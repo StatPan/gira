@@ -1,0 +1,276 @@
+[
+  {
+    "name": "issue_open_default",
+    "snapshot": {
+      "issues": [
+        {
+          "number": 10,
+          "title": "New issue",
+          "state": "open",
+          "labels": ["type:task"],
+          "body": ""
+        }
+      ],
+      "pull_requests": [],
+      "branches": [],
+      "milestones": []
+    },
+    "expect": {
+      "applied_rule_ids": ["issue_open_default"],
+      "applied_targets": ["issue#10"],
+      "skipped_rule_ids": []
+    }
+  },
+  {
+    "name": "issue_triaged_ready",
+    "snapshot": {
+      "issues": [
+        {
+          "number": 11,
+          "title": "Triaged",
+          "state": "open",
+          "labels": ["status:backlog", "type:story", "priority:p1", "agent:worker"],
+          "body": "Has acceptance criteria"
+        }
+      ],
+      "pull_requests": [],
+      "branches": [],
+      "milestones": []
+    },
+    "expect": {
+      "applied_rule_ids": ["issue_triaged_ready"],
+      "applied_targets": ["issue#11"],
+      "skipped_rule_ids": []
+    }
+  },
+  {
+    "name": "branch_started",
+    "snapshot": {
+      "issues": [
+        {
+          "number": 12,
+          "title": "Start branch",
+          "state": "open",
+          "labels": ["status:ready"],
+          "body": ""
+        }
+      ],
+      "pull_requests": [],
+      "branches": ["feat/issue-12-start"],
+      "milestones": []
+    },
+    "expect": {
+      "applied_rule_ids": ["branch_started"],
+      "applied_targets": ["issue#12"],
+      "skipped_rule_ids": []
+    }
+  },
+  {
+    "name": "pr_opened",
+    "snapshot": {
+      "issues": [
+        {
+          "number": 13,
+          "title": "PR opened",
+          "state": "open",
+          "labels": ["status:ready"],
+          "body": ""
+        }
+      ],
+      "pull_requests": [
+        {
+          "number": 200,
+          "state": "open",
+          "draft": false,
+          "body": "Closes #13",
+          "head_ref": "feat/issue-13-pr"
+        }
+      ],
+      "branches": [],
+      "milestones": []
+    },
+    "expect": {
+      "applied_rule_ids": ["pr_opened"],
+      "applied_targets": ["issue#13"],
+      "skipped_rule_ids": []
+    }
+  },
+  {
+    "name": "pr_ready_for_review",
+    "snapshot": {
+      "issues": [
+        {
+          "number": 14,
+          "title": "PR ready",
+          "state": "open",
+          "labels": ["status:in-progress"],
+          "body": ""
+        }
+      ],
+      "pull_requests": [
+        {
+          "number": 201,
+          "state": "open",
+          "draft": false,
+          "body": "Fixes #14",
+          "head_ref": "feat/issue-14-pr"
+        }
+      ],
+      "branches": [],
+      "milestones": []
+    },
+    "expect": {
+      "applied_rule_ids": ["pr_ready_for_review"],
+      "applied_targets": ["issue#14"],
+      "skipped_rule_ids": []
+    }
+  },
+  {
+    "name": "pr_merged_closes_issue",
+    "snapshot": {
+      "issues": [
+        {
+          "number": 15,
+          "title": "Merged done",
+          "state": "closed",
+          "labels": ["status:in-review"],
+          "body": ""
+        }
+      ],
+      "pull_requests": [
+        {
+          "number": 202,
+          "state": "closed",
+          "draft": false,
+          "merged_at": "2026-04-26T12:00:00Z",
+          "body": "Resolves #15",
+          "head_ref": "feat/issue-15-pr"
+        }
+      ],
+      "branches": [],
+      "milestones": []
+    },
+    "expect": {
+      "applied_rule_ids": ["pr_merged_closes_issue"],
+      "applied_targets": ["issue#15"],
+      "skipped_rule_ids": []
+    }
+  },
+  {
+    "name": "milestone_all_closed",
+    "snapshot": {
+      "issues": [],
+      "pull_requests": [],
+      "branches": [],
+      "milestones": [
+        {
+          "number": 5,
+          "title": "MVP",
+          "open_issues": 0,
+          "closed_issues": 3
+        }
+      ]
+    },
+    "expect": {
+      "applied_rule_ids": ["milestone_all_closed"],
+      "applied_targets": ["milestone#5"],
+      "skipped_rule_ids": []
+    }
+  },
+  {
+    "name": "blocked_added",
+    "snapshot": {
+      "issues": [
+        {
+          "number": 16,
+          "title": "Blocked now",
+          "state": "open",
+          "labels": ["status:ready", "blocked"],
+          "body": ""
+        }
+      ],
+      "pull_requests": [],
+      "branches": [],
+      "milestones": []
+    },
+    "expect": {
+      "applied_rule_ids": ["blocked_added"],
+      "applied_targets": ["issue#16"],
+      "skipped_rule_ids": []
+    }
+  },
+  {
+    "name": "blocked_removed",
+    "snapshot": {
+      "issues": [
+        {
+          "number": 17,
+          "title": "Unblocked",
+          "state": "open",
+          "labels": ["status:blocked"],
+          "body": ""
+        }
+      ],
+      "pull_requests": [],
+      "branches": [],
+      "milestones": []
+    },
+    "expect": {
+      "applied_rule_ids": ["blocked_removed"],
+      "applied_targets": ["issue#17"],
+      "skipped_rule_ids": []
+    }
+  },
+  {
+    "name": "release_checklist_complete",
+    "snapshot": {
+      "issues": [
+        {
+          "number": 18,
+          "title": "Release checklist",
+          "state": "open",
+          "labels": ["status:in-progress", "type:task"],
+          "body": "- [x] Cut release\\n- [x] Publish artifacts\\n- [x] Announce"
+        }
+      ],
+      "pull_requests": [],
+      "branches": [],
+      "milestones": []
+    },
+    "expect": {
+      "applied_rule_ids": ["release_checklist_complete"],
+      "applied_targets": ["issue#18"],
+      "skipped_rule_ids": []
+    }
+  },
+  {
+    "name": "multi_rule_conflict_blocked_wins",
+    "snapshot": {
+      "issues": [
+        {
+          "number": 19,
+          "title": "Conflict",
+          "state": "open",
+          "labels": ["status:ready", "blocked", "type:story", "priority:p1", "agent:worker"],
+          "body": ""
+        }
+      ],
+      "pull_requests": [
+        {
+          "number": 203,
+          "state": "open",
+          "draft": false,
+          "body": "Closes #19",
+          "head_ref": "feat/issue-19-pr"
+        }
+      ],
+      "branches": ["feat/issue-19-start"],
+      "milestones": []
+    },
+    "expect": {
+      "applied_rule_ids": ["blocked_added"],
+      "applied_targets": ["issue#19"],
+      "skipped_rule_ids": ["pr_opened", "branch_started"]
+    }
+  }
+]

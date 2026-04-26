@@ -432,3 +432,44 @@ func TestProjectSyncCommandJSONUsesInjectedBuilder(t *testing.T) {
 		t.Fatalf("project sync JSON missing dry_run true: %s", stdout.String())
 	}
 }
+
+func TestProjectTransitionsCommandRequiresDryRun(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"project", "transitions", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "--dry-run is required") {
+		t.Fatalf("stderr missing dry-run requirement:\n%s", stderr.String())
+	}
+}
+
+func TestProjectTransitionsCommandJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newProjectTransitionsReport
+	t.Cleanup(func() { newProjectTransitionsReport = restore })
+	newProjectTransitionsReport = func(repo gira.RepoRef, dryRun bool) (gira.ProjectTransitionsReport, error) {
+		return gira.ProjectTransitionsReport{
+			Repo:    repo.FullName(),
+			Command: "project transitions",
+			DryRun:  dryRun,
+			Counts: gira.ProjectTransitionCounts{
+				Applied: 1,
+			},
+			Transitions: []gira.ProjectTransitionPlanItem{
+				{RuleID: "issue_open_default", TargetType: "issue", TargetID: "10", Decision: "apply", From: "null", To: "Backlog"},
+			},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"project", "transitions", "--repo", "StatPan/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"command\": \"project transitions\"") {
+		t.Fatalf("project transitions JSON missing command: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "\"dry_run\": true") {
+		t.Fatalf("project transitions JSON missing dry_run true: %s", stdout.String())
+	}
+}

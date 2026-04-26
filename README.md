@@ -74,4 +74,6 @@ git push origin v0.1.0
 
 Developer experience conventions for first-run onboarding, dry-run/apply output, JSON, recovery, and the issue-to-PR loop are documented in [docs/dx.md](docs/dx.md).
 
+The GitHub-native Product OS schema for future Projects v2 planning, roadmap date semantics, and dry-run-first automation is documented in [docs/product-os-schema.md](docs/product-os-schema.md).
+
 Explicit non-goals for MVP: GitHub Projects v2 automation, LLM PRD-to-issue decomposition, Web UI, Jira import/export, and chat-bot integration.

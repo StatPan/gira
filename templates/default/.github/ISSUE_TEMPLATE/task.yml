@@ -1,0 +1,16 @@
+name: Task
+
+description: Concrete implementation task
+
+title: "[Task] "
+labels: ["type:task"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      placeholder: "- [ ] ..."

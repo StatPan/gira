@@ -270,7 +270,7 @@
     "expect": {
       "applied_rule_ids": ["blocked_added"],
       "applied_targets": ["issue#19"],
-      "skipped_rule_ids": ["pr_opened", "branch_started"]
+      "skipped_rule_ids": ["pr_opened", "pr_ready_for_review", "branch_started"]
     }
   }
 ]

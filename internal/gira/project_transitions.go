@@ -308,6 +308,7 @@ func BuildProjectTransitionsReport(repo string, snapshot ProjectTransitionSnapsh
 	skips := make([]ProjectTransitionPlanItem, 0)
 
 	linkedPRs := mapPRsToIssues(snapshot.PullRequests)
+	closingLinkedPRs := mapPRsToIssuesByClosingKeywords(snapshot.PullRequests)
 	branchIssues := mapBranchesToIssues(snapshot.Branches)
 
 	sort.Slice(snapshot.Issues, func(i, j int) bool { return snapshot.Issues[i].Number < snapshot.Issues[j].Number })
@@ -325,12 +326,13 @@ func BuildProjectTransitionsReport(repo string, snapshot ProjectTransitionSnapsh
 			))
 		}
 		if !blocked && status == "Blocked" {
+			targetState, reason, resolution := blockedRemovalTarget(issue, prs, branchIssues[issue.Number])
 			issueCandidates[itemKey] = append(issueCandidates[itemKey], makeCandidate(
-				"blocked_removed", "issue", issue.Number, "Blocked", "Ready", "blocked label removed; previous state unavailable", "missing_previous_state", 1,
+				"blocked_removed", "issue", issue.Number, "Blocked", targetState, reason, resolution, 1,
 			))
 		}
 
-		if mergedPR, ok := firstMergedLinkedPR(prs); ok {
+		if mergedPR, ok := firstMergedLinkedPR(closingLinkedPRs[issue.Number]); ok {
 			if strings.EqualFold(issue.State, "closed") {
 				if status != "Done" {
 					issueCandidates[itemKey] = append(issueCandidates[itemKey], makeCandidate(
@@ -361,6 +363,18 @@ func BuildProjectTransitionsReport(repo string, snapshot ProjectTransitionSnapsh
 				issueCandidates[itemKey] = append(issueCandidates[itemKey], makeCandidate(
 					"pr_opened", "issue", issue.Number, "Ready", "In review", fmt.Sprintf("linked non-draft PR #%d references issue", nonDraftPR.Number), "review_state_projection", 3,
 				))
+			}
+			if status == "Blocked" || blocked {
+				skips = append(skips, ProjectTransitionPlanItem{
+					RuleID:             "pr_ready_for_review",
+					TargetType:         "issue",
+					TargetID:           strconv.Itoa(issue.Number),
+					From:               displayStatus(status),
+					To:                 "In review",
+					Reason:             fmt.Sprintf("linked non-draft PR #%d is reviewable but issue is blocked", nonDraftPR.Number),
+					ConflictResolution: "blocked_overrides_review",
+					Decision:           "skip",
+				})
 			}
 		} else if hasDraftPR && (status == "Ready" || status == "In progress") {
 			skips = append(skips, ProjectTransitionPlanItem{
@@ -539,6 +553,21 @@ func mapPRsToIssues(pulls []ProjectTransitionPullRequest) map[int][]ProjectTrans
 	return mapped
 }
 
+func mapPRsToIssuesByClosingKeywords(pulls []ProjectTransitionPullRequest) map[int][]ProjectTransitionPullRequest {
+	mapped := map[int][]ProjectTransitionPullRequest{}
+	for _, pr := range pulls {
+		for _, id := range parseClosingIssueNumbers(pr.Body) {
+			mapped[id] = append(mapped[id], pr)
+		}
+	}
+	for id := range mapped {
+		sort.SliceStable(mapped[id], func(i, j int) bool {
+			return mapped[id][i].Number < mapped[id][j].Number
+		})
+	}
+	return mapped
+}
+
 func mapBranchesToIssues(branches []string) map[int]bool {
 	mapped := map[int]bool{}
 	for _, branch := range branches {
@@ -576,6 +605,39 @@ func inferIssueStatus(issue ProjectTransitionIssue) string {
 		return "Done"
 	}
 	return ""
+}
+
+func blockedRemovalTarget(issue ProjectTransitionIssue, prs []ProjectTransitionPullRequest, branchLinked bool) (string, string, string) {
+	if previous, ok := previousNonBlockedStatus(issue.Labels); ok {
+		return previous, fmt.Sprintf("blocked label removed; restored previous status %s", previous), "restored_previous_state"
+	}
+	if nonDraftPR, ok := firstLinkedPR(prs, false); ok {
+		return "In review", fmt.Sprintf("blocked label removed; previous state unavailable, recomputed from linked non-draft PR #%d", nonDraftPR.Number), "missing_previous_state_recomputed"
+	}
+	if branchLinked {
+		return "In progress", "blocked label removed; previous state unavailable, recomputed from linked branch", "missing_previous_state_recomputed"
+	}
+	return "Ready", "blocked label removed; previous state unavailable", "missing_previous_state"
+}
+
+func previousNonBlockedStatus(labels []string) (string, bool) {
+	best := ""
+	bestScore := -1
+	for _, label := range labels {
+		status, ok := mapStatusLabel(label)
+		if !ok || status == "Blocked" {
+			continue
+		}
+		score := statusPriority(status)
+		if score > bestScore {
+			best = status
+			bestScore = score
+		}
+	}
+	if best == "" {
+		return "", false
+	}
+	return best, true
 }
 
 func managedStatusFromLabels(labels []string) string {

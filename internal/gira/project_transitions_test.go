@@ -113,6 +113,158 @@ func TestProjectTransitionsDeterministicTextAndJSON(t *testing.T) {
 	}
 }
 
+func TestMergedPRWithoutClosingKeywordDoesNotCloseByBranchFallback(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := ProjectTransitionSnapshot{
+		Issues: []ProjectTransitionIssue{
+			{
+				Number: 33,
+				Title:  "Closed manually",
+				State:  "closed",
+				Labels: []string{"status:in-review"},
+			},
+		},
+		PullRequests: []ProjectTransitionPullRequest{
+			{
+				Number:   300,
+				State:    "closed",
+				Draft:    false,
+				MergedAt: strPtr("2026-04-26T12:00:00Z"),
+				Body:     "Refactors follow-up work",
+				HeadRef:  "feat/issue-33-project-transitions-dry-run",
+			},
+		},
+	}
+
+	report, err := BuildProjectTransitionsReport("StatPan/gira", snapshot, now)
+	if err != nil {
+		t.Fatalf("BuildProjectTransitionsReport returned error: %v", err)
+	}
+
+	apply := findTransition(report.Transitions, "pr_merged_closes_issue", "issue", "33", "apply")
+	if apply != nil {
+		t.Fatalf("unexpected apply transition: %+v", *apply)
+	}
+	skip := findTransition(report.Transitions, "pr_merged_closes_issue", "issue", "33", "skip")
+	if skip != nil {
+		t.Fatalf("unexpected skip transition: %+v", *skip)
+	}
+}
+
+func TestBlockedRemovedRecomputesToInReviewWhenNonDraftPRExists(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := ProjectTransitionSnapshot{
+		Issues: []ProjectTransitionIssue{
+			{
+				Number: 44,
+				Title:  "Unblock with PR ready",
+				State:  "open",
+				Labels: []string{"status:blocked"},
+			},
+		},
+		PullRequests: []ProjectTransitionPullRequest{
+			{
+				Number:  301,
+				State:   "open",
+				Draft:   false,
+				Body:    "Fixes #44",
+				HeadRef: "feat/issue-44-unblock",
+			},
+		},
+	}
+
+	report, err := BuildProjectTransitionsReport("StatPan/gira", snapshot, now)
+	if err != nil {
+		t.Fatalf("BuildProjectTransitionsReport returned error: %v", err)
+	}
+
+	apply := findTransition(report.Transitions, "blocked_removed", "issue", "44", "apply")
+	if apply == nil {
+		t.Fatalf("missing blocked_removed apply transition in %+v", report.Transitions)
+	}
+	if apply.To != "In review" {
+		t.Fatalf("blocked_removed To = %q, want %q", apply.To, "In review")
+	}
+	if apply.ConflictResolution != "missing_previous_state_recomputed" {
+		t.Fatalf("blocked_removed conflict resolution = %q, want %q", apply.ConflictResolution, "missing_previous_state_recomputed")
+	}
+}
+
+func TestNonDraftPRBlockedIssueRecordsExplicitBlockedOverrideSkip(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := ProjectTransitionSnapshot{
+		Issues: []ProjectTransitionIssue{
+			{
+				Number: 52,
+				Title:  "Blocked issue with open PR",
+				State:  "open",
+				Labels: []string{"status:blocked", "blocked"},
+			},
+		},
+		PullRequests: []ProjectTransitionPullRequest{
+			{
+				Number:  302,
+				State:   "open",
+				Draft:   false,
+				Body:    "Fixes #52",
+				HeadRef: "feat/issue-52",
+			},
+		},
+	}
+
+	report, err := BuildProjectTransitionsReport("StatPan/gira", snapshot, now)
+	if err != nil {
+		t.Fatalf("BuildProjectTransitionsReport returned error: %v", err)
+	}
+
+	skip := findTransition(report.Transitions, "pr_ready_for_review", "issue", "52", "skip")
+	if skip == nil {
+		skip = findTransition(report.Transitions, "pr_opened", "issue", "52", "skip")
+	}
+	if skip == nil {
+		t.Fatalf("missing blocked override review skip in %+v", report.Transitions)
+	}
+	if skip.ConflictResolution != "blocked_overrides_review" {
+		t.Fatalf("blocked override conflict resolution = %q, want %q", skip.ConflictResolution, "blocked_overrides_review")
+	}
+}
+
+func TestProjectTransitionsReportNotesIssueLabelStatusInferenceOnly(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := ProjectTransitionSnapshot{
+		Issues: []ProjectTransitionIssue{
+			{Number: 61, Title: "No managed status", State: "open"},
+		},
+	}
+
+	report, err := BuildProjectTransitionsReport("StatPan/gira", snapshot, now)
+	if err != nil {
+		t.Fatalf("BuildProjectTransitionsReport returned error: %v", err)
+	}
+
+	apply := findTransition(report.Transitions, "issue_open_default", "issue", "61", "apply")
+	if apply == nil {
+		t.Fatalf("missing issue_open_default apply transition in %+v", report.Transitions)
+	}
+	if !strings.Contains(strings.ToLower(apply.Reason), "managed status") {
+		t.Fatalf("unexpected reason: %q", apply.Reason)
+	}
+}
+
+func findTransition(items []ProjectTransitionPlanItem, ruleID, targetType, targetID, decision string) *ProjectTransitionPlanItem {
+	for i := range items {
+		item := &items[i]
+		if item.RuleID == ruleID && item.TargetType == targetType && item.TargetID == targetID && item.Decision == decision {
+			return item
+		}
+	}
+	return nil
+}
+
+func strPtr(value string) *string {
+	return &value
+}
+
 func loadTransitionFixtures(t *testing.T) []transitionFixture {
 	t.Helper()
 	path := filepath.Join("testdata", "project_transitions", "cases.json")

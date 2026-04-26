@@ -78,6 +78,73 @@ Future automation may infer transitions, but it must preview them before applyin
 
 Status automation should never close issues, merge PRs, delete fields, or rewrite broad repository settings without explicit apply behavior beyond the dry-run plan.
 
+## Lifecycle Transition Matrix (Issue #28 Design Slice)
+
+This matrix defines the first explicit transition contract for Product OS lifecycle automation.
+
+| Rule ID | Trigger | Transition | Rule owner | Dry-run behavior | Apply behavior | Required GitHub events/APIs | Conflict handling |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `issue_open_default` | Issue opened | `null -> Backlog` | Gira status rules engine | Report suggested transition when issue has no managed status | Set status to `Backlog` on the corresponding Project item | Event: `issues.opened`. APIs: issue read (`GET /repos/{owner}/{repo}/issues/{issue_number}`), Project item/field read and update (GraphQL ProjectV2) | If status already set, skip and emit `already_set` |
+| `issue_triaged_ready` | Issue triaged with required labels/criteria | `Backlog -> Ready` | Gira triage rules | Report transition only when triage criteria evaluate true | Set status to `Ready` | Events: `issues.labeled`, `issues.edited`, optional `issue_comment.created`. APIs: issue read, labels read, Project status update | If `blocked` label is present, suppress `Ready` and keep `Blocked` |
+| `branch_started` | Branch created for issue work | `Ready -> In progress` | Gira branch linkage rules | Report inferred transition when branch naming or branch-issue mapping resolves to issue | Set status to `In progress` | Events: `create` (branch), optional `push`. APIs: branch list/read (`GET /repos/{owner}/{repo}/branches`), issue linkage parse from branch name/body/comment, Project status update | If linked PR is already non-draft and reviewable, prefer `In review` |
+| `pr_opened` | PR opened and linked to issue | `In progress -> In review` (or `Ready -> In review`) | Gira PR linkage rules | Report transition for linked issues when PR exists | Set status to `In review` | Events: `pull_request.opened`, `pull_request.synchronize`. APIs: PR read (`GET /repos/{owner}/{repo}/pulls/{pull_number}`), timeline/closing reference read, Project status update | If PR is draft, keep `In progress` and record `draft_pr` |
+| `pr_ready_for_review` | Draft PR marked ready | `In progress -> In review` | Gira PR review-state rules | Report transition for linked issues | Set status to `In review` | Event: `pull_request.ready_for_review`. APIs: PR read, linked issue resolution, Project status update | If issue is `Blocked`, do not auto-transition; emit `blocked_overrides_review` |
+| `pr_merged_closes_issue` | PR merged with `Closes #N` / `Fixes #N` / `Resolves #N` | `In review -> Done` | GitHub closing semantics plus Gira status projection | Report issue closure and `Done` projection | Do not merge/close; only project status reconciliation to `Done` after closure is observed | Event: `pull_request.closed` with `merged=true`; issue close event. APIs: PR merge state read, issue state read, closing reference resolution | If issue remains open (missing/invalid closing keyword), emit `closure_missing` and skip |
+| `milestone_all_closed` | All issues in a milestone are closed | `Milestone phase -> Complete` (computed milestone state) | Gira milestone aggregation rules | Report milestone completion candidate in plan and JSON | In MVP, report-only; no milestone mutation. Future apply may set milestone metadata/comment | Events: `issues.closed`, `issues.reopened`, `milestone.edited`. APIs: milestone issues list (`GET /repos/{owner}/{repo}/issues?milestone=`), open/closed counts | If any issue reopens, immediately drop completion state and emit `phase_reopened` |
+| `blocked_added` | `blocked` label added | `* -> Blocked` | Label-driven status override rule | Report forced override to `Blocked` | Set status to `Blocked` | Event: `issues.labeled`. APIs: issue labels read, Project status update | Always wins over `Ready`, `In progress`, and `In review` |
+| `blocked_removed` | `blocked` label removed | `Blocked -> Unblocked` (restore prior active state) | Label-driven status override rule | Report restored target state from stored last-non-blocked status, else `Ready` fallback | Set status to restored state (`Ready` fallback) | Event: `issues.unlabeled`. APIs: issue labels read, optional state-cache read, Project status update | If prior state unknown, emit `missing_previous_state` and choose deterministic `Ready` |
+| `release_checklist_complete` | Release checklist issue/task list reaches completion | `Release work -> Done` | Gira release gate rules | Report `Done` candidate when checklist parser confirms all required items complete | Set release issue/project item status to `Done` | Events: `issues.edited`, `issue_comment.created`, optional `check_run.completed`. APIs: issue body/tasklist read, optional linked checks read, Project status update | If any required checkbox reopens, revert to `In progress` and emit `checklist_reopened` |
+
+### Rule Ownership
+
+- GitHub remains source of truth for merge and issue close behavior (`Closes #N`, `Fixes #N`, `Resolves #N`).
+- Gira owns status projection into Product OS fields and must never perform destructive repository actions as part of transition apply.
+- Milestone completion is Gira-computed in MVP and reported in status output until an explicit milestone mutation slice is approved.
+
+### Dry-Run and Apply Boundary
+
+- Dry-run must compute a full transition plan with deterministic rule IDs, source object references, old/new state, and skip reasons.
+- Apply may mutate only Gira-managed status fields (or explicitly approved milestone metadata in a future slice).
+- Apply must not close issues, merge PRs, edit branch protections, or alter non-Gira repository settings.
+- Any transition depending on ambiguous linkage must remain a dry-run warning until explicitly resolvable.
+
+### Conflict Handling Order
+
+Evaluate rules in this precedence order to keep outcomes deterministic:
+
+1. `blocked_added` / `blocked_removed` override workflow states.
+2. `pr_merged_closes_issue` projects to `Done` after closure is observed.
+3. `pr_ready_for_review` and `pr_opened` project to `In review`.
+4. `branch_started` projects to `In progress`.
+5. `issue_triaged_ready` and `issue_open_default` fill initial planning states.
+6. `milestone_all_closed` and `release_checklist_complete` are aggregate/reporting transitions and do not override issue-level blocked states.
+
+When multiple rules target the same item in one planning pass, apply only the highest-precedence transition and record lower-precedence rules as skipped with explicit reasons.
+
+### Required GitHub Event/API Coverage
+
+Minimum event sources:
+
+- `issues`: `opened`, `edited`, `labeled`, `unlabeled`, `closed`, `reopened`
+- `pull_request`: `opened`, `ready_for_review`, `synchronize`, `closed`
+- `create` (branch), optional `push` for branch activity confirmation
+- `milestone.edited` (plus issue close/reopen events for milestone aggregate recompute)
+
+Minimum API surfaces (through `gh` in MVP):
+
+- REST issue, PR, milestone, labels, and branch read endpoints.
+- GraphQL ProjectV2 item/field lookup and single-field updates for status projection.
+- REST or GraphQL linkage reads needed to resolve closing keywords and PR-to-issue relations.
+
+### Next Implementation Slice
+
+Implement a read-first `gira project transitions --dry-run --json` slice that:
+
+1. Evaluates only the rules in this matrix.
+2. Emits deterministic machine-readable transition plans with `rule_id`, `from`, `to`, `reason`, and `conflict_resolution`.
+3. Supports `--apply` only for issue-level status field mutations (`Backlog`, `Ready`, `Blocked`, `In progress`, `In review`, `Done`), leaving milestone completion report-only.
+4. Includes fixture-driven tests for each required transition path and at least one multi-rule conflict case.
+
 ## Roadmap View Requirements
 
 GitHub roadmap and timeline views require date fields that can render an item across time. For Gira, every roadmap-able item must have:

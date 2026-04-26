@@ -387,4 +387,48 @@ func TestProjectCapabilityCommandNeedsSubcommand(t *testing.T) {
 	if !strings.Contains(stdout.String(), "project capability") {
 		t.Fatalf("project help output unexpected: %s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "project sync") {
+		t.Fatalf("project help output missing sync command: %s", stdout.String())
+	}
+}
+
+func TestProjectSyncCommandRequiresDryRun(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"project", "sync", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "--dry-run is required") {
+		t.Fatalf("stderr missing dry-run requirement:\n%s", stderr.String())
+	}
+}
+
+func TestProjectSyncCommandJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newProjectSyncReport
+	t.Cleanup(func() { newProjectSyncReport = restore })
+	newProjectSyncReport = func(repo gira.RepoRef, dryRun bool) (gira.ProjectSyncReport, error) {
+		report := gira.ProjectSyncReport{
+			Repo:           repo.FullName(),
+			Command:        "project sync",
+			Project:        "Product OS",
+			DryRun:         dryRun,
+			MissingProject: true,
+			Counts: gira.ProjectSyncCounts{
+				FieldsMissing: 6,
+			},
+		}
+		return report, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"project", "sync", "--repo", "StatPan/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"command\": \"project sync\"") {
+		t.Fatalf("project sync JSON missing command: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "\"dry_run\": true") {
+		t.Fatalf("project sync JSON missing dry_run true: %s", stdout.String())
+	}
 }

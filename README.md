@@ -13,4 +13,6 @@ The MVP focuses on a CLI-first workflow:
 - `gira sync --repo OWNER/REPO`
 - `gira status --repo OWNER/REPO`
 
+Developer experience conventions for first-run onboarding, dry-run/apply output, JSON, recovery, and the issue-to-PR loop are documented in [docs/dx.md](docs/dx.md).
+
 Explicit non-goals for MVP: GitHub Projects v2 automation, LLM PRD-to-issue decomposition, Web UI, Jira import/export, and chat-bot integration.

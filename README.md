@@ -13,10 +13,12 @@ The Python MVP currently owns the full CLI-first workflow:
 - `gira sync --repo OWNER/REPO`
 - `gira status --repo OWNER/REPO`
 
-The Go CLI is being introduced in small slices as the long-term product CLI. The first Go path supports a bootstrap dry-run preview without touching GitHub or local files:
+The Go CLI is being introduced in small slices as the long-term product CLI. The current Go path supports bootstrap dry-run, GitHub metadata sync, and status:
 
 ```bash
 go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
+go run ./cmd/gira sync --repo OWNER/REPO --dry-run
+go run ./cmd/gira sync --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO --json
 ```
@@ -27,6 +29,7 @@ To smoke-test the binary from outside the source checkout:
 GOBIN=/tmp/gira-bin go install ./cmd/gira
 (cd /tmp && /tmp/gira-bin/gira --help)
 (cd /tmp && /tmp/gira-bin/gira bootstrap --repo OWNER/REPO --template default --dry-run)
+(cd /tmp && /tmp/gira-bin/gira sync --repo OWNER/REPO --dry-run)
 (cd /tmp && /tmp/gira-bin/gira status --repo OWNER/REPO --json)
 ```
 

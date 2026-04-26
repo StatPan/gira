@@ -7,6 +7,7 @@ from typing import Optional
 import typer
 
 from gira.config import parse_repo_ref
+from gira.github_sync import GhClient, GhError, apply_sync_plan, build_sync_plan, format_sync_plan
 from gira.install import DEFAULT_BRANCH, format_summary, install_templates
 from gira.templates import format_dry_run, render_template_tree
 
@@ -56,6 +57,24 @@ def bootstrap(
     typer.echo(format_summary(result), nl=False)
     if result.conflicts:
         raise typer.Exit(code=1)
+
+
+@app.command()
+def sync(
+    repo: str = typer.Option(..., "--repo", help="Target GitHub repo in OWNER/REPO format."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Plan sync without creating or updating GitHub metadata."),
+) -> None:
+    """Sync Gira labels, milestones, and bootstrap issues through gh."""
+    repo_ref = parse_repo_ref(repo)
+    client = GhClient(repo_ref)
+    try:
+        plan = build_sync_plan(client)
+        typer.echo(format_sync_plan(plan, dry_run=dry_run), nl=False)
+        if not dry_run:
+            apply_sync_plan(client, plan)
+            typer.echo("sync complete")
+    except GhError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--repo") from exc
 
 
 if __name__ == "__main__":

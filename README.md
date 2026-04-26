@@ -19,6 +19,14 @@ The Go CLI is being introduced in small slices as the long-term product CLI. The
 go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
 ```
 
+To smoke-test the binary from outside the source checkout:
+
+```bash
+GOBIN=/tmp/gira-bin go install ./cmd/gira
+(cd /tmp && /tmp/gira-bin/gira --help)
+(cd /tmp && /tmp/gira-bin/gira bootstrap --repo OWNER/REPO --template default --dry-run)
+```
+
 Developer experience conventions for first-run onboarding, dry-run/apply output, JSON, recovery, and the issue-to-PR loop are documented in [docs/dx.md](docs/dx.md).
 
 Explicit non-goals for MVP: GitHub Projects v2 automation, LLM PRD-to-issue decomposition, Web UI, Jira import/export, and chat-bot integration.

@@ -320,7 +320,7 @@ func BuildProjectTransitionsReport(repo string, snapshot ProjectTransitionSnapsh
 		nonDraftPR, hasNonDraftPR := firstLinkedPR(prs, false)
 		draftPR, hasDraftPR := firstLinkedPR(prs, true)
 
-		if blocked && status != "Blocked" {
+		if blocked && status != "Blocked" && status != "Done" && strings.EqualFold(issue.State, "open") {
 			issueCandidates[itemKey] = append(issueCandidates[itemKey], makeCandidate(
 				"blocked_added", "issue", issue.Number, displayStatus(status), "Blocked", "blocked label present", "blocked_added wins over workflow states", 1,
 			))

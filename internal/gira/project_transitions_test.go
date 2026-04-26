@@ -229,6 +229,30 @@ func TestNonDraftPRBlockedIssueRecordsExplicitBlockedOverrideSkip(t *testing.T) 
 	}
 }
 
+func TestClosedIssueWithBlockedLabelDoesNotTransitionBackToBlocked(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := ProjectTransitionSnapshot{
+		Issues: []ProjectTransitionIssue{
+			{
+				Number: 77,
+				Title:  "Closed issue with lingering blocked label",
+				State:  "closed",
+				Labels: []string{"blocked"},
+			},
+		},
+	}
+
+	report, err := BuildProjectTransitionsReport("StatPan/gira", snapshot, now)
+	if err != nil {
+		t.Fatalf("BuildProjectTransitionsReport returned error: %v", err)
+	}
+
+	apply := findTransition(report.Transitions, "blocked_added", "issue", "77", "apply")
+	if apply != nil {
+		t.Fatalf("unexpected blocked_added apply transition for closed issue: %+v", *apply)
+	}
+}
+
 func TestProjectTransitionsReportNotesIssueLabelStatusInferenceOnly(t *testing.T) {
 	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
 	snapshot := ProjectTransitionSnapshot{

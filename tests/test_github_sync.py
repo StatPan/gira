@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import yaml
 from typer.testing import CliRunner
 
 import gira.cli as cli
@@ -7,6 +10,7 @@ from gira.github_sync import (
     BOOTSTRAP_LABEL,
     BootstrapIssueDef,
     BootstrapIssuePlan,
+    DESIRED_LABELS,
     ExistingIssue,
     ExistingLabel,
     ExistingMilestone,
@@ -22,6 +26,7 @@ from gira.github_sync import (
 
 
 runner = CliRunner()
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_labels_are_planned_by_name():
@@ -97,6 +102,16 @@ def test_extra_labels_and_issues_are_preserved_not_deleted():
 
     assert [item.action for item in label_plan] == ["skip"]
     assert [item.action for item in issue_plan] == ["create"]
+
+
+def test_managed_labels_cover_default_issue_templates():
+    managed_labels = {label.name for label in DESIRED_LABELS}
+    template_labels = set()
+    for path in (ROOT / "templates/default/.github/ISSUE_TEMPLATE").glob("*.yml"):
+        payload = yaml.safe_load(path.read_text())
+        template_labels.update(payload.get("labels", []))
+
+    assert template_labels <= managed_labels
 
 
 def test_same_title_without_bootstrap_label_is_not_deduplicated():

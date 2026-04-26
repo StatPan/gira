@@ -296,7 +296,7 @@ DESIRED_MILESTONES: tuple[MilestoneDef, ...] = (
 
 DESIRED_BOOTSTRAP_ISSUES: tuple[BootstrapIssueDef, ...] = (
     BootstrapIssueDef(
-        title="[Epic] Gira MVP",
+        title="[Epic] Gira MVP: GitHub-as-OS bootstrap",
         body=(
             "## Goal\n"
             "Ship the CLI-first Gira MVP.\n\n"
@@ -309,13 +309,13 @@ DESIRED_BOOTSTRAP_ISSUES: tuple[BootstrapIssueDef, ...] = (
         milestone="MVP",
     ),
     BootstrapIssueDef(
-        title="[Task] Slice 1: package skeleton and default template",
-        body="## Goal\nCreate the Python package, CLI entrypoint, and default project template.",
+        title="[Task] Slice 1: CLI skeleton + template dry-run",
+        body="## Goal\nCreate the Python package, CLI entrypoint, and default project template dry-run.",
         labels=("gira:bootstrap", "type:task", "agent:worker", "status:ready"),
         milestone="MVP",
     ),
     BootstrapIssueDef(
-        title="[Task] Slice 2: local bootstrap install",
+        title="[Task] Slice 2: idempotent repo file install",
         body="## Goal\nInstall rendered template files into a local git repository idempotently.",
         labels=("gira:bootstrap", "type:task", "agent:worker", "status:ready"),
         milestone="MVP",
@@ -327,8 +327,8 @@ DESIRED_BOOTSTRAP_ISSUES: tuple[BootstrapIssueDef, ...] = (
         milestone="MVP",
     ),
     BootstrapIssueDef(
-        title="[Task] Slice 4: compact status summary",
-        body="## Goal\nShow a compact status summary for a Gira-managed GitHub repository.",
+        title="[Task] Slice 4: gira status (text + --json)",
+        body="## Goal\nShow a compact text and JSON status summary for a Gira-managed GitHub repository.",
         labels=("gira:bootstrap", "type:task", "agent:worker", "status:ready"),
         milestone="MVP",
     ),

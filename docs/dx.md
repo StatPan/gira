@@ -68,13 +68,22 @@ Current Go scope:
 ```bash
 go run ./cmd/gira --help
 go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
+go run ./cmd/gira bootstrap --repo OWNER/REPO --path /path/to/repo
 go run ./cmd/gira sync --repo OWNER/REPO --dry-run
 go run ./cmd/gira sync --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO --json
 ```
 
-The Go bootstrap dry-run embeds the default template so output is independent of the caller's working directory. Go `sync` shells out through `gh` to create or update only Gira-managed labels, milestones, and bootstrap issues. Go `status` is read-only and shells out through `gh api` to match the Python MVP JSON contract closely enough for worker automation. Until later slices port mutating bootstrap installs, operators should continue using the Python CLI for local file installs.
+The Go CLI can be installed for daily use from source:
+
+```bash
+go install github.com/StatPan/gira/cmd/gira@latest
+```
+
+The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. Private repository installs need Go private module access, such as `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication. The Go bootstrap path embeds the default template so output and local installs are independent of the caller's working directory. Go `sync` shells out through `gh` to create or update only Gira-managed labels, milestones, and bootstrap issues. Go `status` is read-only and shells out through `gh api` to match the Python MVP JSON contract closely enough for worker automation. The Python CLI remains the reference and fallback implementation until final cutover.
+
+Tagged Go releases are built by `.github/workflows/release.yml`. Maintainers publish one by tagging `main` with a `v*` tag and pushing the tag; the workflow runs Go tests, builds Linux/macOS/Windows archives, and attaches them to the GitHub release.
 
 ## Output Conventions
 

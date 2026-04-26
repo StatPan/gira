@@ -28,11 +28,16 @@ const bootstrapHelp = `Bootstrap a repository into a Gira-managed project worksp
 
 Usage:
   gira bootstrap --repo OWNER/REPO --template default --dry-run [--created-at YYYY-MM-DD]
+  gira bootstrap --repo OWNER/REPO --path PATH [--overwrite] [--branch BRANCH|--no-branch]
 
 Flags:
   --repo string        Target GitHub repo in OWNER/REPO format
   --template string   Template name to render (default "default")
   --dry-run           Render without writing files or calling GitHub
+  --path string        Local target git repo path (required for non-dry-run)
+  --overwrite          Overwrite existing files that differ
+  --branch string      Branch to create/checkout before install (default "chore/gira-bootstrap")
+  --no-branch          Skip branch creation/checkout
   --created-at string Override render date for deterministic tests
   -h, --help          Show help
 `
@@ -99,6 +104,10 @@ func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	template := fs.String("template", "default", "Template name to render")
 	dryRun := fs.Bool("dry-run", false, "Render without writing files or calling GitHub")
+	path := fs.String("path", "", "Local target git repo path")
+	overwrite := fs.Bool("overwrite", false, "Overwrite existing files that differ")
+	branch := fs.String("branch", gira.DefaultBranch, "Branch to create/checkout before install")
+	noBranch := fs.Bool("no-branch", false, "Skip branch creation/checkout")
 	createdAt := fs.String("created-at", "", "Override render date for deterministic tests")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -122,10 +131,6 @@ func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, bootstrapHelp)
 		return 2
 	}
-	if !*dryRun {
-		fmt.Fprint(stderr, "Go bootstrap currently supports --dry-run only\n")
-		return 2
-	}
 
 	repo, err := gira.ParseRepoRef(*repoValue)
 	if err != nil {
@@ -143,7 +148,29 @@ func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	fmt.Fprint(stdout, gira.FormatDryRun(rendered))
+	if *dryRun {
+		fmt.Fprint(stdout, gira.FormatDryRun(rendered))
+		return 0
+	}
+
+	if *path == "" {
+		fmt.Fprint(stderr, "--path is required when not running --dry-run\n")
+		return 2
+	}
+
+	installBranch := *branch
+	if *noBranch {
+		installBranch = ""
+	}
+	result, err := gira.InstallTemplates(*path, rendered, *overwrite, installBranch)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	fmt.Fprint(stdout, gira.FormatInstallSummary(result))
+	if len(result.Conflicts) > 0 {
+		return 1
+	}
 	return 0
 }
 

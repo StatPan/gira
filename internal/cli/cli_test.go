@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -34,15 +35,63 @@ func TestBootstrapRequiresRepo(t *testing.T) {
 	}
 }
 
-func TestBootstrapRejectsNonDryRun(t *testing.T) {
+func TestBootstrapNonDryRunRequiresPath(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"bootstrap", "--repo", "StatPan/example"}, &stdout, &stderr)
 
 	if code == 0 {
 		t.Fatal("exit code = 0, want non-zero")
 	}
-	if !strings.Contains(stderr.String(), "supports --dry-run only") {
-		t.Fatalf("stderr missing dry-run-only message:\n%s", stderr.String())
+	if !strings.Contains(stderr.String(), "--path is required") {
+		t.Fatalf("stderr missing path requirement:\n%s", stderr.String())
+	}
+}
+
+func TestBootstrapNonDryRunRequiresGitRepo(t *testing.T) {
+	dir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"bootstrap",
+		"--repo",
+		"StatPan/example",
+		"--path",
+		dir,
+		"--created-at",
+		"2026-04-26",
+	}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "not a git repository") {
+		t.Fatalf("stderr missing git repo requirement:\n%s", stderr.String())
+	}
+}
+
+func TestBootstrapNonDryRunCanInstallWithoutBranch(t *testing.T) {
+	repo := t.TempDir()
+	runCLIGit(t, repo, "init", "-q", "-b", "main")
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"bootstrap",
+		"--repo",
+		"StatPan/example",
+		"--path",
+		repo,
+		"--no-branch",
+		"--created-at",
+		"2026-04-26",
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "branch:") {
+		t.Fatalf("stdout unexpectedly included branch line:\n%s", stdout.String())
+	}
+	if _, err := os.Stat(repo + "/AGENTS.md"); err != nil {
+		t.Fatalf("AGENTS.md was not created: %v", err)
 	}
 }
 
@@ -284,6 +333,13 @@ func mustCLIRepo(t *testing.T, value string) gira.RepoRef {
 		t.Fatalf("ParseRepoRef returned error: %v", err)
 	}
 	return repo
+}
+
+func runCLIGit(t *testing.T, repo string, args ...string) {
+	t.Helper()
+	if _, err := (gira.ExecCommandRunner{}).Run("git", append([]string{"-C", repo}, args...)...); err != nil {
+		t.Fatalf("git %v failed: %v", args, err)
+	}
 }
 
 func (c cliFakeStatusClient) Repo() gira.RepoRef {

@@ -325,7 +325,7 @@ func BuildProjectTransitionsReport(repo string, snapshot ProjectTransitionSnapsh
 				"blocked_added", "issue", issue.Number, displayStatus(status), "Blocked", "blocked label present", "blocked_added wins over workflow states", 1,
 			))
 		}
-		if !blocked && status == "Blocked" {
+		if !blocked && status == "Blocked" && strings.EqualFold(issue.State, "open") {
 			targetState, reason, resolution := blockedRemovalTarget(issue, prs, branchIssues[issue.Number])
 			issueCandidates[itemKey] = append(issueCandidates[itemKey], makeCandidate(
 				"blocked_removed", "issue", issue.Number, "Blocked", targetState, reason, resolution, 1,

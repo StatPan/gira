@@ -253,6 +253,48 @@ func TestClosedIssueWithBlockedLabelDoesNotTransitionBackToBlocked(t *testing.T)
 	}
 }
 
+func TestClosedIssueWithStaleManagedBlockedLabelDoesNotApplyBlockedRemoved(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := ProjectTransitionSnapshot{
+		Issues: []ProjectTransitionIssue{
+			{
+				Number: 88,
+				Title:  "Closed issue with stale managed blocked status",
+				State:  "closed",
+				Labels: []string{"status:blocked"},
+			},
+		},
+		PullRequests: []ProjectTransitionPullRequest{
+			{
+				Number:   420,
+				State:    "closed",
+				Draft:    false,
+				MergedAt: strPtr("2026-04-26T12:00:00Z"),
+				Body:     "Fixes #88",
+				HeadRef:  "feat/issue-88",
+			},
+		},
+	}
+
+	report, err := BuildProjectTransitionsReport("StatPan/gira", snapshot, now)
+	if err != nil {
+		t.Fatalf("BuildProjectTransitionsReport returned error: %v", err)
+	}
+
+	blockedRemovedApply := findTransition(report.Transitions, "blocked_removed", "issue", "88", "apply")
+	if blockedRemovedApply != nil {
+		t.Fatalf("unexpected blocked_removed apply transition for closed issue: %+v", *blockedRemovedApply)
+	}
+
+	prMergedApply := findTransition(report.Transitions, "pr_merged_closes_issue", "issue", "88", "apply")
+	if prMergedApply == nil {
+		t.Fatalf("missing pr_merged_closes_issue apply transition in %+v", report.Transitions)
+	}
+	if prMergedApply.To != "Done" {
+		t.Fatalf("pr_merged_closes_issue To = %q, want %q", prMergedApply.To, "Done")
+	}
+}
+
 func TestProjectTransitionsReportNotesIssueLabelStatusInferenceOnly(t *testing.T) {
 	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
 	snapshot := ProjectTransitionSnapshot{

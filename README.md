@@ -17,6 +17,8 @@ The Go CLI is being introduced in small slices as the long-term product CLI. The
 
 ```bash
 go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
+go run ./cmd/gira status --repo OWNER/REPO
+go run ./cmd/gira status --repo OWNER/REPO --json
 ```
 
 To smoke-test the binary from outside the source checkout:
@@ -25,6 +27,7 @@ To smoke-test the binary from outside the source checkout:
 GOBIN=/tmp/gira-bin go install ./cmd/gira
 (cd /tmp && /tmp/gira-bin/gira --help)
 (cd /tmp && /tmp/gira-bin/gira bootstrap --repo OWNER/REPO --template default --dry-run)
+(cd /tmp && /tmp/gira-bin/gira status --repo OWNER/REPO --json)
 ```
 
 Developer experience conventions for first-run onboarding, dry-run/apply output, JSON, recovery, and the issue-to-PR loop are documented in [docs/dx.md](docs/dx.md).

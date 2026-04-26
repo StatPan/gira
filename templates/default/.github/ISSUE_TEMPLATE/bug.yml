@@ -1,0 +1,15 @@
+name: Bug
+
+description: Defect report
+
+title: "[Bug] "
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior

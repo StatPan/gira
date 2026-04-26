@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -7,6 +8,7 @@ from typing import Optional
 import typer
 
 from gira.config import parse_repo_ref
+from gira.github_status import build_status_summary, format_status_text
 from gira.github_sync import GhClient, GhError, apply_sync_plan, build_sync_plan, format_sync_plan
 from gira.install import DEFAULT_BRANCH, format_summary, install_templates
 from gira.templates import format_dry_run, render_template_tree
@@ -75,6 +77,26 @@ def sync(
             typer.echo("sync complete")
     except GhError as exc:
         raise typer.BadParameter(str(exc), param_hint="--repo") from exc
+
+
+@app.command()
+def status(
+    repo: str = typer.Option(..., "--repo", help="Target GitHub repo in OWNER/REPO format."),
+    json_output: bool = typer.Option(False, "--json", help="Emit stable JSON for automation."),
+    stale_days: int = typer.Option(14, "--stale-days", min=1, help="Days since update before open issues count as stale."),
+) -> None:
+    """Show a compact read-only status summary from GitHub issues and milestones."""
+    repo_ref = parse_repo_ref(repo)
+    client = GhClient(repo_ref)
+    try:
+        summary = build_status_summary(client, stale_days=stale_days)
+    except GhError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--repo") from exc
+
+    if json_output:
+        typer.echo(json.dumps(summary, sort_keys=True, indent=2))
+    else:
+        typer.echo(format_status_text(summary), nl=False)
 
 
 if __name__ == "__main__":

@@ -141,6 +141,110 @@ Fallback behavior must be conservative:
 - Invalid date ranges should block apply for the affected item until corrected.
 - Status and non-roadmap sync may continue when date warnings do not affect the requested operation.
 
+
+## Permission model (GitHub auth, secret, token)
+
+Product OS automation should be designed for two explicit modes:
+
+- `dry-run`: read-only planning only; should work with minimal credentials and never require write-capable scope.
+- `apply`: mutation mode; should only run actions that the current credential actually allows.
+
+### Execution principle
+
+1. Probe capabilities first, then emit a **capability summary** JSON.
+2. Compute the full plan from computed status transitions/field operations regardless of missing permissions.
+3. In dry-run mode: present full candidate plan + blocked actions per permission boundary.
+4. In apply mode:
+   - execute only allowed mutations,
+   - skip disallowed mutations with explicit `SKIPPED: <reason>` entries,
+   - return non-zero only when blocked items are mandatory for the selected command goal.
+
+This allows secretless users to get planning value, while secreted users can apply safely when authorized.
+
+### Capability taxonomy
+
+`gira project sync` should support at least the following capabilities internally:
+
+| Capability key | Meaning | Minimum permission source |
+|---|---|---|
+| `issues:read` | Read issues, labels, milestones, and linked PR fields | Repository read |
+| `issues:write` | Create/update issue labels/comments and add issue labels | Repo write |
+| `pullrequests:read` | Read PR state/links for transition inference | Repo read |
+| `pullrequests:write` | Merge/close PR operations (future extension only) | Repo write / maintain |
+| `projectsv2:read` | Read Projects v2 metadata/fields/items | Projects write/read |
+| `projectsv2:write` | Mutate Projects v2 fields, views, and items | Projects write |
+| `repo:settings:write` | Change repo-level defaults/settings if implemented later | Repo admin |
+
+### Credential source rules
+
+Token source changes behavior:
+
+- **GitHub App installation token (recommended):** best for scoped Project API access. Permission probes should prefer this path for service-style automation.
+- **PAT (fine-grained):** allowed if granted exact scopes; probes should validate effective scope by operation attempt or metadata endpoint.
+- **Actions secret/JWT-fed token:** usually only useful in GitHub Actions context; local CLI can only use it if injected into runtime env. Never assume secret value; treat unavailable tokens as read-only.
+- **No token / unauthenticated:** CLI should fail fast in apply mode with clear diagnostic, but still allow dry-run for non-authenticated introspection where possible.
+
+### Capability summary JSON (planned output)
+
+`gira project sync --dry-run --json` should emit machine-readable permissions and action gating:
+
+```json
+{
+  "repo": "OWNER/REPO",
+  "command": "project sync",
+  "token": {
+    "kind": "github-app|pat|actions-secret|none",
+    "identity": "masked-or-unknown",
+    "mode": "readwrite|readonly"
+  },
+  "dry_run": true,
+  "capabilities": {
+    "issues:read": "allowed",
+    "issues:write": "allowed",
+    "pullrequests:read": "allowed",
+    "pullrequests:write": "denied:token_scope",
+    "projectsv2:read": "allowed",
+    "projectsv2:write": "denied:token_scope",
+    "repo:settings:write": "unknown:unsupported"
+  },
+  "blocked_actions": [
+    {
+      "action": "project_status_field:update",
+      "reason": "denied:token_scope",
+      "required": "projectsv2:write"
+    },
+    {
+      "action": "milestone_complete_annotation:create",
+      "reason": "denied:token_scope",
+      "required": "issues:write"
+    }
+  ]
+}
+```
+
+### Error/UX requirements for capability mismatch
+
+When apply encounters a denied permission:
+
+- print one stable message format: `permission denied: <action> requires <capability>`
+- list the denied capability with a short `blocked` reason in dry-run plan output
+- keep non-blocking items runnable when they are in-scope and have all dependencies met
+- if user asks for full apply and all remaining operations are blocked, return non-zero with summary `blocked_count > 0`
+
+### `project` command planning precedence
+
+For `status` and `sync` integration:
+
+1. `sync` remains focused on bootstrap label/milestone/issue sync.
+2. `project sync` owns only Project v2 lifecycle/status automation and roadmap maintenance.
+3. Transition rules should run in read-compute order:
+   - detect current state,
+   - choose target state,
+   - verify capability matrix,
+   - apply if allowed.
+4. Manual ownership override is required: if a non-Gira owner (human/worker) sets an explicit status label/comment, automation should skip conflicting updates and report conflict.
+
+
 ## Future Dry-Run Shape
 
 A future `gira project sync --dry-run` should show a deterministic plan before any Projects v2 mutation:

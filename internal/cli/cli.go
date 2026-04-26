@@ -19,6 +19,7 @@ Commands:
   bootstrap   Bootstrap a repository into a Gira-managed project workspace
   sync        Sync Gira labels, milestones, and bootstrap issues through gh
   status      Show a compact read-only GitHub status summary
+  project     Inspect permission capability for Project OS lifecycle actions
 
 Flags:
   -h, --help  Show help
@@ -65,12 +66,40 @@ Flags:
   -h, --help     Show help
 `
 
+const projectHelp = `Project OS capability utilities for permission-aware automation.
+
+Usage:
+  gira project capability --repo OWNER/REPO [--json]
+  gira project sync --repo OWNER/REPO --dry-run [--json]
+
+Commands:
+  capability   Probe current token capabilities without applying any changes
+  sync         Read-only dry-run inspection of Product OS project fields and roadmap dates
+
+Flags:
+  --repo string  Target GitHub repo in OWNER/REPO format
+  --dry-run      Required for this read-only slice
+  --json         Emit stable JSON summary
+  -h, --help     Show help
+`
+
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
 	return gira.NewGHStatusClient(repo, gira.ExecCommandRunner{})
 }
 
 var newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
 	return gira.NewGHSyncClient(repo, gira.ExecCommandRunner{})
+}
+
+var newProjectCapabilityReport = func(repo gira.RepoRef) (gira.ProjectCapabilityReport, error) {
+	return gira.BuildProjectCapabilityReport(repo, gira.ExecCommandRunner{})
+}
+
+var newProjectSyncReport = func(repo gira.RepoRef, dryRun bool) (gira.ProjectSyncReport, error) {
+	if !dryRun {
+		return gira.ProjectSyncReport{}, fmt.Errorf("--dry-run is required for project sync in this slice")
+	}
+	return gira.BuildProjectSyncReportForClient(gira.NewGHProjectSyncClient(repo, gira.ExecCommandRunner{}), time.Now())
 }
 
 var statusNow = func() time.Time {
@@ -90,6 +119,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runSync(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
+	case "project":
+		return runProject(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
@@ -223,6 +254,149 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stdout, "sync complete")
 	}
+	return 0
+}
+
+func runProject(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprint(stdout, projectHelp)
+		return 0
+	}
+	if len(args) == 0 {
+		fmt.Fprint(stderr, projectHelp)
+		return 2
+	}
+
+	switch args[0] {
+	case "capability":
+		return runProjectCapability(args[1:], stdout, stderr)
+	case "sync":
+		return runProjectSync(args[1:], stdout, stderr)
+	case "-h", "--help":
+		fmt.Fprint(stdout, projectHelp)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "unknown project command: %s\n\n", args[0])
+		fmt.Fprint(stderr, projectHelp)
+		return 2
+	}
+}
+
+func runProjectSync(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("project sync", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	dryRun := fs.Bool("dry-run", false, "Required for this read-only slice")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON summary")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, projectHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, projectHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, projectHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, projectHelp)
+		return 2
+	}
+	if !*dryRun {
+		fmt.Fprint(stderr, "--dry-run is required\n\n")
+		fmt.Fprint(stderr, projectHelp)
+		return 2
+	}
+
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+
+	report, err := newProjectSyncReport(repo, *dryRun)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report.Command = "project sync"
+	report.DryRun = *dryRun
+
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode project sync JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+
+	fmt.Fprint(stdout, gira.FormatProjectSyncPlan(report))
+	return 0
+}
+
+func runProjectCapability(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("capability", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON summary")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, projectHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, projectHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, projectHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, projectHelp)
+		return 2
+	}
+
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+
+	report, err := newProjectCapabilityReport(repo)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report.Command = "project capability"
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode project capability JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+
+	fmt.Fprint(stdout, gira.FormatProjectCapabilitySummary(report))
 	return 0
 }
 

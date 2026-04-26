@@ -20,6 +20,9 @@ _TEMPLATE_ROOT = Path(__file__).resolve().parent.parent / "templates"
 
 def render_template_tree(template: str, repo: RepoRef, created_at: str) -> list[RenderedTemplate]:
     """Render every file in a Gira template tree in deterministic path order."""
+    if Path(template).name != template:
+        raise ValueError(f"invalid template name: {template}")
+
     source = _TEMPLATE_ROOT / template
     if not source.is_dir():
         raise ValueError(f"unknown template: {template}")

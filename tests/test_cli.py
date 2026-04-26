@@ -1,6 +1,8 @@
 from typer.testing import CliRunner
 
 from gira.cli import app
+from gira.config import parse_repo_ref
+from gira.templates import render_template_tree
 
 runner = CliRunner()
 
@@ -50,3 +52,13 @@ def test_bootstrap_dry_run_substitutes_template_variables():
     assert "StatPan/example" in result.output
     assert "example" in result.output
     assert "2026-04-26" in result.output
+
+
+def test_template_name_rejects_path_traversal():
+    repo = parse_repo_ref("StatPan/example")
+    try:
+        render_template_tree("../default", repo=repo, created_at="2026-04-26")
+    except ValueError as exc:
+        assert "invalid template name" in str(exc)
+    else:
+        raise AssertionError("expected invalid template name")

@@ -17,6 +17,7 @@ Usage:
 
 Commands:
   bootstrap   Bootstrap a repository into a Gira-managed project workspace
+  sync        Sync Gira labels, milestones, and bootstrap issues through gh
   status      Show a compact read-only GitHub status summary
 
 Flags:
@@ -48,8 +49,23 @@ Flags:
   -h, --help          Show help
 `
 
+const syncHelp = `Sync Gira labels, milestones, and bootstrap issues through gh.
+
+Usage:
+  gira sync --repo OWNER/REPO [--dry-run]
+
+Flags:
+  --repo string  Target GitHub repo in OWNER/REPO format
+  --dry-run      Plan sync without creating or updating GitHub metadata
+  -h, --help     Show help
+`
+
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
 	return gira.NewGHStatusClient(repo, gira.ExecCommandRunner{})
+}
+
+var newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
+	return gira.NewGHSyncClient(repo, gira.ExecCommandRunner{})
 }
 
 var statusNow = func() time.Time {
@@ -65,6 +81,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "bootstrap":
 		return runBootstrap(args[1:], stdout, stderr)
+	case "sync":
+		return runSync(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
 	default:
@@ -126,6 +144,58 @@ func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 	fmt.Fprint(stdout, gira.FormatDryRun(rendered))
+	return 0
+}
+
+func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	dryRun := fs.Bool("dry-run", false, "Plan sync without creating or updating GitHub metadata")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, syncHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, syncHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, syncHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, syncHelp)
+		return 2
+	}
+
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+
+	client := newSyncClient(repo)
+	plan, err := gira.BuildSyncPlan(client)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	fmt.Fprint(stdout, gira.FormatSyncPlan(plan, *dryRun))
+	if !*dryRun {
+		if err := gira.ApplySyncPlan(client, plan); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		fmt.Fprintln(stdout, "sync complete")
+	}
 	return 0
 }
 

@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -18,9 +19,11 @@ type ExecCommandRunner struct{}
 
 func (ExecCommandRunner) Run(name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
-	output, err := cmd.CombinedOutput()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
 	if err != nil {
-		detail := strings.TrimSpace(string(output))
+		detail := strings.TrimSpace(stderr.String())
 		if detail != "" {
 			return nil, fmt.Errorf("%s: %w", detail, err)
 		}

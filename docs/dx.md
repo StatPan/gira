@@ -68,11 +68,13 @@ Current Go scope:
 ```bash
 go run ./cmd/gira --help
 go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
+go run ./cmd/gira sync --repo OWNER/REPO --dry-run
+go run ./cmd/gira sync --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO --json
 ```
 
-The Go bootstrap dry-run embeds the default template so output is independent of the caller's working directory. Go `status` is read-only and shells out through `gh api` to match the Python MVP JSON contract closely enough for worker automation. Until later slices port apply and sync behavior, operators should continue using the Python CLI for mutating bootstrap installs and GitHub metadata operations.
+The Go bootstrap dry-run embeds the default template so output is independent of the caller's working directory. Go `sync` shells out through `gh` to create or update only Gira-managed labels, milestones, and bootstrap issues. Go `status` is read-only and shells out through `gh api` to match the Python MVP JSON contract closely enough for worker automation. Until later slices port mutating bootstrap installs, operators should continue using the Python CLI for local file installs.
 
 ## Output Conventions
 

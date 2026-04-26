@@ -110,6 +110,78 @@ func TestStatusJSONUsesInjectedClient(t *testing.T) {
 	}
 }
 
+func TestSyncDryRunUsesInjectedClientWithoutApplying(t *testing.T) {
+	restoreClient := newSyncClient
+	t.Cleanup(func() {
+		newSyncClient = restoreClient
+	})
+	client := &cliFakeSyncClient{
+		repo: mustCLIRepo(t, "StatPan/gira"),
+		labels: []gira.ExistingLabel{
+			{Name: gira.BootstrapLabel, Color: "5319E7", Description: "Created or managed by Gira bootstrap metadata sync."},
+		},
+	}
+	newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
+		client.repo = repo
+		return client
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"sync", "--repo", "StatPan/gira", "--dry-run"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"sync plan:", "would create", "bootstrap issues:", "create issue:"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("sync dry-run output missing %q:\n%s", want, stdout.String())
+		}
+	}
+	if len(client.calls) != 0 {
+		t.Fatalf("dry-run applied calls: %v", client.calls)
+	}
+}
+
+func TestSyncApplyUsesInjectedClientAndPrintsComplete(t *testing.T) {
+	restoreClient := newSyncClient
+	t.Cleanup(func() {
+		newSyncClient = restoreClient
+	})
+	client := &cliFakeSyncClient{
+		repo: mustCLIRepo(t, "StatPan/gira"),
+		labels: []gira.ExistingLabel{
+			{Name: gira.BootstrapLabel, Color: "000000", Description: "Old description."},
+		},
+		milestones: []gira.ExistingMilestone{
+			{Number: 1, Title: "MVP", Description: "CLI-first Gira bootstrapper with templates and GitHub metadata sync."},
+			{Number: 2, Title: "Beta", Description: "Broader validation and hardening after the MVP workflow is usable."},
+			{Number: 3, Title: "v1", Description: "Stable first release of the GitHub-native project OS workflow."},
+		},
+		issues: []gira.ExistingIssue{
+			{Number: 1, Title: "[Epic] Gira MVP: GitHub-as-OS bootstrap", Labels: []string{gira.BootstrapLabel}},
+			{Number: 2, Title: "[Task] Slice 1: CLI skeleton + template dry-run", Labels: []string{gira.BootstrapLabel}},
+			{Number: 3, Title: "[Task] Slice 2: idempotent repo file install", Labels: []string{gira.BootstrapLabel}},
+			{Number: 4, Title: "[Task] Slice 3: labels/milestones/bootstrap-issues sync", Labels: []string{gira.BootstrapLabel}},
+			{Number: 5, Title: "[Task] Slice 4: gira status (text + --json)", Labels: []string{gira.BootstrapLabel}},
+		},
+	}
+	newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
+		client.repo = repo
+		return client
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"sync", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "sync complete") {
+		t.Fatalf("sync apply output missing completion:\n%s", stdout.String())
+	}
+	if len(client.calls) == 0 || client.calls[0] != "update label "+gira.BootstrapLabel {
+		t.Fatalf("apply calls = %v, want first call to update bootstrap label", client.calls)
+	}
+}
+
 func TestStatusTextUsesInjectedClient(t *testing.T) {
 	restoreClient, restoreNow := newStatusClient, statusNow
 	t.Cleanup(func() {
@@ -156,6 +228,62 @@ func TestStatusRequiresRepo(t *testing.T) {
 type cliFakeStatusClient struct {
 	repo      gira.RepoRef
 	responses map[string]string
+}
+
+type cliFakeSyncClient struct {
+	repo       gira.RepoRef
+	labels     []gira.ExistingLabel
+	milestones []gira.ExistingMilestone
+	issues     []gira.ExistingIssue
+	calls      []string
+}
+
+func (c *cliFakeSyncClient) Repo() gira.RepoRef { return c.repo }
+
+func (c *cliFakeSyncClient) ListLabels() ([]gira.ExistingLabel, error) {
+	return c.labels, nil
+}
+
+func (c *cliFakeSyncClient) CreateLabel(label gira.LabelDef) error {
+	c.calls = append(c.calls, "create label "+label.Name)
+	return nil
+}
+
+func (c *cliFakeSyncClient) UpdateLabel(label gira.LabelDef) error {
+	c.calls = append(c.calls, "update label "+label.Name)
+	return nil
+}
+
+func (c *cliFakeSyncClient) ListMilestones() ([]gira.ExistingMilestone, error) {
+	return c.milestones, nil
+}
+
+func (c *cliFakeSyncClient) CreateMilestone(milestone gira.MilestoneDef) error {
+	c.calls = append(c.calls, "create milestone "+milestone.Title)
+	return nil
+}
+
+func (c *cliFakeSyncClient) UpdateMilestone(number int, milestone gira.MilestoneDef) error {
+	c.calls = append(c.calls, "update milestone "+milestone.Title)
+	return nil
+}
+
+func (c *cliFakeSyncClient) ListBootstrapIssues() ([]gira.ExistingIssue, error) {
+	return c.issues, nil
+}
+
+func (c *cliFakeSyncClient) CreateIssue(issue gira.BootstrapIssueDef) error {
+	c.calls = append(c.calls, "create issue "+issue.Title)
+	return nil
+}
+
+func mustCLIRepo(t *testing.T, value string) gira.RepoRef {
+	t.Helper()
+	repo, err := gira.ParseRepoRef(value)
+	if err != nil {
+		t.Fatalf("ParseRepoRef returned error: %v", err)
+	}
+	return repo
 }
 
 func (c cliFakeStatusClient) Repo() gira.RepoRef {

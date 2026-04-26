@@ -25,15 +25,51 @@ go run ./cmd/gira status --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO --json
 ```
 
+Python remains the reference and fallback implementation until final cutover. Do not remove it while Go parity is still being completed.
+
+## Install
+
+Install the daily Go CLI from the module source:
+
+```bash
+go install github.com/StatPan/gira/cmd/gira@latest
+```
+
+The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. If the repository is private in your environment, configure Go private module access first, for example with `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication. After install, make sure your Go binary directory is on `PATH`:
+
+```bash
+gira --help
+```
+
+For local development from this checkout:
+
+```bash
+GOBIN="$(mktemp -d)" go install ./cmd/gira
+"${GOBIN}/gira" --help
+```
+
 To smoke-test the binary from outside the source checkout:
 
 ```bash
-GOBIN=/tmp/gira-bin go install ./cmd/gira
-(cd /tmp && /tmp/gira-bin/gira --help)
-(cd /tmp && /tmp/gira-bin/gira bootstrap --repo OWNER/REPO --template default --dry-run)
-(cd /tmp && /tmp/gira-bin/gira bootstrap --repo OWNER/REPO --path /path/to/repo --no-branch)
-(cd /tmp && /tmp/gira-bin/gira sync --repo OWNER/REPO --dry-run)
-(cd /tmp && /tmp/gira-bin/gira status --repo OWNER/REPO --json)
+GOBIN="$(mktemp -d)" go install ./cmd/gira
+(cd /tmp && "${GOBIN}/gira" --help)
+(cd /tmp && "${GOBIN}/gira" bootstrap --repo OWNER/REPO --template default --dry-run)
+(cd /tmp && "${GOBIN}/gira" bootstrap --repo OWNER/REPO --path /path/to/repo --no-branch)
+(cd /tmp && "${GOBIN}/gira" sync --repo OWNER/REPO --dry-run)
+(cd /tmp && "${GOBIN}/gira" status --repo OWNER/REPO --json)
+```
+
+## Release Flow
+
+Tagged Go releases are built by `.github/workflows/release.yml`. The workflow runs `go test ./...`, builds Linux, macOS, and Windows CLI archives, and publishes those archives to the GitHub release for tags that start with `v`.
+
+Maintainer flow:
+
+```bash
+git checkout main
+git pull --ff-only origin main
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 Developer experience conventions for first-run onboarding, dry-run/apply output, JSON, recovery, and the issue-to-PR loop are documented in [docs/dx.md](docs/dx.md).

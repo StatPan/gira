@@ -56,6 +56,8 @@ type ProjectRoadmapItem struct {
 	IssueNumber      int
 	IssueTitle       string
 	IssueURL         string
+	TypeLabel        string
+	Roadmapable      bool
 	StartDate        *string
 	TargetDate       *string
 	MilestoneDueDate *string
@@ -74,18 +76,20 @@ type ProjectSyncReport struct {
 }
 
 type ProjectSyncCounts struct {
-	FieldsPresent int `json:"fields_present"`
-	FieldsMissing int `json:"fields_missing"`
-	DateWarnings  int `json:"date_warnings"`
-	DateBlocks    int `json:"date_blocks"`
+	FieldsPresent  int `json:"fields_present"`
+	FieldsMissing  int `json:"fields_missing"`
+	FieldsMismatch int `json:"fields_mismatch"`
+	DateWarnings   int `json:"date_warnings"`
+	DateBlocks     int `json:"date_blocks"`
 }
 
 type ProjectFieldDiff struct {
-	Key        string `json:"key"`
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	Present    bool   `json:"present"`
-	ActualType string `json:"actual_type,omitempty"`
+	Key          string `json:"key"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Present      bool   `json:"present"`
+	ActualType   string `json:"actual_type,omitempty"`
+	TypeMismatch bool   `json:"type_mismatch,omitempty"`
 }
 
 type ProjectDateFallback struct {
@@ -179,13 +183,12 @@ func (c GHProjectSyncClient) Snapshot(projectName string) (ProjectSyncSnapshot, 
 			for _, label := range item.Content.Labels.Nodes {
 				labels = append(labels, label.Name)
 			}
-			if !isRoadmapable(labels) {
-				continue
-			}
+			typeLabel := roadmapTypeLabel(labels)
 			roadmap := ProjectRoadmapItem{
 				IssueNumber: item.Content.Number,
 				IssueTitle:  item.Content.Title,
 				IssueURL:    item.Content.URL,
+				TypeLabel:   typeLabel,
 			}
 			if item.Content.Milestone != nil && item.Content.Milestone.DueOn != nil {
 				if due, ok := normalizeDate(*item.Content.Milestone.DueOn); ok {
@@ -207,6 +210,7 @@ func (c GHProjectSyncClient) Snapshot(projectName string) (ProjectSyncSnapshot, 
 					roadmap.TargetDate = &normalized
 				}
 			}
+			roadmap.Roadmapable = isRoadmapable(roadmap)
 			snapshot.RoadmapItems = append(snapshot.RoadmapItems, roadmap)
 		}
 		break
@@ -245,7 +249,12 @@ func BuildProjectSyncReport(repo string, snapshot ProjectSyncSnapshot, fetchedAt
 		}
 		if present {
 			field.ActualType = strings.ToUpper(actualType)
-			report.Counts.FieldsPresent++
+			if field.ActualType == canonical.Type {
+				report.Counts.FieldsPresent++
+			} else {
+				field.TypeMismatch = true
+				report.Counts.FieldsMismatch++
+			}
 		} else {
 			report.Counts.FieldsMissing++
 		}
@@ -291,6 +300,20 @@ func buildProjectDateValidation(items []ProjectRoadmapItem) ([]ProjectDateValida
 		due, err := normalizeDatePtr(item.MilestoneDueDate)
 		if err != nil {
 			return nil, err
+		}
+		if !item.Roadmapable {
+			reason := "missing roadmapable type label"
+			if item.TypeLabel != "" {
+				reason = item.TypeLabel + " requires a meaningful delivery checkpoint or release marker"
+			}
+			validations = append(validations, ProjectDateValidation{
+				Issue:    item.IssueNumber,
+				Title:    item.IssueTitle,
+				Status:   "not_roadmapable",
+				Severity: "info",
+				Reason:   reason,
+			})
+			continue
 		}
 
 		switch {
@@ -349,7 +372,7 @@ func FormatProjectSyncPlan(report ProjectSyncReport) string {
 	b.WriteString("project sync plan:\n")
 	fmt.Fprintf(&b, "repo:             %s\n", report.Repo)
 	fmt.Fprintf(&b, "project:          %s\n", report.Project)
-	fmt.Fprintf(&b, "fields:           %d missing, %d present\n", report.Counts.FieldsMissing, report.Counts.FieldsPresent)
+	fmt.Fprintf(&b, "fields:           %d missing, %d mismatched, %d present\n", report.Counts.FieldsMissing, report.Counts.FieldsMismatch, report.Counts.FieldsPresent)
 	fmt.Fprintf(&b, "dates:            %d warning, %d block\n", report.Counts.DateWarnings, report.Counts.DateBlocks)
 
 	if report.MissingProject {
@@ -358,10 +381,16 @@ func FormatProjectSyncPlan(report ProjectSyncReport) string {
 	for _, field := range report.Fields {
 		if !field.Present {
 			fmt.Fprintf(&b, "  missing field: %s (%s)\n", field.Name, strings.ToLower(field.Type))
+			continue
+		}
+		if field.TypeMismatch {
+			fmt.Fprintf(&b, "  wrong field type: %s (expected %s, got %s)\n", field.Name, strings.ToLower(field.Type), strings.ToLower(field.ActualType))
 		}
 	}
 	for _, validation := range report.DateValidation {
 		switch validation.Status {
+		case "not_roadmapable":
+			fmt.Fprintf(&b, "  skip issue #%d: not_roadmapable (%s)\n", validation.Issue, validation.Reason)
 		case "missing_target_date":
 			line := fmt.Sprintf("  warn issue #%d: missing_target_date", validation.Issue)
 			if validation.Fallback != nil {
@@ -410,12 +439,23 @@ func normalizeDate(value string) (string, bool) {
 	return "", false
 }
 
-func isRoadmapable(labels []string) bool {
+func roadmapTypeLabel(labels []string) string {
 	for _, label := range labels {
 		switch label {
 		case "type:epic", "type:story", "type:task", "type:spike", "type:bug":
-			return true
+			return label
 		}
 	}
-	return false
+	return ""
+}
+
+func isRoadmapable(item ProjectRoadmapItem) bool {
+	switch item.TypeLabel {
+	case "type:epic", "type:story":
+		return true
+	case "type:task", "type:spike", "type:bug":
+		return item.StartDate != nil || item.TargetDate != nil || item.MilestoneDueDate != nil
+	default:
+		return false
+	}
 }

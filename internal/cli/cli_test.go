@@ -350,3 +350,41 @@ func (c cliFakeStatusClient) JSON(args []string, target any) error {
 	key := strings.Join(args, " ")
 	return json.Unmarshal([]byte(c.responses[key]), target)
 }
+
+func TestProjectCapabilityCommandRequiresRepo(t *testing.T) {
+	restore := newProjectCapabilityReport
+	t.Cleanup(func() { newProjectCapabilityReport = restore })
+	newProjectCapabilityReport = func(repo gira.RepoRef) (gira.ProjectCapabilityReport, error) {
+		report := gira.ProjectCapabilityReport{
+			Repo:    repo.FullName(),
+			Command: "project capability",
+			Mode:    "write",
+			Token:   gira.ProjectCapabilityTokenSummary{Kind: "pat", Identity: "alice"},
+			Capabilities: map[string]gira.ProjectCapabilityStatus{
+				"issues:read": "allowed",
+			},
+			BlockedActions: []gira.ProjectCapabilityBlock{},
+		}
+		return report, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"project", "capability", "--repo", "StatPan/example", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"repo\": \"StatPan/example\"") {
+		t.Fatalf("project capability JSON missing repo: %s", stdout.String())
+	}
+}
+
+func TestProjectCapabilityCommandNeedsSubcommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"project", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if !strings.Contains(stdout.String(), "project capability") {
+		t.Fatalf("project help output unexpected: %s", stdout.String())
+	}
+}

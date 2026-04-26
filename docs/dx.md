@@ -59,6 +59,19 @@ After bootstrap, the operator should see a short install summary and use `gira s
 
 This taxonomy keeps a clean recovery model: rerun `bootstrap` for local files, rerun `sync` for GitHub metadata, rerun `status` to decide what to do next.
 
+## Go CLI Development Path
+
+The Python CLI remains the working MVP and reference implementation. The Go CLI is the forward product path and should move in narrow, testable slices.
+
+Current Go scope:
+
+```bash
+go run ./cmd/gira --help
+go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
+```
+
+The Go bootstrap dry-run embeds the default template so output is independent of the caller's working directory. Until later slices port apply, sync, and status behavior, operators should continue using the Python CLI for mutating bootstrap installs and GitHub metadata operations.
+
 ## Output Conventions
 
 Human output should be short, sectioned, and deterministic enough to compare between runs. Counts should come first; details should only list changed or attention-worthy items.

@@ -6,12 +6,26 @@ Korean shorthand: **기라(Gira): 깃허브로 굴리는 지라.**
 
 ## MVP Direction
 
-The MVP focuses on a CLI-first workflow:
+The Python MVP currently owns the full CLI-first workflow:
 
 - `gira bootstrap --repo OWNER/REPO --template default --dry-run`
 - `gira sync --repo OWNER/REPO --dry-run`
 - `gira sync --repo OWNER/REPO`
 - `gira status --repo OWNER/REPO`
+
+The Go CLI is being introduced in small slices as the long-term product CLI. The first Go path supports a bootstrap dry-run preview without touching GitHub or local files:
+
+```bash
+go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
+```
+
+To smoke-test the binary from outside the source checkout:
+
+```bash
+GOBIN=/tmp/gira-bin go install ./cmd/gira
+(cd /tmp && /tmp/gira-bin/gira --help)
+(cd /tmp && /tmp/gira-bin/gira bootstrap --repo OWNER/REPO --template default --dry-run)
+```
 
 Developer experience conventions for first-run onboarding, dry-run/apply output, JSON, recovery, and the issue-to-PR loop are documented in [docs/dx.md](docs/dx.md).
 

@@ -44,12 +44,15 @@ def bootstrap(
     if path is None:
         raise typer.BadParameter("--path is required when not running --dry-run")
 
-    result = install_templates(
-        target_path=path,
-        rendered=rendered,
-        overwrite=overwrite,
-        branch=None if no_branch else branch,
-    )
+    try:
+        result = install_templates(
+            target_path=path,
+            rendered=rendered,
+            overwrite=overwrite,
+            branch=None if no_branch else branch,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--path") from exc
     typer.echo(format_summary(result), nl=False)
     if result.conflicts:
         raise typer.Exit(code=1)

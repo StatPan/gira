@@ -114,6 +114,8 @@ def test_install_requires_git_repo(tmp_path: Path):
     not_a_repo.mkdir()
     result = runner.invoke(app, _bootstrap_args(not_a_repo))
     assert result.exit_code != 0
+    assert "not a git repository" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_non_dry_run_requires_path():

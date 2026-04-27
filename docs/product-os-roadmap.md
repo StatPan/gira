@@ -1,6 +1,6 @@
 # Product OS Roadmap
 
-Gira's Product OS phase extends the current Go CLI from repository bootstrap/status tooling into a GitHub-native planning and lifecycle layer.
+Gira's Product OS phase extends the current Go CLI from repository bootstrap/sync/status tooling into a GitHub-native planning and lifecycle layer.
 
 This roadmap keeps three constraints fixed:
 

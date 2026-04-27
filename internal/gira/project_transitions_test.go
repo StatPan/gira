@@ -512,6 +512,30 @@ func TestClosedIssueWithStaleReadyLabelAndLinkedBranchDoesNotTransitionInProgres
 	}
 }
 
+func TestClosedReleaseChecklistIssueDoesNotReopenFromUncheckedItems(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := ProjectTransitionSnapshot{
+		Issues: []ProjectTransitionIssue{
+			{
+				Number:  91,
+				Title:   "Release checklist remains incomplete after close",
+				State:   "closed",
+				Labels:  []string{"status:done", "release-checklist"},
+				Body:    "- [x] Draft release notes\n- [ ] Publish changelog\n- [x] Tag release",
+			},
+		},
+	}
+
+	report, err := BuildProjectTransitionsReport("StatPan/gira", snapshot, now)
+	if err != nil {
+		t.Fatalf("BuildProjectTransitionsReport returned error: %v", err)
+	}
+
+	if apply := findTransition(report.Transitions, "release_checklist_complete", "issue", "91", "apply"); apply != nil {
+		t.Fatalf("unexpected release_checklist_complete apply transition for closed issue: %+v", *apply)
+	}
+}
+
 func TestProjectTransitionsReportNotesIssueLabelStatusInferenceOnly(t *testing.T) {
 	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
 	snapshot := ProjectTransitionSnapshot{

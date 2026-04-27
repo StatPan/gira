@@ -419,7 +419,7 @@ func BuildProjectTransitionsReport(repo string, snapshot ProjectTransitionSnapsh
 					"release_checklist_complete", "issue", issue.Number, displayStatus(status), "Done", "all release checklist items are complete", "release_gate_projection", 6,
 				))
 			}
-			if hasChecklist && !allDone && status == "Done" {
+			if strings.EqualFold(issue.State, "open") && hasChecklist && !allDone && status == "Done" {
 				issueCandidates[itemKey] = append(issueCandidates[itemKey], makeCandidate(
 					"release_checklist_complete", "issue", issue.Number, "Done", "In progress", "release checklist contains unchecked required items", "checklist_reopened", 6,
 				))

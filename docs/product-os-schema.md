@@ -309,7 +309,7 @@ For `status` and `sync` integration:
    - choose target state,
    - verify capability matrix,
    - apply if allowed.
-4. Manual ownership override is required: if a non-Gira owner (human/worker) sets an explicit status label/comment, automation should skip conflicting updates and report conflict.
+4. Manual ownership override is future work, not part of this Go dry-run slice. The current transition snapshot only inspects issue labels/body, PR metadata, branches, and milestone counts, so it cannot yet detect owner/comment-driven overrides without expanding inputs.
 
 
 ## Future Dry-Run Shape

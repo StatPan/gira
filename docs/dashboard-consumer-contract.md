@@ -60,9 +60,9 @@ Notion is a strong candidate for a polished human dashboard, but direct dashboar
 
 Therefore the contract priority is:
 
-1. stable human CLI text
-2. stable JSON for automation
-3. optional flat CSV for generic tools
+1. stable JSON for automation and exported consumers
+2. optional flat CSV for generic tools
+3. stable human CLI text for operators
 
 ## API Budget Rule
 

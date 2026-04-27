@@ -1,6 +1,6 @@
 # Product OS Roadmap
 
-Gira's Product OS phase extends the current Go CLI from repository bootstrap/status tooling into a GitHub-native planning and lifecycle layer.
+Gira's Product OS phase extends the current Go CLI from repository bootstrap/sync/status tooling into a GitHub-native planning and lifecycle layer.
 
 This roadmap keeps three constraints fixed:
 
@@ -12,7 +12,7 @@ This roadmap keeps three constraints fixed:
 
 Shipped before this roadmap:
 
-- Go CLI parity for `bootstrap`, `sync`, and `status`
+- Go CLI slices for `bootstrap`, `sync`, and `status`, while Python remains the reference/fallback implementation
 - Product OS schema and roadmap date semantics in `docs/product-os-schema.md`
 - Lifecycle transition matrix design for issue/PR/milestone/project state changes
 - Permission model documented for future `project` commands
@@ -20,7 +20,6 @@ Shipped before this roadmap:
 ## Phase 1 — Capability-first foundation
 
 ### 1.1 Capability probe
-Status: in progress on `feat/issue-35-project-capability`
 
 Goal:
 - add `gira project capability --repo OWNER/REPO [--json]`
@@ -32,7 +31,6 @@ Exit criteria:
 - zero GitHub mutation
 
 ### 1.2 Transition planner dry-run
-Status: next
 
 Goal:
 - add `gira project transitions --repo OWNER/REPO --dry-run [--json]`

@@ -585,7 +585,7 @@ func mapBranchesToIssues(branches []string) map[int]bool {
 
 func firstLinkedPR(prs []ProjectTransitionPullRequest, draft bool) (ProjectTransitionPullRequest, bool) {
 	for _, pr := range prs {
-		if pr.Draft == draft {
+		if strings.EqualFold(pr.State, "open") && pr.Draft == draft {
 			return pr, true
 		}
 	}

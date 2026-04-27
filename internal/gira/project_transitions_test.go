@@ -320,6 +320,76 @@ func TestDraftPRKeepsInProgressIssueAndRecordsDraftSkip(t *testing.T) {
 	}
 }
 
+func TestClosedNonDraftPRDoesNotDriveReviewTransition(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := ProjectTransitionSnapshot{
+		Issues: []ProjectTransitionIssue{
+			{
+				Number: 55,
+				Title:  "Ready issue with closed PR",
+				State:  "open",
+				Labels: []string{"status:ready"},
+			},
+		},
+		PullRequests: []ProjectTransitionPullRequest{
+			{
+				Number:  305,
+				State:   "closed",
+				Draft:   false,
+				Body:    "Fixes #55",
+				HeadRef: "feat/issue-55",
+			},
+		},
+	}
+
+	report, err := BuildProjectTransitionsReport("StatPan/gira", snapshot, now)
+	if err != nil {
+		t.Fatalf("BuildProjectTransitionsReport returned error: %v", err)
+	}
+
+	if apply := findTransition(report.Transitions, "pr_opened", "issue", "55", "apply"); apply != nil {
+		t.Fatalf("unexpected pr_opened apply transition: %+v", *apply)
+	}
+	if skip := findTransition(report.Transitions, "pr_ready_for_review", "issue", "55", "skip"); skip != nil {
+		t.Fatalf("unexpected pr_ready_for_review skip transition: %+v", *skip)
+	}
+}
+
+func TestClosedDraftPRDoesNotDriveDraftReviewSuppression(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := ProjectTransitionSnapshot{
+		Issues: []ProjectTransitionIssue{
+			{
+				Number: 56,
+				Title:  "Ready issue with closed draft PR",
+				State:  "open",
+				Labels: []string{"status:ready"},
+			},
+		},
+		PullRequests: []ProjectTransitionPullRequest{
+			{
+				Number:  306,
+				State:   "closed",
+				Draft:   true,
+				Body:    "Fixes #56",
+				HeadRef: "feat/issue-56",
+			},
+		},
+	}
+
+	report, err := BuildProjectTransitionsReport("StatPan/gira", snapshot, now)
+	if err != nil {
+		t.Fatalf("BuildProjectTransitionsReport returned error: %v", err)
+	}
+
+	if apply := findTransition(report.Transitions, "pr_opened", "issue", "56", "apply"); apply != nil {
+		t.Fatalf("unexpected pr_opened apply transition: %+v", *apply)
+	}
+	if skip := findTransition(report.Transitions, "pr_ready_for_review", "issue", "56", "skip"); skip != nil {
+		t.Fatalf("unexpected pr_ready_for_review skip transition: %+v", *skip)
+	}
+}
+
 func TestClosedIssueWithBlockedLabelDoesNotTransitionBackToBlocked(t *testing.T) {
 	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
 	snapshot := ProjectTransitionSnapshot{

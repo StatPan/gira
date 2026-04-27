@@ -201,7 +201,7 @@ gira export dashboard --repo OWNER/REPO --format json --output ./out/
 gira export dashboard --repo OWNER/REPO --format csv --output ./out/
 ```
 
-The exact command names may change, but the contract should remain export-first rather than dashboard-vendor-first.
+The exact command names may change, but the contract should remain export-first rather than dashboard-vendor-first. The first concrete bundle layout and artifact boundaries are specified in [dashboard-export-artifacts.md](dashboard-export-artifacts.md).
 
 ## Non-Goals Of This Contract
 

@@ -742,7 +742,7 @@ func isReleaseChecklistIssue(issue ProjectTransitionIssue) bool {
 		return true
 	}
 	for _, label := range issue.Labels {
-		if strings.EqualFold(label, "type:release") || strings.EqualFold(label, "release") {
+		if strings.EqualFold(label, "type:release") || strings.EqualFold(label, "release") || strings.EqualFold(label, "release-checklist") {
 			return true
 		}
 	}

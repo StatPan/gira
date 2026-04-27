@@ -536,6 +536,31 @@ func TestClosedReleaseChecklistIssueDoesNotReopenFromUncheckedItems(t *testing.T
 	}
 }
 
+func TestReleaseChecklistIssueDetectedFromLabelAlone(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := ProjectTransitionSnapshot{
+		Issues: []ProjectTransitionIssue{
+			{
+				Number:  92,
+				Title:   "Ship v1.2.3",
+				State:   "open",
+				Labels:  []string{"status:in-progress", "release-checklist"},
+				Body:    "- [x] Draft release notes\n- [x] Publish changelog\n- [x] Tag release",
+			},
+		},
+	}
+
+	report, err := BuildProjectTransitionsReport("StatPan/gira", snapshot, now)
+	if err != nil {
+		t.Fatalf("BuildProjectTransitionsReport returned error: %v", err)
+	}
+
+	apply := findTransition(report.Transitions, "release_checklist_complete", "issue", "92", "apply")
+	if apply == nil {
+		t.Fatalf("expected release_checklist_complete apply transition for release-checklist label without title marker")
+	}
+}
+
 func TestProjectTransitionsReportNotesIssueLabelStatusInferenceOnly(t *testing.T) {
 	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
 	snapshot := ProjectTransitionSnapshot{

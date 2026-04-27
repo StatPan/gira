@@ -602,12 +602,12 @@ func firstMergedLinkedPR(prs []ProjectTransitionPullRequest) (ProjectTransitionP
 }
 
 func inferIssueStatus(issue ProjectTransitionIssue) string {
+	if strings.EqualFold(issue.State, "closed") {
+		return "Done"
+	}
 	status := managedStatusFromLabels(issue.Labels)
 	if status != "" {
 		return status
-	}
-	if strings.EqualFold(issue.State, "closed") {
-		return "Done"
 	}
 	return ""
 }

@@ -151,8 +151,6 @@
       "milestones": []
     },
     "expect": {
-      "applied_rule_ids": ["pr_merged_closes_issue"],
-      "applied_targets": ["issue#15"],
       "skipped_rule_ids": []
     }
   },

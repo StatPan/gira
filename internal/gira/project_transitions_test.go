@@ -58,10 +58,10 @@ func TestBuildProjectTransitionsReportFixtures(t *testing.T) {
 			sort.Strings(wantAppliedTargets)
 			sort.Strings(wantSkippedRules)
 
-			if !reflect.DeepEqual(appliedRules, wantAppliedRules) {
+			if !reflect.DeepEqual(normalizeStringSlice(appliedRules), normalizeStringSlice(wantAppliedRules)) {
 				t.Fatalf("applied rules = %v, want %v", appliedRules, wantAppliedRules)
 			}
-			if !reflect.DeepEqual(appliedTargets, wantAppliedTargets) {
+			if !reflect.DeepEqual(normalizeStringSlice(appliedTargets), normalizeStringSlice(wantAppliedTargets)) {
 				t.Fatalf("applied targets = %v, want %v", appliedTargets, wantAppliedTargets)
 			}
 			if !reflect.DeepEqual(normalizeStringSlice(skippedRules), normalizeStringSlice(wantSkippedRules)) {
@@ -448,11 +448,67 @@ func TestClosedIssueWithStaleManagedBlockedLabelDoesNotApplyBlockedRemoved(t *te
 	}
 
 	prMergedApply := findTransition(report.Transitions, "pr_merged_closes_issue", "issue", "88", "apply")
-	if prMergedApply == nil {
-		t.Fatalf("missing pr_merged_closes_issue apply transition in %+v", report.Transitions)
+	if prMergedApply != nil {
+		t.Fatalf("unexpected pr_merged_closes_issue apply transition for already-closed issue: %+v", *prMergedApply)
 	}
-	if prMergedApply.To != "Done" {
-		t.Fatalf("pr_merged_closes_issue To = %q, want %q", prMergedApply.To, "Done")
+}
+
+func TestClosedIssueWithStaleReadyLabelAndOpenPRDoesNotTransitionToReview(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := ProjectTransitionSnapshot{
+		Issues: []ProjectTransitionIssue{
+			{
+				Number: 89,
+				Title:  "Closed issue with stale ready status and open PR",
+				State:  "closed",
+				Labels: []string{"status:ready"},
+			},
+		},
+		PullRequests: []ProjectTransitionPullRequest{
+			{
+				Number:  421,
+				State:   "open",
+				Draft:   false,
+				Body:    "Fixes #89",
+				HeadRef: "feat/issue-89",
+			},
+		},
+	}
+
+	report, err := BuildProjectTransitionsReport("StatPan/gira", snapshot, now)
+	if err != nil {
+		t.Fatalf("BuildProjectTransitionsReport returned error: %v", err)
+	}
+
+	if apply := findTransition(report.Transitions, "pr_opened", "issue", "89", "apply"); apply != nil {
+		t.Fatalf("unexpected pr_opened apply transition for closed issue: %+v", *apply)
+	}
+	if apply := findTransition(report.Transitions, "pr_ready_for_review", "issue", "89", "apply"); apply != nil {
+		t.Fatalf("unexpected pr_ready_for_review apply transition for closed issue: %+v", *apply)
+	}
+}
+
+func TestClosedIssueWithStaleReadyLabelAndLinkedBranchDoesNotTransitionInProgress(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := ProjectTransitionSnapshot{
+		Issues: []ProjectTransitionIssue{
+			{
+				Number: 90,
+				Title:  "Closed issue with stale ready status and linked branch",
+				State:  "closed",
+				Labels: []string{"status:ready"},
+			},
+		},
+		Branches: []string{"feat/issue-90-closed-work"},
+	}
+
+	report, err := BuildProjectTransitionsReport("StatPan/gira", snapshot, now)
+	if err != nil {
+		t.Fatalf("BuildProjectTransitionsReport returned error: %v", err)
+	}
+
+	if apply := findTransition(report.Transitions, "branch_started", "issue", "90", "apply"); apply != nil {
+		t.Fatalf("unexpected branch_started apply transition for closed issue: %+v", *apply)
 	}
 }
 

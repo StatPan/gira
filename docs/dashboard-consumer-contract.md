@@ -197,11 +197,11 @@ Representative future surfaces:
 ```text
 gira project transitions --repo OWNER/REPO --dry-run --json
 gira project sync --repo OWNER/REPO --dry-run --json
-gira export dashboard --repo OWNER/REPO --format json --output ./out/
-gira export dashboard --repo OWNER/REPO --format csv --output ./out/
+gira export dashboard --repo OWNER/REPO --output ./out/ --dry-run
+gira export dashboard --repo OWNER/REPO --output ./out/ --json
 ```
 
-The exact command names may change, but the contract should remain export-first rather than dashboard-vendor-first.
+The exact command names may change, but the contract should remain export-first rather than dashboard-vendor-first. The first concrete bundle layout and artifact boundaries are specified in [dashboard-export-artifacts.md](dashboard-export-artifacts.md).
 
 ## Non-Goals Of This Contract
 

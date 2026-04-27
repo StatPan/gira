@@ -71,6 +71,7 @@ Initial rule:
 - `schema_version` is required in `manifest.json`
 - major shape changes must increment the version
 - additive fields are preferred over breaking renames
+- canonical artifacts should prefer snapshot-derived metadata over wall-clock-only run metadata when determinism matters
 
 Suggested initial version:
 
@@ -85,7 +86,7 @@ v1alpha1
 Minimum keys:
 
 - `schema_version`
-- `generated_at`
+- `snapshot_at`
 - `repo`
 - `sources`
 - `artifacts`
@@ -96,16 +97,16 @@ Suggested shape:
 ```json
 {
   "schema_version": "v1alpha1",
-  "generated_at": "2026-04-27T14:30:00Z",
+  "snapshot_at": "2026-04-27T14:29:50Z",
   "repo": "StatPan/gira",
   "sources": {
     "github": {
       "included": true,
-      "fetched_at": "2026-04-27T14:29:50Z"
+      "snapshot_at": "2026-04-27T14:29:50Z"
     },
     "google_calendar": {
       "included": false,
-      "fetched_at": null,
+      "snapshot_at": null,
       "reason": "not_enabled"
     }
   },
@@ -120,6 +121,8 @@ Suggested shape:
   }
 }
 ```
+
+`snapshot_at` should represent the canonical source snapshot time that the export bundle is derived from. Implementations may log a separate wall-clock run time elsewhere, but canonical JSON artifacts should not require volatile per-run timestamps when the source snapshot is unchanged.
 
 ## Raw JSON Layer
 
@@ -137,10 +140,13 @@ Design rules:
 Minimum top-level keys:
 
 - `repo`
-- `generated_at`
+- `snapshot_at`
 - `issues`
 - `pull_requests`
 - `milestones`
+
+Optional expansion keys:
+
 - `project_items`
 
 Suggested per-record identifier rules:
@@ -148,7 +154,7 @@ Suggested per-record identifier rules:
 - issues: `issue_number` and `issue_id`
 - PRs: `pr_number` and `pr_id`
 - milestones: `milestone_number` and `milestone_id`
-- project items: stable exported `project_item_id`
+- project items, when exported in a later slice: stable exported `project_item_id`
 
 ### `raw/calendar.json`
 
@@ -156,7 +162,7 @@ Calendar support may be absent in the first implementation, but the contract sho
 
 Minimum top-level keys:
 
-- `generated_at`
+- `snapshot_at`
 - `included`
 - `events`
 - `timeboxes`
@@ -170,7 +176,7 @@ This file carries lifecycle planning evidence already aligned with the Product O
 
 Minimum top-level keys:
 
-- `generated_at`
+- `snapshot_at`
 - `repo`
 - `transitions`
 - `conflicts`
@@ -192,7 +198,7 @@ This file records what the active credential could inspect or mutate at export t
 
 Minimum top-level keys:
 
-- `generated_at`
+- `snapshot_at`
 - `repo`
 - `capabilities`
 - `blocked_actions`
@@ -212,7 +218,7 @@ Purpose:
 
 Minimum top-level keys:
 
-- `generated_at`
+- `snapshot_at`
 - `repo`
 - `items`
 - `warnings`
@@ -237,7 +243,7 @@ Purpose:
 
 Minimum top-level keys:
 
-- `generated_at`
+- `snapshot_at`
 - `repo`
 - `items`
 - `warnings`
@@ -259,7 +265,7 @@ Purpose:
 
 Minimum top-level keys:
 
-- `generated_at`
+- `snapshot_at`
 - `repo`
 - `owners`
 - `warnings`
@@ -271,7 +277,7 @@ Purpose:
 
 Minimum top-level keys:
 
-- `generated_at`
+- `snapshot_at`
 - `repo`
 - `items`
 - `warnings`
@@ -283,7 +289,7 @@ Purpose:
 
 Minimum top-level keys:
 
-- `generated_at`
+- `snapshot_at`
 - `items`
 - `warnings`
 
@@ -294,7 +300,7 @@ Purpose:
 
 Minimum top-level keys:
 
-- `generated_at`
+- `snapshot_at`
 - `repo`
 - `warnings`
 

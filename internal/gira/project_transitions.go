@@ -377,8 +377,13 @@ func BuildProjectTransitionsReport(repo string, snapshot ProjectTransitionSnapsh
 				})
 			}
 		} else if hasDraftPR && (status == "Ready" || status == "In progress") {
+			if status == "Ready" {
+				issueCandidates[itemKey] = append(issueCandidates[itemKey], makeCandidate(
+					"pr_opened", "issue", issue.Number, "Ready", "In progress", fmt.Sprintf("linked PR #%d is draft; work is in progress until ready for review", draftPR.Number), "draft_pr", 3,
+				))
+			}
 			skips = append(skips, ProjectTransitionPlanItem{
-				RuleID:             "pr_opened",
+				RuleID:             "pr_ready_for_review",
 				TargetType:         "issue",
 				TargetID:           strconv.Itoa(issue.Number),
 				From:               displayStatus(status),

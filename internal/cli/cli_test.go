@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -231,6 +232,235 @@ func TestSyncApplyUsesInjectedClientAndPrintsComplete(t *testing.T) {
 	}
 }
 
+func TestExportDashboardCommandRequiresRepo(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"export", "dashboard", "--dry-run"}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "--repo is required") {
+		t.Fatalf("stderr missing repo requirement:\n%s", stderr.String())
+	}
+}
+
+func TestExportDashboardCommandRejectsInvalidRepoFormat(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"export", "dashboard", "--repo", "bad-format", "--dry-run"}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "OWNER/REPO") {
+		t.Fatalf("stderr missing parse error for invalid repo:\n%s", stderr.String())
+	}
+}
+
+func TestExportDashboardCommandRejectsPositionalArgs(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"export", "dashboard", "--repo", "StatPan/gira", "--dry-run", "unexpected"}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "unexpected argument") {
+		t.Fatalf("stderr missing unexpected argument error:\n%s", stderr.String())
+	}
+}
+
+func TestExportDashboardDryRunRequiresDeterministicOutput(t *testing.T) {
+	restoreClient, restoreNow := newDashboardExportClient, dashboardExportNow
+	t.Cleanup(func() {
+		newDashboardExportClient = restoreClient
+		dashboardExportNow = restoreNow
+	})
+	client := &cliFakeDashboardExportClient{
+		repo: mustCLIRepo(t, "StatPan/gira"),
+		issues: []gira.DashboardRawIssue{
+			{IssueNumber: 2, Title: "Second", State: "open", Labels: []string{"status:ready"}},
+			{IssueNumber: 1, Title: "First", State: "open", Labels: []string{"status:blocked"}},
+		},
+		pulls: []gira.DashboardRawPullRequest{
+			{PullRequestNumber: 11, Title: "PR", State: "closed", Labels: []string{"priority:p1"}},
+		},
+		milestones: []gira.DashboardRawMilestone{
+			{MilestoneNumber: 3, Title: "Later", State: "closed"},
+			{MilestoneNumber: 1, Title: "First", State: "open"},
+		},
+		projectSync: gira.ProjectSyncSnapshot{
+			RoadmapItems: []gira.ProjectRoadmapItem{
+				{IssueNumber: 10, IssueTitle: "Roadmap", TypeLabel: "type:epic", IssueURL: "https://github.com/StatPan/gira/issues/10", Roadmapable: true, StartDate: strPtr("2026-04-10"), TargetDate: strPtr("2026-04-20")},
+				{IssueNumber: 9, IssueTitle: "Another", TypeLabel: "type:task", IssueURL: "https://github.com/StatPan/gira/issues/9", Roadmapable: false},
+			},
+		},
+		capabilities: gira.ProjectCapabilityReport{
+			Capabilities: map[string]gira.ProjectCapabilityStatus{},
+			BlockedActions: []gira.ProjectCapabilityBlock{},
+		},
+	}
+	newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
+		client.repo = repo
+		return client
+	}
+	dashboardExportNow = func() time.Time {
+		return time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	}
+
+	var firstOut, firstErr, secondOut, secondErr bytes.Buffer
+	firstCode := Run([]string{"export", "dashboard", "--repo", "StatPan/gira", "--dry-run"}, &firstOut, &firstErr)
+	secondCode := Run([]string{"export", "dashboard", "--repo", "StatPan/gira", "--dry-run"}, &secondOut, &secondErr)
+
+	if firstCode != 0 || secondCode != 0 {
+		t.Fatalf("exit codes = %d/%d, want 0/0; stderr: %s%s", firstCode, secondCode, firstErr.String(), secondErr.String())
+	}
+	if firstOut.String() != secondOut.String() {
+		t.Fatalf("dry-run output changed between identical runs")
+	}
+	if !strings.Contains(firstOut.String(), "export dashboard plan:") {
+		t.Fatalf("dry-run output missing plan header:\n%s", firstOut.String())
+	}
+}
+
+func TestExportDashboardJSONOnlyStdout(t *testing.T) {
+	restoreClient, restoreNow := newDashboardExportClient, dashboardExportNow
+	t.Cleanup(func() {
+		newDashboardExportClient = restoreClient
+		dashboardExportNow = restoreNow
+	})
+	client := &cliFakeDashboardExportClient{
+		repo: mustCLIRepo(t, "StatPan/gira"),
+		capabilities: gira.ProjectCapabilityReport{
+			Capabilities: map[string]gira.ProjectCapabilityStatus{},
+			BlockedActions: []gira.ProjectCapabilityBlock{},
+		},
+	}
+	newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
+		client.repo = repo
+		return client
+	}
+	dashboardExportNow = func() time.Time {
+		return time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"export",
+		"dashboard",
+		"--repo",
+		"StatPan/gira",
+		"--dry-run",
+		"--json",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr not empty in json mode:\n%s", stderr.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("JSON output parse failure: %v\n%s", err, stdout.String())
+	}
+	if payload["command"] != "export dashboard" {
+		t.Fatalf("payload missing command field: %v", payload["command"])
+	}
+}
+
+func TestExportDashboardApplyWritesArtifactsAndJsonOnlyStdout(t *testing.T) {
+	restoreClient, restoreNow := newDashboardExportClient, dashboardExportNow
+	t.Cleanup(func() {
+		newDashboardExportClient = restoreClient
+		dashboardExportNow = restoreNow
+	})
+	client := &cliFakeDashboardExportClient{
+		repo: mustCLIRepo(t, "StatPan/gira"),
+		milestones: []gira.DashboardRawMilestone{
+			{MilestoneNumber: 1, Title: "MVP", State: "open"},
+		},
+		capabilities: gira.ProjectCapabilityReport{
+			Capabilities: map[string]gira.ProjectCapabilityStatus{
+				"issues:read": "allowed",
+			},
+		},
+	}
+	newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
+		client.repo = repo
+		return client
+	}
+	dashboardExportNow = func() time.Time {
+		return time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	}
+
+	outputRoot := filepath.Join(t.TempDir(), "dashboard-output")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"export",
+		"dashboard",
+		"--repo",
+		"StatPan/gira",
+		"--output",
+		outputRoot,
+		"--json",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr not empty in json mode:\n%s", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"command\": \"export dashboard\"") {
+		t.Fatalf("stdout missing plan JSON:\n%s", stdout.String())
+	}
+
+	expected := []string{
+		"manifest.json",
+		"raw/github.json",
+		"raw/transitions.json",
+		"raw/capabilities.json",
+		"derived/execution_board.json",
+		"derived/roadmap_timeline.json",
+		"derived/warnings.json",
+		"csv/execution_items.csv",
+		"csv/roadmap_items.csv",
+	}
+	for _, relativePath := range expected {
+		if _, err := os.Stat(filepath.Join(outputRoot, relativePath)); err != nil {
+			t.Fatalf("expected exported file %q: %v", relativePath, err)
+		}
+	}
+}
+
+func TestExportDashboardApplyRejectsOutputFilePath(t *testing.T) {
+	restoreClient := newDashboardExportClient
+	t.Cleanup(func() { newDashboardExportClient = restoreClient })
+	file, err := os.CreateTemp(t.TempDir(), "dashboard-output")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close temp file: %v", err)
+	}
+	newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
+		return &cliFakeDashboardExportClient{repo: repo}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"export",
+		"dashboard",
+		"--repo",
+		"StatPan/gira",
+		"--output",
+		file.Name(),
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "output path exists but is not a directory") {
+		t.Fatalf("stderr missing output path type error:\n%s", stderr.String())
+	}
+}
+
 func TestStatusTextUsesInjectedClient(t *testing.T) {
 	restoreClient, restoreNow := newStatusClient, statusNow
 	t.Cleanup(func() {
@@ -285,6 +515,46 @@ type cliFakeSyncClient struct {
 	milestones []gira.ExistingMilestone
 	issues     []gira.ExistingIssue
 	calls      []string
+}
+
+type cliFakeDashboardExportClient struct {
+	repo         gira.RepoRef
+	issues       []gira.DashboardRawIssue
+	pulls        []gira.DashboardRawPullRequest
+	milestones   []gira.DashboardRawMilestone
+	projectSync  gira.ProjectSyncSnapshot
+	transitions  gira.ProjectTransitionSnapshot
+	capabilities gira.ProjectCapabilityReport
+}
+
+func (c *cliFakeDashboardExportClient) Repo() gira.RepoRef { return c.repo }
+
+func (c *cliFakeDashboardExportClient) FetchIssues() ([]gira.DashboardRawIssue, error) {
+	return c.issues, nil
+}
+
+func (c *cliFakeDashboardExportClient) FetchPullRequests() ([]gira.DashboardRawPullRequest, error) {
+	return c.pulls, nil
+}
+
+func (c *cliFakeDashboardExportClient) FetchMilestones() ([]gira.DashboardRawMilestone, error) {
+	return c.milestones, nil
+}
+
+func (c *cliFakeDashboardExportClient) FetchProjectSnapshot() (gira.ProjectSyncSnapshot, error) {
+	return c.projectSync, nil
+}
+
+func (c *cliFakeDashboardExportClient) FetchTransitionSnapshot() (gira.ProjectTransitionSnapshot, error) {
+	return c.transitions, nil
+}
+
+func (c *cliFakeDashboardExportClient) FetchCapabilities() (gira.ProjectCapabilityReport, error) {
+	return c.capabilities, nil
+}
+
+func strPtr(value string) *string {
+	return &value
 }
 
 func (c *cliFakeSyncClient) Repo() gira.RepoRef { return c.repo }

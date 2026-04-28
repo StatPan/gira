@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/StatPan/gira/internal/gira"
@@ -19,6 +20,7 @@ Commands:
   bootstrap   Bootstrap a repository into a Gira-managed project workspace
   sync        Sync Gira labels, milestones, and bootstrap issues through gh
   status      Show a compact read-only GitHub status summary
+  export      Export dashboard artifacts from read-only GitHub data
   project     Inspect permission capability for Project OS lifecycle actions
 
 Flags:
@@ -85,6 +87,19 @@ Flags:
   -h, --help     Show help
 `
 
+const exportHelp = `Export read-only dashboard artifacts from GitHub.
+
+Usage:
+  gira export dashboard --repo OWNER/REPO [--output PATH] [--dry-run] [--json]
+
+Flags:
+  --repo string       Target GitHub repo in OWNER/REPO format
+  --output string     Output root directory for artifacts (default "./out/dashboard")
+  --dry-run           Plan export without writing artifacts
+  --json              Emit stable JSON summary
+  -h, --help          Show help
+`
+
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
 	return gira.NewGHStatusClient(repo, gira.ExecCommandRunner{})
 }
@@ -111,6 +126,14 @@ var newProjectTransitionsReport = func(repo gira.RepoRef, dryRun bool) (gira.Pro
 	return gira.BuildProjectTransitionsReportForClient(gira.NewGHProjectTransitionsClient(repo, gira.ExecCommandRunner{}), time.Now())
 }
 
+var newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
+	return gira.NewGHDashboardExportClient(repo, gira.ExecCommandRunner{})
+}
+
+var dashboardExportNow = func() time.Time {
+	return time.Now()
+}
+
 var statusNow = func() time.Time {
 	return time.Now()
 }
@@ -128,6 +151,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runSync(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
+	case "export":
+		return runExport(args[1:], stdout, stderr)
 	case "project":
 		return runProject(args[1:], stdout, stderr)
 	default:
@@ -211,6 +236,100 @@ func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(result.Conflicts) > 0 {
 		return 1
 	}
+	return 0
+}
+
+func runExport(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprint(stdout, exportHelp)
+		return 0
+	}
+	if args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, exportHelp)
+		return 0
+	}
+	if args[0] != "dashboard" {
+		fmt.Fprintf(stderr, "unknown export command: %s\n\n", args[0])
+		fmt.Fprint(stderr, exportHelp)
+		return 2
+	}
+
+	return runExportDashboard(args[1:], stdout, stderr)
+}
+
+func runExportDashboard(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("export dashboard", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	outputRoot := fs.String("output", "./out/dashboard", "Output root directory for artifacts")
+	dryRun := fs.Bool("dry-run", false, "Plan export without writing artifacts")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON summary")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, exportHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, exportHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, exportHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, exportHelp)
+		return 2
+	}
+
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+
+	if !*dryRun {
+		if outputInfo, err := os.Stat(*outputRoot); err == nil && !outputInfo.IsDir() {
+			fmt.Fprintf(stderr, "output path exists but is not a directory: %s\n", *outputRoot)
+			return 2
+		}
+	}
+
+	client := newDashboardExportClient(repo)
+	plan, bundle, err := gira.BuildDashboardExportPlan(repo, *outputRoot, dashboardExportNow(), *dryRun, client)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+
+	if !*dryRun {
+		if err := gira.WriteDashboardExportBundle(*outputRoot, bundle); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+	}
+
+	if *jsonOutput {
+		output, err := json.MarshalIndent(plan, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode export dashboard JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+
+	if *dryRun {
+		fmt.Fprint(stdout, gira.FormatDashboardExportPlan(plan))
+		return 0
+	}
+	fmt.Fprintf(stdout, "export dashboard artifacts written to %s\n", *outputRoot)
 	return 0
 }
 

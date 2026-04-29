@@ -78,6 +78,10 @@ type SyncPlan struct {
 	BootstrapIssues []BootstrapIssuePlan
 }
 
+type SyncPlanOptions struct {
+	EnableBootstrapIssues bool
+}
+
 type SyncClient interface {
 	Repo() RepoRef
 	ListLabels() ([]ExistingLabel, error)
@@ -381,7 +385,7 @@ var DesiredBootstrapIssues = []BootstrapIssueDef{
 	},
 }
 
-func BuildSyncPlan(client SyncClient) (SyncPlan, error) {
+func BuildSyncPlan(client SyncClient, opts SyncPlanOptions) (SyncPlan, error) {
 	labels, err := client.ListLabels()
 	if err != nil {
 		return SyncPlan{}, err
@@ -390,14 +394,24 @@ func BuildSyncPlan(client SyncClient) (SyncPlan, error) {
 	if err != nil {
 		return SyncPlan{}, err
 	}
-	issues, err := client.ListBootstrapIssues()
-	if err != nil {
-		return SyncPlan{}, err
+
+	bootstrapPlan := make([]BootstrapIssuePlan, 0, len(DesiredBootstrapIssues))
+	if opts.EnableBootstrapIssues {
+		issues, err := client.ListBootstrapIssues()
+		if err != nil {
+			return SyncPlan{}, err
+		}
+		bootstrapPlan = PlanBootstrapIssues(DesiredBootstrapIssues, issues)
+	} else {
+		for _, issue := range DesiredBootstrapIssues {
+			bootstrapPlan = append(bootstrapPlan, BootstrapIssuePlan{Action: PlanSkip, Desired: issue})
+		}
 	}
+
 	return SyncPlan{
 		Labels:          PlanLabels(DesiredLabels, labels),
 		Milestones:      PlanMilestones(DesiredMilestones, milestones),
-		BootstrapIssues: PlanBootstrapIssues(DesiredBootstrapIssues, issues),
+		BootstrapIssues: bootstrapPlan,
 	}, nil
 }
 

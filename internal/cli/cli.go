@@ -18,7 +18,7 @@ Usage:
 
 Commands:
   bootstrap   Bootstrap a repository into a Gira-managed project workspace
-  sync        Sync Gira labels, milestones, and bootstrap issues through gh
+  sync        Sync Gira labels, milestones, and optionally bootstrap issues through gh
   status      Show a compact read-only GitHub status summary
   export      Export dashboard artifacts from read-only GitHub data
   project     Inspect permission capability for Project OS lifecycle actions
@@ -57,15 +57,16 @@ Flags:
   -h, --help          Show help
 `
 
-const syncHelp = `Sync Gira labels, milestones, and bootstrap issues through gh.
+const syncHelp = `Sync Gira labels, milestones, and optionally bootstrap issues through gh.
 
 Usage:
-  gira sync --repo OWNER/REPO [--dry-run]
+  gira sync --repo OWNER/REPO [--dry-run] [--bootstrap-issues]
 
 Flags:
-  --repo string  Target GitHub repo in OWNER/REPO format
-  --dry-run      Plan sync without creating or updating GitHub metadata
-  -h, --help     Show help
+  --repo string              Target GitHub repo in OWNER/REPO format
+  --dry-run                  Plan sync without creating or updating GitHub metadata
+  --bootstrap-issues         Enable creation of default Gira bootstrap issues
+  -h, --help                 Show help
 `
 
 const projectHelp = `Project OS capability utilities for permission-aware automation.
@@ -339,6 +340,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
 
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	dryRun := fs.Bool("dry-run", false, "Plan sync without creating or updating GitHub metadata")
+	bootstrapIssues := fs.Bool("bootstrap-issues", false, "Enable creation of default Gira bootstrap issues")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
 
@@ -369,7 +371,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 
 	client := newSyncClient(repo)
-	plan, err := gira.BuildSyncPlan(client)
+	plan, err := gira.BuildSyncPlan(client, gira.SyncPlanOptions{EnableBootstrapIssues: *bootstrapIssues})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2

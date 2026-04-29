@@ -28,16 +28,23 @@ The first ten minutes after `gira bootstrap` should answer four questions: what 
    git status --short
    ```
 
-3. Preview GitHub metadata sync:
+3. Preview GitHub metadata sync (bootstrap issues are opt-in):
 
    ```bash
    gira sync --repo OWNER/REPO --dry-run
    ```
 
-4. Apply labels, milestones, and bootstrap issues after the plan looks right:
+4. Apply labels and milestones after the plan looks right:
 
    ```bash
    gira sync --repo OWNER/REPO
+   ```
+
+   For Gira self-dogfood bootstrap issues, opt in explicitly:
+
+   ```bash
+   gira sync --repo StatPan/gira --dry-run --bootstrap-issues
+   gira sync --repo StatPan/gira --bootstrap-issues
    ```
 
 5. Inspect the project state:
@@ -53,7 +60,7 @@ After bootstrap, the operator should see a short install summary and use `gira s
 
 `bootstrap` prepares local project files from the default template. It owns `.github` templates, project docs, task list seeds, and local worker instructions. It should not create labels, milestones, issues, branches outside the target local repo, or remote PRs.
 
-`sync` reconciles GitHub execution metadata through `gh`. It owns Gira-managed labels, milestones, and bootstrap issues. It may create or update known Gira metadata, but it must not delete labels, close issues, delete milestones, or change broad repository settings in the MVP.
+`sync` reconciles GitHub execution metadata through `gh`. It owns Gira-managed labels, milestones, and (when `--bootstrap-issues` is provided) bootstrap issues. It may create or update known Gira metadata, but it must not delete labels, close issues, delete milestones, or change broad repository settings in the MVP.
 
 `status` reads GitHub state and summarizes it. It owns compact human reporting and stable JSON for automation. It must remain read-only.
 

@@ -232,6 +232,19 @@ func probeProjectCapability(repo RepoRef, perms githubRepoPermissions, runner Co
 	return
 }
 
+func HasCapability(report ProjectCapabilityReport, capability string) bool {
+	return report.Capabilities[capability] == ProjectCapabilityAllowed
+}
+
+func CapabilityDeniedReason(report ProjectCapabilityReport, capability string) string {
+	for _, block := range report.BlockedActions {
+		if block.Action == capability {
+			return block.Reason
+		}
+	}
+	return "permission denied"
+}
+
 func FormatProjectCapabilitySummary(report ProjectCapabilityReport) string {
 	var lines []string
 	lines = append(lines, "project capability\n")

@@ -799,3 +799,30 @@ func TestProjectSyncApplyCommandJSONUsesInjectedBuilder(t *testing.T) {
 		t.Fatalf("project sync apply JSON missing action: %s", stdout.String())
 	}
 }
+
+func TestGuardrailsSyncCommandJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newGuardrailsSyncReport
+	t.Cleanup(func() { newGuardrailsSyncReport = restore })
+	newGuardrailsSyncReport = func(repo gira.RepoRef, policyPath string, apply bool, allowRelaxation bool) (gira.GuardrailsSyncReport, error) {
+		return gira.GuardrailsSyncReport{Repo: repo.FullName(), BlockedCount: 1}, nil
+	}
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"guardrails", "sync", "--repo", "StatPan/gira", "--policy", ".gira/guardrails.yaml", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"blocked_count\": 1") {
+		t.Fatalf("missing blocked_count: %s", stdout.String())
+	}
+}
+
+func TestGuardrailsSyncRequiresMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"guardrails", "sync", "--repo", "StatPan/gira", "--policy", ".gira/guardrails.yaml"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero")
+	}
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required") {
+		t.Fatalf("unexpected stderr: %s", stderr.String())
+	}
+}

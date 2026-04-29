@@ -25,6 +25,7 @@ Commands:
   export      Export dashboard artifacts from read-only GitHub data
   project     Inspect permission capability for Project OS lifecycle actions
   audit       Verify audit ledgers for mutation integrity
+  guardrails  Audit and apply branch protection/ruleset policy
 
 Flags:
   -h, --help  Show help
@@ -121,6 +122,22 @@ Flags:
   -h, --help     Show help
 `
 
+const guardrailsHelp = `Audit and apply repository guardrails policy.
+
+Usage:
+  gira guardrails sync --repo OWNER/REPO --policy .gira/guardrails.yaml --dry-run [--json] [--allow-relaxation]
+  gira guardrails sync --repo OWNER/REPO --policy .gira/guardrails.yaml --apply [--json] [--allow-relaxation]
+
+Flags:
+  --repo string          Target GitHub repo in OWNER/REPO format
+  --policy string        Guardrails policy file path
+  --dry-run              Compute deterministic full diff only
+  --apply                Apply policy-owned settings only
+  --json                 Emit stable JSON summary
+  --allow-relaxation     Allow relaxation changes
+  -h, --help             Show help
+`
+
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
 	return gira.NewGHStatusClient(repo, gira.ExecCommandRunner{})
 }
@@ -163,6 +180,23 @@ var newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClien
 	return gira.NewGHDashboardExportClient(repo, gira.ExecCommandRunner{})
 }
 
+var newGuardrailsSyncReport = func(repo gira.RepoRef, policyPath string, apply bool, allowRelaxation bool) (gira.GuardrailsSyncReport, error) {
+	policy, err := gira.LoadGuardrailsPolicy(policyPath)
+	if err != nil {
+		return gira.GuardrailsSyncReport{}, err
+	}
+	if apply {
+		capability, err := newProjectCapabilityReport(repo)
+		if err != nil {
+			return gira.GuardrailsSyncReport{}, err
+		}
+		if !gira.HasCapability(capability, "repo:settings:write") {
+			return gira.GuardrailsSyncReport{}, fmt.Errorf("repo:settings:write denied: %s", gira.CapabilityDeniedReason(capability, "repo:settings:write"))
+		}
+	}
+	return gira.SyncGuardrailsForClient(repo, policy, gira.NewGHGuardrailsClient(repo, gira.ExecCommandRunner{}), apply, allowRelaxation)
+}
+
 var dashboardExportNow = func() time.Time {
 	return time.Now()
 }
@@ -190,6 +224,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runProject(args[1:], stdout, stderr)
 	case "audit":
 		return runAudit(args[1:], stdout, stderr)
+	case "guardrails":
+		return runGuardrails(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
@@ -423,6 +459,69 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stdout, "sync complete")
 	}
+	return 0
+}
+
+func runGuardrails(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, guardrailsHelp)
+		return 0
+	}
+	if args[0] != "sync" {
+		fmt.Fprintf(stderr, "unknown guardrails command: %s\n\n", args[0])
+		fmt.Fprint(stderr, guardrailsHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("guardrails sync", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	policyPath := fs.String("policy", "", "Guardrails policy file path")
+	dryRun := fs.Bool("dry-run", false, "Compute deterministic full diff only")
+	applyMode := fs.Bool("apply", false, "Apply policy-owned settings only")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON summary")
+	allowRelaxation := fs.Bool("allow-relaxation", false, "Allow relaxation changes")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, guardrailsHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, guardrailsHelp)
+		return 0
+	}
+	if *repoValue == "" || *policyPath == "" {
+		fmt.Fprint(stderr, "--repo and --policy are required\n\n")
+		fmt.Fprint(stderr, guardrailsHelp)
+		return 2
+	}
+	if (*dryRun && *applyMode) || (!*dryRun && !*applyMode) {
+		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required\n\n")
+		fmt.Fprint(stderr, guardrailsHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newGuardrailsSyncReport(repo, *policyPath, *applyMode, *allowRelaxation)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode guardrails JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	output, _ := json.MarshalIndent(report, "", "  ")
+	fmt.Fprintf(stdout, "%s\n", output)
 	return 0
 }
 

@@ -890,3 +890,69 @@ func blockAuditWrites(t *testing.T) {
 		_ = os.Remove(base)
 	})
 }
+
+func TestGuardrailsSyncCommandJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newGuardrailsSyncReport
+	t.Cleanup(func() { newGuardrailsSyncReport = restore })
+	newGuardrailsSyncReport = func(repo gira.RepoRef, policyPath string, apply bool, allowRelaxation bool) (gira.GuardrailsSyncReport, error) {
+		return gira.GuardrailsSyncReport{Repo: repo.FullName(), BlockedCount: 1}, nil
+	}
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"guardrails", "sync", "--repo", "StatPan/gira", "--policy", ".gira/guardrails.yaml", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"blocked_count\": 1") {
+		t.Fatalf("missing blocked_count: %s", stdout.String())
+	}
+}
+
+func TestGuardrailsSyncRequiresMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"guardrails", "sync", "--repo", "StatPan/gira", "--policy", ".gira/guardrails.yaml"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero")
+	}
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required") {
+		t.Fatalf("unexpected stderr: %s", stderr.String())
+	}
+}
+
+func TestGuardrailsSyncApplyDeniedPermissionFailsClosed(t *testing.T) {
+	restoreCapability := newProjectCapabilityReport
+	t.Cleanup(func() { newProjectCapabilityReport = restoreCapability })
+	newProjectCapabilityReport = func(repo gira.RepoRef) (gira.ProjectCapabilityReport, error) {
+		return gira.ProjectCapabilityReport{
+			Repo: repo.FullName(),
+			Capabilities: map[string]gira.ProjectCapabilityStatus{
+				"repo:settings:write": gira.ProjectCapabilityDeniedScope,
+			},
+			BlockedActions: []gira.ProjectCapabilityBlock{{
+				Action: "repo:settings:write",
+				Reason: "token scope or repository permission is insufficient",
+			}},
+		}, nil
+	}
+
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "guardrails.yaml")
+	if err := os.WriteFile(policyPath, []byte(`branch_protection:
+  main:
+    required_approving_review_count: 2
+    require_code_owner_reviews: true
+    required_status_checks_strict: true
+    allow_force_pushes: false
+    allow_deletions: false
+`), 0o644); err != nil {
+		t.Fatalf("write policy: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"guardrails", "sync", "--repo", "StatPan/gira", "--policy", policyPath, "--apply", "--json"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("expected non-zero exit for denied permission")
+	}
+	if !strings.Contains(stderr.String(), "repo:settings:write denied") {
+		t.Fatalf("missing explicit denied reason: %s", stderr.String())
+	}
+}

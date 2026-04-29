@@ -11,7 +11,9 @@ The Python MVP currently owns the full CLI-first workflow:
 - `gira bootstrap --repo OWNER/REPO --template default --dry-run`
 - `gira bootstrap --repo OWNER/REPO --path PATH`
 - `gira sync --repo OWNER/REPO --dry-run`
+- `gira sync --repo OWNER/REPO --dry-run --bootstrap-issues`  # Gira self-bootstrap only
 - `gira sync --repo OWNER/REPO`
+- `gira sync --repo OWNER/REPO --bootstrap-issues`            # Gira self-bootstrap only
 - `gira status --repo OWNER/REPO`
 
 The Go CLI is being introduced in small slices as the long-term product CLI. The current Go path supports bootstrap dry-run/local install, GitHub metadata sync, and status:
@@ -20,7 +22,9 @@ The Go CLI is being introduced in small slices as the long-term product CLI. The
 go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
 go run ./cmd/gira bootstrap --repo OWNER/REPO --path /path/to/repo
 go run ./cmd/gira sync --repo OWNER/REPO --dry-run
+go run ./cmd/gira sync --repo OWNER/REPO --dry-run --bootstrap-issues  # Gira self-bootstrap only
 go run ./cmd/gira sync --repo OWNER/REPO
+go run ./cmd/gira sync --repo OWNER/REPO --bootstrap-issues            # Gira self-bootstrap only
 go run ./cmd/gira status --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO --json
 ```
@@ -56,6 +60,7 @@ GOBIN="$(mktemp -d)" go install ./cmd/gira
 (cd /tmp && "${GOBIN}/gira" bootstrap --repo OWNER/REPO --template default --dry-run)
 (cd /tmp && "${GOBIN}/gira" bootstrap --repo OWNER/REPO --path /path/to/repo --no-branch)
 (cd /tmp && "${GOBIN}/gira" sync --repo OWNER/REPO --dry-run)
+(cd /tmp && "${GOBIN}/gira" sync --repo OWNER/REPO --dry-run --bootstrap-issues)
 (cd /tmp && "${GOBIN}/gira" status --repo OWNER/REPO --json)
 ```
 

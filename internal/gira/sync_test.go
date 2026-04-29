@@ -106,7 +106,7 @@ func TestBuildSyncPlanUsesGhListShapes(t *testing.T) {
 		},
 	}
 
-	plan, err := BuildSyncPlan(client)
+	plan, err := BuildSyncPlan(client, SyncPlanOptions{EnableBootstrapIssues: true})
 	if err != nil {
 		t.Fatalf("BuildSyncPlan returned error: %v", err)
 	}
@@ -118,6 +118,29 @@ func TestBuildSyncPlanUsesGhListShapes(t *testing.T) {
 	}
 	if countBootstrapIssueActions(plan.BootstrapIssues, PlanCreate) != len(DesiredBootstrapIssues)-1 {
 		t.Fatalf("issue create count = %d, want %d", countBootstrapIssueActions(plan.BootstrapIssues, PlanCreate), len(DesiredBootstrapIssues)-1)
+	}
+}
+
+func TestBuildSyncPlanSkipsBootstrapIssuesWhenDisabled(t *testing.T) {
+	client := &fakeSyncClient{
+		repo:       mustRepo(t, "StatPan/gira"),
+		labels:     []ExistingLabel{{Name: BootstrapLabel, Color: "5319E7", Description: "Created or managed by Gira bootstrap metadata sync."}},
+		milestones: []ExistingMilestone{{Number: 1, Title: "MVP", Description: "CLI-first Gira bootstrapper with templates and GitHub metadata sync."}},
+		issues:     []ExistingIssue{{Number: 1, Title: "[Epic] Gira MVP: GitHub-as-OS bootstrap", Labels: []string{BootstrapLabel}}},
+	}
+
+	plan, err := BuildSyncPlan(client, SyncPlanOptions{EnableBootstrapIssues: false})
+	if err != nil {
+		t.Fatalf("BuildSyncPlan returned error: %v", err)
+	}
+	if len(plan.BootstrapIssues) != len(DesiredBootstrapIssues) {
+		t.Fatalf("bootstrap issue plan length = %d, want %d", len(plan.BootstrapIssues), len(DesiredBootstrapIssues))
+	}
+	if countBootstrapIssueActions(plan.BootstrapIssues, PlanCreate) != 0 {
+		t.Fatalf("bootstrap issue create count = %d, want 0", countBootstrapIssueActions(plan.BootstrapIssues, PlanCreate))
+	}
+	if countBootstrapIssueActions(plan.BootstrapIssues, PlanSkip) != len(DesiredBootstrapIssues) {
+		t.Fatalf("bootstrap issue skip count = %d, want %d", countBootstrapIssueActions(plan.BootstrapIssues, PlanSkip), len(DesiredBootstrapIssues))
 	}
 }
 

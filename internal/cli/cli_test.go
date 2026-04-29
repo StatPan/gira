@@ -181,7 +181,38 @@ func TestSyncDryRunUsesInjectedClientWithoutApplying(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{"sync plan:", "would create", "bootstrap issues:", "create issue:"} {
+	for _, want := range []string{"sync plan:", "would create", "bootstrap issues: 0 would create", "create label:"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("sync dry-run output missing %q:\n%s", want, stdout.String())
+		}
+	}
+	if len(client.calls) != 0 {
+		t.Fatalf("dry-run applied calls: %v", client.calls)
+	}
+}
+
+func TestSyncDryRunWithBootstrapIssuesFlagIncludesIssueCreates(t *testing.T) {
+	restoreClient := newSyncClient
+	t.Cleanup(func() {
+		newSyncClient = restoreClient
+	})
+	client := &cliFakeSyncClient{
+		repo: mustCLIRepo(t, "StatPan/gira"),
+		labels: []gira.ExistingLabel{
+			{Name: gira.BootstrapLabel, Color: "5319E7", Description: "Created or managed by Gira bootstrap metadata sync."},
+		},
+	}
+	newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
+		client.repo = repo
+		return client
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"sync", "--repo", "StatPan/gira", "--dry-run", "--bootstrap-issues"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"sync plan:", "bootstrap issues:", "create issue:"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("sync dry-run output missing %q:\n%s", want, stdout.String())
 		}
@@ -294,7 +325,7 @@ func TestExportDashboardDryRunRequiresDeterministicOutput(t *testing.T) {
 			},
 		},
 		capabilities: gira.ProjectCapabilityReport{
-			Capabilities: map[string]gira.ProjectCapabilityStatus{},
+			Capabilities:   map[string]gira.ProjectCapabilityStatus{},
 			BlockedActions: []gira.ProjectCapabilityBlock{},
 		},
 	}
@@ -330,7 +361,7 @@ func TestExportDashboardJSONOnlyStdout(t *testing.T) {
 	client := &cliFakeDashboardExportClient{
 		repo: mustCLIRepo(t, "StatPan/gira"),
 		capabilities: gira.ProjectCapabilityReport{
-			Capabilities: map[string]gira.ProjectCapabilityStatus{},
+			Capabilities:   map[string]gira.ProjectCapabilityStatus{},
 			BlockedActions: []gira.ProjectCapabilityBlock{},
 		},
 	}

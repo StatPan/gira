@@ -168,7 +168,7 @@ var newGuardrailsSyncReport = func(repo gira.RepoRef, policyPath string, apply b
 		return gira.GuardrailsSyncReport{}, err
 	}
 	if apply {
-		capability, err := gira.BuildProjectCapabilityReport(repo, gira.ExecCommandRunner{})
+		capability, err := newProjectCapabilityReport(repo)
 		if err != nil {
 			return gira.GuardrailsSyncReport{}, err
 		}

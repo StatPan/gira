@@ -95,6 +95,29 @@ type ProjectTransitionPlanItem struct {
 	Decision           string `json:"decision"`
 }
 
+type ProjectTransitionsApplyReport struct {
+	Repo         string                              `json:"repo"`
+	Command      string                              `json:"command"`
+	DryRun       bool                                `json:"dry_run"`
+	Applied      []ProjectTransitionApplyResultItem  `json:"applied"`
+	Skipped      []ProjectTransitionApplySkippedItem `json:"skipped"`
+	BlockedCount int                                 `json:"blocked_count"`
+}
+
+type ProjectTransitionApplyResultItem struct {
+	Issue        int    `json:"issue"`
+	RuleID       string `json:"rule_id"`
+	From         string `json:"from"`
+	To           string `json:"to"`
+	LabelApplied string `json:"label_applied"`
+}
+
+type ProjectTransitionApplySkippedItem struct {
+	Issue  int    `json:"issue"`
+	RuleID string `json:"rule_id"`
+	Reason string `json:"reason"`
+}
+
 func (c GHProjectTransitionsClient) Snapshot() (ProjectTransitionSnapshot, error) {
 	issues, err := c.fetchIssues()
 	if err != nil {
@@ -293,6 +316,72 @@ func BuildProjectTransitionsReportForClient(client ProjectTransitionsClient, fet
 		return ProjectTransitionsReport{}, err
 	}
 	return BuildProjectTransitionsReport(client.Repo().FullName(), snapshot, fetchedAt)
+}
+
+func ApplyProjectTransitionsForClient(client ProjectTransitionsClient, runner CommandRunner, fetchedAt time.Time) (ProjectTransitionsApplyReport, error) {
+	if runner == nil {
+		runner = ExecCommandRunner{}
+	}
+	snapshot, err := client.Snapshot()
+	if err != nil {
+		return ProjectTransitionsApplyReport{}, err
+	}
+	plan, err := BuildProjectTransitionsReport(client.Repo().FullName(), snapshot, fetchedAt)
+	if err != nil {
+		return ProjectTransitionsApplyReport{}, err
+	}
+
+	apply := ProjectTransitionsApplyReport{
+		Repo:    client.Repo().FullName(),
+		Command: "project transitions",
+		DryRun:  false,
+		Applied: make([]ProjectTransitionApplyResultItem, 0),
+		Skipped: make([]ProjectTransitionApplySkippedItem, 0),
+	}
+
+	issueByNumber := map[int]ProjectTransitionIssue{}
+	for _, issue := range snapshot.Issues {
+		issueByNumber[issue.Number] = issue
+	}
+
+	for _, transition := range plan.Transitions {
+		if transition.Decision != "apply" || transition.TargetType != "issue" {
+			continue
+		}
+		issueNumber, err := strconv.Atoi(transition.TargetID)
+		if err != nil {
+			continue
+		}
+		issue, ok := issueByNumber[issueNumber]
+		if !ok {
+			apply.Skipped = append(apply.Skipped, ProjectTransitionApplySkippedItem{Issue: issueNumber, RuleID: transition.RuleID, Reason: "issue_not_found_in_snapshot"})
+			continue
+		}
+		targetLabel, ok := statusToLabel(transition.To)
+		if !ok {
+			apply.Skipped = append(apply.Skipped, ProjectTransitionApplySkippedItem{Issue: issueNumber, RuleID: transition.RuleID, Reason: "unsupported_target_state"})
+			continue
+		}
+
+		managed := managedStatusLabels(issue.Labels)
+		if len(managed) == 1 && strings.EqualFold(managed[0], targetLabel) {
+			apply.Skipped = append(apply.Skipped, ProjectTransitionApplySkippedItem{Issue: issueNumber, RuleID: transition.RuleID, Reason: "already_set"})
+			continue
+		}
+
+		if err := replaceIssueStatusLabel(client.Repo(), issueNumber, managed, targetLabel, runner); err != nil {
+			return ProjectTransitionsApplyReport{}, err
+		}
+		apply.Applied = append(apply.Applied, ProjectTransitionApplyResultItem{
+			Issue:        issueNumber,
+			RuleID:       transition.RuleID,
+			From:         transition.From,
+			To:           transition.To,
+			LabelApplied: targetLabel,
+		})
+	}
+
+	return apply, nil
 }
 
 func BuildProjectTransitionsReport(repo string, snapshot ProjectTransitionSnapshot, fetchedAt time.Time) (ProjectTransitionsReport, error) {
@@ -660,6 +749,51 @@ func managedStatusFromLabels(labels []string) string {
 		}
 	}
 	return best
+}
+
+func replaceIssueStatusLabel(repo RepoRef, issueNumber int, existingManaged []string, targetLabel string, runner CommandRunner) error {
+	for _, label := range existingManaged {
+		if strings.EqualFold(label, targetLabel) {
+			continue
+		}
+		if _, err := runner.Run("gh", "api", "repos/"+repo.FullName()+"/issues/"+strconv.Itoa(issueNumber)+"/labels/"+label, "-X", "DELETE"); err != nil {
+			return err
+		}
+	}
+	if _, err := runner.Run("gh", "api", "repos/"+repo.FullName()+"/issues/"+strconv.Itoa(issueNumber)+"/labels", "-X", "POST", "-f", "labels[]="+targetLabel); err != nil {
+		return err
+	}
+	return nil
+}
+
+func managedStatusLabels(labels []string) []string {
+	out := make([]string, 0)
+	for _, label := range labels {
+		if _, ok := mapStatusLabel(label); ok {
+			out = append(out, label)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func statusToLabel(status string) (string, bool) {
+	switch strings.TrimSpace(status) {
+	case "Backlog":
+		return "status:backlog", true
+	case "Ready":
+		return "status:ready", true
+	case "Blocked":
+		return "status:blocked", true
+	case "In progress":
+		return "status:in-progress", true
+	case "In review":
+		return "status:in-review", true
+	case "Done":
+		return "status:done", true
+	default:
+		return "", false
+	}
 }
 
 func mapStatusLabel(label string) (string, bool) {

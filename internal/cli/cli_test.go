@@ -956,3 +956,28 @@ func TestGuardrailsSyncApplyDeniedPermissionFailsClosed(t *testing.T) {
 		t.Fatalf("missing explicit denied reason: %s", stderr.String())
 	}
 }
+
+func TestProjectSyncApplyCommandJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newProjectSyncApplyReport
+	t.Cleanup(func() { newProjectSyncApplyReport = restore })
+	newProjectSyncApplyReport = func(repo gira.RepoRef) (gira.ProjectSyncApplyReport, error) {
+		return gira.ProjectSyncApplyReport{
+			Repo:    repo.FullName(),
+			Command: "project sync",
+			DryRun:  false,
+			Applied: []gira.ProjectSyncApplyAction{{Action: "project_status_field:update", Required: "projectsv2:write", Result: "ok"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"project", "sync", "--repo", "StatPan/gira", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"dry_run\": false") {
+		t.Fatalf("project sync apply JSON missing dry_run false: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "\"action\": \"project_status_field:update\"") {
+		t.Fatalf("project sync apply JSON missing action: %s", stdout.String())
+	}
+}

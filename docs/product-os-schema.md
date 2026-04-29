@@ -369,3 +369,121 @@ JSON output for automation should use stable keys and no prose on stdout:
 ```
 
 The apply form should follow the existing Gira sync convention: build the full plan first, mutate only Gira-managed fields/views/items, report partial failures clearly, and make reruns safe.
+
+## Issue #48 Spec Draft: Machine-checkable field contract
+
+This section is the spec-only contract for the first Product OS field slice. It intentionally defines schema, validation, and examples without enabling automation behavior.
+
+### Canonical keys and field definitions
+
+| Key | Type | Required | Allowed values / format | Default / empty semantics |
+| --- | --- | --- | --- | --- |
+| `status` | enum(string) | Yes | `backlog`, `ready`, `blocked`, `in_progress`, `in_review`, `done` | No implicit default in apply mode. Dry-run may suggest `backlog` for new untriaged issues. Empty/unknown value is validation error. |
+| `priority` | enum(string) | Yes | `p0`, `p1`, `p2`, `p3` | No implicit default. Empty/unknown is validation error. |
+| `layer` | enum(string) | Yes | `docs`, `backend`, `ai`, `infra`, `product`, `ops` | No implicit default. Empty/unknown is validation error. |
+| `phase` | string | Yes | Milestone/phase identifier (example: `beta`, `sprint-2026-05-w1`) | Must be non-empty and map to an existing milestone name (case-insensitive compare recommended). |
+| `owner` | string | Conditional | GitHub login (example: `StatPan`) | Required when `agent` is missing. |
+| `agent` | enum(string) | Conditional | `human`, `worker` | Required when `owner` is missing. |
+| `start_date` | date(string) | Yes for roadmap-able items | ISO-8601 `YYYY-MM-DD` | Missing value yields `missing_start_date` or `missing_dates`. |
+| `target_date` | date(string) | Yes for roadmap-able items | ISO-8601 `YYYY-MM-DD` | Missing value yields `missing_target_date` or `missing_dates`. Must be `>= start_date`. |
+
+Notes:
+- `owner` and `agent` satisfy the same ownership requirement as `owner OR agent`.
+- `phase` is the canonical key for milestone/phase mapping in machine output.
+- Human-readable labels/field names may remain Title Case in GitHub, while machine output MUST keep these snake_case keys.
+
+### Required label taxonomy
+
+Required labels for roadmap-able Product OS issues:
+- Exactly one `priority:*` label (`priority:p0|p1|p2|p3`)
+- At least one workstream label from `area:*` or `layer:*`
+- Exactly one ownership label from `agent:human|agent:worker` when `owner` is absent
+- Exactly one type label from `type:epic|type:story|type:task|type:spike|type:bug`
+
+Optional labels:
+- `blocked` (status override trigger)
+- Additional routing labels such as `area:*` combinations or domain tags
+
+Naming rules:
+- Prefix labels MUST use lowercase `<namespace>:<value>` format.
+- Namespace set for this slice: `type`, `priority`, `area`, `layer`, `agent`.
+- Unknown namespaces are tolerated but ignored by Product OS validation.
+
+### Milestone conventions
+
+- `phase` maps to a GitHub milestone title.
+- Milestone should represent a bounded delivery window (phase/sprint/release).
+- Milestone completion semantics: phase is complete when all scoped issues are closed.
+- Milestone due date is phase-level metadata and does not replace per-item `start_date` and `target_date` for roadmap rendering.
+
+### Validation rules (dry-run first)
+
+Validation statuses:
+- `ok`
+- `missing_start_date`
+- `missing_target_date`
+- `missing_dates`
+- `invalid_date_range`
+- `missing_required_field`
+- `invalid_enum_value`
+- `missing_required_label`
+
+Validation behavior:
+1. Missing/invalid required keys MUST be reported per item with deterministic reason codes.
+2. `target_date < start_date` MUST emit `invalid_date_range` and block apply for that item.
+3. Dry-run MUST always report all violations in one pass (no fail-fast truncation).
+4. Dry-run output SHOULD include a compact reason list suitable for machine parsing.
+
+### Example payloads
+
+Passing example A:
+
+```json
+{
+  "status": "ready",
+  "priority": "p0",
+  "layer": "backend",
+  "phase": "Beta",
+  "owner": "StatPan",
+  "start_date": "2026-05-01",
+  "target_date": "2026-05-12",
+  "labels": ["type:task", "priority:p0", "area:backend", "agent:human"]
+}
+```
+
+Passing example B:
+
+```json
+{
+  "status": "in_progress",
+  "priority": "p1",
+  "layer": "docs",
+  "phase": "sprint-2026-05-w2",
+  "agent": "worker",
+  "start_date": "2026-05-06",
+  "target_date": "2026-05-09",
+  "labels": ["type:story", "priority:p1", "layer:docs", "agent:worker"]
+}
+```
+
+Failing example C (invalid with reasons):
+
+```json
+{
+  "status": "working",
+  "priority": "p5",
+  "layer": "backend",
+  "phase": "",
+  "start_date": "2026-05-10",
+  "target_date": "2026-05-02",
+  "labels": ["type:task", "area:backend"]
+}
+```
+
+Expected failures for C:
+- `invalid_enum_value: status=working`
+- `invalid_enum_value: priority=p5`
+- `missing_required_field: phase`
+- `invalid_date_range: target_date < start_date`
+- `missing_required_label: priority:*`
+- `missing_required_label: ownership (agent:* or owner)`

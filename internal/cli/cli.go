@@ -74,6 +74,7 @@ const projectHelp = `Project OS capability utilities for permission-aware automa
 Usage:
   gira project capability --repo OWNER/REPO [--json]
   gira project sync --repo OWNER/REPO --dry-run [--json]
+  gira project sync --repo OWNER/REPO --apply [--json]
   gira project transitions --repo OWNER/REPO --dry-run [--json]
   gira project transitions --repo OWNER/REPO --apply [--json]
 
@@ -116,9 +117,17 @@ var newProjectCapabilityReport = func(repo gira.RepoRef) (gira.ProjectCapability
 
 var newProjectSyncReport = func(repo gira.RepoRef, dryRun bool) (gira.ProjectSyncReport, error) {
 	if !dryRun {
-		return gira.ProjectSyncReport{}, fmt.Errorf("--dry-run is required for project sync in this slice")
+		return gira.ProjectSyncReport{}, fmt.Errorf("--dry-run is required for project sync unless --apply is provided")
 	}
 	return gira.BuildProjectSyncReportForClient(gira.NewGHProjectSyncClient(repo, gira.ExecCommandRunner{}), time.Now())
+}
+
+var newProjectSyncApplyReport = func(repo gira.RepoRef) (gira.ProjectSyncApplyReport, error) {
+	capability, err := gira.BuildProjectCapabilityReport(repo, gira.ExecCommandRunner{})
+	if err != nil {
+		return gira.ProjectSyncApplyReport{}, err
+	}
+	return gira.BuildProjectSyncApplyReport(capability), nil
 }
 
 var newProjectTransitionsReport = func(repo gira.RepoRef, dryRun bool) (gira.ProjectTransitionsReport, error) {
@@ -424,7 +433,8 @@ func runProjectSync(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs.SetOutput(io.Discard)
 
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
-	dryRun := fs.Bool("dry-run", false, "Required for this read-only slice")
+	dryRun := fs.Bool("dry-run", false, "Read-only report mode")
+	applyMode := fs.Bool("apply", false, "Apply capability-gated status update workflow")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON summary")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -448,8 +458,8 @@ func runProjectSync(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, projectHelp)
 		return 2
 	}
-	if !*dryRun {
-		fmt.Fprint(stderr, "--dry-run is required\n\n")
+	if (*dryRun && *applyMode) || (!*dryRun && !*applyMode) {
+		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required\n\n")
 		fmt.Fprint(stderr, projectHelp)
 		return 2
 	}
@@ -458,6 +468,25 @@ func runProjectSync(args []string, stdout io.Writer, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
+	}
+
+	if *applyMode {
+		applyReport, err := newProjectSyncApplyReport(repo)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		if *jsonOutput {
+			output, err := json.MarshalIndent(applyReport, "", "  ")
+			if err != nil {
+				fmt.Fprintf(stderr, "encode project sync apply JSON: %v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "%s\n", output)
+			return 0
+		}
+		fmt.Fprintln(stdout, "project sync apply completed")
+		return 0
 	}
 
 	report, err := newProjectSyncReport(repo, *dryRun)

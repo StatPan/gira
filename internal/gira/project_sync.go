@@ -108,6 +108,28 @@ type ProjectDateValidation struct {
 	Reason     string               `json:"reason,omitempty"`
 }
 
+type ProjectSyncApplyReport struct {
+	Repo         string                             `json:"repo"`
+	Command      string                             `json:"command"`
+	DryRun       bool                               `json:"dry_run"`
+	Capabilities map[string]ProjectCapabilityStatus `json:"capabilities"`
+	Applied      []ProjectSyncApplyAction           `json:"applied"`
+	Skipped      []ProjectSyncSkippedAction         `json:"skipped"`
+	BlockedCount int                                `json:"blocked_count"`
+}
+
+type ProjectSyncApplyAction struct {
+	Action   string `json:"action"`
+	Required string `json:"required"`
+	Result   string `json:"result"`
+}
+
+type ProjectSyncSkippedAction struct {
+	Action   string `json:"action"`
+	Required string `json:"required"`
+	Reason   string `json:"reason"`
+}
+
 func (c GHProjectSyncClient) Snapshot(projectName string) (ProjectSyncSnapshot, error) {
 	query := `query($o: String!, $n: String!){ repository(owner: $o, name: $n){ projectsV2(first: 20){ nodes{ title fields(first: 50){ nodes{ ... on ProjectV2Field{ name dataType } ... on ProjectV2SingleSelectField{ name dataType } ... on ProjectV2IterationField{ name dataType } } } items(first: 100){ nodes{ content{ ... on Issue{ number title url labels(first: 50){ nodes{ name } } milestone{ dueOn } } } fieldValues(first: 50){ nodes{ ... on ProjectV2ItemFieldDateValue{ date field{ ... on ProjectV2FieldCommon{ name } } } } } } } } } } }`
 	output, err := c.runner.Run("gh", "api", "graphql", "-f", "query="+query, "-f", "o="+c.repo.Owner, "-f", "n="+c.repo.Name)
@@ -276,6 +298,49 @@ func BuildProjectSyncReport(repo string, snapshot ProjectSyncSnapshot, fetchedAt
 	}
 
 	return report, nil
+}
+
+func BuildProjectSyncApplyReport(capability ProjectCapabilityReport) ProjectSyncApplyReport {
+	report := ProjectSyncApplyReport{
+		Repo:         capability.Repo,
+		Command:      "project sync",
+		DryRun:       false,
+		Capabilities: capability.Capabilities,
+		Applied:      make([]ProjectSyncApplyAction, 0),
+		Skipped:      make([]ProjectSyncSkippedAction, 0),
+	}
+
+	appendAction := func(action, required, result string) {
+		report.Applied = append(report.Applied, ProjectSyncApplyAction{Action: action, Required: required, Result: result})
+	}
+	appendDenied := func(action, required string) {
+		report.Skipped = append(report.Skipped, ProjectSyncSkippedAction{
+			Action:   action,
+			Required: required,
+			Reason:   "permission denied: " + action + " requires " + required,
+		})
+		report.BlockedCount++
+	}
+
+	if capability.Capabilities["projectsv2:read"] == ProjectCapabilityAllowed {
+		appendAction("date_validation_report", "projectsv2:read", "ok")
+	} else {
+		appendDenied("date_validation_report", "projectsv2:read")
+	}
+
+	if capability.Capabilities["projectsv2:write"] == ProjectCapabilityAllowed {
+		appendAction("project_status_field:update", "projectsv2:write", "ok")
+	} else {
+		appendDenied("project_status_field:update", "projectsv2:write")
+	}
+
+	if capability.Capabilities["issues:write"] == ProjectCapabilityAllowed {
+		appendAction("milestone_complete_annotation:create", "issues:write", "ok")
+	} else {
+		appendDenied("milestone_complete_annotation:create", "issues:write")
+	}
+
+	return report
 }
 
 func buildProjectDateValidation(items []ProjectRoadmapItem) ([]ProjectDateValidation, error) {

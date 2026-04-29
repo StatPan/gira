@@ -294,3 +294,31 @@ func TestRoadmapabilityPolicy(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildProjectSyncApplyReportCapabilityGating(t *testing.T) {
+	cap := ProjectCapabilityReport{
+		Repo: "StatPan/gira",
+		Capabilities: map[string]ProjectCapabilityStatus{
+			"projectsv2:read":  ProjectCapabilityAllowed,
+			"projectsv2:write": ProjectCapabilityDeniedScope,
+			"issues:write":     ProjectCapabilityAllowed,
+		},
+	}
+
+	report := BuildProjectSyncApplyReport(cap)
+	if report.DryRun {
+		t.Fatal("expected dry_run=false for apply report")
+	}
+	if report.BlockedCount != 1 {
+		t.Fatalf("blocked_count=%d, want 1", report.BlockedCount)
+	}
+	if len(report.Applied) != 2 {
+		t.Fatalf("applied=%d, want 2", len(report.Applied))
+	}
+	if len(report.Skipped) != 1 {
+		t.Fatalf("skipped=%d, want 1", len(report.Skipped))
+	}
+	if report.Skipped[0].Action != "project_status_field:update" {
+		t.Fatalf("unexpected skipped action: %#v", report.Skipped[0])
+	}
+}

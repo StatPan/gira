@@ -693,14 +693,14 @@ func TestProjectCapabilityCommandNeedsSubcommand(t *testing.T) {
 	}
 }
 
-func TestProjectSyncCommandRequiresDryRun(t *testing.T) {
+func TestProjectSyncCommandRequiresDryRunOrApply(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"project", "sync", "--repo", "StatPan/gira"}, &stdout, &stderr)
 	if code == 0 {
 		t.Fatal("exit code = 0, want non-zero")
 	}
-	if !strings.Contains(stderr.String(), "--dry-run is required") {
-		t.Fatalf("stderr missing dry-run requirement:\n%s", stderr.String())
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required") {
+		t.Fatalf("stderr missing dry-run/apply requirement:\n%s", stderr.String())
 	}
 }
 
@@ -775,27 +775,27 @@ func TestProjectTransitionsCommandJSONUsesInjectedBuilder(t *testing.T) {
 	}
 }
 
-func TestProjectTransitionsApplyCommandJSONUsesInjectedBuilder(t *testing.T) {
-	restore := newProjectTransitionsApplyReport
-	t.Cleanup(func() { newProjectTransitionsApplyReport = restore })
-	newProjectTransitionsApplyReport = func(repo gira.RepoRef) (gira.ProjectTransitionsApplyReport, error) {
-		return gira.ProjectTransitionsApplyReport{
+func TestProjectSyncApplyCommandJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newProjectSyncApplyReport
+	t.Cleanup(func() { newProjectSyncApplyReport = restore })
+	newProjectSyncApplyReport = func(repo gira.RepoRef) (gira.ProjectSyncApplyReport, error) {
+		return gira.ProjectSyncApplyReport{
 			Repo:    repo.FullName(),
-			Command: "project transitions",
+			Command: "project sync",
 			DryRun:  false,
-			Applied: []gira.ProjectTransitionApplyResultItem{{Issue: 10, RuleID: "issue_open_default", LabelApplied: "status:backlog"}},
+			Applied: []gira.ProjectSyncApplyAction{{Action: "project_status_field:update", Required: "projectsv2:write", Result: "ok"}},
 		}, nil
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"project", "transitions", "--repo", "StatPan/gira", "--apply", "--json"}, &stdout, &stderr)
+	code := Run([]string{"project", "sync", "--repo", "StatPan/gira", "--apply", "--json"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "\"dry_run\": false") {
-		t.Fatalf("project transitions apply JSON missing dry_run false: %s", stdout.String())
+		t.Fatalf("project sync apply JSON missing dry_run false: %s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "\"label_applied\": \"status:backlog\"") {
-		t.Fatalf("project transitions apply JSON missing label_applied: %s", stdout.String())
+	if !strings.Contains(stdout.String(), "\"action\": \"project_status_field:update\"") {
+		t.Fatalf("project sync apply JSON missing action: %s", stdout.String())
 	}
 }

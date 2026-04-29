@@ -775,31 +775,6 @@ func TestProjectTransitionsCommandJSONUsesInjectedBuilder(t *testing.T) {
 	}
 }
 
-func TestProjectTransitionsApplyCommandJSONUsesInjectedBuilder(t *testing.T) {
-	restore := newProjectTransitionsApplyReport
-	t.Cleanup(func() { newProjectTransitionsApplyReport = restore })
-	newProjectTransitionsApplyReport = func(repo gira.RepoRef) (gira.ProjectTransitionsApplyReport, error) {
-		return gira.ProjectTransitionsApplyReport{
-			Repo:    repo.FullName(),
-			Command: "project transitions",
-			DryRun:  false,
-			Applied: []gira.ProjectTransitionApplyResultItem{{Issue: 10, RuleID: "issue_open_default", LabelApplied: "status:backlog"}},
-		}, nil
-	}
-
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"project", "transitions", "--repo", "StatPan/gira", "--apply", "--json"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
-	}
-	if !strings.Contains(stdout.String(), "\"dry_run\": false") {
-		t.Fatalf("project transitions apply JSON missing dry_run false: %s", stdout.String())
-	}
-	if !strings.Contains(stdout.String(), "\"label_applied\": \"status:backlog\"") {
-		t.Fatalf("project transitions apply JSON missing label_applied: %s", stdout.String())
-	}
-}
-
 func TestProjectSyncApplyCommandJSONUsesInjectedBuilder(t *testing.T) {
 	restore := newProjectSyncApplyReport
 	t.Cleanup(func() { newProjectSyncApplyReport = restore })

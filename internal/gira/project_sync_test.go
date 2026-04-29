@@ -158,6 +158,7 @@ func TestBuildProjectSyncReportDateValidationWarningsAndBlocks(t *testing.T) {
 				"Target date":        "DATE",
 			},
 			RoadmapItems: []ProjectRoadmapItem{
+				{IssueNumber: 41, IssueTitle: "Story OK", TypeLabel: "type:story", Roadmapable: true, StartDate: stringPtr("2026-05-01"), TargetDate: stringPtr("2026-05-03")},
 				{IssueNumber: 42, IssueTitle: "Story A", TypeLabel: "type:story", Roadmapable: true, StartDate: stringPtr("2026-05-01"), TargetDate: nil, MilestoneDueDate: stringPtr("2026-06-30")},
 				{IssueNumber: 51, IssueTitle: "Story B", TypeLabel: "type:story", Roadmapable: true, StartDate: stringPtr("2026-05-08"), TargetDate: stringPtr("2026-05-01")},
 			},
@@ -172,6 +173,15 @@ func TestBuildProjectSyncReportDateValidationWarningsAndBlocks(t *testing.T) {
 	}
 	if report.Counts.DateBlocks != 1 {
 		t.Fatalf("date blocks = %d, want 1", report.Counts.DateBlocks)
+	}
+	if len(report.DateValidation) != 3 {
+		t.Fatalf("date validations = %d, want 3", len(report.DateValidation))
+	}
+	if report.DateValidation[0].Status != "ok" || report.DateValidation[0].Reason != "date_validation_passed" {
+		t.Fatalf("first validation = %#v, want ok/date_validation_passed", report.DateValidation[0])
+	}
+	if report.DateValidation[1].Reason != "missing_required_field:target_date;fallback:milestone_due_date" {
+		t.Fatalf("missing_target_date reason = %q", report.DateValidation[1].Reason)
 	}
 	text := FormatProjectSyncPlan(report)
 	for _, want := range []string{
@@ -218,6 +228,44 @@ func TestBuildProjectSyncReportSkipsNonRoadmapableTasks(t *testing.T) {
 	text := FormatProjectSyncPlan(report)
 	if !strings.Contains(text, "skip issue #60: not_roadmapable (type:task requires a meaningful delivery checkpoint or release marker)") {
 		t.Fatalf("project sync text missing not_roadmapable skip:\n%s", text)
+	}
+}
+
+func TestBuildProjectSyncReportPhaseDueDateFallbackStatus(t *testing.T) {
+	report, err := BuildProjectSyncReport(
+		"StatPan/gira",
+		ProjectSyncSnapshot{
+			ProjectName: "Product OS",
+			FieldTypes: map[string]string{
+				"Status":             "SINGLE_SELECT",
+				"Priority":           "SINGLE_SELECT",
+				"Layer / workstream": "SINGLE_SELECT",
+				"Owner / agent":      "SINGLE_SELECT",
+				"Start date":         "DATE",
+				"Target date":        "DATE",
+			},
+			RoadmapItems: []ProjectRoadmapItem{
+				{IssueNumber: 70, IssueTitle: "Story no dates but milestone", TypeLabel: "type:story", Roadmapable: true, MilestoneDueDate: stringPtr("2026-07-01")},
+			},
+		},
+		projectSyncNowFixture,
+	)
+	if err != nil {
+		t.Fatalf("BuildProjectSyncReport returned error: %v", err)
+	}
+	if len(report.DateValidation) != 1 {
+		t.Fatalf("date validation len = %d, want 1", len(report.DateValidation))
+	}
+	v := report.DateValidation[0]
+	if v.Status != "phase_due_date_fallback" {
+		t.Fatalf("status = %q, want phase_due_date_fallback", v.Status)
+	}
+	if v.Reason != "missing_required_field:start_date,target_date;fallback:milestone_due_date" {
+		t.Fatalf("reason = %q", v.Reason)
+	}
+	text := FormatProjectSyncPlan(report)
+	if !strings.Contains(text, "warn issue #70: phase_due_date_fallback; milestone due date 2026-07-01 available as reporting fallback") {
+		t.Fatalf("project sync text missing phase_due_date_fallback:\n%s", text)
 	}
 }
 

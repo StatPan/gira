@@ -323,9 +323,12 @@ func buildProjectDateValidation(items []ProjectRoadmapItem) ([]ProjectDateValida
 				Title:    item.IssueTitle,
 				Status:   "missing_dates",
 				Severity: "warn",
+				Reason:   "missing_required_field:start_date,target_date",
 			}
 			if due != nil {
+				validation.Status = "phase_due_date_fallback"
 				validation.Fallback = &ProjectDateFallback{Source: "milestone_due_date", Value: *due}
+				validation.Reason = "missing_required_field:start_date,target_date;fallback:milestone_due_date"
 			}
 			validations = append(validations, validation)
 		case start == nil && target != nil:
@@ -335,6 +338,7 @@ func buildProjectDateValidation(items []ProjectRoadmapItem) ([]ProjectDateValida
 				Status:     "missing_start_date",
 				Severity:   "warn",
 				TargetDate: target,
+				Reason:     "missing_required_field:start_date",
 			})
 		case start != nil && target == nil:
 			validation := ProjectDateValidation{
@@ -343,14 +347,28 @@ func buildProjectDateValidation(items []ProjectRoadmapItem) ([]ProjectDateValida
 				Status:    "missing_target_date",
 				Severity:  "warn",
 				StartDate: start,
+				Reason:    "missing_required_field:target_date",
 			}
 			if due != nil {
 				validation.Fallback = &ProjectDateFallback{Source: "milestone_due_date", Value: *due}
+				validation.Reason = "missing_required_field:target_date;fallback:milestone_due_date"
 			}
 			validations = append(validations, validation)
 		default:
 			startDate, _ := time.Parse(time.DateOnly, *start)
 			targetDate, _ := time.Parse(time.DateOnly, *target)
+			if !targetDate.Before(startDate) {
+				validations = append(validations, ProjectDateValidation{
+					Issue:      item.IssueNumber,
+					Title:      item.IssueTitle,
+					Status:     "ok",
+					Severity:   "info",
+					StartDate:  start,
+					TargetDate: target,
+					Reason:     "date_validation_passed",
+				})
+				continue
+			}
 			if targetDate.Before(startDate) {
 				validations = append(validations, ProjectDateValidation{
 					Issue:      item.IssueNumber,
@@ -408,6 +426,10 @@ func FormatProjectSyncPlan(report ProjectSyncReport) string {
 				fmt.Fprintf(&b, "  warn issue #%d: missing_dates; milestone due date %s available as reporting fallback\n", validation.Issue, validation.Fallback.Value)
 			} else {
 				fmt.Fprintf(&b, "  warn issue #%d: missing_dates\n", validation.Issue)
+			}
+		case "phase_due_date_fallback":
+			if validation.Fallback != nil {
+				fmt.Fprintf(&b, "  warn issue #%d: phase_due_date_fallback; milestone due date %s available as reporting fallback\n", validation.Issue, validation.Fallback.Value)
 			}
 		}
 	}

@@ -734,14 +734,14 @@ func TestProjectSyncCommandJSONUsesInjectedBuilder(t *testing.T) {
 	}
 }
 
-func TestProjectTransitionsCommandRequiresDryRun(t *testing.T) {
+func TestProjectTransitionsCommandRequiresDryRunOrApply(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"project", "transitions", "--repo", "StatPan/gira"}, &stdout, &stderr)
 	if code == 0 {
 		t.Fatal("exit code = 0, want non-zero")
 	}
-	if !strings.Contains(stderr.String(), "--dry-run is required") {
-		t.Fatalf("stderr missing dry-run requirement:\n%s", stderr.String())
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required") {
+		t.Fatalf("stderr missing dry-run/apply requirement:\n%s", stderr.String())
 	}
 }
 
@@ -772,5 +772,30 @@ func TestProjectTransitionsCommandJSONUsesInjectedBuilder(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "\"dry_run\": true") {
 		t.Fatalf("project transitions JSON missing dry_run true: %s", stdout.String())
+	}
+}
+
+func TestProjectTransitionsApplyCommandJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newProjectTransitionsApplyReport
+	t.Cleanup(func() { newProjectTransitionsApplyReport = restore })
+	newProjectTransitionsApplyReport = func(repo gira.RepoRef) (gira.ProjectTransitionsApplyReport, error) {
+		return gira.ProjectTransitionsApplyReport{
+			Repo:    repo.FullName(),
+			Command: "project transitions",
+			DryRun:  false,
+			Applied: []gira.ProjectTransitionApplyResultItem{{Issue: 10, RuleID: "issue_open_default", LabelApplied: "status:backlog"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"project", "transitions", "--repo", "StatPan/gira", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"dry_run\": false") {
+		t.Fatalf("project transitions apply JSON missing dry_run false: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "\"label_applied\": \"status:backlog\"") {
+		t.Fatalf("project transitions apply JSON missing label_applied: %s", stdout.String())
 	}
 }

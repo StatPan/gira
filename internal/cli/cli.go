@@ -75,6 +75,7 @@ Usage:
   gira project capability --repo OWNER/REPO [--json]
   gira project sync --repo OWNER/REPO --dry-run [--json]
   gira project transitions --repo OWNER/REPO --dry-run [--json]
+  gira project transitions --repo OWNER/REPO --apply [--json]
 
 Commands:
   capability   Probe current token capabilities without applying any changes
@@ -122,9 +123,13 @@ var newProjectSyncReport = func(repo gira.RepoRef, dryRun bool) (gira.ProjectSyn
 
 var newProjectTransitionsReport = func(repo gira.RepoRef, dryRun bool) (gira.ProjectTransitionsReport, error) {
 	if !dryRun {
-		return gira.ProjectTransitionsReport{}, fmt.Errorf("--dry-run is required for project transitions in this slice")
+		return gira.ProjectTransitionsReport{}, fmt.Errorf("--dry-run is required for project transitions unless --apply is provided")
 	}
 	return gira.BuildProjectTransitionsReportForClient(gira.NewGHProjectTransitionsClient(repo, gira.ExecCommandRunner{}), time.Now())
+}
+
+var newProjectTransitionsApplyReport = func(repo gira.RepoRef) (gira.ProjectTransitionsApplyReport, error) {
+	return gira.ApplyProjectTransitionsForClient(gira.NewGHProjectTransitionsClient(repo, gira.ExecCommandRunner{}), gira.ExecCommandRunner{}, time.Now())
 }
 
 var newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
@@ -482,7 +487,8 @@ func runProjectTransitions(args []string, stdout io.Writer, stderr io.Writer) in
 	fs.SetOutput(io.Discard)
 
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
-	dryRun := fs.Bool("dry-run", false, "Required for this read-only slice")
+	dryRun := fs.Bool("dry-run", false, "Read-only plan mode")
+	applyMode := fs.Bool("apply", false, "Apply issue-level status label updates")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON summary")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -506,8 +512,8 @@ func runProjectTransitions(args []string, stdout io.Writer, stderr io.Writer) in
 		fmt.Fprint(stderr, projectHelp)
 		return 2
 	}
-	if !*dryRun {
-		fmt.Fprint(stderr, "--dry-run is required\n\n")
+	if (*dryRun && *applyMode) || (!*dryRun && !*applyMode) {
+		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required\n\n")
 		fmt.Fprint(stderr, projectHelp)
 		return 2
 	}
@@ -516,6 +522,30 @@ func runProjectTransitions(args []string, stdout io.Writer, stderr io.Writer) in
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
+	}
+
+	if *applyMode {
+		applyReport, err := newProjectTransitionsApplyReport(repo)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		if *jsonOutput {
+			output, err := json.MarshalIndent(applyReport, "", "  ")
+			if err != nil {
+				fmt.Fprintf(stderr, "encode project transitions apply JSON: %v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "%s\n", output)
+			return 0
+		}
+		text, err := json.MarshalIndent(applyReport, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode project transitions apply JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", text)
+		return 0
 	}
 
 	report, err := newProjectTransitionsReport(repo, *dryRun)

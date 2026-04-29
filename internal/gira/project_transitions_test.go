@@ -517,11 +517,11 @@ func TestClosedReleaseChecklistIssueDoesNotReopenFromUncheckedItems(t *testing.T
 	snapshot := ProjectTransitionSnapshot{
 		Issues: []ProjectTransitionIssue{
 			{
-				Number:  91,
-				Title:   "Release checklist remains incomplete after close",
-				State:   "closed",
-				Labels:  []string{"status:done", "release-checklist"},
-				Body:    "- [x] Draft release notes\n- [ ] Publish changelog\n- [x] Tag release",
+				Number: 91,
+				Title:  "Release checklist remains incomplete after close",
+				State:  "closed",
+				Labels: []string{"status:done", "release-checklist"},
+				Body:   "- [x] Draft release notes\n- [ ] Publish changelog\n- [x] Tag release",
 			},
 		},
 	}
@@ -541,11 +541,11 @@ func TestReleaseChecklistIssueDetectedFromLabelAlone(t *testing.T) {
 	snapshot := ProjectTransitionSnapshot{
 		Issues: []ProjectTransitionIssue{
 			{
-				Number:  92,
-				Title:   "Ship v1.2.3",
-				State:   "open",
-				Labels:  []string{"status:in-progress", "release-checklist"},
-				Body:    "- [x] Draft release notes\n- [x] Publish changelog\n- [x] Tag release",
+				Number: 92,
+				Title:  "Ship v1.2.3",
+				State:  "open",
+				Labels: []string{"status:in-progress", "release-checklist"},
+				Body:   "- [x] Draft release notes\n- [x] Publish changelog\n- [x] Tag release",
 			},
 		},
 	}
@@ -580,6 +580,55 @@ func TestProjectTransitionsReportNotesIssueLabelStatusInferenceOnly(t *testing.T
 	}
 	if !strings.Contains(strings.ToLower(apply.Reason), "managed status") {
 		t.Fatalf("unexpected reason: %q", apply.Reason)
+	}
+}
+
+type fakeTransitionsClient struct {
+	repo     RepoRef
+	snapshot ProjectTransitionSnapshot
+}
+
+func (f fakeTransitionsClient) Repo() RepoRef { return f.repo }
+
+func (f fakeTransitionsClient) Snapshot() (ProjectTransitionSnapshot, error) { return f.snapshot, nil }
+
+type fakeTransitionsRunner struct {
+	calls []string
+}
+
+func (r *fakeTransitionsRunner) Run(name string, args ...string) ([]byte, error) {
+	r.calls = append(r.calls, name+" "+strings.Join(args, " "))
+	return []byte("{}"), nil
+}
+
+func TestApplyProjectTransitionsForClientAppliesAndSkips(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	repo := ParseRepoRefMust("StatPan/gira")
+	client := fakeTransitionsClient{
+		repo: repo,
+		snapshot: ProjectTransitionSnapshot{
+			Issues: []ProjectTransitionIssue{
+				{Number: 100, Title: "No status", State: "open", Labels: []string{"type:task", "priority:p1", "agent:worker"}, Body: "ready body"},
+				{Number: 101, Title: "Already ready", State: "open", Labels: []string{"status:ready"}},
+			},
+		},
+	}
+	runner := &fakeTransitionsRunner{}
+	report, err := ApplyProjectTransitionsForClient(client, runner, now)
+	if err != nil {
+		t.Fatalf("ApplyProjectTransitionsForClient returned error: %v", err)
+	}
+	if len(report.Applied) != 1 {
+		t.Fatalf("applied = %d, want 1", len(report.Applied))
+	}
+	if report.Applied[0].Issue != 100 || report.Applied[0].LabelApplied != "status:backlog" {
+		t.Fatalf("unexpected applied item: %#v", report.Applied[0])
+	}
+	if len(report.Skipped) != 0 {
+		t.Fatalf("unexpected skipped items: %#v", report.Skipped)
+	}
+	if len(runner.calls) != 1 || !strings.Contains(runner.calls[0], "issues/100/labels") {
+		t.Fatalf("unexpected runner calls: %#v", runner.calls)
 	}
 }
 

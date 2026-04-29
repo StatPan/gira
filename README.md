@@ -39,11 +39,21 @@ Install the daily Go CLI from the module source:
 go install github.com/StatPan/gira/cmd/gira@latest
 ```
 
-The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. If the repository is private in your environment, configure Go private module access first, for example with `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication. After install, make sure your Go binary directory is on `PATH`:
+The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. If the repository is private in your environment, configure Go private module access first, for example with `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication.
+
+## Use it today (daily CLI path)
+
+From a fresh shell, make sure your Go bin directory is on `PATH`, then run Gira directly (no source checkout, no `uv run`):
 
 ```bash
+export PATH="$(go env GOPATH)/bin:$PATH"
 gira --help
+gira bootstrap --repo OWNER/REPO --template default --dry-run
+gira sync --repo OWNER/REPO --dry-run
+gira status --repo OWNER/REPO --json
 ```
+
+This is the canonical operator path for daily use.
 
 For local development from this checkout:
 

@@ -146,6 +146,70 @@ func VerifyAuditLedger(globPath string) AuditVerifyReport {
 	return report
 }
 
+func VerifyAuditLedgerForRepo(globPath string, repo RepoRef) AuditVerifyReport {
+	report := AuditVerifyReport{Valid: true}
+	files, err := filepath.Glob(globPath)
+	if err != nil || len(files) == 0 {
+		report.Valid = false
+		report.Failure = "no_audit_files_found"
+		return report
+	}
+	wantFile := fmt.Sprintf("%s_%s.jsonl", repo.Owner, repo.Name)
+	filtered := make([]string, 0, len(files))
+	for _, file := range files {
+		if filepath.Base(file) == wantFile {
+			filtered = append(filtered, file)
+		}
+	}
+	if len(filtered) == 0 {
+		report.Valid = false
+		report.Failure = "no_audit_files_found"
+		return report
+	}
+	sort.Strings(filtered)
+	report.Files = filtered
+	prevHash := ""
+	for _, file := range filtered {
+		fh, err := os.Open(file)
+		if err != nil {
+			return failAudit(report, file, 0, fmt.Sprintf("open_failed:%v", err))
+		}
+		scanner := bufio.NewScanner(fh)
+		line := 0
+		for scanner.Scan() {
+			line++
+			report.Records++
+			var rec AuditRecord
+			if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
+				fh.Close()
+				return failAudit(report, file, line, "malformed_json")
+			}
+			if err := validateAuditRecord(rec, false); err != nil {
+				fh.Close()
+				return failAudit(report, file, line, err.Error())
+			}
+			if rec.PrevHash != prevHash {
+				fh.Close()
+				return failAudit(report, file, line, "hash_chain_broken")
+			}
+			if rec.Hash != computeAuditHash(rec) {
+				fh.Close()
+				return failAudit(report, file, line, "hash_mismatch")
+			}
+			prevHash = rec.Hash
+		}
+		if err := scanner.Err(); err != nil {
+			fh.Close()
+			return failAudit(report, file, line, fmt.Sprintf("scan_failed:%v", err))
+		}
+		fh.Close()
+	}
+	if report.Records == 0 {
+		return failAudit(report, "", 0, "no_audit_records")
+	}
+	return report
+}
+
 func failAudit(report AuditVerifyReport, file string, line int, reason string) AuditVerifyReport {
 	report.Valid = false
 	report.Failure = reason

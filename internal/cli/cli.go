@@ -603,7 +603,12 @@ func runProjectTransitions(args []string, stdout io.Writer, stderr io.Writer) in
 			fmt.Fprintf(stdout, "%s\n", output)
 			return 0
 		}
-		fmt.Fprintln(stdout, "project transitions apply completed")
+		text, err := json.MarshalIndent(applyReport, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode project transitions apply JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", text)
 		return 0
 	}
 
@@ -786,11 +791,12 @@ func runAuditVerify(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, auditHelp)
 		return 2
 	}
-	if _, err := gira.ParseRepoRef(*repoValue); err != nil {
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	report := gira.VerifyAuditLedger(*ledgerPath)
+	report := gira.VerifyAuditLedgerForRepo(*ledgerPath, repo)
 	if *jsonOutput {
 		out, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {

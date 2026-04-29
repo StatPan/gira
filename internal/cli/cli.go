@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/StatPan/gira/internal/gira"
@@ -22,6 +24,7 @@ Commands:
   status      Show a compact read-only GitHub status summary
   export      Export dashboard artifacts from read-only GitHub data
   project     Inspect permission capability for Project OS lifecycle actions
+  audit       Verify audit ledgers for mutation integrity
 
 Flags:
   -h, --help  Show help
@@ -103,6 +106,21 @@ Flags:
   -h, --help          Show help
 `
 
+const auditHelp = `Audit utilities for append-only mutation ledger verification.
+
+Usage:
+  gira audit verify --repo OWNER/REPO --path .gira/audit/*.jsonl [--json]
+
+Commands:
+  verify       Validate JSONL schema and hash-chain integrity
+
+Flags:
+  --repo string  Target GitHub repo in OWNER/REPO format
+  --path string  Glob path to audit JSONL files (default ".gira/audit/*.jsonl")
+  --json         Emit stable JSON summary
+  -h, --help     Show help
+`
+
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
 	return gira.NewGHStatusClient(repo, gira.ExecCommandRunner{})
 }
@@ -170,6 +188,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runExport(args[1:], stdout, stderr)
 	case "project":
 		return runProject(args[1:], stdout, stderr)
+	case "audit":
+		return runAudit(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
@@ -396,6 +416,11 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "%v\n", err)
 			return 2
 		}
+		record := gira.NewAuditRecord("sync", "sha256:sync-plan", "metadata_sync:apply", repo.FullName(), "ok", "", "allowed", time.Now())
+		if err := appendAuditRecord(repo, record); err != nil {
+			fmt.Fprintf(stderr, "audit write failed: %v\n", err)
+			return 2
+		}
 		fmt.Fprintln(stdout, "sync complete")
 	}
 	return 0
@@ -474,6 +499,11 @@ func runProjectSync(args []string, stdout io.Writer, stderr io.Writer) int {
 		applyReport, err := newProjectSyncApplyReport(repo)
 		if err != nil {
 			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		record := gira.NewAuditRecord("project sync", "sha256:project-sync-policy", "project_status_field:update", repo.FullName(), "ok", "", "capability_gated", time.Now())
+		if err := appendAuditRecord(repo, record); err != nil {
+			fmt.Fprintf(stderr, "audit write failed: %v\n", err)
 			return 2
 		}
 		if *jsonOutput {
@@ -557,6 +587,11 @@ func runProjectTransitions(args []string, stdout io.Writer, stderr io.Writer) in
 		applyReport, err := newProjectTransitionsApplyReport(repo)
 		if err != nil {
 			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		record := gira.NewAuditRecord("project transitions", "sha256:project-transitions-policy", "issue_status_transition:apply", repo.FullName(), "ok", "", "rule_matrix", time.Now())
+		if err := appendAuditRecord(repo, record); err != nil {
+			fmt.Fprintf(stderr, "audit write failed: %v\n", err)
 			return 2
 		}
 		if *jsonOutput {
@@ -710,5 +745,72 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatStatusText(summary))
+	return 0
+}
+
+func appendAuditRecord(repo gira.RepoRef, record gira.AuditRecord) error {
+	path := fmt.Sprintf(".gira/audit/%s_%s.jsonl", repo.Owner, repo.Name)
+	if strings.HasSuffix(os.Args[0], ".test") {
+		path = filepath.Join(os.TempDir(), "gira-audit-test", fmt.Sprintf("%s_%s.jsonl", repo.Owner, repo.Name))
+	}
+	return gira.AppendAuditRecords(path, []gira.AuditRecord{record})
+}
+
+func runAudit(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, auditHelp)
+		return 0
+	}
+	if args[0] != "verify" {
+		fmt.Fprintf(stderr, "unknown audit command: %s\n\n", args[0])
+		fmt.Fprint(stderr, auditHelp)
+		return 2
+	}
+	return runAuditVerify(args[1:], stdout, stderr)
+}
+
+func runAuditVerify(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("audit verify", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ledgerPath := fs.String("path", ".gira/audit/*.jsonl", "Glob path to audit JSONL files")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON summary")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, auditHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, auditHelp)
+		return 0
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, auditHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report := gira.VerifyAuditLedgerForRepo(*ledgerPath, repo)
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode audit verify JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+	} else if report.Valid {
+		fmt.Fprintf(stdout, "audit verify: ok (%d records)\n", report.Records)
+	} else {
+		fmt.Fprintf(stdout, "audit verify: failed (%s)\n", report.Failure)
+	}
+	if !report.Valid {
+		return 1
+	}
 	return 0
 }

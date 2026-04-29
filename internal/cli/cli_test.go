@@ -799,3 +799,94 @@ func TestProjectSyncApplyCommandJSONUsesInjectedBuilder(t *testing.T) {
 		t.Fatalf("project sync apply JSON missing action: %s", stdout.String())
 	}
 }
+
+func TestAuditVerifyScopesToRepoInCLI(t *testing.T) {
+	dir := t.TempDir()
+	repoPath := filepath.Join(dir, "StatPan_gira.jsonl")
+	otherPath := filepath.Join(dir, "OtherOrg_other.jsonl")
+	if err := gira.AppendAuditRecords(repoPath, []gira.AuditRecord{gira.NewAuditRecord("sync", "sha256:a", "label:create", "issue#1", "ok", "", "allowed", time.Now())}); err != nil {
+		t.Fatalf("append repo audit: %v", err)
+	}
+	if err := gira.AppendAuditRecords(otherPath, []gira.AuditRecord{gira.NewAuditRecord("sync", "sha256:b", "label:create", "issue#2", "ok", "", "allowed", time.Now())}); err != nil {
+		t.Fatalf("append other audit: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"audit", "verify", "--repo", "StatPan/gira", "--path", filepath.Join(dir, "*.jsonl")}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "audit verify: ok (1 records)") {
+		t.Fatalf("unexpected stdout: %s", stdout.String())
+	}
+}
+
+func TestAuditVerifyFailsForMismatchedRepoPath(t *testing.T) {
+	dir := t.TempDir()
+	otherPath := filepath.Join(dir, "OtherOrg_other.jsonl")
+	if err := gira.AppendAuditRecords(otherPath, []gira.AuditRecord{gira.NewAuditRecord("sync", "sha256:b", "label:create", "issue#2", "ok", "", "allowed", time.Now())}); err != nil {
+		t.Fatalf("append other audit: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"audit", "verify", "--repo", "StatPan/gira", "--path", otherPath}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stdout: %s stderr: %s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "audit verify: failed (no_audit_files_found)") {
+		t.Fatalf("unexpected stdout: %s", stdout.String())
+	}
+}
+
+func TestApplyPathsFailClosedWhenAuditWriteFails(t *testing.T) {
+	restoreSyncClient := newSyncClient
+	restoreProjectSync := newProjectSyncApplyReport
+	restoreTransitions := newProjectTransitionsApplyReport
+	t.Cleanup(func() {
+		newSyncClient = restoreSyncClient
+		newProjectSyncApplyReport = restoreProjectSync
+		newProjectTransitionsApplyReport = restoreTransitions
+	})
+
+	blockAuditWrites(t)
+
+	syncClient := &cliFakeSyncClient{repo: mustCLIRepo(t, "StatPan/gira")}
+	newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
+		syncClient.repo = repo
+		return syncClient
+	}
+	newProjectSyncApplyReport = func(repo gira.RepoRef) (gira.ProjectSyncApplyReport, error) {
+		return gira.ProjectSyncApplyReport{Repo: repo.FullName(), Command: "project sync", DryRun: false}, nil
+	}
+	newProjectTransitionsApplyReport = func(repo gira.RepoRef) (gira.ProjectTransitionsApplyReport, error) {
+		return gira.ProjectTransitionsApplyReport{Repo: repo.FullName(), Command: "project transitions", DryRun: false}, nil
+	}
+
+	cases := [][]string{
+		{"sync", "--repo", "StatPan/gira"},
+		{"project", "sync", "--repo", "StatPan/gira", "--apply"},
+		{"project", "transitions", "--repo", "StatPan/gira", "--apply"},
+	}
+	for _, args := range cases {
+		var stdout, stderr bytes.Buffer
+		code := Run(args, &stdout, &stderr)
+		if code == 0 {
+			t.Fatalf("expected non-zero for %v", args)
+		}
+		if !strings.Contains(stderr.String(), "audit write failed") {
+			t.Fatalf("expected audit failure for %v; stderr: %s", args, stderr.String())
+		}
+	}
+}
+
+func blockAuditWrites(t *testing.T) {
+	t.Helper()
+	base := filepath.Join(os.TempDir(), "gira-audit-test")
+	_ = os.RemoveAll(base)
+	if err := os.WriteFile(base, []byte("block"), 0o644); err != nil {
+		t.Fatalf("prepare audit block file: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Remove(base)
+	})
+}

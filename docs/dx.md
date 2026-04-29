@@ -88,6 +88,16 @@ The Go CLI can be installed for daily use from source:
 go install github.com/StatPan/gira/cmd/gira@latest
 ```
 
+Canonical daily operator path (fresh shell, outside source checkout):
+
+```bash
+export PATH="$(go env GOPATH)/bin:$PATH"
+gira --help
+gira bootstrap --repo OWNER/REPO --template default --dry-run
+gira sync --repo OWNER/REPO --dry-run
+gira status --repo OWNER/REPO --json
+```
+
 The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. Private repository installs need Go private module access, such as `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication. The Go bootstrap path embeds the default template so output and local installs are independent of the caller's working directory. Go `sync` shells out through `gh` to create or update only Gira-managed labels, milestones, and bootstrap issues. Go `status` is read-only and shells out through `gh api` to match the Python MVP JSON contract closely enough for worker automation. The Python CLI remains the reference and fallback implementation until final cutover.
 
 Tagged Go releases are built by `.github/workflows/release.yml`. Maintainers publish one by tagging `main` with a `v*` tag and pushing the tag; the workflow runs Go tests, builds Linux/macOS/Windows archives, and attaches them to the GitHub release.

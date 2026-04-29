@@ -395,7 +395,7 @@ func BuildSyncPlan(client SyncClient, opts SyncPlanOptions) (SyncPlan, error) {
 		return SyncPlan{}, err
 	}
 
-	bootstrapPlan := make([]BootstrapIssuePlan, 0, len(DesiredBootstrapIssues))
+	var bootstrapPlan []BootstrapIssuePlan
 	if opts.EnableBootstrapIssues {
 		issues, err := client.ListBootstrapIssues()
 		if err != nil {
@@ -403,6 +403,7 @@ func BuildSyncPlan(client SyncClient, opts SyncPlanOptions) (SyncPlan, error) {
 		}
 		bootstrapPlan = PlanBootstrapIssues(DesiredBootstrapIssues, issues)
 	} else {
+		bootstrapPlan = make([]BootstrapIssuePlan, 0, len(DesiredBootstrapIssues))
 		for _, issue := range DesiredBootstrapIssues {
 			bootstrapPlan = append(bootstrapPlan, BootstrapIssuePlan{Action: PlanSkip, Desired: issue})
 		}

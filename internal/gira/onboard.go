@@ -85,11 +85,7 @@ func BuildOnboardVerifyReport(repo RepoRef, stage OnboardStage, runner CommandRu
 	}
 
 	ghCheck := commandCheck(runner, repo)
-	repoView, repoCheck := repoAccessCheck(runner, repo)
-	defaultBranch := ""
-	if repoView.DefaultBranchRef != nil {
-		defaultBranch = repoView.DefaultBranchRef.Name
-	}
+	_, repoCheck := repoAccessCheck(runner, repo)
 
 	stageReports := make([]OnboardStageReport, 0, len(onboardStageOrder))
 	for _, current := range onboardingStagesUpTo(stage) {
@@ -99,14 +95,10 @@ func BuildOnboardVerifyReport(repo RepoRef, stage OnboardStage, runner CommandRu
 			stageReport.Checks = append(stageReport.Checks, ghCheck, repoCheck)
 		case OnboardStageBootstrap:
 			stageReport.Checks = append(stageReport.Checks,
-				contentCheck(runner, repo, defaultBranch, "AGENTS.md", "bootstrap_agents_file", "bootstrap AGENTS instruction file is committed"),
-				contentCheck(runner, repo, defaultBranch, ".github/PULL_REQUEST_TEMPLATE.md", "bootstrap_pr_template", "bootstrap PR template is committed"),
-				contentCheck(runner, repo, defaultBranch, "docs/runbooks/local-dev.md", "bootstrap_local_runbook", "local development runbook exists"),
-				contentCheck(runner, repo, defaultBranch, "tasks/sprint-current.md", "bootstrap_sprint_scratchpad", "current sprint scratchpad exists"),
+				bootstrapObjectsReadinessCheck(repo, runner),
 			)
 		case OnboardStageFirstSprint:
 			stageReport.Checks = append(stageReport.Checks,
-				metadataReadinessCheck(repo, runner),
 				openIssueCheck(repo, runner, checkedAt),
 			)
 		case OnboardStageSteadyState:
@@ -237,35 +229,36 @@ func contentCheck(runner CommandRunner, repo RepoRef, branch string, path string
 	}
 }
 
-func metadataReadinessCheck(repo RepoRef, runner CommandRunner) OnboardCheck {
-	plan, err := BuildSyncPlan(NewGHSyncClient(repo, runner), SyncPlanOptions{})
+func bootstrapObjectsReadinessCheck(repo RepoRef, runner CommandRunner) OnboardCheck {
+	plan, err := BuildSyncPlan(NewGHSyncClient(repo, runner), SyncPlanOptions{EnableBootstrapIssues: true})
 	if err != nil {
 		return OnboardCheck{
-			ID:          "policy_metadata_ready",
-			Description: "policy/bootstrap metadata is converged",
+			ID:          "bootstrap_operating_objects_ready",
+			Description: "bootstrap operating objects are converged (labels, milestones, bootstrap issues)",
 			Status:      OnboardCheckFail,
 			Detail:      err.Error(),
-			Remediation: fmt.Sprintf("run `gira sync --repo %s --dry-run`, then apply the required metadata sync", repo.FullName()),
+			Remediation: fmt.Sprintf("run `gira sync --repo %s --bootstrap-issues --dry-run`, then apply the required metadata/object sync", repo.FullName()),
 		}
 	}
 	labelCreates := countLabelActions(plan.Labels, PlanCreate)
 	labelUpdates := countLabelActions(plan.Labels, PlanUpdate)
 	milestoneCreates := countMilestoneActions(plan.Milestones, PlanCreate)
 	milestoneUpdates := countMilestoneActions(plan.Milestones, PlanUpdate)
-	if labelCreates+labelUpdates+milestoneCreates+milestoneUpdates > 0 {
+	bootstrapIssueCreates := countBootstrapIssueActions(plan.BootstrapIssues, PlanCreate)
+	if labelCreates+labelUpdates+milestoneCreates+milestoneUpdates+bootstrapIssueCreates > 0 {
 		return OnboardCheck{
-			ID:          "policy_metadata_ready",
-			Description: "policy/bootstrap metadata is converged",
+			ID:          "bootstrap_operating_objects_ready",
+			Description: "bootstrap operating objects are converged (labels, milestones, bootstrap issues)",
 			Status:      OnboardCheckFail,
-			Detail:      fmt.Sprintf("labels create=%d update=%d; milestones create=%d update=%d", labelCreates, labelUpdates, milestoneCreates, milestoneUpdates),
-			Remediation: fmt.Sprintf("run `gira sync --repo %s --dry-run` and then `gira sync --repo %s` until drift is zero", repo.FullName(), repo.FullName()),
+			Detail:      fmt.Sprintf("labels create=%d update=%d; milestones create=%d update=%d; bootstrap issues create=%d", labelCreates, labelUpdates, milestoneCreates, milestoneUpdates, bootstrapIssueCreates),
+			Remediation: fmt.Sprintf("run `gira sync --repo %s --bootstrap-issues --dry-run` and then `gira sync --repo %s --bootstrap-issues` until drift is zero", repo.FullName(), repo.FullName()),
 		}
 	}
 	return OnboardCheck{
-		ID:          "policy_metadata_ready",
-		Description: "policy/bootstrap metadata is converged",
+		ID:          "bootstrap_operating_objects_ready",
+		Description: "bootstrap operating objects are converged (labels, milestones, bootstrap issues)",
 		Status:      OnboardCheckPass,
-		Detail:      "labels and milestones already match the default Gira contract",
+		Detail:      "labels, milestones, and bootstrap issues already match the default Gira contract",
 	}
 }
 

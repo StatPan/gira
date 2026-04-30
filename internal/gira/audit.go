@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -69,21 +68,17 @@ func AppendAuditRecords(path string, records []AuditRecord) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	lockFile, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	unlock, err := acquireAuditLock(path)
 	if err != nil {
 		return err
 	}
-	defer lockFile.Close()
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
-		return err
-	}
-	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+	defer unlock()
 
 	prevHash, err := lastAuditHash(path)
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
@@ -349,4 +344,21 @@ func writeLastAuditHash(path, hash string) error {
 		return nil
 	}
 	return os.WriteFile(path+".lasthash", []byte(hash+"\n"), 0o644)
+}
+
+func acquireAuditLock(path string) (func(), error) {
+	lockPath := path + ".lock"
+	for i := 0; i < 50; i++ {
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err == nil {
+			_ = f.Close()
+			return func() { _ = os.Remove(lockPath) }, nil
+		}
+		if os.IsExist(err) {
+			time.Sleep(20 * time.Millisecond)
+			continue
+		}
+		return nil, err
+	}
+	return nil, fmt.Errorf("audit_lock_timeout")
 }

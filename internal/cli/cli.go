@@ -25,6 +25,7 @@ Commands:
   export      Export dashboard artifacts from read-only GitHub data
   project     Inspect permission capability for Project OS lifecycle actions
   audit       Verify audit ledgers for mutation integrity
+  worker      Manage worker claim/handoff/release state for issues
   guardrails  Audit and apply branch protection/ruleset policy
 
 Flags:
@@ -138,6 +139,14 @@ Flags:
   -h, --help             Show help
 `
 
+const workerHelp = `Worker coordination commands for issue ownership and handoff payloads.
+
+Usage:
+  gira worker claim --repo OWNER/REPO --issue N --worker NAME [--lease-minutes 30]
+  gira worker handoff --repo OWNER/REPO --issue N --goal TEXT --context TEXT --acceptance "a;b" --verify "cmd1;cmd2" --rollback TEXT
+  gira worker release --repo OWNER/REPO --issue N --worker NAME
+`
+
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
 	return gira.NewGHStatusClient(repo, gira.ExecCommandRunner{})
 }
@@ -224,6 +233,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runProject(args[1:], stdout, stderr)
 	case "audit":
 		return runAudit(args[1:], stdout, stderr)
+	case "worker":
+		return runWorker(args[1:], stdout, stderr)
 	case "guardrails":
 		return runGuardrails(args[1:], stdout, stderr)
 	default:
@@ -845,6 +856,144 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	fmt.Fprint(stdout, gira.FormatStatusText(summary))
 	return 0
+}
+
+func runWorker(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, workerHelp)
+		return 0
+	}
+	switch args[0] {
+	case "claim":
+		return runWorkerClaim(args[1:], stdout, stderr)
+	case "handoff":
+		return runWorkerHandoff(args[1:], stdout, stderr)
+	case "release":
+		return runWorkerRelease(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown worker command: %s\n\n", args[0])
+		fmt.Fprint(stderr, workerHelp)
+		return 2
+	}
+}
+
+func runWorkerClaim(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("worker claim", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo")
+	issue := fs.Int("issue", 0, "Issue number")
+	worker := fs.String("worker", "", "Worker name")
+	leaseMinutes := fs.Int("lease-minutes", 30, "Lease TTL in minutes")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workerHelp)
+		return 2
+	}
+	if *repoValue == "" || *issue <= 0 || strings.TrimSpace(*worker) == "" {
+		fmt.Fprint(stderr, "--repo, --issue, --worker are required\n\n")
+		fmt.Fprint(stderr, workerHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	claim := gira.WorkerClaim{Repo: repo.FullName(), IssueNumber: *issue, Worker: *worker, LeaseUntilUTC: time.Now().UTC().Add(time.Duration(*leaseMinutes) * time.Minute), Version: gira.WorkerHandoffSchemaVersion}
+	path := gira.WorkerStatePath(repo, *issue)
+	if err := gira.ClaimWorkerLease(path, claim, time.Now().UTC()); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	record := gira.NewAuditRecord("worker claim", "sha256:worker-state", "worker_claim", fmt.Sprintf("%s#%d", repo.FullName(), *issue), "ok", "", "allowed", time.Now())
+	if err := appendAuditRecord(repo, record); err != nil {
+		fmt.Fprintf(stderr, "audit write failed: %v\n", err)
+		return 2
+	}
+	fmt.Fprintln(stdout, "worker claim: ok")
+	return 0
+}
+
+func runWorkerHandoff(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("worker handoff", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo")
+	issue := fs.Int("issue", 0, "Issue number")
+	goal := fs.String("goal", "", "Goal")
+	context := fs.String("context", "", "Context")
+	acceptance := fs.String("acceptance", "", "Semicolon-separated acceptance criteria")
+	verify := fs.String("verify", "", "Semicolon-separated verification commands")
+	rollback := fs.String("rollback", "", "Rollback notes")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workerHelp)
+		return 2
+	}
+	if *repoValue == "" || *issue <= 0 {
+		fmt.Fprint(stderr, "--repo and --issue are required\n\n")
+		fmt.Fprint(stderr, workerHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	payload := gira.WorkerHandoffPayload{SchemaVersion: gira.WorkerHandoffSchemaVersion, Goal: *goal, Context: *context, AcceptanceCriteria: splitList(*acceptance), VerificationCommands: splitList(*verify), RollbackNotes: *rollback}
+	path := gira.WorkerStatePath(repo, *issue)
+	if err := gira.WriteWorkerHandoff(path, payload); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "worker handoff: ok")
+	return 0
+}
+
+func runWorkerRelease(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("worker release", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo")
+	issue := fs.Int("issue", 0, "Issue number")
+	worker := fs.String("worker", "", "Worker name")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workerHelp)
+		return 2
+	}
+	if *repoValue == "" || *issue <= 0 || strings.TrimSpace(*worker) == "" {
+		fmt.Fprint(stderr, "--repo, --issue, --worker are required\n\n")
+		fmt.Fprint(stderr, workerHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	path := gira.WorkerStatePath(repo, *issue)
+	if err := gira.ReleaseWorkerLease(path, *worker); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	record := gira.NewAuditRecord("worker release", "sha256:worker-state", "worker_release", fmt.Sprintf("%s#%d", repo.FullName(), *issue), "ok", "", "allowed", time.Now())
+	if err := appendAuditRecord(repo, record); err != nil {
+		fmt.Fprintf(stderr, "audit write failed: %v\n", err)
+		return 2
+	}
+	fmt.Fprintln(stdout, "worker release: ok")
+	return 0
+}
+
+func splitList(value string) []string {
+	parts := strings.Split(value, ";")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func appendAuditRecord(repo gira.RepoRef, record gira.AuditRecord) error {

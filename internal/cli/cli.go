@@ -939,7 +939,7 @@ func runWorkerHandoff(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	payload := gira.WorkerHandoffPayload{SchemaVersion: gira.WorkerHandoffSchemaVersion, Goal: *goal, Context: *context, AcceptanceCriteria: splitList(*acceptance), VerificationCommand: splitList(*verify), RollbackNotes: *rollback}
+	payload := gira.WorkerHandoffPayload{SchemaVersion: gira.WorkerHandoffSchemaVersion, Goal: *goal, Context: *context, AcceptanceCriteria: splitList(*acceptance), VerificationCommands: splitList(*verify), RollbackNotes: *rollback}
 	path := gira.WorkerStatePath(repo, *issue)
 	if err := gira.WriteWorkerHandoff(path, payload); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)

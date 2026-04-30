@@ -11,7 +11,7 @@ func TestValidateWorkerHandoffPayload(t *testing.T) {
 		Goal:                "Implement worker claim protocol",
 		Context:             "Issue #72",
 		AcceptanceCriteria:  []string{"claims are exclusive"},
-		VerificationCommand: []string{"go test ./internal/gira"},
+		VerificationCommands: []string{"go test ./internal/gira"},
 		RollbackNotes:       "revert worker state files",
 	}
 	if err := ValidateWorkerHandoffPayload(payload); err != nil {

@@ -35,7 +35,7 @@ func TestWorkerHandoffRequiresPayloadFields(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("expected non-zero for invalid payload")
 	}
-	if !strings.Contains(stderr.String(), "missing_goal") {
-		t.Fatalf("expected missing_goal error, got: %s", stderr.String())
+	if !strings.Contains(stderr.String(), "missing goal") {
+		t.Fatalf("expected missing goal error, got: %s", stderr.String())
 	}
 }

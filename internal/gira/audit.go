@@ -68,6 +68,12 @@ func AppendAuditRecords(path string, records []AuditRecord) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	unlock, err := acquireAuditLock(path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	prevHash, err := lastAuditHash(path)
 	if err != nil {
 		return err
@@ -91,6 +97,9 @@ func AppendAuditRecords(path string, records []AuditRecord) error {
 		}
 		prevHash = rec.Hash
 	}
+	if err := writeLastAuditHash(path, prevHash); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -106,6 +115,7 @@ func VerifyAuditLedger(globPath string) AuditVerifyReport {
 	report.Files = files
 	prevHash := ""
 	for _, file := range files {
+		prevHash = ""
 		fh, err := os.Open(file)
 		if err != nil {
 			return failAudit(report, file, 0, fmt.Sprintf("open_failed:%v", err))
@@ -170,6 +180,7 @@ func VerifyAuditLedgerForRepo(globPath string, repo RepoRef) AuditVerifyReport {
 	report.Files = filtered
 	prevHash := ""
 	for _, file := range filtered {
+		prevHash = ""
 		fh, err := os.Open(file)
 		if err != nil {
 			return failAudit(report, file, 0, fmt.Sprintf("open_failed:%v", err))
@@ -248,12 +259,43 @@ func validateAuditRecord(rec AuditRecord, writing bool) error {
 }
 
 func computeAuditHash(rec AuditRecord) string {
-	base := rec.SchemaVersion + "|" + rec.TS + "|" + rec.Actor + "|" + rec.Command + "|" + rec.PolicyHash + "|" + rec.Action + "|" + rec.Target + "|" + rec.Result + "|" + rec.Reason + "|" + rec.Permission + "|" + rec.PrevHash
-	sum := sha256.Sum256([]byte(base))
+	payload := struct {
+		SchemaVersion string `json:"schema_version"`
+		TS            string `json:"ts"`
+		Actor         string `json:"actor"`
+		Command       string `json:"command"`
+		PolicyHash    string `json:"policy_hash"`
+		Action        string `json:"action"`
+		Target        string `json:"target"`
+		Result        string `json:"result"`
+		Reason        string `json:"reason,omitempty"`
+		Permission    string `json:"permission_outcome,omitempty"`
+		PrevHash      string `json:"prev_hash,omitempty"`
+	}{
+		SchemaVersion: rec.SchemaVersion,
+		TS:            rec.TS,
+		Actor:         rec.Actor,
+		Command:       rec.Command,
+		PolicyHash:    rec.PolicyHash,
+		Action:        rec.Action,
+		Target:        rec.Target,
+		Result:        rec.Result,
+		Reason:        rec.Reason,
+		Permission:    rec.Permission,
+		PrevHash:      rec.PrevHash,
+	}
+	base, _ := json.Marshal(payload)
+	sum := sha256.Sum256(base)
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 func lastAuditHash(path string) (string, error) {
+	if v, ok, err := readLastAuditHash(path); err != nil {
+		return "", err
+	} else if ok {
+		return v, nil
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -274,5 +316,49 @@ func lastAuditHash(path string) (string, error) {
 	if err := s.Err(); err != nil {
 		return "", err
 	}
+	if last != "" {
+		if err := writeLastAuditHash(path, last); err != nil {
+			return "", err
+		}
+	}
 	return last, nil
+}
+
+func readLastAuditHash(path string) (string, bool, error) {
+	b, err := os.ReadFile(path + ".lasthash")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	v := strings.TrimSpace(string(b))
+	if v == "" {
+		return "", false, nil
+	}
+	return v, true, nil
+}
+
+func writeLastAuditHash(path, hash string) error {
+	if strings.TrimSpace(hash) == "" {
+		return nil
+	}
+	return os.WriteFile(path+".lasthash", []byte(hash+"\n"), 0o644)
+}
+
+func acquireAuditLock(path string) (func(), error) {
+	lockPath := path + ".lock"
+	for i := 0; i < 50; i++ {
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err == nil {
+			_ = f.Close()
+			return func() { _ = os.Remove(lockPath) }, nil
+		}
+		if os.IsExist(err) {
+			time.Sleep(20 * time.Millisecond)
+			continue
+		}
+		return nil, err
+	}
+	return nil, fmt.Errorf("audit_lock_timeout")
 }

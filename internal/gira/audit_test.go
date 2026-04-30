@@ -3,6 +3,7 @@ package gira
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -86,6 +87,42 @@ func TestAuditRejectsMissingRequiredField(t *testing.T) {
 	rec.Actor = ""
 	if err := validateAuditRecord(rec, true); err == nil {
 		t.Fatalf("expected validation error")
+	}
+}
+
+func TestVerifyAuditLedgerResetsChainPerFile(t *testing.T) {
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "a.jsonl")
+	pathB := filepath.Join(dir, "b.jsonl")
+
+	if err := AppendAuditRecords(pathA, []AuditRecord{
+		NewAuditRecord("sync", "sha256:abc", "label:create", "issue#1", "ok", "", "allowed", time.Now()),
+	}); err != nil {
+		t.Fatalf("append A: %v", err)
+	}
+	if err := AppendAuditRecords(pathB, []AuditRecord{
+		NewAuditRecord("sync", "sha256:abc", "label:create", "issue#2", "ok", "", "allowed", time.Now().Add(time.Second)),
+	}); err != nil {
+		t.Fatalf("append B: %v", err)
+	}
+
+	report := VerifyAuditLedger(filepath.Join(dir, "*.jsonl"))
+	if !report.Valid {
+		t.Fatalf("expected valid report for multi-file ledgers, got %+v", report)
+	}
+}
+
+func TestComputeAuditHashNoDelimiterCollision(t *testing.T) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	recA := AuditRecord{SchemaVersion: AuditSchemaVersion, TS: now, Actor: "a|b", Command: "c", PolicyHash: "sha256:abc", Action: "d", Target: "t", Result: "ok"}
+	recB := AuditRecord{SchemaVersion: AuditSchemaVersion, TS: now, Actor: "a", Command: "b|c", PolicyHash: "sha256:abc", Action: "d", Target: "t", Result: "ok"}
+	hA := computeAuditHash(recA)
+	hB := computeAuditHash(recB)
+	if hA == hB {
+		t.Fatalf("unexpected hash collision for delimiter-shaped inputs: %s", hA)
+	}
+	if !strings.HasPrefix(hA, "sha256:") || !strings.HasPrefix(hB, "sha256:") {
+		t.Fatalf("unexpected hash prefix: A=%s B=%s", hA, hB)
 	}
 }
 

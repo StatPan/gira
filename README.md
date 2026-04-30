@@ -16,7 +16,7 @@ The Python MVP currently owns the full CLI-first workflow:
 - `gira sync --repo OWNER/REPO --bootstrap-issues`            # Gira self-bootstrap only
 - `gira status --repo OWNER/REPO`
 
-The Go CLI is being introduced in small slices as the long-term product CLI. The current Go path supports bootstrap dry-run/local install, GitHub metadata sync, and status:
+The Go CLI is being introduced in small slices as the long-term product CLI. The current Go path supports bootstrap dry-run/local install, GitHub metadata sync, status, and onboarding verification:
 
 ```bash
 go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
@@ -27,6 +27,8 @@ go run ./cmd/gira sync --repo OWNER/REPO
 go run ./cmd/gira sync --repo OWNER/REPO --bootstrap-issues            # Gira self-bootstrap only
 go run ./cmd/gira status --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO --json
+go run ./cmd/gira onboard verify --repo OWNER/REPO --stage init --json
+go run ./cmd/gira onboard verify --repo OWNER/REPO --stage steady-state --json
 ```
 
 Python remains the reference and fallback implementation until final cutover. Do not remove it while Go parity is still being completed.
@@ -50,6 +52,8 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 gira --help
 gira bootstrap --repo OWNER/REPO --template default --dry-run
 gira sync --repo OWNER/REPO --dry-run
+gira onboard verify --repo OWNER/REPO --stage init --json
+gira onboard verify --repo OWNER/REPO --stage steady-state --json
 gira status --repo OWNER/REPO --json
 ```
 

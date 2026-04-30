@@ -54,7 +54,14 @@ The first ten minutes after `gira bootstrap` should answer four questions: what 
    gira status --repo OWNER/REPO --json
    ```
 
-After bootstrap, the operator should see a short install summary and use `gira sync --dry-run` as the next-step hint. After sync, the operator should use `gira status` to pick the next ready issue.
+6. Verify go/no-go readiness before first daily use:
+
+   ```bash
+   gira onboard verify --repo OWNER/REPO --stage init --json
+   gira onboard verify --repo OWNER/REPO --stage steady-state --json
+   ```
+
+After bootstrap, the operator should see a short install summary and use `gira sync --dry-run` as the next-step hint. After sync, the operator should use `gira status` to pick the next ready issue. `gira onboard verify` should provide the explicit go/no-go verdict and remediation checklist before the team treats the repo as daily-operable.
 
 ## Command Taxonomy
 
@@ -64,7 +71,9 @@ After bootstrap, the operator should see a short install summary and use `gira s
 
 `status` reads GitHub state and summarizes it. It owns compact human reporting and stable JSON for automation. It must remain read-only.
 
-This taxonomy keeps a clean recovery model: rerun `bootstrap` for local files, rerun `sync` for GitHub metadata, rerun `status` to decide what to do next.
+`onboard verify` is read-only and composes the other recovery steps into a staged go/no-go verdict. It owns prerequisite checks, committed bootstrap artifact checks, metadata convergence checks, and sample daily-run validation.
+
+This taxonomy keeps a clean recovery model: rerun `bootstrap` for local files, rerun `sync` for GitHub metadata, rerun `status` to decide what to do next, and rerun `onboard verify` to confirm the repo is truly ready for daily operation.
 
 ## Go CLI Development Path
 
@@ -80,6 +89,8 @@ go run ./cmd/gira sync --repo OWNER/REPO --dry-run
 go run ./cmd/gira sync --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO --json
+go run ./cmd/gira onboard verify --repo OWNER/REPO --stage init --json
+go run ./cmd/gira onboard verify --repo OWNER/REPO --stage steady-state --json
 ```
 
 The Go CLI can be installed for daily use from source:

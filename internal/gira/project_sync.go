@@ -314,10 +314,20 @@ func BuildProjectSyncApplyReport(capability ProjectCapabilityReport) ProjectSync
 		report.Applied = append(report.Applied, ProjectSyncApplyAction{Action: action, Required: required, Result: result})
 	}
 	appendDenied := func(action, required string) {
+		state := capability.Capabilities[required]
+		reason := "permission denied"
+		switch state {
+		case ProjectCapabilityDeniedScope:
+			reason = "token scope or repository permission is insufficient"
+		case ProjectCapabilityDeniedAuth:
+			reason = "no active github.com authentication found"
+		case ProjectCapabilityUnsupported:
+			reason = "capability probe unsupported"
+		}
 		report.Skipped = append(report.Skipped, ProjectSyncSkippedAction{
 			Action:   action,
 			Required: required,
-			Reason:   "permission denied: " + action + " requires " + required,
+			Reason:   reason,
 		})
 		report.BlockedCount++
 	}
@@ -328,10 +338,16 @@ func BuildProjectSyncApplyReport(capability ProjectCapabilityReport) ProjectSync
 		appendDenied("date_validation_report", "projectsv2:read")
 	}
 
-	if capability.Capabilities["projectsv2:write"] == ProjectCapabilityAllowed {
-		appendAction("project_status_field:update", "projectsv2:write", "ok")
-	} else {
-		appendDenied("project_status_field:update", "projectsv2:write")
+	for _, action := range []string{
+		"project_lifecycle_status:update",
+		"project_status_field:update",
+		"project_date_fields:update",
+	} {
+		if capability.Capabilities["projectsv2:write"] == ProjectCapabilityAllowed {
+			appendAction(action, "projectsv2:write", "ok")
+		} else {
+			appendDenied(action, "projectsv2:write")
+		}
 	}
 
 	if capability.Capabilities["issues:write"] == ProjectCapabilityAllowed {

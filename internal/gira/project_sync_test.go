@@ -309,16 +309,21 @@ func TestBuildProjectSyncApplyReportCapabilityGating(t *testing.T) {
 	if report.DryRun {
 		t.Fatal("expected dry_run=false for apply report")
 	}
-	if report.BlockedCount != 1 {
-		t.Fatalf("blocked_count=%d, want 1", report.BlockedCount)
+	if report.BlockedCount != 3 {
+		t.Fatalf("blocked_count=%d, want 3", report.BlockedCount)
 	}
 	if len(report.Applied) != 2 {
 		t.Fatalf("applied=%d, want 2", len(report.Applied))
 	}
-	if len(report.Skipped) != 1 {
-		t.Fatalf("skipped=%d, want 1", len(report.Skipped))
+	if len(report.Skipped) != 3 {
+		t.Fatalf("skipped=%d, want 3", len(report.Skipped))
 	}
-	if report.Skipped[0].Action != "project_status_field:update" {
-		t.Fatalf("unexpected skipped action: %#v", report.Skipped[0])
+	for i, action := range []string{"project_lifecycle_status:update", "project_status_field:update", "project_date_fields:update"} {
+		if report.Skipped[i].Action != action {
+			t.Fatalf("skipped[%d].action=%q, want %q", i, report.Skipped[i].Action, action)
+		}
+		if report.Skipped[i].Reason != "token scope or repository permission is insufficient" {
+			t.Fatalf("skipped[%d].reason=%q", i, report.Skipped[i].Reason)
+		}
 	}
 }

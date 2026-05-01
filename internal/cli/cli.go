@@ -34,6 +34,9 @@ Commands:
   triage      Backlog triage queue and policy apply helpers
   sprint      Sprint iteration planning/start/close workflow
   graph       Work graph validation (parent/depends_on/blocks)
+  review      Review routing queue with stale-review detection
+  merge       Policy-checked merge queue (dry-run/apply)
+  release     Release readiness gate report
 
 Flags:
   -h, --help  Show help
@@ -202,6 +205,24 @@ Usage:
   gira graph validate --repo OWNER/REPO [--json]
 `
 
+const reviewHelp = `Review/approval routing queue.
+
+Usage:
+  gira review queue --repo OWNER/REPO [--json]
+`
+
+const mergeHelp = `Merge queue with policy checks.
+
+Usage:
+  gira merge queue --repo OWNER/REPO --dry-run|--apply [--json]
+`
+
+const releaseHelp = `Release readiness gate across approvals/checks/blockers/must-fix labels.
+
+Usage:
+  gira release readiness --repo OWNER/REPO [--json]
+`
+
 const devHelp = `Developer workflow helpers for issue-to-branch execution.
 
 Usage:
@@ -254,6 +275,11 @@ var newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClien
 
 var newGraphClient = func(repo gira.RepoRef) gira.GraphClient {
 	return gira.NewGHGraphClient(repo, gira.ExecCommandRunner{})
+}
+
+var newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
+	client := gira.NewGHReviewGateClient(repo, gira.ExecCommandRunner{})
+	return client
 }
 
 var newGuardrailsSyncReport = func(repo gira.RepoRef, policyPath string, apply bool, allowRelaxation bool) (gira.GuardrailsSyncReport, error) {
@@ -326,6 +352,12 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runSprint(args[1:], stdout, stderr)
 	case "graph":
 		return runGraph(args[1:], stdout, stderr)
+	case "review":
+		return runReview(args[1:], stdout, stderr)
+	case "merge":
+		return runMerge(args[1:], stdout, stderr)
+	case "release":
+		return runRelease(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
@@ -1645,6 +1677,140 @@ func runGraph(args []string, stdout io.Writer, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "%s\n", out)
 	_ = jsonOutput
 	if report.Counts.Diagnostics > 0 {
+		return 1
+	}
+	return 0
+}
+
+func runReview(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, reviewHelp)
+		return 0
+	}
+	if args[0] != "queue" {
+		fmt.Fprintf(stderr, "unknown review command: %s\n\n", args[0])
+		fmt.Fprint(stderr, reviewHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("review queue", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, reviewHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, reviewHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildReviewQueue(newReviewGateClient(repo), time.Now())
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	out, _ := json.MarshalIndent(report, "", "  ")
+	if *jsonOutput {
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprintf(stdout, "%s\n", out)
+	return 0
+}
+
+func runMerge(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, mergeHelp)
+		return 0
+	}
+	if args[0] != "queue" {
+		fmt.Fprintf(stderr, "unknown merge command: %s\n\n", args[0])
+		fmt.Fprint(stderr, mergeHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("merge queue", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	dryRun := fs.Bool("dry-run", false, "Preview only")
+	apply := fs.Bool("apply", false, "Apply merges")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, mergeHelp)
+		return 2
+	}
+	if *repoValue == "" || (*dryRun == *apply) {
+		fmt.Fprint(stderr, "--repo and exactly one of --dry-run/--apply are required\n\n")
+		fmt.Fprint(stderr, mergeHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildMergeQueue(newReviewGateClient(repo), time.Now(), *apply)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	out, _ := json.MarshalIndent(report, "", "  ")
+	if *jsonOutput {
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprintf(stdout, "%s\n", out)
+	return 0
+}
+
+func runRelease(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, releaseHelp)
+		return 0
+	}
+	if args[0] != "readiness" {
+		fmt.Fprintf(stderr, "unknown release command: %s\n\n", args[0])
+		fmt.Fprint(stderr, releaseHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("release readiness", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, releaseHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, releaseHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildReleaseReadiness(newReviewGateClient(repo), time.Now())
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	out, _ := json.MarshalIndent(report, "", "  ")
+	if *jsonOutput {
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprintf(stdout, "%s\n", out)
+	if !report.Ready {
 		return 1
 	}
 	return 0

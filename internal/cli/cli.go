@@ -30,6 +30,7 @@ Commands:
   audit       Verify audit ledgers for mutation integrity
   worker      Manage worker claim/handoff/release state for issues
   guardrails  Audit and apply branch protection/ruleset policy
+  triage      Backlog triage queue and policy apply helpers
 
 Flags:
   -h, --help  Show help
@@ -169,6 +170,13 @@ Flags:
   -h, --help             Show help
 `
 
+const triageHelp = `Backlog triage queue and policy apply helpers.
+
+Usage:
+  gira triage queue --repo OWNER/REPO [--json]
+  gira triage apply --repo OWNER/REPO --policy FILE --dry-run|--apply [--json]
+`
+
 const workerHelp = `Worker coordination commands for issue ownership and handoff payloads.
 
 Usage:
@@ -291,6 +299,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runWorker(args[1:], stdout, stderr)
 	case "guardrails":
 		return runGuardrails(args[1:], stdout, stderr)
+	case "triage":
+		return runTriage(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
@@ -1127,6 +1137,91 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	fmt.Fprint(stdout, gira.FormatStatusText(summary))
 	return 0
+}
+
+func runTriage(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, triageHelp)
+		return 0
+	}
+	switch args[0] {
+	case "queue":
+		fs := flag.NewFlagSet("triage queue", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, triageHelp)
+			return 2
+		}
+		if *repoValue == "" {
+			fmt.Fprint(stderr, "--repo is required\n\n")
+			fmt.Fprint(stderr, triageHelp)
+			return 2
+		}
+		repo, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		report, err := gira.BuildTriageQueue(gira.NewGHTriageClient(repo, gira.ExecCommandRunner{}), time.Now())
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		output, _ := json.MarshalIndent(report, "", "  ")
+		if *jsonOutput {
+			fmt.Fprintf(stdout, "%s\n", output)
+			return 0
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	case "apply":
+		fs := flag.NewFlagSet("triage apply", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		policyPath := fs.String("policy", "", "Policy file path")
+		dryRun := fs.Bool("dry-run", false, "Preview only")
+		apply := fs.Bool("apply", false, "Apply labels")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, triageHelp)
+			return 2
+		}
+		if *repoValue == "" || *policyPath == "" || (*dryRun == *apply) {
+			fmt.Fprint(stderr, "--repo, --policy and exactly one of --dry-run/--apply are required\n\n")
+			fmt.Fprint(stderr, triageHelp)
+			return 2
+		}
+		repo, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		policy, err := gira.LoadTriagePolicy(*policyPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		report, err := gira.ApplyTriagePolicy(gira.NewGHTriageClient(repo, gira.ExecCommandRunner{}), policy, *apply, time.Now())
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		output, _ := json.MarshalIndent(report, "", "  ")
+		if *jsonOutput {
+			fmt.Fprintf(stdout, "%s\n", output)
+			return 0
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "unknown triage command: %s\n\n", args[0])
+		fmt.Fprint(stderr, triageHelp)
+		return 2
+	}
 }
 
 func runWorker(args []string, stdout io.Writer, stderr io.Writer) int {

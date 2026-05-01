@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -954,5 +955,44 @@ func TestGuardrailsSyncApplyDeniedPermissionFailsClosed(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "repo:settings:write denied") {
 		t.Fatalf("missing explicit denied reason: %s", stderr.String())
+	}
+}
+
+type devCLIRunner struct {
+	outputs map[string][]byte
+	errs    map[string]error
+}
+
+func (r devCLIRunner) Run(name string, args ...string) ([]byte, error) {
+	key := name + " " + strings.Join(args, " ")
+	if err, ok := r.errs[key]; ok {
+		return nil, err
+	}
+	if out, ok := r.outputs[key]; ok {
+		return out, nil
+	}
+	return nil, fmt.Errorf("unexpected call: %s", key)
+}
+
+func TestDevStartJSONDryRun(t *testing.T) {
+	original := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = original })
+	devCommandRunner = devCLIRunner{
+		outputs: map[string][]byte{
+			"gh api repos/StatPan/gira/issues/59": []byte(`{"number":59,"title":"Start branch","state":"open","labels":[{"name":"status:ready"}]}`),
+		},
+		errs: map[string]error{
+			"git show-ref --verify --quiet refs/heads/issue-59-start-branch": fmt.Errorf("exit status 1"),
+			"git ls-remote --exit-code --heads origin issue-59-start-branch": fmt.Errorf("exit status 2"),
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"dev", "start", "--repo", "StatPan/gira", "--issue", "59", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"branch": "issue-59-start-branch"`) {
+		t.Fatalf("missing branch in output: %s", stdout.String())
 	}
 }

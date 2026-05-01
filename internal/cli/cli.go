@@ -152,6 +152,8 @@ const devHelp = `Developer workflow helpers for issue-to-branch execution.
 
 Usage:
   gira dev start --repo OWNER/REPO --issue N [--dry-run] [--json] [--force] [--branch-pattern "issue-%d-%s"]
+  gira dev pr open --repo OWNER/REPO --issue N [--json]
+  gira dev pr status --repo OWNER/REPO --issue N [--json]
 `
 
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
@@ -260,6 +262,9 @@ func runDev(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stdout, devHelp)
 		return 0
 	}
+	if args[0] == "pr" {
+		return runDevPR(args[1:], stdout, stderr)
+	}
 	if args[0] != "start" {
 		fmt.Fprintf(stderr, "unknown dev command: %s\n\n", args[0])
 		_, _ = io.WriteString(stderr, devHelp)
@@ -308,6 +313,66 @@ func runDev(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "dev start: %s\n", result.Branch)
 	return 0
+}
+
+func runDevPR(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 {
+		_, _ = io.WriteString(stderr, devHelp)
+		return 2
+	}
+	cmd := args[0]
+	fs := flag.NewFlagSet("dev pr "+cmd, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	issue := fs.Int("issue", 0, "Issue number")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, devHelp)
+		return 2
+	}
+	if *repoValue == "" || *issue <= 0 {
+		fmt.Fprint(stderr, "--repo and --issue are required\n\n")
+		_, _ = io.WriteString(stderr, devHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	switch cmd {
+	case "open":
+		result, err := gira.OpenDevPR(repo, *issue, devCommandRunner)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+			return 0
+		}
+		fmt.Fprintf(stdout, "dev pr open: %s\n", result.PRURL)
+		return 0
+	case "status":
+		result, err := gira.DevPRStatus(repo, *issue, devCommandRunner)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+			return 0
+		}
+		fmt.Fprintf(stdout, "dev pr status: ready=%t blockers=%s\n", result.Ready, strings.Join(result.Blockers, ","))
+		return 0
+	default:
+		fmt.Fprintf(stderr, "unknown dev pr command: %s\n\n", cmd)
+		_, _ = io.WriteString(stderr, devHelp)
+		return 2
+	}
 }
 
 func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {

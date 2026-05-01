@@ -1,0 +1,128 @@
+package gira
+
+import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+type DevPROpenResult struct {
+	Repo     string `json:"repo"`
+	Issue    int    `json:"issue"`
+	PRNumber int    `json:"pr_number"`
+	PRURL    string `json:"pr_url"`
+	Title    string `json:"title"`
+	Body     string `json:"body"`
+}
+
+type DevPRStatusResult struct {
+	Repo      string   `json:"repo"`
+	Issue     int      `json:"issue"`
+	PRNumber  int      `json:"pr_number,omitempty"`
+	PRURL     string   `json:"pr_url,omitempty"`
+	State     string   `json:"state,omitempty"`
+	Mergeable string   `json:"mergeable,omitempty"`
+	Blockers  []string `json:"blockers"`
+	Ready     bool     `json:"ready"`
+}
+
+type prSummary struct {
+	Number         int    `json:"number"`
+	Title          string `json:"title"`
+	Body           string `json:"body"`
+	State          string `json:"state"`
+	URL            string `json:"url"`
+	ReviewDecision string `json:"reviewDecision"`
+	IsDraft        bool   `json:"isDraft"`
+	MergeState     string `json:"mergeStateStatus"`
+	StatusRollup   []struct {
+		Conclusion string `json:"conclusion"`
+		Status     string `json:"status"`
+	} `json:"statusCheckRollup"`
+}
+
+func OpenDevPR(repo RepoRef, issueNumber int, runner CommandRunner) (DevPROpenResult, error) {
+	if runner == nil {
+		runner = ExecCommandRunner{}
+	}
+	issue, err := fetchDevIssue(repo, issueNumber, runner)
+	if err != nil {
+		return DevPROpenResult{}, err
+	}
+	title := fmt.Sprintf("feat: %s", issue.Title)
+	body := fmt.Sprintf("Closes #%d", issueNumber)
+	out, err := runner.Run("gh", "pr", "create", "--repo", repo.FullName(), "--title", title, "--body", body)
+	if err != nil {
+		return DevPROpenResult{}, err
+	}
+	url := strings.TrimSpace(string(out))
+	prNumber := extractPRNumber(url)
+	return DevPROpenResult{Repo: repo.FullName(), Issue: issueNumber, PRNumber: prNumber, PRURL: url, Title: title, Body: body}, nil
+}
+
+func DevPRStatus(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStatusResult, error) {
+	if runner == nil {
+		runner = ExecCommandRunner{}
+	}
+	search := fmt.Sprintf("repo:%s is:pr %d", repo.FullName(), issueNumber)
+	out, err := runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--search", search, "--json", "number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup", "--limit", "20")
+	if err != nil {
+		return DevPRStatusResult{}, err
+	}
+	var prs []prSummary
+	if err := json.Unmarshal(out, &prs); err != nil {
+		return DevPRStatusResult{}, fmt.Errorf("parse pr list JSON: %w", err)
+	}
+	result := DevPRStatusResult{Repo: repo.FullName(), Issue: issueNumber, Blockers: []string{}}
+	for _, pr := range prs {
+		if hasClosingKeyword(pr.Body, issueNumber) {
+			result.PRNumber = pr.Number
+			result.PRURL = pr.URL
+			result.State = pr.State
+			result.Mergeable = pr.MergeState
+			if pr.IsDraft {
+				result.Blockers = append(result.Blockers, "draft")
+			}
+			if pr.ReviewDecision == "CHANGES_REQUESTED" || pr.ReviewDecision == "REVIEW_REQUIRED" {
+				result.Blockers = append(result.Blockers, "review")
+			}
+			for _, check := range pr.StatusRollup {
+				if strings.EqualFold(check.Conclusion, "failure") || strings.EqualFold(check.Conclusion, "cancelled") || strings.EqualFold(check.Conclusion, "timed_out") {
+					result.Blockers = append(result.Blockers, "checks")
+					break
+				}
+				if strings.EqualFold(check.Status, "in_progress") || strings.EqualFold(check.Status, "queued") || strings.EqualFold(check.Status, "pending") {
+					result.Blockers = append(result.Blockers, "checks_pending")
+					break
+				}
+			}
+			break
+		}
+	}
+	if result.PRNumber == 0 {
+		result.Blockers = append(result.Blockers, "missing_linked_pr")
+	}
+	result.Ready = len(result.Blockers) == 0
+	return result, nil
+}
+
+func hasClosingKeyword(body string, issueNumber int) bool {
+	needle := "#" + strconv.Itoa(issueNumber)
+	lower := strings.ToLower(body)
+	for _, keyword := range []string{"close", "closes", "closed", "fix", "fixes", "fixed", "resolve", "resolves", "resolved"} {
+		if strings.Contains(lower, keyword+" "+needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractPRNumber(url string) int {
+	parts := strings.Split(strings.TrimSpace(url), "/")
+	if len(parts) == 0 {
+		return 0
+	}
+	n, _ := strconv.Atoi(parts[len(parts)-1])
+	return n
+}

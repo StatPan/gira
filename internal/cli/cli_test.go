@@ -996,3 +996,59 @@ func TestDevStartJSONDryRun(t *testing.T) {
 		t.Fatalf("missing branch in output: %s", stdout.String())
 	}
 }
+
+func TestDevStartJSONReusesLocalBranch(t *testing.T) {
+	original := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = original })
+	devCommandRunner = devCLIRunner{
+		outputs: map[string][]byte{
+			"gh api repos/StatPan/gira/issues/59":                       []byte(`{"number":59,"title":"Start branch","state":"open","labels":[{"name":"status:ready"}]}`),
+			"git show-ref --verify --quiet refs/heads/issue-59-start-branch": nil,
+			"git ls-remote --exit-code --heads origin issue-59-start-branch": []byte("abc\trefs/heads/issue-59-start-branch"),
+			"git checkout issue-59-start-branch":                         nil,
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"dev", "start", "--repo", "StatPan/gira", "--issue", "59", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"created": false`) {
+		t.Fatalf("expected created=false for local branch reuse: %s", stdout.String())
+	}
+}
+
+func TestDevPROpenJSON(t *testing.T) {
+	original := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = original })
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/60": []byte(`{"number":60,"title":"Add PR loop","state":"open","labels":[{"name":"status:ready"}]}`),
+		"gh pr create --repo StatPan/gira --title feat: Add PR loop --body Closes #60": []byte("https://github.com/StatPan/gira/pull/99\n"),
+	}}
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"dev", "pr", "open", "--repo", "StatPan/gira", "--issue", "60", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"pr_number": 99`) {
+		t.Fatalf("missing pr_number: %s", stdout.String())
+	}
+}
+
+func TestDevPRStatusJSON(t *testing.T) {
+	original := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = original })
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"gh pr list --repo StatPan/gira --search repo:StatPan/gira is:pr 60 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[{"number":99,"title":"x","body":"Closes #60","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+	}}
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"dev", "pr", "status", "--repo", "StatPan/gira", "--issue", "60", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"ready": true`) {
+		t.Fatalf("expected ready true: %s", stdout.String())
+	}
+}
+

@@ -28,6 +28,9 @@ func TestBuildProjectSyncReportMissingProject(t *testing.T) {
 	if !strings.Contains(text, "fields:           6 missing, 0 mismatched, 0 present") {
 		t.Fatalf("project sync text missing field counts:\n%s", text)
 	}
+	if !strings.Contains(text, "views:            3 missing, 0 mismatched, 0 present") {
+		t.Fatalf("project sync text missing field counts:\n%s", text)
+	}
 	if !strings.Contains(text, "missing project: Product OS") {
 		t.Fatalf("project sync text missing missing-project line:\n%s", text)
 	}
@@ -137,7 +140,7 @@ func TestProjectSyncJSONStable(t *testing.T) {
 	if err := json.Unmarshal(first, &payload); err != nil {
 		t.Fatalf("project sync JSON did not parse: %v\n%s", err, first)
 	}
-	for _, key := range []string{"repo", "project", "command", "dry_run", "counts", "fields", "date_validation", "fetched_at"} {
+	for _, key := range []string{"repo", "project", "command", "dry_run", "counts", "fields", "views", "date_validation", "fetched_at"} {
 		if _, ok := payload[key]; !ok {
 			t.Fatalf("project sync JSON missing key %q:\n%s", key, first)
 		}
@@ -320,5 +323,62 @@ func TestBuildProjectSyncApplyReportCapabilityGating(t *testing.T) {
 	}
 	if report.Skipped[0].Action != "project_status_field:update" {
 		t.Fatalf("unexpected skipped action: %#v", report.Skipped[0])
+	}
+}
+
+func TestBuildProjectSyncReportManagedViews(t *testing.T) {
+	report, err := BuildProjectSyncReport(
+		"StatPan/gira",
+		ProjectSyncSnapshot{
+			ProjectName: "Product OS",
+			FieldTypes: map[string]string{
+				"Status":             "SINGLE_SELECT",
+				"Priority":           "SINGLE_SELECT",
+				"Layer / workstream": "SINGLE_SELECT",
+				"Owner / agent":      "SINGLE_SELECT",
+				"Start date":         "DATE",
+				"Target date":        "DATE",
+			},
+			Views: map[string]string{
+				"Gira Epic/Task Board": "BOARD_LAYOUT",
+				"Gira Lifecycle Table": "ROADMAP_LAYOUT",
+			},
+		},
+		projectSyncNowFixture,
+	)
+	if err != nil {
+		t.Fatalf("BuildProjectSyncReport returned error: %v", err)
+	}
+	if report.Counts.ViewsPresent != 1 || report.Counts.ViewsMismatch != 1 || report.Counts.ViewsMissing != 1 {
+		t.Fatalf("view counts = %#v", report.Counts)
+	}
+	text := FormatProjectSyncPlan(report)
+	for _, want := range []string{
+		"views:            1 missing, 1 mismatched, 1 present",
+		"missing view: Gira Roadmap Timeline (roadmap_layout)",
+		"wrong view layout: Gira Lifecycle Table (expected table_layout, got roadmap_layout)",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("project sync text missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestBuildProjectSyncApplyReportIncludesManagedViewPlan(t *testing.T) {
+	cap := ProjectCapabilityReport{
+		Repo: "StatPan/gira",
+		Capabilities: map[string]ProjectCapabilityStatus{
+			"projectsv2:read":  ProjectCapabilityAllowed,
+			"projectsv2:write": ProjectCapabilityAllowed,
+			"issues:write":     ProjectCapabilityAllowed,
+		},
+	}
+
+	report := BuildProjectSyncApplyReport(cap)
+	if len(report.ViewPlan) != len(ProductOSManagedViews) {
+		t.Fatalf("view_plan=%d, want %d", len(report.ViewPlan), len(ProductOSManagedViews))
+	}
+	if report.ViewPlan[0].Action != "create_or_update" {
+		t.Fatalf("unexpected view action: %#v", report.ViewPlan[0])
 	}
 }

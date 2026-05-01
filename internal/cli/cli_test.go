@@ -1052,3 +1052,36 @@ func TestDevPRStatusJSON(t *testing.T) {
 	}
 }
 
+func TestInitRequiresRepo(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"init", "--json"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero without --repo")
+	}
+	if !strings.Contains(stderr.String(), "--repo is required") {
+		t.Fatalf("missing repo error: %s", stderr.String())
+	}
+}
+
+func TestInitJSONReady(t *testing.T) {
+	original := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = original })
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"gh --version":                                     []byte("gh version 2"),
+		"git --version":                                    []byte("git version 2"),
+		"gh auth status":                                   []byte("ok"),
+		"gh repo view StatPan/gira --json name":            []byte(`{"name":"gira"}`),
+		"git -C /repo rev-parse --is-inside-work-tree":     []byte("true"),
+		"git -C /repo diff --quiet":                        nil,
+		"git -C /repo diff --cached --quiet":               nil,
+	}}
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"init", "--repo", "StatPan/gira", "--path", "/repo", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"ready": true`) {
+		t.Fatalf("expected ready true: %s", stdout.String())
+	}
+}
+

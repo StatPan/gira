@@ -19,6 +19,7 @@ Usage:
   gira <command> [flags]
 
 Commands:
+  init        One-command onboarding with prerequisite checks and next-step plan
   bootstrap   Bootstrap a repository into a Gira-managed project workspace
   dev         Issue to branch execution helpers
   sync        Sync Gira labels, milestones, and optionally bootstrap issues through gh
@@ -48,6 +49,19 @@ Flags:
   --branch string      Branch to create/checkout before install (default "chore/gira-bootstrap")
   --no-branch          Skip branch creation/checkout
   --created-at string Override render date for deterministic tests
+  -h, --help          Show help
+`
+
+const initHelp = `One-command onboarding with prerequisite checks and fail-closed planning.
+
+Usage:
+  gira init --repo OWNER/REPO [--path .] [--dry-run] [--json]
+
+Flags:
+  --repo string       Target GitHub repo in OWNER/REPO format
+  --path string       Local git workspace path to validate (default ".")
+  --dry-run           Emit plan only (default true for this planning slice)
+  --json              Emit stable JSON report for automation
   -h, --help          Show help
 `
 
@@ -232,6 +246,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 
 	switch args[0] {
+	case "init":
+		return runInit(args[1:], stdout, stderr)
 	case "bootstrap":
 		return runBootstrap(args[1:], stdout, stderr)
 	case "dev":
@@ -255,6 +271,57 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, rootHelp)
 		return 2
 	}
+}
+
+func runInit(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	pathValue := fs.String("path", ".", "Local git workspace path to validate")
+	dryRun := fs.Bool("dry-run", true, "Emit plan only")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, initHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, initHelp)
+		return 0
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		_, _ = io.WriteString(stderr, initHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildInitReport(repo, *pathValue, *dryRun, devCommandRunner)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode init JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatInitReport(report))
+	return 0
 }
 
 func runDev(args []string, stdout io.Writer, stderr io.Writer) int {

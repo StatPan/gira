@@ -113,6 +113,12 @@ func fetchDevIssue(repo RepoRef, issueNumber int, runner CommandRunner) (devStar
 	if err := json.Unmarshal(output, &raw); err != nil {
 		return devStartIssue{}, fmt.Errorf("parse issue JSON: %w", err)
 	}
+	if raw.Number <= 0 {
+		return devStartIssue{}, fmt.Errorf("parse issue JSON: missing or invalid issue number")
+	}
+	if raw.Number != issueNumber {
+		return devStartIssue{}, fmt.Errorf("parse issue JSON: expected issue #%d, got #%d", issueNumber, raw.Number)
+	}
 	labels := make([]string, 0, len(raw.Labels))
 	for _, label := range raw.Labels {
 		labels = append(labels, label.Name)

@@ -996,3 +996,25 @@ func TestDevStartJSONDryRun(t *testing.T) {
 		t.Fatalf("missing branch in output: %s", stdout.String())
 	}
 }
+
+func TestDevStartJSONReusesLocalBranch(t *testing.T) {
+	original := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = original })
+	devCommandRunner = devCLIRunner{
+		outputs: map[string][]byte{
+			"gh api repos/StatPan/gira/issues/59":                       []byte(`{"number":59,"title":"Start branch","state":"open","labels":[{"name":"status:ready"}]}`),
+			"git show-ref --verify --quiet refs/heads/issue-59-start-branch": nil,
+			"git ls-remote --exit-code --heads origin issue-59-start-branch": []byte("abc\trefs/heads/issue-59-start-branch"),
+			"git checkout issue-59-start-branch":                         nil,
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"dev", "start", "--repo", "StatPan/gira", "--issue", "59", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"created": false`) {
+		t.Fatalf("expected created=false for local branch reuse: %s", stdout.String())
+	}
+}

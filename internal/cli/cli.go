@@ -37,6 +37,7 @@ Commands:
   review      Review routing queue with stale-review detection
   merge       Policy-checked merge queue (dry-run/apply)
   release     Release readiness gate report
+  report      Weekly PM cockpit report
 
 Flags:
   -h, --help  Show help
@@ -223,6 +224,12 @@ Usage:
   gira release readiness --repo OWNER/REPO [--json]
 `
 
+const reportHelp = `Weekly PM cockpit report with deterministic KPIs and top exceptions.
+
+Usage:
+  gira report weekly --repo OWNER/REPO [--json|--md]
+`
+
 const devHelp = `Developer workflow helpers for issue-to-branch execution.
 
 Usage:
@@ -315,6 +322,10 @@ var statusNow = func() time.Time {
 	return time.Now()
 }
 
+var reportNow = func() time.Time {
+	return time.Now()
+}
+
 var devCommandRunner gira.CommandRunner = gira.ExecCommandRunner{}
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -358,6 +369,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runMerge(args[1:], stdout, stderr)
 	case "release":
 		return runRelease(args[1:], stdout, stderr)
+	case "report":
+		return runReport(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
@@ -1812,6 +1825,57 @@ func runRelease(args []string, stdout io.Writer, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "%s\n", out)
 	if !report.Ready {
 		return 1
+	}
+	return 0
+}
+
+func runReport(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, reportHelp)
+		return 0
+	}
+	if args[0] != "weekly" {
+		fmt.Fprintf(stderr, "unknown report command: %s\n\n", args[0])
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("report weekly", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON summary")
+	mdOutput := fs.Bool("md", false, "Emit markdown report")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildWeeklyReport(repo, reportNow(), newDashboardExportClient(repo), newReviewGateClient(repo))
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode report JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	if *mdOutput || !*jsonOutput {
+		fmt.Fprint(stdout, gira.FormatWeeklyReportMarkdown(report))
+		return 0
 	}
 	return 0
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +32,7 @@ Commands:
   worker      Manage worker claim/handoff/release state for issues
   guardrails  Audit and apply branch protection/ruleset policy
   triage      Backlog triage queue and policy apply helpers
+  sprint      Sprint iteration planning/start/close workflow
 
 Flags:
   -h, --help  Show help
@@ -177,6 +179,14 @@ Usage:
   gira triage apply --repo OWNER/REPO --policy FILE --dry-run|--apply [--json]
 `
 
+const sprintHelp = `Sprint/iteration command family.
+
+Usage:
+  gira sprint plan --repo OWNER/REPO --iteration ID --capacity N --issues 1,2,3 --dry-run|--apply [--json]
+  gira sprint start --repo OWNER/REPO --iteration ID --dry-run|--apply [--json]
+  gira sprint close --repo OWNER/REPO --iteration ID --completed 1,2 --spillover-disposition carry|drop --rollover-reason TEXT --dry-run|--apply [--json]
+`
+
 const workerHelp = `Worker coordination commands for issue ownership and handoff payloads.
 
 Usage:
@@ -301,6 +311,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runGuardrails(args[1:], stdout, stderr)
 	case "triage":
 		return runTriage(args[1:], stdout, stderr)
+	case "sprint":
+		return runSprint(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
@@ -1224,6 +1236,135 @@ func runTriage(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 }
 
+func runSprint(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, sprintHelp)
+		return 0
+	}
+	switch args[0] {
+	case "plan":
+		fs := flag.NewFlagSet("sprint plan", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		iteration := fs.String("iteration", "", "Iteration identifier")
+		capacity := fs.Int("capacity", 0, "Capacity target")
+		issues := fs.String("issues", "", "Comma-separated committed issue numbers")
+		dryRun := fs.Bool("dry-run", false, "Preview only")
+		apply := fs.Bool("apply", false, "Persist plan")
+		_ = fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		if *repoValue == "" || *iteration == "" || *capacity <= 0 || (*dryRun == *apply) {
+			fmt.Fprint(stderr, "--repo, --iteration, --capacity and exactly one of --dry-run/--apply are required\n\n")
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		repo, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		committed, err := parseCSVInts(*issues)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		report, err := gira.PlanSprint(gira.SprintStatePath(repo), repo, *iteration, *capacity, committed, *apply)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		output, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	case "start":
+		fs := flag.NewFlagSet("sprint start", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		iteration := fs.String("iteration", "", "Iteration identifier")
+		dryRun := fs.Bool("dry-run", false, "Preview only")
+		apply := fs.Bool("apply", false, "Start sprint")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		if *repoValue == "" || *iteration == "" || (*dryRun == *apply) {
+			fmt.Fprint(stderr, "--repo, --iteration and exactly one of --dry-run/--apply are required\n\n")
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		repo, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		report, err := gira.StartSprint(gira.SprintStatePath(repo), repo, *iteration, *apply, time.Now())
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		output, _ := json.MarshalIndent(report, "", "  ")
+		if *jsonOutput {
+			fmt.Fprintf(stdout, "%s\n", output)
+			return 0
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	case "close":
+		fs := flag.NewFlagSet("sprint close", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		iteration := fs.String("iteration", "", "Iteration identifier")
+		completed := fs.String("completed", "", "Comma-separated completed issue numbers")
+		disposition := fs.String("spillover-disposition", "", "carry or drop")
+		reason := fs.String("rollover-reason", "", "Why spillover occurred")
+		dryRun := fs.Bool("dry-run", false, "Preview only")
+		apply := fs.Bool("apply", false, "Close sprint")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		if *repoValue == "" || *iteration == "" || *disposition == "" || *reason == "" || (*dryRun == *apply) {
+			fmt.Fprint(stderr, "--repo, --iteration, --spillover-disposition, --rollover-reason and exactly one of --dry-run/--apply are required\n\n")
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		repo, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		completedItems, err := parseCSVInts(*completed)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		report, err := gira.CloseSprint(gira.SprintStatePath(repo), repo, *iteration, completedItems, *disposition, *reason, *apply, time.Now())
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		output, _ := json.MarshalIndent(report, "", "  ")
+		if *jsonOutput {
+			fmt.Fprintf(stdout, "%s\n", output)
+			return 0
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "unknown sprint command: %s\n\n", args[0])
+		fmt.Fprint(stderr, sprintHelp)
+		return 2
+	}
+}
+
 func runWorker(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(stdout, workerHelp)
@@ -1348,6 +1489,26 @@ func runWorkerRelease(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	fmt.Fprintln(stdout, "worker release: ok")
 	return 0
+}
+
+func parseCSVInts(value string) ([]int, error) {
+	if strings.TrimSpace(value) == "" {
+		return []int{}, nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]int, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer %q", p)
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }
 
 func splitList(value string) []string {

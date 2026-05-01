@@ -33,6 +33,7 @@ Commands:
   guardrails  Audit and apply branch protection/ruleset policy
   triage      Backlog triage queue and policy apply helpers
   sprint      Sprint iteration planning/start/close workflow
+  graph       Work graph validation (parent/depends_on/blocks)
 
 Flags:
   -h, --help  Show help
@@ -195,6 +196,12 @@ Usage:
   gira worker release --repo OWNER/REPO --issue N --worker NAME
 `
 
+const graphHelp = `Work graph validation (parent/depends_on/blocks).
+
+Usage:
+  gira graph validate --repo OWNER/REPO [--json]
+`
+
 const devHelp = `Developer workflow helpers for issue-to-branch execution.
 
 Usage:
@@ -243,6 +250,10 @@ var newProjectTransitionsApplyReport = func(repo gira.RepoRef) (gira.ProjectTran
 
 var newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
 	return gira.NewGHDashboardExportClient(repo, gira.ExecCommandRunner{})
+}
+
+var newGraphClient = func(repo gira.RepoRef) gira.GraphClient {
+	return gira.NewGHGraphClient(repo, gira.ExecCommandRunner{})
 }
 
 var newGuardrailsSyncReport = func(repo gira.RepoRef, policyPath string, apply bool, allowRelaxation bool) (gira.GuardrailsSyncReport, error) {
@@ -313,6 +324,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTriage(args[1:], stdout, stderr)
 	case "sprint":
 		return runSprint(args[1:], stdout, stderr)
+	case "graph":
+		return runGraph(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
@@ -1585,6 +1598,53 @@ func runAuditVerify(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "audit verify: failed (%s)\n", report.Failure)
 	}
 	if !report.Valid {
+		return 1
+	}
+	return 0
+}
+
+func runGraph(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, graphHelp)
+		return 0
+	}
+	if args[0] != "validate" {
+		fmt.Fprintf(stderr, "unknown graph command: %s\n\n", args[0])
+		fmt.Fprint(stderr, graphHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("graph validate", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, graphHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, graphHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildGraphValidationReportForClient(newGraphClient(repo))
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	out, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "encode graph JSON: %v\n", err)
+		return 2
+	}
+	fmt.Fprintf(stdout, "%s\n", out)
+	_ = jsonOutput
+	if report.Counts.Diagnostics > 0 {
 		return 1
 	}
 	return 0

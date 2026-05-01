@@ -401,11 +401,16 @@ func BuildProjectTransitionsReport(repo string, snapshot ProjectTransitionSnapsh
 	branchIssues := mapBranchesToIssues(snapshot.Branches)
 
 	sort.Slice(snapshot.Issues, func(i, j int) bool { return snapshot.Issues[i].Number < snapshot.Issues[j].Number })
+	issueByNumber := map[int]ProjectTransitionIssue{}
+	for _, issue := range snapshot.Issues {
+		issueByNumber[issue.Number] = issue
+	}
 	for _, issue := range snapshot.Issues {
 		itemKey := transitionItemKey("issue", issue.Number)
 		status := inferIssueStatus(issue)
 		blocked := hasBlockedLabel(issue.Labels)
 		prs := linkedPRs[issue.Number]
+		links := parseIssueLinks(issue.Body)
 		nonDraftPR, hasNonDraftPR := firstLinkedPR(prs, false)
 		draftPR, hasDraftPR := firstLinkedPR(prs, true)
 
@@ -512,6 +517,21 @@ func BuildProjectTransitionsReport(repo string, snapshot ProjectTransitionSnapsh
 				issueCandidates[itemKey] = append(issueCandidates[itemKey], makeCandidate(
 					"release_checklist_complete", "issue", issue.Number, "Done", "In progress", "release checklist contains unchecked required items", "checklist_reopened", 6,
 				))
+			}
+		}
+		for _, dep := range links.DependsOn {
+			if depIssue, ok := issueByNumber[dep]; ok && strings.EqualFold(depIssue.State, "open") {
+				skips = append(skips, ProjectTransitionPlanItem{
+					RuleID:             "dependency_open_blocks_done",
+					TargetType:         "issue",
+					TargetID:           strconv.Itoa(issue.Number),
+					From:               displayStatus(status),
+					To:                 "Done",
+					Reason:             fmt.Sprintf("depends_on #%d is open", dep),
+					ConflictResolution: "dependency_gate",
+					Decision:           "skip",
+				})
+				break
 			}
 		}
 	}

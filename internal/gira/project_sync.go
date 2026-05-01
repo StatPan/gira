@@ -49,7 +49,20 @@ func (c GHProjectSyncClient) Repo() RepoRef {
 type ProjectSyncSnapshot struct {
 	ProjectName  string
 	FieldTypes   map[string]string
+	Views        map[string]string
 	RoadmapItems []ProjectRoadmapItem
+}
+
+type CanonicalProjectView struct {
+	Key    string `json:"key"`
+	Name   string `json:"name"`
+	Layout string `json:"layout"`
+}
+
+var ProductOSManagedViews = []CanonicalProjectView{
+	{Key: "epic_task_board", Name: "Gira Epic/Task Board", Layout: "BOARD_LAYOUT"},
+	{Key: "lifecycle_table", Name: "Gira Lifecycle Table", Layout: "TABLE_LAYOUT"},
+	{Key: "roadmap_timeline", Name: "Gira Roadmap Timeline", Layout: "ROADMAP_LAYOUT"},
 }
 
 type ProjectRoadmapItem struct {
@@ -71,6 +84,7 @@ type ProjectSyncReport struct {
 	MissingProject bool                    `json:"missing_project"`
 	Counts         ProjectSyncCounts       `json:"counts"`
 	Fields         []ProjectFieldDiff      `json:"fields"`
+	Views          []ProjectViewDiff       `json:"views"`
 	DateValidation []ProjectDateValidation `json:"date_validation"`
 	FetchedAt      string                  `json:"fetched_at"`
 }
@@ -79,6 +93,9 @@ type ProjectSyncCounts struct {
 	FieldsPresent  int `json:"fields_present"`
 	FieldsMissing  int `json:"fields_missing"`
 	FieldsMismatch int `json:"fields_mismatch"`
+	ViewsPresent   int `json:"views_present"`
+	ViewsMissing   int `json:"views_missing"`
+	ViewsMismatch  int `json:"views_mismatch"`
 	DateWarnings   int `json:"date_warnings"`
 	DateBlocks     int `json:"date_blocks"`
 }
@@ -90,6 +107,15 @@ type ProjectFieldDiff struct {
 	Present      bool   `json:"present"`
 	ActualType   string `json:"actual_type,omitempty"`
 	TypeMismatch bool   `json:"type_mismatch,omitempty"`
+}
+
+type ProjectViewDiff struct {
+	Key            string `json:"key"`
+	Name           string `json:"name"`
+	Layout         string `json:"layout"`
+	Present        bool   `json:"present"`
+	ActualLayout   string `json:"actual_layout,omitempty"`
+	LayoutMismatch bool   `json:"layout_mismatch,omitempty"`
 }
 
 type ProjectDateFallback struct {
@@ -113,9 +139,17 @@ type ProjectSyncApplyReport struct {
 	Command      string                             `json:"command"`
 	DryRun       bool                               `json:"dry_run"`
 	Capabilities map[string]ProjectCapabilityStatus `json:"capabilities"`
+	ViewPlan     []ProjectViewApplyAction           `json:"view_plan"`
 	Applied      []ProjectSyncApplyAction           `json:"applied"`
 	Skipped      []ProjectSyncSkippedAction         `json:"skipped"`
 	BlockedCount int                                `json:"blocked_count"`
+}
+
+type ProjectViewApplyAction struct {
+	ViewKey string `json:"view_key"`
+	Name    string `json:"name"`
+	Layout  string `json:"layout"`
+	Action  string `json:"action"`
 }
 
 type ProjectSyncApplyAction struct {
@@ -131,7 +165,7 @@ type ProjectSyncSkippedAction struct {
 }
 
 func (c GHProjectSyncClient) Snapshot(projectName string) (ProjectSyncSnapshot, error) {
-	query := `query($o: String!, $n: String!){ repository(owner: $o, name: $n){ projectsV2(first: 20){ nodes{ title fields(first: 50){ nodes{ ... on ProjectV2Field{ name dataType } ... on ProjectV2SingleSelectField{ name dataType } ... on ProjectV2IterationField{ name dataType } } } items(first: 100){ nodes{ content{ ... on Issue{ number title url labels(first: 50){ nodes{ name } } milestone{ dueOn } } } fieldValues(first: 50){ nodes{ ... on ProjectV2ItemFieldDateValue{ date field{ ... on ProjectV2FieldCommon{ name } } } } } } } } } } }`
+	query := `query($o: String!, $n: String!){ repository(owner: $o, name: $n){ projectsV2(first: 20){ nodes{ title fields(first: 50){ nodes{ ... on ProjectV2Field{ name dataType } ... on ProjectV2SingleSelectField{ name dataType } ... on ProjectV2IterationField{ name dataType } } } views(first: 20){ nodes{ name layout } } items(first: 100){ nodes{ content{ ... on Issue{ number title url labels(first: 50){ nodes{ name } } milestone{ dueOn } } } fieldValues(first: 50){ nodes{ ... on ProjectV2ItemFieldDateValue{ date field{ ... on ProjectV2FieldCommon{ name } } } } } } } } } } }`
 	output, err := c.runner.Run("gh", "api", "graphql", "-f", "query="+query, "-f", "o="+c.repo.Owner, "-f", "n="+c.repo.Name)
 	if err != nil {
 		return ProjectSyncSnapshot{}, err
@@ -149,6 +183,12 @@ func (c GHProjectSyncClient) Snapshot(projectName string) (ProjectSyncSnapshot, 
 								DataType string `json:"dataType"`
 							} `json:"nodes"`
 						} `json:"fields"`
+						Views struct {
+							Nodes []struct {
+								Name   string `json:"name"`
+								Layout string `json:"layout"`
+							} `json:"nodes"`
+						} `json:"views"`
 						Items struct {
 							Nodes []struct {
 								Content *struct {
@@ -185,6 +225,7 @@ func (c GHProjectSyncClient) Snapshot(projectName string) (ProjectSyncSnapshot, 
 
 	snapshot := ProjectSyncSnapshot{
 		FieldTypes: make(map[string]string),
+		Views:      make(map[string]string),
 	}
 	for _, project := range payload.Data.Repository.ProjectsV2.Nodes {
 		if project.Title != projectName {
@@ -196,6 +237,12 @@ func (c GHProjectSyncClient) Snapshot(projectName string) (ProjectSyncSnapshot, 
 				continue
 			}
 			snapshot.FieldTypes[field.Name] = strings.ToUpper(field.DataType)
+		}
+		for _, view := range project.Views.Nodes {
+			if view.Name == "" {
+				continue
+			}
+			snapshot.Views[view.Name] = strings.ToUpper(view.Layout)
 		}
 		for _, item := range project.Items.Nodes {
 			if item.Content == nil {
@@ -255,6 +302,7 @@ func BuildProjectSyncReport(repo string, snapshot ProjectSyncSnapshot, fetchedAt
 		Command:   "project sync",
 		DryRun:    true,
 		Fields:    make([]ProjectFieldDiff, 0, len(ProductOSCanonicalFields)),
+		Views:     make([]ProjectViewDiff, 0, len(ProductOSManagedViews)),
 		FetchedAt: formatGitHubTime(fetchedAt),
 	}
 	if snapshot.ProjectName == "" {
@@ -283,6 +331,28 @@ func BuildProjectSyncReport(repo string, snapshot ProjectSyncSnapshot, fetchedAt
 		report.Fields = append(report.Fields, field)
 	}
 
+	for _, managed := range ProductOSManagedViews {
+		actualLayout, present := snapshot.Views[managed.Name]
+		view := ProjectViewDiff{
+			Key:     managed.Key,
+			Name:    managed.Name,
+			Layout:  managed.Layout,
+			Present: present,
+		}
+		if present {
+			view.ActualLayout = strings.ToUpper(actualLayout)
+			if view.ActualLayout == managed.Layout {
+				report.Counts.ViewsPresent++
+			} else {
+				view.LayoutMismatch = true
+				report.Counts.ViewsMismatch++
+			}
+		} else {
+			report.Counts.ViewsMissing++
+		}
+		report.Views = append(report.Views, view)
+	}
+
 	validations, err := buildProjectDateValidation(snapshot.RoadmapItems)
 	if err != nil {
 		return ProjectSyncReport{}, err
@@ -306,8 +376,12 @@ func BuildProjectSyncApplyReport(capability ProjectCapabilityReport) ProjectSync
 		Command:      "project sync",
 		DryRun:       false,
 		Capabilities: capability.Capabilities,
+		ViewPlan:     make([]ProjectViewApplyAction, 0, len(ProductOSManagedViews)),
 		Applied:      make([]ProjectSyncApplyAction, 0),
 		Skipped:      make([]ProjectSyncSkippedAction, 0),
+	}
+	for _, view := range ProductOSManagedViews {
+		report.ViewPlan = append(report.ViewPlan, ProjectViewApplyAction{ViewKey: view.Key, Name: view.Name, Layout: view.Layout, Action: "create_or_update"})
 	}
 
 	appendAction := func(action, required, result string) {
@@ -456,6 +530,7 @@ func FormatProjectSyncPlan(report ProjectSyncReport) string {
 	fmt.Fprintf(&b, "repo:             %s\n", report.Repo)
 	fmt.Fprintf(&b, "project:          %s\n", report.Project)
 	fmt.Fprintf(&b, "fields:           %d missing, %d mismatched, %d present\n", report.Counts.FieldsMissing, report.Counts.FieldsMismatch, report.Counts.FieldsPresent)
+	fmt.Fprintf(&b, "views:            %d missing, %d mismatched, %d present\n", report.Counts.ViewsMissing, report.Counts.ViewsMismatch, report.Counts.ViewsPresent)
 	fmt.Fprintf(&b, "dates:            %d warning, %d block\n", report.Counts.DateWarnings, report.Counts.DateBlocks)
 
 	if report.MissingProject {
@@ -468,6 +543,15 @@ func FormatProjectSyncPlan(report ProjectSyncReport) string {
 		}
 		if field.TypeMismatch {
 			fmt.Fprintf(&b, "  wrong field type: %s (expected %s, got %s)\n", field.Name, strings.ToLower(field.Type), strings.ToLower(field.ActualType))
+		}
+	}
+	for _, view := range report.Views {
+		if !view.Present {
+			fmt.Fprintf(&b, "  missing view: %s (%s)\n", view.Name, strings.ToLower(view.Layout))
+			continue
+		}
+		if view.LayoutMismatch {
+			fmt.Fprintf(&b, "  wrong view layout: %s (expected %s, got %s)\n", view.Name, strings.ToLower(view.Layout), strings.ToLower(view.ActualLayout))
 		}
 	}
 	for _, validation := range report.DateValidation {

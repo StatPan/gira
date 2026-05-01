@@ -694,6 +694,32 @@ func TestProjectCapabilityCommandNeedsSubcommand(t *testing.T) {
 	}
 }
 
+func TestParityJiraCommandJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newJiraParityReport
+	t.Cleanup(func() { newJiraParityReport = restore })
+	newJiraParityReport = func(repo gira.RepoRef) (gira.JiraParityReport, error) {
+		return gira.JiraParityReport{
+			Repo:    repo.FullName(),
+			Command: "parity jira",
+			Scores:  gira.JiraParityScores{Earned: 80, Total: 100, Pct: 80},
+			Domains: []gira.JiraParityDomain{{Name: "visibility", Weight: 15, Pass: true, Evidence: []string{"gira status"}}},
+			Ready:   false,
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"parity", "jira", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"command\": \"parity jira\"") {
+		t.Fatalf("parity jira JSON missing command: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "\"percent\": 80") {
+		t.Fatalf("parity jira JSON missing percent score: %s", stdout.String())
+	}
+}
+
 func TestProjectSyncCommandRequiresDryRunOrApply(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"project", "sync", "--repo", "StatPan/gira"}, &stdout, &stderr)
@@ -1002,10 +1028,10 @@ func TestDevStartJSONReusesLocalBranch(t *testing.T) {
 	t.Cleanup(func() { devCommandRunner = original })
 	devCommandRunner = devCLIRunner{
 		outputs: map[string][]byte{
-			"gh api repos/StatPan/gira/issues/59":                       []byte(`{"number":59,"title":"Start branch","state":"open","labels":[{"name":"status:ready"}]}`),
+			"gh api repos/StatPan/gira/issues/59":                            []byte(`{"number":59,"title":"Start branch","state":"open","labels":[{"name":"status:ready"}]}`),
 			"git show-ref --verify --quiet refs/heads/issue-59-start-branch": nil,
 			"git ls-remote --exit-code --heads origin issue-59-start-branch": []byte("abc\trefs/heads/issue-59-start-branch"),
-			"git checkout issue-59-start-branch":                         nil,
+			"git checkout issue-59-start-branch":                             nil,
 		},
 	}
 
@@ -1023,7 +1049,7 @@ func TestDevPROpenJSON(t *testing.T) {
 	original := devCommandRunner
 	t.Cleanup(func() { devCommandRunner = original })
 	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
-		"gh api repos/StatPan/gira/issues/60": []byte(`{"number":60,"title":"Add PR loop","state":"open","labels":[{"name":"status:ready"}]}`),
+		"gh api repos/StatPan/gira/issues/60":                                          []byte(`{"number":60,"title":"Add PR loop","state":"open","labels":[{"name":"status:ready"}]}`),
 		"gh pr create --repo StatPan/gira --title feat: Add PR loop --body Closes #60": []byte("https://github.com/StatPan/gira/pull/99\n"),
 	}}
 	var stdout, stderr bytes.Buffer
@@ -1067,13 +1093,13 @@ func TestInitJSONReady(t *testing.T) {
 	original := devCommandRunner
 	t.Cleanup(func() { devCommandRunner = original })
 	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
-		"gh --version":                                     []byte("gh version 2"),
-		"git --version":                                    []byte("git version 2"),
-		"gh auth status":                                   []byte("ok"),
-		"gh repo view StatPan/gira --json name":            []byte(`{"name":"gira"}`),
-		"git -C /repo rev-parse --is-inside-work-tree":     []byte("true"),
-		"git -C /repo diff --quiet":                        nil,
-		"git -C /repo diff --cached --quiet":               nil,
+		"gh --version":                                 []byte("gh version 2"),
+		"git --version":                                []byte("git version 2"),
+		"gh auth status":                               []byte("ok"),
+		"gh repo view StatPan/gira --json name":        []byte(`{"name":"gira"}`),
+		"git -C /repo rev-parse --is-inside-work-tree": []byte("true"),
+		"git -C /repo diff --quiet":                    nil,
+		"git -C /repo diff --cached --quiet":           nil,
 	}}
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"init", "--repo", "StatPan/gira", "--path", "/repo", "--json"}, &stdout, &stderr)
@@ -1084,4 +1110,3 @@ func TestInitJSONReady(t *testing.T) {
 		t.Fatalf("expected ready true: %s", stdout.String())
 	}
 }
-

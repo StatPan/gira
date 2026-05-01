@@ -25,6 +25,7 @@ Commands:
   sync        Sync Gira labels, milestones, and optionally bootstrap issues through gh
   status      Show a compact read-only GitHub status summary
   export      Export dashboard artifacts from read-only GitHub data
+  parity      Compute deterministic Jira-replacement parity scorecard
   project     Inspect permission capability for Project OS lifecycle actions
   audit       Verify audit ledgers for mutation integrity
   worker      Manage worker claim/handoff/release state for issues
@@ -138,6 +139,20 @@ Flags:
   -h, --help     Show help
 `
 
+const parityHelp = `Jira-parity scorecard for objective replacement readiness.
+
+Usage:
+  gira parity jira --repo OWNER/REPO [--json]
+
+Commands:
+  jira         Compute weighted parity report with domain evidence and blockers
+
+Flags:
+  --repo string  Target GitHub repo in OWNER/REPO format
+  --json         Emit stable JSON summary
+  -h, --help     Show help
+`
+
 const guardrailsHelp = `Audit and apply repository guardrails policy.
 
 Usage:
@@ -229,6 +244,14 @@ var newGuardrailsSyncReport = func(repo gira.RepoRef, policyPath string, apply b
 	return gira.SyncGuardrailsForClient(repo, policy, gira.NewGHGuardrailsClient(repo, gira.ExecCommandRunner{}), apply, allowRelaxation)
 }
 
+var newJiraParityReport = func(repo gira.RepoRef) (gira.JiraParityReport, error) {
+	capability, err := newProjectCapabilityReport(repo)
+	if err != nil {
+		return gira.JiraParityReport{}, err
+	}
+	return gira.BuildJiraParityReport(repo, capability, time.Now()), nil
+}
+
 var dashboardExportNow = func() time.Time {
 	return time.Now()
 }
@@ -258,6 +281,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runStatus(args[1:], stdout, stderr)
 	case "export":
 		return runExport(args[1:], stdout, stderr)
+	case "parity":
+		return runParity(args[1:], stdout, stderr)
 	case "project":
 		return runProject(args[1:], stdout, stderr)
 	case "audit":
@@ -321,6 +346,54 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatInitReport(report))
+	return 0
+}
+
+func runParity(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		_, _ = io.WriteString(stdout, parityHelp)
+		return 0
+	}
+	if args[0] != "jira" {
+		fmt.Fprintf(stderr, "unknown parity command: %s\n\n", args[0])
+		_, _ = io.WriteString(stderr, parityHelp)
+		return 2
+	}
+
+	fs := flag.NewFlagSet("parity jira", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, parityHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		_, _ = io.WriteString(stderr, parityHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newJiraParityReport(repo)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	out, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "encode parity JSON: %v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprintf(stdout, "%s\n", out)
 	return 0
 }
 

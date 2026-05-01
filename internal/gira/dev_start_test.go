@@ -70,3 +70,49 @@ func TestStartDevBranchRemoteConflict(t *testing.T) {
 		t.Fatalf("expected branch conflict error, got %v", err)
 	}
 }
+
+func TestStartDevBranchReusesExistingLocalBranch(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	issueJSON := `{"number":59,"title":"Add API: start branch","state":"open","labels":[{"name":"status:ready"}]}`
+	runner := &devStartRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/59":                       []byte(issueJSON),
+		"git show-ref --verify --quiet refs/heads/issue-59-add-api-start-branch": nil,
+		"git ls-remote --exit-code --heads origin issue-59-add-api-start-branch": []byte("abc\trefs/heads/issue-59-add-api-start-branch"),
+		"git checkout issue-59-add-api-start-branch":                nil,
+	}}
+
+	result, err := StartDevBranch(repo, 59, DefaultDevBranchPattern, false, false, runner)
+	if err != nil {
+		t.Fatalf("StartDevBranch error: %v", err)
+	}
+	if result.Created {
+		t.Fatalf("expected existing local branch to be reused without creating")
+	}
+	if !containsCall(runner.calls, "git checkout issue-59-add-api-start-branch") {
+		t.Fatalf("expected checkout existing branch, calls=%v", runner.calls)
+	}
+	if containsCall(runner.calls, "git checkout -b issue-59-add-api-start-branch") {
+		t.Fatalf("did not expect branch creation call, calls=%v", runner.calls)
+	}
+}
+
+func TestStartDevBranchFailsOnIssueNumberMismatch(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &devStartRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/59": []byte(`{"number":60,"title":"Add API: start branch","state":"open","labels":[{"name":"status:ready"}]}`),
+	}}
+
+	_, err := StartDevBranch(repo, 59, DefaultDevBranchPattern, true, false, runner)
+	if err == nil || !strings.Contains(err.Error(), "expected issue #59, got #60") {
+		t.Fatalf("expected issue number mismatch error, got %v", err)
+	}
+}
+
+func containsCall(calls []string, target string) bool {
+	for _, call := range calls {
+		if call == target {
+			return true
+		}
+	}
+	return false
+}

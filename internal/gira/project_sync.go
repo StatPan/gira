@@ -323,19 +323,19 @@ func BuildProjectSyncApplyReport(capability ProjectCapabilityReport) ProjectSync
 	}
 
 	if capability.Capabilities["projectsv2:read"] == ProjectCapabilityAllowed {
-		appendAction("date_validation_report", "projectsv2:read", "ok")
+		appendAction("date_validation_report", "projectsv2:read", "planned")
 	} else {
 		appendDenied("date_validation_report", "projectsv2:read")
 	}
 
 	if capability.Capabilities["projectsv2:write"] == ProjectCapabilityAllowed {
-		appendAction("project_status_field:update", "projectsv2:write", "ok")
+		appendAction("project_status_field:update", "projectsv2:write", "planned")
 	} else {
 		appendDenied("project_status_field:update", "projectsv2:write")
 	}
 
 	if capability.Capabilities["issues:write"] == ProjectCapabilityAllowed {
-		appendAction("milestone_complete_annotation:create", "issues:write", "ok")
+		appendAction("milestone_complete_annotation:create", "issues:write", "planned")
 	} else {
 		appendDenied("milestone_complete_annotation:create", "issues:write")
 	}

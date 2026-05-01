@@ -1110,3 +1110,63 @@ func TestInitJSONReady(t *testing.T) {
 		t.Fatalf("expected ready true: %s", stdout.String())
 	}
 }
+
+func TestReportWeeklyJSON(t *testing.T) {
+	restoreDash := newDashboardExportClient
+	restoreReview := newReviewGateClient
+	restoreNow := reportNow
+	t.Cleanup(func() {
+		newDashboardExportClient = restoreDash
+		newReviewGateClient = restoreReview
+		reportNow = restoreNow
+	})
+	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	reportNow = func() time.Time { return now }
+	newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
+		return weeklyDashClient{repo: repo, issues: []gira.DashboardRawIssue{{IssueNumber: 70, Title: "Blocked", State: "open", Labels: []string{"blocked"}, UpdatedAt: now.Add(-15 * 24 * time.Hour).Format(time.RFC3339), URL: "https://example/issues/70"}}}
+	}
+	newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
+		return weeklyReviewClient{repo: repo, prs: []gira.ReviewPR{{Number: 77, Title: "Wait", URL: "https://example/pr/77", UpdatedAt: now.Add(-72 * time.Hour).Format(time.RFC3339), RequestedReviewers: []string{"alice"}}}, issues: []gira.ReviewIssue{{Number: 70, Labels: []string{"blocker"}}}}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"report", "weekly", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"backlog_health": "amber"`) {
+		t.Fatalf("missing backlog health in output: %s", stdout.String())
+	}
+}
+
+type weeklyDashClient struct {
+	repo   gira.RepoRef
+	issues []gira.DashboardRawIssue
+}
+
+func (c weeklyDashClient) Repo() gira.RepoRef                             { return c.repo }
+func (c weeklyDashClient) FetchIssues() ([]gira.DashboardRawIssue, error) { return c.issues, nil }
+func (c weeklyDashClient) FetchPullRequests() ([]gira.DashboardRawPullRequest, error) {
+	return nil, nil
+}
+func (c weeklyDashClient) FetchMilestones() ([]gira.DashboardRawMilestone, error) { return nil, nil }
+func (c weeklyDashClient) FetchProjectSnapshot() (gira.ProjectSyncSnapshot, error) {
+	return gira.ProjectSyncSnapshot{}, nil
+}
+func (c weeklyDashClient) FetchTransitionSnapshot() (gira.ProjectTransitionSnapshot, error) {
+	return gira.ProjectTransitionSnapshot{}, nil
+}
+func (c weeklyDashClient) FetchCapabilities() (gira.ProjectCapabilityReport, error) {
+	return gira.ProjectCapabilityReport{}, nil
+}
+
+type weeklyReviewClient struct {
+	repo   gira.RepoRef
+	prs    []gira.ReviewPR
+	issues []gira.ReviewIssue
+}
+
+func (c weeklyReviewClient) Repo() gira.RepoRef                          { return c.repo }
+func (c weeklyReviewClient) ListOpenPRs() ([]gira.ReviewPR, error)       { return c.prs, nil }
+func (c weeklyReviewClient) ListOpenIssues() ([]gira.ReviewIssue, error) { return c.issues, nil }
+func (c weeklyReviewClient) MergePR(number int) error                    { return nil }

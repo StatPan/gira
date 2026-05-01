@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,15 +20,25 @@ Usage:
   gira <command> [flags]
 
 Commands:
+  init        One-command onboarding with prerequisite checks and next-step plan
   bootstrap   Bootstrap a repository into a Gira-managed project workspace
+  onboard     Verify onboarding readiness from init to steady-state
   dev         Issue to branch execution helpers
   sync        Sync Gira labels, milestones, and optionally bootstrap issues through gh
   status      Show a compact read-only GitHub status summary
   export      Export dashboard artifacts from read-only GitHub data
+  parity      Compute deterministic Jira-replacement parity scorecard
   project     Inspect permission capability for Project OS lifecycle actions
   audit       Verify audit ledgers for mutation integrity
   worker      Manage worker claim/handoff/release state for issues
   guardrails  Audit and apply branch protection/ruleset policy
+  triage      Backlog triage queue and policy apply helpers
+  sprint      Sprint iteration planning/start/close workflow
+  graph       Work graph validation (parent/depends_on/blocks)
+  review      Review routing queue with stale-review detection
+  merge       Policy-checked merge queue (dry-run/apply)
+  release     Release readiness gate report
+  report      Weekly PM cockpit report
 
 Flags:
   -h, --help  Show help
@@ -51,6 +62,19 @@ Flags:
   -h, --help          Show help
 `
 
+const initHelp = `One-command onboarding with prerequisite checks and fail-closed planning.
+
+Usage:
+  gira init --repo OWNER/REPO [--path .] [--dry-run] [--json]
+
+Flags:
+  --repo string       Target GitHub repo in OWNER/REPO format
+  --path string       Local git workspace path to validate (default ".")
+  --dry-run           Emit plan only (default true for this planning slice)
+  --json              Emit stable JSON report for automation
+  -h, --help          Show help
+`
+
 const statusHelp = `Show a compact read-only status summary from GitHub issues and milestones.
 
 Usage:
@@ -61,6 +85,21 @@ Flags:
   --json              Emit stable JSON for automation
   --stale-days int    Days since update before open issues count as stale (default 14)
   -h, --help          Show help
+`
+
+const onboardHelp = `Verify onboarding readiness from init to daily operation.
+
+Usage:
+  gira onboard verify --repo OWNER/REPO --stage init|bootstrap|first-sprint|steady-state [--json]
+
+Commands:
+  verify       Run prerequisite, bootstrap, metadata, and daily-run checks
+
+Flags:
+  --repo string   Target GitHub repo in OWNER/REPO format
+  --stage string  Readiness stage to verify
+  --json          Emit stable JSON readiness artifact
+  -h, --help      Show help
 `
 
 const syncHelp = `Sync Gira labels, milestones, and optionally bootstrap issues through gh.
@@ -124,6 +163,20 @@ Flags:
   -h, --help     Show help
 `
 
+const parityHelp = `Jira-parity scorecard for objective replacement readiness.
+
+Usage:
+  gira parity jira --repo OWNER/REPO [--json]
+
+Commands:
+  jira         Compute weighted parity report with domain evidence and blockers
+
+Flags:
+  --repo string  Target GitHub repo in OWNER/REPO format
+  --json         Emit stable JSON summary
+  -h, --help     Show help
+`
+
 const guardrailsHelp = `Audit and apply repository guardrails policy.
 
 Usage:
@@ -140,6 +193,21 @@ Flags:
   -h, --help             Show help
 `
 
+const triageHelp = `Backlog triage queue and policy apply helpers.
+
+Usage:
+  gira triage queue --repo OWNER/REPO [--json]
+  gira triage apply --repo OWNER/REPO --policy FILE --dry-run|--apply [--json]
+`
+
+const sprintHelp = `Sprint/iteration command family.
+
+Usage:
+  gira sprint plan --repo OWNER/REPO --iteration ID --capacity N --issues 1,2,3 --dry-run|--apply [--json]
+  gira sprint start --repo OWNER/REPO --iteration ID --dry-run|--apply [--json]
+  gira sprint close --repo OWNER/REPO --iteration ID --completed 1,2 --spillover-disposition carry|drop --rollover-reason TEXT --dry-run|--apply [--json]
+`
+
 const workerHelp = `Worker coordination commands for issue ownership and handoff payloads.
 
 Usage:
@@ -148,14 +216,50 @@ Usage:
   gira worker release --repo OWNER/REPO --issue N --worker NAME
 `
 
+const graphHelp = `Work graph validation (parent/depends_on/blocks).
+
+Usage:
+  gira graph validate --repo OWNER/REPO [--json]
+`
+
+const reviewHelp = `Review/approval routing queue.
+
+Usage:
+  gira review queue --repo OWNER/REPO [--json]
+`
+
+const mergeHelp = `Merge queue with policy checks.
+
+Usage:
+  gira merge queue --repo OWNER/REPO --dry-run|--apply [--json]
+`
+
+const releaseHelp = `Release readiness gate across approvals/checks/blockers/must-fix labels.
+
+Usage:
+  gira release readiness --repo OWNER/REPO [--json]
+`
+
+const reportHelp = `Weekly PM cockpit report with deterministic KPIs and top exceptions.
+
+Usage:
+  gira report weekly --repo OWNER/REPO [--json|--md]
+`
+
 const devHelp = `Developer workflow helpers for issue-to-branch execution.
 
 Usage:
   gira dev start --repo OWNER/REPO --issue N [--dry-run] [--json] [--force] [--branch-pattern "issue-%d-%s"]
+  gira dev pr open --repo OWNER/REPO --issue N [--json]
+  gira dev pr status --repo OWNER/REPO --issue N [--json]
 `
 
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
 	return gira.NewGHStatusClient(repo, gira.ExecCommandRunner{})
+}
+
+var newOnboardVerifyReport = func(repo gira.RepoRef, stage gira.OnboardStage) (gira.OnboardVerifyReport, error) {
+	return gira.BuildOnboardVerifyReport(repo, stage, gira.ExecCommandRunner{}, time.Now().UTC()), nil
 }
 
 var newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
@@ -196,6 +300,15 @@ var newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClien
 	return gira.NewGHDashboardExportClient(repo, gira.ExecCommandRunner{})
 }
 
+var newGraphClient = func(repo gira.RepoRef) gira.GraphClient {
+	return gira.NewGHGraphClient(repo, gira.ExecCommandRunner{})
+}
+
+var newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
+	client := gira.NewGHReviewGateClient(repo, gira.ExecCommandRunner{})
+	return client
+}
+
 var newGuardrailsSyncReport = func(repo gira.RepoRef, policyPath string, apply bool, allowRelaxation bool) (gira.GuardrailsSyncReport, error) {
 	policy, err := gira.LoadGuardrailsPolicy(policyPath)
 	if err != nil {
@@ -213,11 +326,23 @@ var newGuardrailsSyncReport = func(repo gira.RepoRef, policyPath string, apply b
 	return gira.SyncGuardrailsForClient(repo, policy, gira.NewGHGuardrailsClient(repo, gira.ExecCommandRunner{}), apply, allowRelaxation)
 }
 
+var newJiraParityReport = func(repo gira.RepoRef) (gira.JiraParityReport, error) {
+	capability, err := newProjectCapabilityReport(repo)
+	if err != nil {
+		return gira.JiraParityReport{}, err
+	}
+	return gira.BuildJiraParityReport(repo, capability, time.Now()), nil
+}
+
 var dashboardExportNow = func() time.Time {
 	return time.Now()
 }
 
 var statusNow = func() time.Time {
+	return time.Now()
+}
+
+var reportNow = func() time.Time {
 	return time.Now()
 }
 
@@ -230,8 +355,12 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 
 	switch args[0] {
+	case "init":
+		return runInit(args[1:], stdout, stderr)
 	case "bootstrap":
 		return runBootstrap(args[1:], stdout, stderr)
+	case "onboard":
+		return runOnboard(args[1:], stdout, stderr)
 	case "dev":
 		return runDev(args[1:], stdout, stderr)
 	case "sync":
@@ -240,6 +369,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runStatus(args[1:], stdout, stderr)
 	case "export":
 		return runExport(args[1:], stdout, stderr)
+	case "parity":
+		return runParity(args[1:], stdout, stderr)
 	case "project":
 		return runProject(args[1:], stdout, stderr)
 	case "audit":
@@ -248,6 +379,20 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runWorker(args[1:], stdout, stderr)
 	case "guardrails":
 		return runGuardrails(args[1:], stdout, stderr)
+	case "triage":
+		return runTriage(args[1:], stdout, stderr)
+	case "sprint":
+		return runSprint(args[1:], stdout, stderr)
+	case "graph":
+		return runGraph(args[1:], stdout, stderr)
+	case "review":
+		return runReview(args[1:], stdout, stderr)
+	case "merge":
+		return runMerge(args[1:], stdout, stderr)
+	case "release":
+		return runRelease(args[1:], stdout, stderr)
+	case "report":
+		return runReport(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
@@ -255,10 +400,112 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 }
 
+func runInit(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	pathValue := fs.String("path", ".", "Local git workspace path to validate")
+	dryRun := fs.Bool("dry-run", true, "Emit plan only")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, initHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, initHelp)
+		return 0
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		_, _ = io.WriteString(stderr, initHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildInitReport(repo, *pathValue, *dryRun, devCommandRunner)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode init JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatInitReport(report))
+	return 0
+}
+
+func runParity(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		_, _ = io.WriteString(stdout, parityHelp)
+		return 0
+	}
+	if args[0] != "jira" {
+		fmt.Fprintf(stderr, "unknown parity command: %s\n\n", args[0])
+		_, _ = io.WriteString(stderr, parityHelp)
+		return 2
+	}
+
+	fs := flag.NewFlagSet("parity jira", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, parityHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		_, _ = io.WriteString(stderr, parityHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newJiraParityReport(repo)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	out, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "encode parity JSON: %v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprintf(stdout, "%s\n", out)
+	return 0
+}
+
 func runDev(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		_, _ = io.WriteString(stdout, devHelp)
 		return 0
+	}
+	if args[0] == "pr" {
+		return runDevPR(args[1:], stdout, stderr)
 	}
 	if args[0] != "start" {
 		fmt.Fprintf(stderr, "unknown dev command: %s\n\n", args[0])
@@ -308,6 +555,66 @@ func runDev(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "dev start: %s\n", result.Branch)
 	return 0
+}
+
+func runDevPR(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 {
+		_, _ = io.WriteString(stderr, devHelp)
+		return 2
+	}
+	cmd := args[0]
+	fs := flag.NewFlagSet("dev pr "+cmd, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	issue := fs.Int("issue", 0, "Issue number")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, devHelp)
+		return 2
+	}
+	if *repoValue == "" || *issue <= 0 {
+		fmt.Fprint(stderr, "--repo and --issue are required\n\n")
+		_, _ = io.WriteString(stderr, devHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	switch cmd {
+	case "open":
+		result, err := gira.OpenDevPR(repo, *issue, devCommandRunner)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+			return 0
+		}
+		fmt.Fprintf(stdout, "dev pr open: %s\n", result.PRURL)
+		return 0
+	case "status":
+		result, err := gira.DevPRStatus(repo, *issue, devCommandRunner)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+			return 0
+		}
+		fmt.Fprintf(stdout, "dev pr status: ready=%t blockers=%s\n", result.Ready, strings.Join(result.Blockers, ","))
+		return 0
+	default:
+		fmt.Fprintf(stderr, "unknown dev pr command: %s\n\n", cmd)
+		_, _ = io.WriteString(stderr, devHelp)
+		return 2
+	}
 }
 
 func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -385,6 +692,75 @@ func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func runOnboard(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, onboardHelp)
+		return 0
+	}
+	if args[0] != "verify" {
+		fmt.Fprintf(stderr, "unknown onboard command: %s\n\n", args[0])
+		fmt.Fprint(stderr, onboardHelp)
+		return 2
+	}
+
+	fs := flag.NewFlagSet("onboard verify", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	stageValue := fs.String("stage", "", "Readiness stage to verify")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON readiness artifact")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, onboardHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, onboardHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, onboardHelp)
+		return 2
+	}
+	if *repoValue == "" || *stageValue == "" {
+		fmt.Fprint(stderr, "--repo and --stage are required\n\n")
+		fmt.Fprint(stderr, onboardHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	stage, err := gira.ParseOnboardStage(*stageValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, onboardHelp)
+		return 2
+	}
+	report, err := newOnboardVerifyReport(repo, stage)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode onboard verify JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+	} else {
+		fmt.Fprint(stdout, gira.FormatOnboardVerifyReport(report))
+	}
+	if report.Ready {
+		return 0
+	}
+	return 1
 }
 
 func runExport(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -924,6 +1300,220 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
+func runTriage(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, triageHelp)
+		return 0
+	}
+	switch args[0] {
+	case "queue":
+		fs := flag.NewFlagSet("triage queue", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, triageHelp)
+			return 2
+		}
+		if *repoValue == "" {
+			fmt.Fprint(stderr, "--repo is required\n\n")
+			fmt.Fprint(stderr, triageHelp)
+			return 2
+		}
+		repo, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		report, err := gira.BuildTriageQueue(gira.NewGHTriageClient(repo, gira.ExecCommandRunner{}), time.Now())
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		output, _ := json.MarshalIndent(report, "", "  ")
+		if *jsonOutput {
+			fmt.Fprintf(stdout, "%s\n", output)
+			return 0
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	case "apply":
+		fs := flag.NewFlagSet("triage apply", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		policyPath := fs.String("policy", "", "Policy file path")
+		dryRun := fs.Bool("dry-run", false, "Preview only")
+		apply := fs.Bool("apply", false, "Apply labels")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, triageHelp)
+			return 2
+		}
+		if *repoValue == "" || *policyPath == "" || (*dryRun == *apply) {
+			fmt.Fprint(stderr, "--repo, --policy and exactly one of --dry-run/--apply are required\n\n")
+			fmt.Fprint(stderr, triageHelp)
+			return 2
+		}
+		repo, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		policy, err := gira.LoadTriagePolicy(*policyPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		report, err := gira.ApplyTriagePolicy(gira.NewGHTriageClient(repo, gira.ExecCommandRunner{}), policy, *apply, time.Now())
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		output, _ := json.MarshalIndent(report, "", "  ")
+		if *jsonOutput {
+			fmt.Fprintf(stdout, "%s\n", output)
+			return 0
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "unknown triage command: %s\n\n", args[0])
+		fmt.Fprint(stderr, triageHelp)
+		return 2
+	}
+}
+
+func runSprint(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, sprintHelp)
+		return 0
+	}
+	switch args[0] {
+	case "plan":
+		fs := flag.NewFlagSet("sprint plan", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		iteration := fs.String("iteration", "", "Iteration identifier")
+		capacity := fs.Int("capacity", 0, "Capacity target")
+		issues := fs.String("issues", "", "Comma-separated committed issue numbers")
+		dryRun := fs.Bool("dry-run", false, "Preview only")
+		apply := fs.Bool("apply", false, "Persist plan")
+		_ = fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		if *repoValue == "" || *iteration == "" || *capacity <= 0 || (*dryRun == *apply) {
+			fmt.Fprint(stderr, "--repo, --iteration, --capacity and exactly one of --dry-run/--apply are required\n\n")
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		repo, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		committed, err := parseCSVInts(*issues)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		report, err := gira.PlanSprint(gira.SprintStatePath(repo), repo, *iteration, *capacity, committed, *apply)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		output, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	case "start":
+		fs := flag.NewFlagSet("sprint start", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		iteration := fs.String("iteration", "", "Iteration identifier")
+		dryRun := fs.Bool("dry-run", false, "Preview only")
+		apply := fs.Bool("apply", false, "Start sprint")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		if *repoValue == "" || *iteration == "" || (*dryRun == *apply) {
+			fmt.Fprint(stderr, "--repo, --iteration and exactly one of --dry-run/--apply are required\n\n")
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		repo, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		report, err := gira.StartSprint(gira.SprintStatePath(repo), repo, *iteration, *apply, time.Now())
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		output, _ := json.MarshalIndent(report, "", "  ")
+		if *jsonOutput {
+			fmt.Fprintf(stdout, "%s\n", output)
+			return 0
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	case "close":
+		fs := flag.NewFlagSet("sprint close", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		iteration := fs.String("iteration", "", "Iteration identifier")
+		completed := fs.String("completed", "", "Comma-separated completed issue numbers")
+		disposition := fs.String("spillover-disposition", "", "carry or drop")
+		reason := fs.String("rollover-reason", "", "Why spillover occurred")
+		dryRun := fs.Bool("dry-run", false, "Preview only")
+		apply := fs.Bool("apply", false, "Close sprint")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		if *repoValue == "" || *iteration == "" || *disposition == "" || *reason == "" || (*dryRun == *apply) {
+			fmt.Fprint(stderr, "--repo, --iteration, --spillover-disposition, --rollover-reason and exactly one of --dry-run/--apply are required\n\n")
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		repo, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		completedItems, err := parseCSVInts(*completed)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		report, err := gira.CloseSprint(gira.SprintStatePath(repo), repo, *iteration, completedItems, *disposition, *reason, *apply, time.Now())
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		output, _ := json.MarshalIndent(report, "", "  ")
+		if *jsonOutput {
+			fmt.Fprintf(stdout, "%s\n", output)
+			return 0
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "unknown sprint command: %s\n\n", args[0])
+		fmt.Fprint(stderr, sprintHelp)
+		return 2
+	}
+}
+
 func runWorker(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(stdout, workerHelp)
@@ -1050,6 +1640,26 @@ func runWorkerRelease(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
+func parseCSVInts(value string) ([]int, error) {
+	if strings.TrimSpace(value) == "" {
+		return []int{}, nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]int, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer %q", p)
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
 func splitList(value string) []string {
 	parts := strings.Split(value, ";")
 	out := make([]string, 0, len(parts))
@@ -1125,6 +1735,238 @@ func runAuditVerify(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	if !report.Valid {
 		return 1
+	}
+	return 0
+}
+
+func runGraph(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, graphHelp)
+		return 0
+	}
+	if args[0] != "validate" {
+		fmt.Fprintf(stderr, "unknown graph command: %s\n\n", args[0])
+		fmt.Fprint(stderr, graphHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("graph validate", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, graphHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, graphHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildGraphValidationReportForClient(newGraphClient(repo))
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	out, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "encode graph JSON: %v\n", err)
+		return 2
+	}
+	fmt.Fprintf(stdout, "%s\n", out)
+	_ = jsonOutput
+	if report.Counts.Diagnostics > 0 {
+		return 1
+	}
+	return 0
+}
+
+func runReview(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, reviewHelp)
+		return 0
+	}
+	if args[0] != "queue" {
+		fmt.Fprintf(stderr, "unknown review command: %s\n\n", args[0])
+		fmt.Fprint(stderr, reviewHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("review queue", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, reviewHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, reviewHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildReviewQueue(newReviewGateClient(repo), time.Now())
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	out, _ := json.MarshalIndent(report, "", "  ")
+	if *jsonOutput {
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprintf(stdout, "%s\n", out)
+	return 0
+}
+
+func runMerge(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, mergeHelp)
+		return 0
+	}
+	if args[0] != "queue" {
+		fmt.Fprintf(stderr, "unknown merge command: %s\n\n", args[0])
+		fmt.Fprint(stderr, mergeHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("merge queue", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	dryRun := fs.Bool("dry-run", false, "Preview only")
+	apply := fs.Bool("apply", false, "Apply merges")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, mergeHelp)
+		return 2
+	}
+	if *repoValue == "" || (*dryRun == *apply) {
+		fmt.Fprint(stderr, "--repo and exactly one of --dry-run/--apply are required\n\n")
+		fmt.Fprint(stderr, mergeHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildMergeQueue(newReviewGateClient(repo), time.Now(), *apply)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	out, _ := json.MarshalIndent(report, "", "  ")
+	if *jsonOutput {
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprintf(stdout, "%s\n", out)
+	return 0
+}
+
+func runRelease(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, releaseHelp)
+		return 0
+	}
+	if args[0] != "readiness" {
+		fmt.Fprintf(stderr, "unknown release command: %s\n\n", args[0])
+		fmt.Fprint(stderr, releaseHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("release readiness", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, releaseHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, releaseHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildReleaseReadiness(newReviewGateClient(repo), time.Now())
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	out, _ := json.MarshalIndent(report, "", "  ")
+	if *jsonOutput {
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprintf(stdout, "%s\n", out)
+	if !report.Ready {
+		return 1
+	}
+	return 0
+}
+
+func runReport(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, reportHelp)
+		return 0
+	}
+	if args[0] != "weekly" {
+		fmt.Fprintf(stderr, "unknown report command: %s\n\n", args[0])
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("report weekly", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON summary")
+	mdOutput := fs.Bool("md", false, "Emit markdown report")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildWeeklyReport(repo, reportNow(), newDashboardExportClient(repo), newReviewGateClient(repo))
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode report JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	if *mdOutput || !*jsonOutput {
+		fmt.Fprint(stdout, gira.FormatWeeklyReportMarkdown(report))
+		return 0
 	}
 	return 0
 }

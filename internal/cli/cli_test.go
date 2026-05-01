@@ -161,6 +161,49 @@ func TestStatusJSONUsesInjectedClient(t *testing.T) {
 	}
 }
 
+func TestOnboardVerifyRequiresRepoAndStage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"onboard", "verify", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "--repo and --stage are required") {
+		t.Fatalf("stderr missing repo/stage requirement:\n%s", stderr.String())
+	}
+}
+
+func TestOnboardVerifyJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newOnboardVerifyReport
+	t.Cleanup(func() { newOnboardVerifyReport = restore })
+	newOnboardVerifyReport = func(repo gira.RepoRef, stage gira.OnboardStage) (gira.OnboardVerifyReport, error) {
+		return gira.OnboardVerifyReport{
+			Repo:      repo.FullName(),
+			Command:   "onboard verify",
+			Stage:     string(stage),
+			CheckedAt: "2026-04-26T12:00:00Z",
+			Ready:     false,
+			BlockingChecklist: []gira.OnboardCheck{{
+				ID:          "bootstrap_pr_template",
+				Description: "bootstrap PR template is committed",
+				Status:      gira.OnboardCheckFail,
+				Remediation: "run gira bootstrap",
+			}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"onboard", "verify", "--repo", "StatPan/gira", "--stage", "bootstrap", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"stage\": \"bootstrap\"") {
+		t.Fatalf("onboard JSON missing stage: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "\"ready\": false") {
+		t.Fatalf("onboard JSON missing ready=false: %s", stdout.String())
+	}
+}
+
 func TestSyncDryRunUsesInjectedClientWithoutApplying(t *testing.T) {
 	restoreClient := newSyncClient
 	t.Cleanup(func() {
@@ -694,6 +737,32 @@ func TestProjectCapabilityCommandNeedsSubcommand(t *testing.T) {
 	}
 }
 
+func TestParityJiraCommandJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newJiraParityReport
+	t.Cleanup(func() { newJiraParityReport = restore })
+	newJiraParityReport = func(repo gira.RepoRef) (gira.JiraParityReport, error) {
+		return gira.JiraParityReport{
+			Repo:    repo.FullName(),
+			Command: "parity jira",
+			Scores:  gira.JiraParityScores{Earned: 80, Total: 100, Pct: 80},
+			Domains: []gira.JiraParityDomain{{Name: "visibility", Weight: 15, Pass: true, Evidence: []string{"gira status"}}},
+			Ready:   false,
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"parity", "jira", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"command\": \"parity jira\"") {
+		t.Fatalf("parity jira JSON missing command: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "\"percent\": 80") {
+		t.Fatalf("parity jira JSON missing percent score: %s", stdout.String())
+	}
+}
+
 func TestProjectSyncCommandRequiresDryRunOrApply(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"project", "sync", "--repo", "StatPan/gira"}, &stdout, &stderr)
@@ -1002,10 +1071,10 @@ func TestDevStartJSONReusesLocalBranch(t *testing.T) {
 	t.Cleanup(func() { devCommandRunner = original })
 	devCommandRunner = devCLIRunner{
 		outputs: map[string][]byte{
-			"gh api repos/StatPan/gira/issues/59":                       []byte(`{"number":59,"title":"Start branch","state":"open","labels":[{"name":"status:ready"}]}`),
+			"gh api repos/StatPan/gira/issues/59":                            []byte(`{"number":59,"title":"Start branch","state":"open","labels":[{"name":"status:ready"}]}`),
 			"git show-ref --verify --quiet refs/heads/issue-59-start-branch": nil,
 			"git ls-remote --exit-code --heads origin issue-59-start-branch": []byte("abc\trefs/heads/issue-59-start-branch"),
-			"git checkout issue-59-start-branch":                         nil,
+			"git checkout issue-59-start-branch":                             nil,
 		},
 	}
 
@@ -1018,3 +1087,129 @@ func TestDevStartJSONReusesLocalBranch(t *testing.T) {
 		t.Fatalf("expected created=false for local branch reuse: %s", stdout.String())
 	}
 }
+
+func TestDevPROpenJSON(t *testing.T) {
+	original := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = original })
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/60":                                          []byte(`{"number":60,"title":"Add PR loop","state":"open","labels":[{"name":"status:ready"}]}`),
+		"gh pr create --repo StatPan/gira --title feat: Add PR loop --body Closes #60": []byte("https://github.com/StatPan/gira/pull/99\n"),
+	}}
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"dev", "pr", "open", "--repo", "StatPan/gira", "--issue", "60", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"pr_number": 99`) {
+		t.Fatalf("missing pr_number: %s", stdout.String())
+	}
+}
+
+func TestDevPRStatusJSON(t *testing.T) {
+	original := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = original })
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"gh pr list --repo StatPan/gira --search repo:StatPan/gira is:pr 60 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[{"number":99,"title":"x","body":"Closes #60","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+	}}
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"dev", "pr", "status", "--repo", "StatPan/gira", "--issue", "60", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"ready": true`) {
+		t.Fatalf("expected ready true: %s", stdout.String())
+	}
+}
+
+func TestInitRequiresRepo(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"init", "--json"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero without --repo")
+	}
+	if !strings.Contains(stderr.String(), "--repo is required") {
+		t.Fatalf("missing repo error: %s", stderr.String())
+	}
+}
+
+func TestInitJSONReady(t *testing.T) {
+	original := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = original })
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"gh --version":                                 []byte("gh version 2"),
+		"git --version":                                []byte("git version 2"),
+		"gh auth status":                               []byte("ok"),
+		"gh repo view StatPan/gira --json name":        []byte(`{"name":"gira"}`),
+		"git -C /repo rev-parse --is-inside-work-tree": []byte("true"),
+		"git -C /repo diff --quiet":                    nil,
+		"git -C /repo diff --cached --quiet":           nil,
+	}}
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"init", "--repo", "StatPan/gira", "--path", "/repo", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"ready": true`) {
+		t.Fatalf("expected ready true: %s", stdout.String())
+	}
+}
+
+func TestReportWeeklyJSON(t *testing.T) {
+	restoreDash := newDashboardExportClient
+	restoreReview := newReviewGateClient
+	restoreNow := reportNow
+	t.Cleanup(func() {
+		newDashboardExportClient = restoreDash
+		newReviewGateClient = restoreReview
+		reportNow = restoreNow
+	})
+	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	reportNow = func() time.Time { return now }
+	newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
+		return weeklyDashClient{repo: repo, issues: []gira.DashboardRawIssue{{IssueNumber: 70, Title: "Blocked", State: "open", Labels: []string{"blocked"}, UpdatedAt: now.Add(-15 * 24 * time.Hour).Format(time.RFC3339), URL: "https://example/issues/70"}}}
+	}
+	newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
+		return weeklyReviewClient{repo: repo, prs: []gira.ReviewPR{{Number: 77, Title: "Wait", URL: "https://example/pr/77", UpdatedAt: now.Add(-72 * time.Hour).Format(time.RFC3339), RequestedReviewers: []string{"alice"}}}, issues: []gira.ReviewIssue{{Number: 70, Labels: []string{"blocker"}}}}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"report", "weekly", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"backlog_health": "amber"`) {
+		t.Fatalf("missing backlog health in output: %s", stdout.String())
+	}
+}
+
+type weeklyDashClient struct {
+	repo   gira.RepoRef
+	issues []gira.DashboardRawIssue
+}
+
+func (c weeklyDashClient) Repo() gira.RepoRef                             { return c.repo }
+func (c weeklyDashClient) FetchIssues() ([]gira.DashboardRawIssue, error) { return c.issues, nil }
+func (c weeklyDashClient) FetchPullRequests() ([]gira.DashboardRawPullRequest, error) {
+	return nil, nil
+}
+func (c weeklyDashClient) FetchMilestones() ([]gira.DashboardRawMilestone, error) { return nil, nil }
+func (c weeklyDashClient) FetchProjectSnapshot() (gira.ProjectSyncSnapshot, error) {
+	return gira.ProjectSyncSnapshot{}, nil
+}
+func (c weeklyDashClient) FetchTransitionSnapshot() (gira.ProjectTransitionSnapshot, error) {
+	return gira.ProjectTransitionSnapshot{}, nil
+}
+func (c weeklyDashClient) FetchCapabilities() (gira.ProjectCapabilityReport, error) {
+	return gira.ProjectCapabilityReport{}, nil
+}
+
+type weeklyReviewClient struct {
+	repo   gira.RepoRef
+	prs    []gira.ReviewPR
+	issues []gira.ReviewIssue
+}
+
+func (c weeklyReviewClient) Repo() gira.RepoRef                          { return c.repo }
+func (c weeklyReviewClient) ListOpenPRs() ([]gira.ReviewPR, error)       { return c.prs, nil }
+func (c weeklyReviewClient) ListOpenIssues() ([]gira.ReviewIssue, error) { return c.issues, nil }
+func (c weeklyReviewClient) MergePR(number int) error                    { return nil }

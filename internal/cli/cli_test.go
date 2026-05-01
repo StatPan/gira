@@ -783,7 +783,7 @@ func TestProjectSyncApplyCommandJSONUsesInjectedBuilder(t *testing.T) {
 			Repo:    repo.FullName(),
 			Command: "project sync",
 			DryRun:  false,
-			Applied: []gira.ProjectSyncApplyAction{{Action: "project_status_field:update", Required: "projectsv2:write", Result: "ok"}},
+			Applied: []gira.ProjectSyncApplyAction{{Action: "project_status_field:update", Required: "projectsv2:write", Result: "planned"}},
 		}, nil
 	}
 

@@ -20,6 +20,7 @@ Usage:
 
 Commands:
   bootstrap   Bootstrap a repository into a Gira-managed project workspace
+  dev         Issue to branch execution helpers
   sync        Sync Gira labels, milestones, and optionally bootstrap issues through gh
   status      Show a compact read-only GitHub status summary
   export      Export dashboard artifacts from read-only GitHub data
@@ -147,6 +148,12 @@ Usage:
   gira worker release --repo OWNER/REPO --issue N --worker NAME
 `
 
+const devHelp = `Developer workflow helpers for issue-to-branch execution.
+
+Usage:
+  gira dev start --repo OWNER/REPO --issue N [--dry-run] [--json] [--force] [--branch-pattern "issue-%d-%s"]
+`
+
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
 	return gira.NewGHStatusClient(repo, gira.ExecCommandRunner{})
 }
@@ -214,6 +221,8 @@ var statusNow = func() time.Time {
 	return time.Now()
 }
 
+var devCommandRunner gira.CommandRunner = gira.ExecCommandRunner{}
+
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(stdout, rootHelp)
@@ -223,6 +232,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "bootstrap":
 		return runBootstrap(args[1:], stdout, stderr)
+	case "dev":
+		return runDev(args[1:], stdout, stderr)
 	case "sync":
 		return runSync(args[1:], stdout, stderr)
 	case "status":
@@ -242,6 +253,61 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, rootHelp)
 		return 2
 	}
+}
+
+func runDev(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		_, _ = io.WriteString(stdout, devHelp)
+		return 0
+	}
+	if args[0] != "start" {
+		fmt.Fprintf(stderr, "unknown dev command: %s\n\n", args[0])
+		_, _ = io.WriteString(stderr, devHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("dev start", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	issue := fs.Int("issue", 0, "Issue number")
+	dryRun := fs.Bool("dry-run", false, "Preview only")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	force := fs.Bool("force", false, "Override readiness checks")
+	pattern := fs.String("branch-pattern", gira.DefaultDevBranchPattern, "fmt pattern for branch naming")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, devHelp)
+		return 2
+	}
+	if *repoValue == "" || *issue <= 0 {
+		fmt.Fprint(stderr, "--repo and --issue are required\n\n")
+		_, _ = io.WriteString(stderr, devHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	result, err := gira.StartDevBranch(repo, *issue, *pattern, *dryRun, *force, devCommandRunner)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode dev start JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprintf(stdout, "dev start: %s\n", result.Branch)
+	return 0
 }
 
 func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {

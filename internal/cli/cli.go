@@ -22,6 +22,7 @@ Usage:
 Commands:
   init        One-command onboarding with prerequisite checks and next-step plan
   bootstrap   Bootstrap a repository into a Gira-managed project workspace
+  onboard     Verify onboarding readiness from init to steady-state
   dev         Issue to branch execution helpers
   sync        Sync Gira labels, milestones, and optionally bootstrap issues through gh
   status      Show a compact read-only GitHub status summary
@@ -84,6 +85,21 @@ Flags:
   --json              Emit stable JSON for automation
   --stale-days int    Days since update before open issues count as stale (default 14)
   -h, --help          Show help
+`
+
+const onboardHelp = `Verify onboarding readiness from init to daily operation.
+
+Usage:
+  gira onboard verify --repo OWNER/REPO --stage init|bootstrap|first-sprint|steady-state [--json]
+
+Commands:
+  verify       Run prerequisite, bootstrap, metadata, and daily-run checks
+
+Flags:
+  --repo string   Target GitHub repo in OWNER/REPO format
+  --stage string  Readiness stage to verify
+  --json          Emit stable JSON readiness artifact
+  -h, --help      Show help
 `
 
 const syncHelp = `Sync Gira labels, milestones, and optionally bootstrap issues through gh.
@@ -242,6 +258,10 @@ var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
 	return gira.NewGHStatusClient(repo, gira.ExecCommandRunner{})
 }
 
+var newOnboardVerifyReport = func(repo gira.RepoRef, stage gira.OnboardStage) (gira.OnboardVerifyReport, error) {
+	return gira.BuildOnboardVerifyReport(repo, stage, gira.ExecCommandRunner{}, time.Now().UTC()), nil
+}
+
 var newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
 	return gira.NewGHSyncClient(repo, gira.ExecCommandRunner{})
 }
@@ -339,6 +359,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runInit(args[1:], stdout, stderr)
 	case "bootstrap":
 		return runBootstrap(args[1:], stdout, stderr)
+	case "onboard":
+		return runOnboard(args[1:], stdout, stderr)
 	case "dev":
 		return runDev(args[1:], stdout, stderr)
 	case "sync":
@@ -670,6 +692,75 @@ func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func runOnboard(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, onboardHelp)
+		return 0
+	}
+	if args[0] != "verify" {
+		fmt.Fprintf(stderr, "unknown onboard command: %s\n\n", args[0])
+		fmt.Fprint(stderr, onboardHelp)
+		return 2
+	}
+
+	fs := flag.NewFlagSet("onboard verify", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	stageValue := fs.String("stage", "", "Readiness stage to verify")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON readiness artifact")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, onboardHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, onboardHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, onboardHelp)
+		return 2
+	}
+	if *repoValue == "" || *stageValue == "" {
+		fmt.Fprint(stderr, "--repo and --stage are required\n\n")
+		fmt.Fprint(stderr, onboardHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	stage, err := gira.ParseOnboardStage(*stageValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, onboardHelp)
+		return 2
+	}
+	report, err := newOnboardVerifyReport(repo, stage)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode onboard verify JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+	} else {
+		fmt.Fprint(stdout, gira.FormatOnboardVerifyReport(report))
+	}
+	if report.Ready {
+		return 0
+	}
+	return 1
 }
 
 func runExport(args []string, stdout io.Writer, stderr io.Writer) int {

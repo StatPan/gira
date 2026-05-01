@@ -161,6 +161,49 @@ func TestStatusJSONUsesInjectedClient(t *testing.T) {
 	}
 }
 
+func TestOnboardVerifyRequiresRepoAndStage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"onboard", "verify", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "--repo and --stage are required") {
+		t.Fatalf("stderr missing repo/stage requirement:\n%s", stderr.String())
+	}
+}
+
+func TestOnboardVerifyJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newOnboardVerifyReport
+	t.Cleanup(func() { newOnboardVerifyReport = restore })
+	newOnboardVerifyReport = func(repo gira.RepoRef, stage gira.OnboardStage) (gira.OnboardVerifyReport, error) {
+		return gira.OnboardVerifyReport{
+			Repo:      repo.FullName(),
+			Command:   "onboard verify",
+			Stage:     string(stage),
+			CheckedAt: "2026-04-26T12:00:00Z",
+			Ready:     false,
+			BlockingChecklist: []gira.OnboardCheck{{
+				ID:          "bootstrap_pr_template",
+				Description: "bootstrap PR template is committed",
+				Status:      gira.OnboardCheckFail,
+				Remediation: "run gira bootstrap",
+			}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"onboard", "verify", "--repo", "StatPan/gira", "--stage", "bootstrap", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"stage\": \"bootstrap\"") {
+		t.Fatalf("onboard JSON missing stage: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "\"ready\": false") {
+		t.Fatalf("onboard JSON missing ready=false: %s", stdout.String())
+	}
+}
+
 func TestSyncDryRunUsesInjectedClientWithoutApplying(t *testing.T) {
 	restoreClient := newSyncClient
 	t.Cleanup(func() {

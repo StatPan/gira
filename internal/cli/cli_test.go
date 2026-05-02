@@ -1192,6 +1192,9 @@ func TestInitReadsConfig(t *testing.T) {
 	if !strings.Contains(stdout.String(), `"config_profile_count": 1`) {
 		t.Fatalf("expected config profile count in output: %s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), `config profile \"default\": labels=1 milestones=0 issue_templates=0 approvals=1 codeowners=false`) {
+		t.Fatalf("expected config profile plan details in output: %s", stdout.String())
+	}
 }
 
 func TestInitUsesDefaultConfigPathWhenPresent(t *testing.T) {

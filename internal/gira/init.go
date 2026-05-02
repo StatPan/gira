@@ -3,6 +3,7 @@ package gira
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -22,6 +23,10 @@ type InitReport struct {
 }
 
 func BuildInitReport(repo RepoRef, path string, dryRun bool, runner CommandRunner) (InitReport, error) {
+	return BuildInitReportWithConfig(repo, path, dryRun, "", nil, runner)
+}
+
+func BuildInitReportWithConfig(repo RepoRef, path string, dryRun bool, configPath string, config *InitConfig, runner CommandRunner) (InitReport, error) {
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
@@ -34,6 +39,7 @@ func BuildInitReport(repo RepoRef, path string, dryRun bool, runner CommandRunne
 		Repo:         repo.FullName(),
 		Path:         absPath,
 		DryRun:       dryRun,
+		ConfigPath:   configPath,
 		Checks:       map[string]bool{},
 		Failures:     map[string]string{},
 		Remediations: map[string]string{},
@@ -42,6 +48,27 @@ func BuildInitReport(repo RepoRef, path string, dryRun bool, runner CommandRunne
 			"gira sync --repo " + repo.FullName(),
 			"gira status --repo " + repo.FullName() + " --json",
 		},
+	}
+	if config != nil {
+		report.ConfigProfileCount = len(config.Profiles)
+		profileNames := make([]string, 0, len(config.Profiles))
+		for name := range config.Profiles {
+			profileNames = append(profileNames, name)
+		}
+		sort.Strings(profileNames)
+		for _, name := range profileNames {
+			profile := config.Profiles[name]
+			report.PlannedSteps = append(report.PlannedSteps,
+				fmt.Sprintf("config profile %q: labels=%d milestones=%d issue_templates=%d approvals=%d codeowners=%t",
+					name,
+					len(profile.Labels),
+					len(profile.Milestones),
+					len(profile.IssueTemplates),
+					profile.ReviewPolicy.RequiredApprovals,
+					profile.ReviewPolicy.RequireCodeOwners,
+				),
+			)
+		}
 	}
 
 	report.Checks["gh_installed"] = probeCommand(runner, "gh", "--version") == nil

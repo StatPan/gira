@@ -453,11 +453,11 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) int {
 		loadedConfig = cfg
 	}
 
-	report, err := gira.BuildInitReport(repo, *pathValue, *dryRun, devCommandRunner)
+	var configPtr *gira.InitConfig
 	if loadedConfigPath != "" {
-		report.ConfigPath = loadedConfigPath
-		report.ConfigProfileCount = len(loadedConfig.Profiles)
+		configPtr = &loadedConfig
 	}
+	report, err := gira.BuildInitReportWithConfig(repo, *pathValue, *dryRun, loadedConfigPath, configPtr, devCommandRunner)
 	if err != nil {
 		if *jsonOutput {
 			out, _ := json.MarshalIndent(report, "", "  ")

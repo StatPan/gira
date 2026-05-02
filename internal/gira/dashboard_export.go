@@ -38,25 +38,25 @@ type DashboardExportArtifact struct {
 }
 
 type DashboardExportCounts struct {
-	Issues        int `json:"issues"`
-	PullRequests  int `json:"pull_requests"`
-	Milestones    int `json:"milestones"`
-	RoadmapItems  int `json:"roadmap_items"`
-	Transitions   int `json:"transitions"`
-	Warnings      int `json:"warnings"`
+	Issues       int `json:"issues"`
+	PullRequests int `json:"pull_requests"`
+	Milestones   int `json:"milestones"`
+	RoadmapItems int `json:"roadmap_items"`
+	Transitions  int `json:"transitions"`
+	Warnings     int `json:"warnings"`
 }
 
 type DashboardExportPlan struct {
-	Command       string                  `json:"command"`
-	DryRun        bool                    `json:"dry_run"`
-	Repo          string                  `json:"repo"`
-	OutputRoot    string                  `json:"output_root"`
-	SchemaVersion string                  `json:"schema_version"`
-	SnapshotAt    string                  `json:"snapshot_at"`
-	Sources       []DashboardExportSource `json:"sources"`
+	Command       string                    `json:"command"`
+	DryRun        bool                      `json:"dry_run"`
+	Repo          string                    `json:"repo"`
+	OutputRoot    string                    `json:"output_root"`
+	SchemaVersion string                    `json:"schema_version"`
+	SnapshotAt    string                    `json:"snapshot_at"`
+	Sources       []DashboardExportSource   `json:"sources"`
 	Artifacts     []DashboardExportArtifact `json:"artifacts"`
-	Counts        DashboardExportCounts   `json:"counts"`
-	Warnings      []string                `json:"warnings"`
+	Counts        DashboardExportCounts     `json:"counts"`
+	Warnings      []string                  `json:"warnings"`
 }
 
 type DashboardExportGenerator struct {
@@ -65,12 +65,12 @@ type DashboardExportGenerator struct {
 }
 
 type DashboardExportManifest struct {
-	SchemaVersion string                  `json:"schema_version"`
-	SnapshotAt    string                  `json:"snapshot_at"`
-	Repo          string                  `json:"repo"`
-	Sources       []DashboardExportSource  `json:"sources"`
+	SchemaVersion string                    `json:"schema_version"`
+	SnapshotAt    string                    `json:"snapshot_at"`
+	Repo          string                    `json:"repo"`
+	Sources       []DashboardExportSource   `json:"sources"`
 	Artifacts     []DashboardExportArtifact `json:"artifacts"`
-	Generator     DashboardExportGenerator `json:"generator"`
+	Generator     DashboardExportGenerator  `json:"generator"`
 }
 
 type DashboardRawIssue struct {
@@ -87,22 +87,22 @@ type DashboardRawIssue struct {
 type DashboardRawPullRequest struct {
 	PullRequestNumber int      `json:"pr_number"`
 	PullRequestID     string   `json:"pr_id,omitempty"`
-	Title            string   `json:"title"`
-	State            string   `json:"state"`
-	Draft            bool     `json:"draft"`
-	Labels           []string `json:"labels"`
-	URL              string   `json:"url"`
+	Title             string   `json:"title"`
+	State             string   `json:"state"`
+	Draft             bool     `json:"draft"`
+	Labels            []string `json:"labels"`
+	URL               string   `json:"url"`
 }
 
 type DashboardRawMilestone struct {
-	MilestoneNumber int    `json:"milestone_number"`
-	MilestoneID     string `json:"milestone_id,omitempty"`
-	Title           string `json:"title"`
-	State           string `json:"state"`
-	Description     string `json:"description"`
+	MilestoneNumber int     `json:"milestone_number"`
+	MilestoneID     string  `json:"milestone_id,omitempty"`
+	Title           string  `json:"title"`
+	State           string  `json:"state"`
+	Description     string  `json:"description"`
 	DueOn           *string `json:"due_on"`
-	OpenIssues      int    `json:"open_issues"`
-	ClosedIssues    int    `json:"closed_issues"`
+	OpenIssues      int     `json:"open_issues"`
+	ClosedIssues    int     `json:"closed_issues"`
 }
 
 type DashboardRawProjectItem struct {
@@ -117,28 +117,28 @@ type DashboardRawProjectItem struct {
 }
 
 type DashboardExportRawGitHub struct {
-	Repo         string                   `json:"repo"`
-	SnapshotAt   string                   `json:"snapshot_at"`
-	Issues       []DashboardRawIssue      `json:"issues"`
+	Repo         string                    `json:"repo"`
+	SnapshotAt   string                    `json:"snapshot_at"`
+	Issues       []DashboardRawIssue       `json:"issues"`
 	PullRequests []DashboardRawPullRequest `json:"pull_requests"`
 	Milestones   []DashboardRawMilestone   `json:"milestones"`
 	ProjectItems []DashboardRawProjectItem `json:"project_items"`
 }
 
 type DashboardExportRawTransitions struct {
-	Repo       string                     `json:"repo"`
-	SnapshotAt string                     `json:"snapshot_at"`
+	Repo        string                      `json:"repo"`
+	SnapshotAt  string                      `json:"snapshot_at"`
 	Transitions []ProjectTransitionPlanItem `json:"transitions"`
-	Conflicts  []ProjectTransitionPlanItem `json:"conflicts"`
-	Warnings   []string                   `json:"warnings"`
+	Conflicts   []ProjectTransitionPlanItem `json:"conflicts"`
+	Warnings    []string                    `json:"warnings"`
 }
 
 type DashboardExportRawCapabilities struct {
-	Repo          string                       `json:"repo"`
-	SnapshotAt    string                       `json:"snapshot_at"`
-	Capabilities  map[string]ProjectCapabilityStatus `json:"capabilities"`
-	BlockedActions []ProjectCapabilityBlock     `json:"blocked_actions"`
-	Warnings      []string                     `json:"warnings"`
+	Repo           string                             `json:"repo"`
+	SnapshotAt     string                             `json:"snapshot_at"`
+	Capabilities   map[string]ProjectCapabilityStatus `json:"capabilities"`
+	BlockedActions []ProjectCapabilityBlock           `json:"blocked_actions"`
+	Warnings       []string                           `json:"warnings"`
 }
 
 type DashboardExecutionBoardItem struct {
@@ -154,10 +154,10 @@ type DashboardExecutionBoardItem struct {
 }
 
 type DashboardExportExecutionBoard struct {
-	Repo       string                  `json:"repo"`
-	SnapshotAt string                  `json:"snapshot_at"`
+	Repo       string                        `json:"repo"`
+	SnapshotAt string                        `json:"snapshot_at"`
 	Items      []DashboardExecutionBoardItem `json:"items"`
-	Warnings   []string                `json:"warnings"`
+	Warnings   []string                      `json:"warnings"`
 }
 
 type DashboardRoadmapTimelineItem struct {
@@ -171,10 +171,10 @@ type DashboardRoadmapTimelineItem struct {
 }
 
 type DashboardExportRoadmapTimeline struct {
-	Repo       string                    `json:"repo"`
-	SnapshotAt string                    `json:"snapshot_at"`
+	Repo       string                         `json:"repo"`
+	SnapshotAt string                         `json:"snapshot_at"`
 	Items      []DashboardRoadmapTimelineItem `json:"items"`
-	Warnings   []string                  `json:"warnings"`
+	Warnings   []string                       `json:"warnings"`
 }
 
 type DashboardExportWarnings struct {
@@ -184,13 +184,13 @@ type DashboardExportWarnings struct {
 }
 
 type DashboardExportBundle struct {
-	Manifest        DashboardExportManifest      `json:"manifest"`
-	RawGitHub       DashboardExportRawGitHub     `json:"raw_github"`
-	RawTransitions  DashboardExportRawTransitions `json:"raw_transitions"`
+	Manifest        DashboardExportManifest        `json:"manifest"`
+	RawGitHub       DashboardExportRawGitHub       `json:"raw_github"`
+	RawTransitions  DashboardExportRawTransitions  `json:"raw_transitions"`
 	RawCapabilities DashboardExportRawCapabilities `json:"raw_capabilities"`
-	ExecutionBoard  DashboardExportExecutionBoard `json:"execution_board"`
+	ExecutionBoard  DashboardExportExecutionBoard  `json:"execution_board"`
 	RoadmapTimeline DashboardExportRoadmapTimeline `json:"roadmap_timeline"`
-	Warnings        DashboardExportWarnings      `json:"warnings"`
+	Warnings        DashboardExportWarnings        `json:"warnings"`
 }
 
 func DashboardExportArtifacts() []DashboardExportArtifact {
@@ -311,11 +311,11 @@ func BuildDashboardExportPlan(repo RepoRef, outputRoot string, snapshotAt time.T
 			Warnings:    transitionReportWarnings(transitionReport),
 		},
 		RawCapabilities: DashboardExportRawCapabilities{
-			Repo:          repo.FullName(),
-			SnapshotAt:    snapshotText,
-			Capabilities:  capabilityReport.Capabilities,
+			Repo:           repo.FullName(),
+			SnapshotAt:     snapshotText,
+			Capabilities:   capabilityReport.Capabilities,
 			BlockedActions: capabilityReport.BlockedActions,
-			Warnings:      roadmapWarnings,
+			Warnings:       roadmapWarnings,
 		},
 		ExecutionBoard: DashboardExportExecutionBoard{
 			Repo:       repo.FullName(),
@@ -399,10 +399,10 @@ func buildDashboardRoadmapItems(milestones []DashboardRawMilestone, projectItems
 	items := make([]DashboardRoadmapTimelineItem, 0, len(milestones)+len(projectItems))
 	for _, milestone := range milestones {
 		item := DashboardRoadmapTimelineItem{
-			ID:    "milestone:" + strconv.Itoa(milestone.MilestoneNumber),
-			Title: milestone.Title,
-			Status: milestone.State,
-			Phase:  "milestone",
+			ID:         "milestone:" + strconv.Itoa(milestone.MilestoneNumber),
+			Title:      milestone.Title,
+			Status:     milestone.State,
+			Phase:      "milestone",
 			SourceRefs: []string{"milestone:" + strconv.Itoa(milestone.MilestoneNumber)},
 		}
 		if milestone.DueOn != nil {
@@ -418,10 +418,10 @@ func buildDashboardRoadmapItems(milestones []DashboardRawMilestone, projectItems
 			status = "not_roadmapable"
 		}
 		item := DashboardRoadmapTimelineItem{
-			ID:    "issue:" + strconv.Itoa(projectItem.IssueNumber),
-			Title: projectItem.IssueTitle,
-			Status: status,
-			Phase:  projectItem.TypeLabel,
+			ID:         "issue:" + strconv.Itoa(projectItem.IssueNumber),
+			Title:      projectItem.IssueTitle,
+			Status:     status,
+			Phase:      projectItem.TypeLabel,
 			SourceRefs: []string{"issue:" + strconv.Itoa(projectItem.IssueNumber)},
 		}
 		if projectItem.StartDate != nil {
@@ -593,7 +593,7 @@ func FormatDashboardExportPlan(plan DashboardExportPlan) string {
 	for _, artifact := range plan.Artifacts {
 		lines = append(lines, fmt.Sprintf("  - %s (%s) will_write=%t", artifact.Path, artifact.Kind, artifact.WillWrite))
 	}
-	lines = append(lines, fmt.Sprintf("counts:") )
+	lines = append(lines, fmt.Sprintf("counts:"))
 	lines = append(lines, fmt.Sprintf("  issues: %d", plan.Counts.Issues))
 	lines = append(lines, fmt.Sprintf("  pull_requests: %d", plan.Counts.PullRequests))
 	lines = append(lines, fmt.Sprintf("  milestones: %d", plan.Counts.Milestones))

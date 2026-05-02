@@ -25,7 +25,7 @@ func (r devPRRunner) Run(name string, args ...string) ([]byte, error) {
 func TestOpenDevPR(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := devPRRunner{outputs: map[string][]byte{
-		"gh api repos/StatPan/gira/issues/60": []byte(`{"number":60,"title":"Add PR loop","state":"open","labels":[{"name":"status:ready"}]}`),
+		"gh api repos/StatPan/gira/issues/60":                                          []byte(`{"number":60,"title":"Add PR loop","state":"open","labels":[{"name":"status:ready"}]}`),
 		"gh pr create --repo StatPan/gira --title feat: Add PR loop --body Closes #60": []byte("https://github.com/StatPan/gira/pull/99\n"),
 	}}
 	result, err := OpenDevPR(repo, 60, runner)

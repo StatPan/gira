@@ -11,31 +11,31 @@ import (
 )
 
 type SprintState struct {
-	Repo       string             `json:"repo"`
-	Iterations map[string]Sprint  `json:"iterations"`
+	Repo       string            `json:"repo"`
+	Iterations map[string]Sprint `json:"iterations"`
 }
 
 type Sprint struct {
-	Iteration            string   `json:"iteration"`
-	CapacityTarget       int      `json:"capacity_target"`
-	CommittedItems       []int    `json:"committed_items"`
-	CompletedItems       []int    `json:"completed_items"`
-	SpilloverItems       []int    `json:"spillover_items"`
-	RolloverReason       string   `json:"rollover_reason"`
-	SpilloverDisposition string   `json:"spillover_disposition"`
-	CommitmentFrozen     bool     `json:"commitment_frozen"`
-	StartedAt            string   `json:"started_at,omitempty"`
-	ClosedAt             string   `json:"closed_at,omitempty"`
+	Iteration            string `json:"iteration"`
+	CapacityTarget       int    `json:"capacity_target"`
+	CommittedItems       []int  `json:"committed_items"`
+	CompletedItems       []int  `json:"completed_items"`
+	SpilloverItems       []int  `json:"spillover_items"`
+	RolloverReason       string `json:"rollover_reason"`
+	SpilloverDisposition string `json:"spillover_disposition"`
+	CommitmentFrozen     bool   `json:"commitment_frozen"`
+	StartedAt            string `json:"started_at,omitempty"`
+	ClosedAt             string `json:"closed_at,omitempty"`
 }
 
 type SprintPlanReport struct {
-	Repo         string `json:"repo"`
-	Iteration    string `json:"iteration"`
-	Mode         string `json:"mode"`
-	Capacity     int    `json:"capacity_target"`
-	CommitCount  int    `json:"commit_count"`
-	CapacityBreach bool `json:"capacity_breach"`
-	Sprint       Sprint `json:"sprint"`
+	Repo           string `json:"repo"`
+	Iteration      string `json:"iteration"`
+	Mode           string `json:"mode"`
+	Capacity       int    `json:"capacity_target"`
+	CommitCount    int    `json:"commit_count"`
+	CapacityBreach bool   `json:"capacity_breach"`
+	Sprint         Sprint `json:"sprint"`
 }
 
 type SprintStartReport struct {
@@ -204,7 +204,7 @@ func diffInts(all []int, completed []int) []int {
 	for _, n := range completed {
 		completedSet[n] = struct{}{}
 	}
-out := make([]int, 0)
+	out := make([]int, 0)
 	for _, n := range normalizeInts(all) {
 		if _, ok := completedSet[n]; !ok {
 			out = append(out, n)

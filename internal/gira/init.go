@@ -7,16 +7,16 @@ import (
 )
 
 type InitReport struct {
-	Command       string            `json:"command"`
-	Repo          string            `json:"repo"`
-	Path          string            `json:"path"`
-	DryRun        bool              `json:"dry_run"`
-	Ready         bool              `json:"ready"`
-	Checks        map[string]bool   `json:"checks"`
-	Failures      map[string]string `json:"failures,omitempty"`
-	Remediations  map[string]string `json:"remediations,omitempty"`
-	PlannedSteps  []string          `json:"planned_steps"`
-	NextStep      string            `json:"next_step"`
+	Command      string            `json:"command"`
+	Repo         string            `json:"repo"`
+	Path         string            `json:"path"`
+	DryRun       bool              `json:"dry_run"`
+	Ready        bool              `json:"ready"`
+	Checks       map[string]bool   `json:"checks"`
+	Failures     map[string]string `json:"failures,omitempty"`
+	Remediations map[string]string `json:"remediations,omitempty"`
+	PlannedSteps []string          `json:"planned_steps"`
+	NextStep     string            `json:"next_step"`
 }
 
 func BuildInitReport(repo RepoRef, path string, dryRun bool, runner CommandRunner) (InitReport, error) {

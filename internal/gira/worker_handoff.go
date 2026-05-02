@@ -17,9 +17,9 @@ type WorkerClaim struct {
 }
 
 type WorkerHandoffPayload struct {
-	SchemaVersion       string   `json:"schema_version"`
-	Goal                string   `json:"goal"`
-	Context             string   `json:"context"`
+	SchemaVersion        string   `json:"schema_version"`
+	Goal                 string   `json:"goal"`
+	Context              string   `json:"context"`
 	AcceptanceCriteria   []string `json:"acceptance_criteria"`
 	VerificationCommands []string `json:"verification_commands"`
 	RollbackNotes        string   `json:"rollback_notes"`

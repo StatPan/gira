@@ -96,11 +96,15 @@ func (c GHTriageClient) ListOpenIssues() ([]TriageIssue, error) {
 	issues := make([]TriageIssue, 0, len(rows))
 	for _, row := range rows {
 		var raw struct {
-			Number     int    `json:"number"`
-			Title      string `json:"title"`
-			State      string `json:"state"`
-			Labels     []struct{ Name string `json:"name"` } `json:"labels"`
-			Assignees  []struct{ Login string `json:"login"` } `json:"assignees"`
+			Number int    `json:"number"`
+			Title  string `json:"title"`
+			State  string `json:"state"`
+			Labels []struct {
+				Name string `json:"name"`
+			} `json:"labels"`
+			Assignees []struct {
+				Login string `json:"login"`
+			} `json:"assignees"`
 			CreatedAt  string           `json:"created_at"`
 			UpdatedAt  string           `json:"updated_at"`
 			HTMLURL    string           `json:"html_url"`
@@ -189,11 +193,21 @@ func BuildTriageQueue(client TriageClient, now time.Time) (TriageQueueReport, er
 	for _, issue := range issues {
 		violations := classifyViolations(issue, now)
 		row := TriageRow{Issue: issue, Violations: violations}
-		if contains(violations, "missing_assignee") { buckets["unowned"] = append(buckets["unowned"], row) }
-		if contains(violations, "missing_priority") { buckets["no-priority"] = append(buckets["no-priority"], row) }
-		if contains(violations, "missing_due_date") { buckets["no-due-date"] = append(buckets["no-due-date"], row) }
-		if contains(violations, "overdue") { buckets["overdue"] = append(buckets["overdue"], row) }
-		if contains(violations, "sla_risk") { buckets["sla-risk"] = append(buckets["sla-risk"], row) }
+		if contains(violations, "missing_assignee") {
+			buckets["unowned"] = append(buckets["unowned"], row)
+		}
+		if contains(violations, "missing_priority") {
+			buckets["no-priority"] = append(buckets["no-priority"], row)
+		}
+		if contains(violations, "missing_due_date") {
+			buckets["no-due-date"] = append(buckets["no-due-date"], row)
+		}
+		if contains(violations, "overdue") {
+			buckets["overdue"] = append(buckets["overdue"], row)
+		}
+		if contains(violations, "sla_risk") {
+			buckets["sla-risk"] = append(buckets["sla-risk"], row)
+		}
 	}
 	return TriageQueueReport{Repo: client.Repo().FullName(), Generated: now.UTC().Format(time.RFC3339), Issues: issues, Buckets: buckets}, nil
 }
@@ -233,9 +247,13 @@ func ApplyTriagePolicy(client TriageClient, policy TriagePolicy, apply bool, now
 
 func classifyViolations(issue TriageIssue, now time.Time) []string {
 	v := make([]string, 0)
-	if len(issue.Assignees) == 0 { v = append(v, "missing_assignee") }
+	if len(issue.Assignees) == 0 {
+		v = append(v, "missing_assignee")
+	}
 	priority := findPrefix(issue.Labels, "priority:")
-	if priority == "" { v = append(v, "missing_priority") }
+	if priority == "" {
+		v = append(v, "missing_priority")
+	}
 	due := findPrefix(issue.Labels, "due:")
 	if due == "" {
 		v = append(v, "missing_due_date")
@@ -267,13 +285,21 @@ func findPrefix(labels []string, prefix string) string {
 
 func labelsNotPresent(add []string, existing []string) []string {
 	set := map[string]struct{}{}
-	for _, e := range existing { set[e] = struct{}{} }
+	for _, e := range existing {
+		set[e] = struct{}{}
+	}
 	out := make([]string, 0, len(add))
 	seen := map[string]struct{}{}
 	for _, l := range add {
-		if strings.TrimSpace(l) == "" { continue }
-		if _, ok := set[l]; ok { continue }
-		if _, ok := seen[l]; ok { continue }
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		if _, ok := set[l]; ok {
+			continue
+		}
+		if _, ok := seen[l]; ok {
+			continue
+		}
 		seen[l] = struct{}{}
 		out = append(out, l)
 	}
@@ -283,7 +309,9 @@ func labelsNotPresent(add []string, existing []string) []string {
 
 func contains(values []string, want string) bool {
 	for _, v := range values {
-		if v == want { return true }
+		if v == want {
+			return true
+		}
 	}
 	return false
 }

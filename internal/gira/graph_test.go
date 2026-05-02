@@ -11,10 +11,10 @@ func TestBuildGraphValidationReportDetectsCoreRules(t *testing.T) {
 		t.Fatalf("expected diagnostics")
 	}
 	want := map[string]bool{
-		"missing_parent":      false,
-		"unresolved_blocker":  false,
-		"broken_blocks":       false,
-		"dependency_cycle":    false,
+		"missing_parent":            false,
+		"unresolved_blocker":        false,
+		"broken_blocks":             false,
+		"dependency_cycle":          false,
 		"done_with_open_dependency": false,
 	}
 	for _, d := range report.Diagnostics {

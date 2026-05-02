@@ -151,13 +151,13 @@ func (c GHDashboardExportClient) FetchPullRequests() ([]DashboardRawPullRequest,
 	pulls := make([]DashboardRawPullRequest, 0, len(rows))
 	for _, row := range rows {
 		var raw struct {
-			Number int    `json:"number"`
-			Title  string `json:"title"`
-			State  string `json:"state"`
-			Draft  bool   `json:"draft"`
-			URL    string `json:"url"`
+			Number  int    `json:"number"`
+			Title   string `json:"title"`
+			State   string `json:"state"`
+			Draft   bool   `json:"draft"`
+			URL     string `json:"url"`
 			HTMLURL string `json:"html_url"`
-			Labels []struct {
+			Labels  []struct {
 				Name string `json:"name"`
 			} `json:"labels"`
 		}
@@ -224,10 +224,10 @@ func (c GHDashboardExportClient) FetchMilestones() ([]DashboardRawMilestone, err
 	milestones := make([]DashboardRawMilestone, 0, len(rows))
 	for _, row := range rows {
 		var raw struct {
-			Number       int    `json:"number"`
-			Title        string `json:"title"`
-			State        string `json:"state"`
-			Description  string `json:"description"`
+			Number       int     `json:"number"`
+			Title        string  `json:"title"`
+			State        string  `json:"state"`
+			Description  string  `json:"description"`
 			DueOn        *string `json:"due_on"`
 			OpenIssues   int     `json:"open_issues"`
 			ClosedIssues int     `json:"closed_issues"`

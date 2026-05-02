@@ -55,7 +55,9 @@ func (c GHGraphClient) Issues() ([]GraphIssue, error) {
 			State       string    `json:"state"`
 			Body        string    `json:"body"`
 			PullRequest *struct{} `json:"pull_request"`
-			Labels      []struct{ Name string `json:"name"` } `json:"labels"`
+			Labels      []struct {
+				Name string `json:"name"`
+			} `json:"labels"`
 		}
 		if err := json.Unmarshal(row, &raw); err != nil {
 			return nil, fmt.Errorf("parse issue row: %w", err)
@@ -208,7 +210,9 @@ func hasDoneStatus(labels []string) bool {
 	}
 	return false
 }
-func hasGraphOverride(body string) bool { return strings.Contains(strings.ToLower(body), "graph-override") }
+func hasGraphOverride(body string) bool {
+	return strings.Contains(strings.ToLower(body), "graph-override")
+}
 
 func detectCycles(adj map[int][]int) []int {
 	state := map[int]int{}

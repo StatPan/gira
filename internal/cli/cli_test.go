@@ -28,6 +28,77 @@ func TestHelpOutput(t *testing.T) {
 	}
 }
 
+func TestTriageHelpFlagPrintsHelpAndExitsZero(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"triage", "-h"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Backlog triage normalization helpers") {
+		t.Fatalf("stdout missing triage help:\n%s", stdout.String())
+	}
+}
+
+func TestTriageMissingRepoReturnsTwo(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"triage", "--dry-run"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--repo and exactly one of --dry-run/--apply are required") {
+		t.Fatalf("stderr missing required-args message:\n%s", stderr.String())
+	}
+}
+
+func TestTriageDryRunApplyExclusivityReturnsTwo(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "neither", args: []string{"triage", "--repo", "StatPan/gira"}},
+		{name: "both", args: []string{"triage", "--repo", "StatPan/gira", "--dry-run", "--apply"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run(tc.args, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("exit code = %d, want 2", code)
+			}
+			if !strings.Contains(stderr.String(), "exactly one of --dry-run/--apply") {
+				t.Fatalf("stderr missing exclusivity guidance:\n%s", stderr.String())
+			}
+		})
+	}
+}
+
+func TestTriageDryRunValidInvocationReturnsZero(t *testing.T) {
+	restore := newTriageReport
+	t.Cleanup(func() { newTriageReport = restore })
+	newTriageReport = func(repo gira.RepoRef, apply bool) (gira.TriageNormalizeReport, error) {
+		if repo.FullName() != "StatPan/gira" {
+			t.Fatalf("repo = %s, want StatPan/gira", repo.FullName())
+		}
+		if apply {
+			t.Fatalf("apply = true, want false for dry-run")
+		}
+		return gira.TriageNormalizeReport{Repo: repo.FullName(), Mode: "dry-run"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"triage", "--repo", "StatPan/gira", "--dry-run"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"repo\": \"StatPan/gira\"") {
+		t.Fatalf("stdout missing triage JSON payload:\n%s", stdout.String())
+	}
+}
+
 func TestContractCRUDMatrix(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"contract", "crud"}, &stdout, &stderr)

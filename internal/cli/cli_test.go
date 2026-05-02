@@ -23,6 +23,45 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "GitHub-native project OS bootstrapper") {
 		t.Fatalf("help output missing product description:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "contract") {
+		t.Fatalf("help output missing contract command:\n%s", stdout.String())
+	}
+}
+
+func TestContractCRUDMatrix(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"contract", "crud"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	output := stdout.String()
+	for _, want := range []string{
+		"CRUD capability matrix (MVP contract)",
+		"surface               create                                           read                                                                                     update                                                            delete",
+		"labels                gira sync --repo OWNER/REPO                      gira sync --repo OWNER/REPO --dry-run                                                    gira sync --repo OWNER/REPO                                       unsupported (intentional in MVP)",
+		"milestones            gira sync --repo OWNER/REPO                      gira sync --repo OWNER/REPO --dry-run                                                    gira sync --repo OWNER/REPO                                       unsupported (intentional in MVP)",
+		"issues                gira sync --repo OWNER/REPO --bootstrap-issues   gira status --repo OWNER/REPO                                                            gira triage apply --apply / gira worker claim|handoff|release     unsupported direct delete in MVP",
+		"pr_loop               gira dev pr open --repo OWNER/REPO --issue N     gira dev pr status --repo OWNER/REPO --issue N / gira review queue                        gira merge queue --apply (opt-in destructive)                     unsupported direct delete; close via GitHub UI/API",
+		"project_fields_views  unsupported (MVP non-goal)                       gira project capability / gira project sync --dry-run / gira project transitions --dry-run unsupported in MVP (dry-run inspection only)                      unsupported (MVP non-goal)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("contract output missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestContractUnsupportedOperationGuidance(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"contract", "delete"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "unsupported contract operation") {
+		t.Fatalf("stderr missing unsupported guidance:\n%s", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "supported operation: gira contract crud") {
+		t.Fatalf("stderr missing supported operation guidance:\n%s", stderr.String())
+	}
 }
 
 func TestBootstrapRequiresRepo(t *testing.T) {

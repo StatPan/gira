@@ -84,6 +84,7 @@
 7. `blocker_format`
 
 ### 필드 작성 규칙
+- 필드 순서는 고정한다: `title → goal → scope → files_to_change → verification_commands → acceptance_criteria → blocker_format`
 - goal: 단일 결과(One outcome)로 작성
 - scope: 포함/제외 경계가 분명해야 함
 - files_to_change: 상대경로 명시, 과도한 와일드카드 금지

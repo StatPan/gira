@@ -80,6 +80,7 @@ func TestFormatSyncPlanMatchesDryRunLanguage(t *testing.T) {
 	text := FormatSyncPlan(plan, true)
 	for _, want := range []string{
 		"sync plan:",
+		"policy mode:      merge",
 		"labels:           1 would create, 0 would update, 0 skip",
 		"milestones:       0 would create, 0 would update, 1 skip",
 		"bootstrap issues: 1 would create, 0 skip",
@@ -129,7 +130,7 @@ func TestBuildSyncPlanSkipsBootstrapIssuesWhenDisabled(t *testing.T) {
 		issues:     []ExistingIssue{{Number: 1, Title: "[Epic] Gira MVP: GitHub-as-OS bootstrap", Labels: []string{BootstrapLabel}}},
 	}
 
-	plan, err := BuildSyncPlan(client, SyncPlanOptions{EnableBootstrapIssues: false})
+	plan, err := BuildSyncPlan(client, SyncPlanOptions{EnableBootstrapIssues: false, PolicyMode: SyncPolicyMerge})
 	if err != nil {
 		t.Fatalf("BuildSyncPlan returned error: %v", err)
 	}
@@ -141,6 +142,26 @@ func TestBuildSyncPlanSkipsBootstrapIssuesWhenDisabled(t *testing.T) {
 	}
 	if countBootstrapIssueActions(plan.BootstrapIssues, PlanSkip) != len(DesiredBootstrapIssues) {
 		t.Fatalf("bootstrap issue skip count = %d, want %d", countBootstrapIssueActions(plan.BootstrapIssues, PlanSkip), len(DesiredBootstrapIssues))
+	}
+}
+
+func TestBuildSyncPlanAdoptModeSkipsAllManagedMutations(t *testing.T) {
+	client := &fakeSyncClient{repo: mustRepo(t, "StatPan/gira")}
+	plan, err := BuildSyncPlan(client, SyncPlanOptions{EnableBootstrapIssues: true, PolicyMode: SyncPolicyAdopt})
+	if err != nil {
+		t.Fatalf("BuildSyncPlan returned error: %v", err)
+	}
+	if plan.PolicyMode != SyncPolicyAdopt {
+		t.Fatalf("policy mode = %q, want %q", plan.PolicyMode, SyncPolicyAdopt)
+	}
+	if countLabelActions(plan.Labels, PlanCreate)+countLabelActions(plan.Labels, PlanUpdate) != 0 {
+		t.Fatalf("adopt mode should not create/update labels")
+	}
+	if countMilestoneActions(plan.Milestones, PlanCreate)+countMilestoneActions(plan.Milestones, PlanUpdate) != 0 {
+		t.Fatalf("adopt mode should not create/update milestones")
+	}
+	if countBootstrapIssueActions(plan.BootstrapIssues, PlanCreate) != 0 {
+		t.Fatalf("adopt mode should not create bootstrap issues")
 	}
 }
 

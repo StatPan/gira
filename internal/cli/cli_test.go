@@ -1186,6 +1186,58 @@ func TestInitReadsConfig(t *testing.T) {
 	if !strings.Contains(stdout.String(), `"ready": true`) {
 		t.Fatalf("expected ready true: %s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), `"config_path":`) {
+		t.Fatalf("expected config path in output: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), `"config_profile_count": 1`) {
+		t.Fatalf("expected config profile count in output: %s", stdout.String())
+	}
+}
+
+func TestInitUsesDefaultConfigPathWhenPresent(t *testing.T) {
+	original := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = original })
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"gh --version":                                 []byte("gh version 2"),
+		"git --version":                                []byte("git version 2"),
+		"gh auth status":                               []byte("ok"),
+		"gh repo view StatPan/gira --json name":        []byte(`{"name":"gira"}`),
+		"git -C /repo rev-parse --is-inside-work-tree": []byte("true"),
+		"git -C /repo diff --quiet":                    nil,
+		"git -C /repo diff --cached --quiet":           nil,
+	}}
+
+	dir := t.TempDir()
+	giraDir := filepath.Join(dir, ".gira")
+	if err := os.MkdirAll(giraDir, 0o755); err != nil {
+		t.Fatalf("mkdir .gira: %v", err)
+	}
+	configPath := filepath.Join(giraDir, "config.yaml")
+	err := os.WriteFile(configPath, []byte(`profiles:
+  default:
+    labels: ["type:task"]
+`), 0o644)
+	if err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir tempdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"init", "--repo", "StatPan/gira", "--path", "/repo", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"config_path": ".gira/config.yaml"`) {
+		t.Fatalf("expected default config path in output: %s", stdout.String())
+	}
 }
 
 func TestInitInvalidConfigFails(t *testing.T) {

@@ -7,16 +7,18 @@ import (
 )
 
 type InitReport struct {
-	Command      string            `json:"command"`
-	Repo         string            `json:"repo"`
-	Path         string            `json:"path"`
-	DryRun       bool              `json:"dry_run"`
-	Ready        bool              `json:"ready"`
-	Checks       map[string]bool   `json:"checks"`
-	Failures     map[string]string `json:"failures,omitempty"`
-	Remediations map[string]string `json:"remediations,omitempty"`
-	PlannedSteps []string          `json:"planned_steps"`
-	NextStep     string            `json:"next_step"`
+	Command            string            `json:"command"`
+	Repo               string            `json:"repo"`
+	Path               string            `json:"path"`
+	DryRun             bool              `json:"dry_run"`
+	ConfigPath         string            `json:"config_path,omitempty"`
+	ConfigProfileCount int               `json:"config_profile_count,omitempty"`
+	Ready              bool              `json:"ready"`
+	Checks             map[string]bool   `json:"checks"`
+	Failures           map[string]string `json:"failures,omitempty"`
+	Remediations       map[string]string `json:"remediations,omitempty"`
+	PlannedSteps       []string          `json:"planned_steps"`
+	NextStep           string            `json:"next_step"`
 }
 
 func BuildInitReport(repo RepoRef, path string, dryRun bool, runner CommandRunner) (InitReport, error) {
@@ -99,6 +101,9 @@ func FormatInitReport(report InitReport) string {
 		status = "ready"
 	}
 	fmt.Fprintf(&b, "init %s: %s\n", status, report.Repo)
+	if strings.TrimSpace(report.ConfigPath) != "" {
+		fmt.Fprintf(&b, "- config: %s (profiles=%d)\n", report.ConfigPath, report.ConfigProfileCount)
+	}
 	for check, ok := range report.Checks {
 		state := "FAIL"
 		if ok {

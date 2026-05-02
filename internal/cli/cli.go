@@ -431,14 +431,28 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	if strings.TrimSpace(*configPath) != "" {
-		if _, err := gira.LoadInitConfig(*configPath); err != nil {
+	loadedConfigPath := strings.TrimSpace(*configPath)
+	var loadedConfig gira.InitConfig
+	if loadedConfigPath == "" {
+		defaultConfigPath := gira.DefaultInitConfigPath()
+		if stat, err := os.Stat(defaultConfigPath); err == nil && !stat.IsDir() {
+			loadedConfigPath = defaultConfigPath
+		}
+	}
+	if loadedConfigPath != "" {
+		cfg, err := gira.LoadInitConfig(loadedConfigPath)
+		if err != nil {
 			fmt.Fprintf(stderr, "%v\n", err)
 			return 2
 		}
+		loadedConfig = cfg
 	}
 
 	report, err := gira.BuildInitReport(repo, *pathValue, *dryRun, devCommandRunner)
+	if loadedConfigPath != "" {
+		report.ConfigPath = loadedConfigPath
+		report.ConfigProfileCount = len(loadedConfig.Profiles)
+	}
 	if err != nil {
 		if *jsonOutput {
 			out, _ := json.MarshalIndent(report, "", "  ")

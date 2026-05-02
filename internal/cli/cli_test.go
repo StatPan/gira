@@ -1407,6 +1407,25 @@ func TestReportWeeklyJSON(t *testing.T) {
 	}
 }
 
+func TestReviewGateFailsWhenChecksFail(t *testing.T) {
+	original := reviewGateRunner
+	t.Cleanup(func() { reviewGateRunner = original })
+	reviewGateRunner = devCLIRunner{outputs: map[string][]byte{
+		"gofmt -l .":          []byte(""),
+		"go test ./...":       []byte(""),
+		"go test -race ./...": []byte(""),
+	}, errs: map[string]error{"go vet ./...": fmt.Errorf("vet failed")}}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"review", "gate", "--json"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("expected non-zero when checks fail")
+	}
+	if !strings.Contains(stdout.String(), `"ready": false`) {
+		t.Fatalf("expected readiness false output: %s", stdout.String())
+	}
+}
+
 type weeklyDashClient struct {
 	repo   gira.RepoRef
 	issues []gira.DashboardRawIssue

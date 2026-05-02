@@ -229,6 +229,7 @@ const reviewHelp = `Review/approval routing queue.
 
 Usage:
   gira review queue --repo OWNER/REPO [--json]
+  gira review gate [--json]
 `
 
 const mergeHelp = `Merge queue with policy checks.
@@ -324,6 +325,8 @@ var newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
 	client := gira.NewGHReviewGateClient(repo, gira.ExecCommandRunner{})
 	return client
 }
+
+var reviewGateRunner gira.CommandRunner = gira.ExecCommandRunner{}
 
 var newGuardrailsSyncReport = func(repo gira.RepoRef, policyPath string, apply bool, allowRelaxation bool) (gira.GuardrailsSyncReport, error) {
 	policy, err := gira.LoadGuardrailsPolicy(policyPath)
@@ -1842,6 +1845,30 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stdout, reviewHelp)
 		return 0
 	}
+	if args[0] == "gate" {
+		fs := flag.NewFlagSet("review gate", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, reviewHelp)
+			return 2
+		}
+		report := gira.RunQualityGate(reviewGateRunner)
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode review gate JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		if !*jsonOutput {
+			// default output is JSON to remain machine-readable
+		}
+		if !report.Ready {
+			return 1
+		}
+		return 0
+	}
 	if args[0] != "queue" {
 		fmt.Fprintf(stderr, "unknown review command: %s\n\n", args[0])
 		fmt.Fprint(stderr, reviewHelp)
@@ -1871,7 +1898,11 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	out, _ := json.MarshalIndent(report, "", "  ")
+	out, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "encode review queue JSON: %v\n", err)
+		return 2
+	}
 	if *jsonOutput {
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0

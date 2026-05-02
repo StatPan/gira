@@ -73,3 +73,53 @@ func TestValidateTriagePolicyFailsClosed(t *testing.T) {
 		t.Fatalf("expected validation error")
 	}
 }
+
+func TestNormalizeOpenIssueTriageAddsMissingAxes(t *testing.T) {
+	repo, _ := ParseRepoRef("StatPan/gira")
+	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	client := &fakeTriageClient{repo: repo, issues: []TriageIssue{{Number: 80, Title: "CLI command cleanup", Labels: []string{"status:ready"}}}}
+	report, err := NormalizeOpenIssueTriage(client, false, now)
+	if err != nil {
+		t.Fatalf("NormalizeOpenIssueTriage err=%v", err)
+	}
+	if report.Planned != 1 || report.Applied != 0 || report.Skipped != 0 {
+		t.Fatalf("unexpected summary: %+v", report)
+	}
+	if len(report.Issues) != 1 || len(report.Issues[0].Add) != 3 {
+		t.Fatalf("unexpected planned labels: %+v", report.Issues)
+	}
+}
+
+func TestNormalizeOpenIssueTriageSkipsConflicts(t *testing.T) {
+	repo, _ := ParseRepoRef("StatPan/gira")
+	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	client := &fakeTriageClient{repo: repo, issues: []TriageIssue{{Number: 81, Title: "conflict", Labels: []string{"type:task", "type:bug", "priority:p2"}}}}
+	report, err := NormalizeOpenIssueTriage(client, false, now)
+	if err != nil {
+		t.Fatalf("NormalizeOpenIssueTriage err=%v", err)
+	}
+	if report.Skipped != 1 || report.Issues[0].Skip != "needs-decision" {
+		t.Fatalf("expected needs-decision skip: %+v", report)
+	}
+}
+
+func TestNormalizeOpenIssueTriageApplyIdempotent(t *testing.T) {
+	repo, _ := ParseRepoRef("StatPan/gira")
+	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	client := &fakeTriageClient{repo: repo, issues: []TriageIssue{{Number: 82, Title: "docs", Labels: []string{}}}}
+	first, err := NormalizeOpenIssueTriage(client, true, now)
+	if err != nil {
+		t.Fatalf("NormalizeOpenIssueTriage first err=%v", err)
+	}
+	if first.Applied != 1 {
+		t.Fatalf("expected first apply mutation: %+v", first)
+	}
+	client.issues[0].Labels = append(client.issues[0].Labels, client.edits[82]...)
+	second, err := NormalizeOpenIssueTriage(client, true, now)
+	if err != nil {
+		t.Fatalf("NormalizeOpenIssueTriage second err=%v", err)
+	}
+	if second.Applied != 0 || second.Planned != 0 || second.Unchanged != 1 {
+		t.Fatalf("expected idempotent second apply: %+v", second)
+	}
+}

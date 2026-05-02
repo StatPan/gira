@@ -23,7 +23,7 @@ func RunQualityGate(runner CommandRunner) QualityGateReport {
 		runner = ExecCommandRunner{}
 	}
 	checks := []QualityCheckResult{
-		runQualityCheck(runner, "gofmt", "gofmt -w .", "Run gofmt -w . to apply formatting."),
+		runGofmtCheck(runner),
 		runQualityCheck(runner, "govet", "go vet ./...", "Run go vet ./... and fix reported diagnostics."),
 		runQualityCheck(runner, "gotest", "go test ./...", "Run go test ./... and address failing tests."),
 		runQualityCheck(runner, "gotest-race", "go test -race ./...", "Run go test -race ./... and address race/test failures."),
@@ -37,6 +37,18 @@ func RunQualityGate(runner CommandRunner) QualityGateReport {
 		}
 	}
 	return QualityGateReport{Ready: ready, Checks: checks, Blockers: blockers}
+}
+
+func runGofmtCheck(runner CommandRunner) QualityCheckResult {
+	const command = "gofmt -l ."
+	out, err := runner.Run("gofmt", "-l", ".")
+	if err != nil {
+		return QualityCheckResult{Name: "gofmt", Command: command, Status: "failed", Hint: "Run gofmt -w . to apply formatting."}
+	}
+	if strings.TrimSpace(string(out)) != "" {
+		return QualityCheckResult{Name: "gofmt", Command: command, Status: "failed", Hint: "Run gofmt -w . to apply formatting."}
+	}
+	return QualityCheckResult{Name: "gofmt", Command: command, Status: "passed"}
 }
 
 func runQualityCheck(runner CommandRunner, name string, command string, hint string) QualityCheckResult {

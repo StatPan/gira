@@ -1855,7 +1855,11 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) int {
 			return 2
 		}
 		report := gira.RunQualityGate(reviewGateRunner)
-		out, _ := json.MarshalIndent(report, "", "  ")
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode review gate JSON: %v\n", err)
+			return 2
+		}
 		fmt.Fprintf(stdout, "%s\n", out)
 		if !*jsonOutput {
 			// default output is JSON to remain machine-readable
@@ -1894,7 +1898,11 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	out, _ := json.MarshalIndent(report, "", "  ")
+	out, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "encode review queue JSON: %v\n", err)
+		return 2
+	}
 	if *jsonOutput {
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0

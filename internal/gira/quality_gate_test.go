@@ -7,7 +7,8 @@ import (
 )
 
 type qualityRunner struct {
-	errors map[string]error
+	errors  map[string]error
+	outputs map[string][]byte
 }
 
 func (q qualityRunner) Run(name string, args ...string) ([]byte, error) {
@@ -15,7 +16,10 @@ func (q qualityRunner) Run(name string, args ...string) ([]byte, error) {
 	if err, ok := q.errors[key]; ok {
 		return nil, err
 	}
-	return []byte("ok"), nil
+	if out, ok := q.outputs[key]; ok {
+		return out, nil
+	}
+	return []byte(""), nil
 }
 
 func TestRunQualityGateReady(t *testing.T) {
@@ -46,5 +50,40 @@ func TestRunQualityGateFailedAndHints(t *testing.T) {
 	}
 	if !foundHint {
 		t.Fatalf("expected actionable hint for govet: %+v", report.Checks)
+	}
+}
+
+func TestRunQualityGateFailsOnFormattingDrift(t *testing.T) {
+	report := RunQualityGate(qualityRunner{outputs: map[string][]byte{
+		"gofmt -l .": []byte("internal/gira/quality_gate.go\n"),
+	}})
+	if report.Ready {
+		t.Fatalf("expected not ready when formatting drifts")
+	}
+	for _, check := range report.Checks {
+		if check.Name == "gofmt" {
+			if check.Status != "failed" {
+				t.Fatalf("expected gofmt check to fail, got %q", check.Status)
+			}
+			if !strings.Contains(check.Hint, "gofmt -w") {
+				t.Fatalf("expected actionable gofmt hint, got %q", check.Hint)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing gofmt check in report: %+v", report.Checks)
+}
+
+func TestRunQualityGatePassesWhenFormattingClean(t *testing.T) {
+	report := RunQualityGate(qualityRunner{outputs: map[string][]byte{
+		"gofmt -l .": []byte("\n"),
+	}})
+	for _, check := range report.Checks {
+		if check.Name == "gofmt" && check.Status != "passed" {
+			t.Fatalf("expected gofmt check to pass, got %q", check.Status)
+		}
+	}
+	if !report.Ready {
+		t.Fatalf("expected ready report: %+v", report)
 	}
 }

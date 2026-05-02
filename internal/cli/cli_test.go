@@ -1411,7 +1411,7 @@ func TestReviewGateFailsWhenChecksFail(t *testing.T) {
 	original := reviewGateRunner
 	t.Cleanup(func() { reviewGateRunner = original })
 	reviewGateRunner = devCLIRunner{outputs: map[string][]byte{
-		"gofmt -w .":          []byte(""),
+		"gofmt -l .":          []byte(""),
 		"go test ./...":       []byte(""),
 		"go test -race ./...": []byte(""),
 	}, errs: map[string]error{"go vet ./...": fmt.Errorf("vet failed")}}

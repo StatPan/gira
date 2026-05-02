@@ -53,6 +53,36 @@ type SprintCloseReport struct {
 	Summary   Sprint `json:"summary"`
 }
 
+type SprintRolloverReport struct {
+	Repo             string                `json:"repo"`
+	Mode             string                `json:"mode"`
+	TargetMilestone  *SprintRolloverTarget `json:"target_milestone,omitempty"`
+	TargetResolution string                `json:"target_resolution"`
+	Summary          SprintRolloverSummary `json:"summary"`
+	Items            []SprintRolloverItem  `json:"items"`
+}
+
+type SprintRolloverTarget struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+}
+
+type SprintRolloverSummary struct {
+	Candidates int `json:"candidates"`
+	Applied    int `json:"applied"`
+	Skipped    int `json:"skipped"`
+}
+
+type SprintRolloverItem struct {
+	IssueNumber     int    `json:"issue_number"`
+	IssueTitle      string `json:"issue_title"`
+	FromMilestone   string `json:"from_milestone"`
+	CandidateReason string `json:"candidate_reason"`
+	Action          string `json:"action"`
+	SkipReason      string `json:"skip_reason,omitempty"`
+	TargetMilestone string `json:"target_milestone,omitempty"`
+}
+
 func SprintStatePath(repo RepoRef) string {
 	return filepath.Join(".gira", "sprints", strings.ReplaceAll(strings.ToLower(repo.FullName()), "/", "-"), "state.json")
 }
@@ -148,6 +178,172 @@ func CloseSprint(path string, repo RepoRef, iteration string, completed []int, d
 		}
 	}
 	return SprintCloseReport{Repo: repo.FullName(), Iteration: iteration, Mode: mode, Summary: summary}, nil
+}
+
+func SprintRollover(repo RepoRef, toMilestone string, apply bool, now time.Time, runner CommandRunner) (SprintRolloverReport, error) {
+	client := NewGHStatusClient(repo, runner)
+	return SprintRolloverForClient(client, runner, toMilestone, apply, now)
+}
+
+func SprintRolloverForClient(client StatusClient, runner CommandRunner, toMilestone string, apply bool, now time.Time) (SprintRolloverReport, error) {
+	milestones, err := FetchMilestones(client)
+	if err != nil {
+		return SprintRolloverReport{}, err
+	}
+	issues, err := FetchIssues(client)
+	if err != nil {
+		return SprintRolloverReport{}, err
+	}
+
+	milestoneByTitle := map[string]normalizedMilestone{}
+	for _, m := range milestones {
+		milestoneByTitle[m.Title] = m
+	}
+
+	mode := "dry-run"
+	if apply {
+		mode = "apply"
+	}
+	report := SprintRolloverReport{Repo: client.Repo().FullName(), Mode: mode, Items: make([]SprintRolloverItem, 0)}
+	target, resolution := resolveRolloverTarget(milestones, strings.TrimSpace(toMilestone), now)
+	report.TargetResolution = resolution
+	if target != nil {
+		report.TargetMilestone = &SprintRolloverTarget{Number: target.Number, Title: target.Title}
+	}
+
+	for _, issue := range issues {
+		if issue.State != "open" || issue.Milestone == nil {
+			continue
+		}
+		source, ok := milestoneByTitle[*issue.Milestone]
+		if !ok {
+			continue
+		}
+		reason := rolloverCandidateReason(source, now)
+		if reason == "" {
+			continue
+		}
+		item := SprintRolloverItem{IssueNumber: issue.Number, IssueTitle: issue.Title, FromMilestone: source.Title, CandidateReason: reason}
+		report.Summary.Candidates++
+		if target == nil {
+			item.Action = "skipped"
+			item.SkipReason = "no target open milestone"
+			report.Summary.Skipped++
+			report.Items = append(report.Items, item)
+			continue
+		}
+		if source.Number == target.Number {
+			item.Action = "skipped"
+			item.SkipReason = "already in target milestone"
+			item.TargetMilestone = target.Title
+			report.Summary.Skipped++
+			report.Items = append(report.Items, item)
+			continue
+		}
+		item.TargetMilestone = target.Title
+		if apply {
+			if err := setIssueMilestone(runner, client.Repo(), issue.Number, target.Number); err != nil {
+				item.Action = "skipped"
+				item.SkipReason = "apply failed: " + err.Error()
+				report.Summary.Skipped++
+			} else {
+				item.Action = "applied"
+				report.Summary.Applied++
+			}
+		} else {
+			item.Action = "would-apply"
+			report.Summary.Applied++
+		}
+		report.Items = append(report.Items, item)
+	}
+
+	sort.Slice(report.Items, func(i, j int) bool { return report.Items[i].IssueNumber < report.Items[j].IssueNumber })
+	return report, nil
+}
+
+func resolveRolloverTarget(milestones []normalizedMilestone, explicit string, now time.Time) (*normalizedMilestone, string) {
+	if explicit != "" {
+		for _, m := range milestones {
+			if m.Title == explicit {
+				if strings.EqualFold(m.State, "open") {
+					copy := m
+					return &copy, "explicit --to"
+				}
+				return nil, "explicit --to is not open"
+			}
+		}
+		return nil, "explicit --to not found"
+	}
+	open := make([]normalizedMilestone, 0)
+	for _, m := range milestones {
+		if strings.EqualFold(m.State, "open") {
+			open = append(open, m)
+		}
+	}
+	if len(open) == 0 {
+		return nil, "no open milestones"
+	}
+	sort.Slice(open, func(i, j int) bool {
+		di := open[i].DueOn != nil
+		dj := open[j].DueOn != nil
+		if di != dj {
+			return di
+		}
+		if !di {
+			return open[i].Number < open[j].Number
+		}
+		left, lerr := parseGitHubTime(*open[i].DueOn)
+		right, rerr := parseGitHubTime(*open[j].DueOn)
+		if lerr != nil || rerr != nil || left.Equal(right) {
+			return open[i].Number < open[j].Number
+		}
+		return left.Before(right)
+	})
+	for _, m := range open {
+		if m.DueOn == nil {
+			continue
+		}
+		due, err := parseGitHubTime(*m.DueOn)
+		if err == nil && !due.Before(now.UTC()) {
+			copy := m
+			return &copy, "cadence next open milestone"
+		}
+	}
+	copy := open[0]
+	return &copy, "cadence next open milestone"
+}
+
+func rolloverCandidateReason(m normalizedMilestone, now time.Time) string {
+	if strings.EqualFold(m.State, "closed") {
+		return "source milestone is closed"
+	}
+	if m.DueOn == nil {
+		return ""
+	}
+	due, err := parseGitHubTime(*m.DueOn)
+	if err != nil {
+		return ""
+	}
+	if due.Before(now.UTC()) {
+		return "source milestone due date passed"
+	}
+	return ""
+}
+
+func setIssueMilestone(runner CommandRunner, repo RepoRef, issueNumber int, milestoneNumber int) error {
+	if runner == nil {
+		runner = ExecCommandRunner{}
+	}
+	_, err := runner.Run(
+		"gh",
+		"api",
+		"repos/"+repo.FullName()+"/issues/"+fmt.Sprintf("%d", issueNumber),
+		"-X",
+		"PATCH",
+		"-f",
+		"milestone="+fmt.Sprintf("%d", milestoneNumber),
+	)
+	return err
 }
 
 func loadSprintState(path string, repo RepoRef) (SprintState, error) {

@@ -139,6 +139,7 @@ BLOCKED: <reason> | needed: <specific decision/input> | owner: <person/role>
 ```
 
 - 문제점: 필드 누락(title/files_to_change/acceptance_criteria/blocker_format), 검증 불가 문장, 경계 불명확.
+- 이 템플릿 규약의 운영 초안은 `docs/ops/issue-drafts-github-native-pm-v2.md`의 Issue 2와 동기화한다.
 
 ---
 

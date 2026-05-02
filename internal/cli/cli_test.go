@@ -266,6 +266,44 @@ func TestSyncDryRunWithBootstrapIssuesFlagIncludesIssueCreates(t *testing.T) {
 	}
 }
 
+func TestSyncPolicyModeAdoptApplyPerformsNoMutations(t *testing.T) {
+	restoreClient := newSyncClient
+	t.Cleanup(func() {
+		newSyncClient = restoreClient
+	})
+	client := &cliFakeSyncClient{repo: mustCLIRepo(t, "StatPan/gira")}
+	newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
+		client.repo = repo
+		return client
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"sync", "--repo", "StatPan/gira", "--policy-mode", "adopt"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "policy mode:      adopt") {
+		t.Fatalf("sync output missing adopt policy mode:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "sync complete") {
+		t.Fatalf("sync apply output missing completion:\n%s", stdout.String())
+	}
+	if len(client.calls) != 0 {
+		t.Fatalf("adopt mode should not mutate, calls=%v", client.calls)
+	}
+}
+
+func TestSyncPolicyModeRejectsInvalidValue(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"sync", "--repo", "StatPan/gira", "--dry-run", "--policy-mode", "bad"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "invalid sync policy mode") {
+		t.Fatalf("stderr missing invalid policy mode error:\n%s", stderr.String())
+	}
+}
+
 func TestSyncApplyUsesInjectedClientAndPrintsComplete(t *testing.T) {
 	restoreClient := newSyncClient
 	t.Cleanup(func() {

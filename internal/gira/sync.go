@@ -73,6 +73,7 @@ type BootstrapIssuePlan struct {
 }
 
 type SyncPlan struct {
+	PolicyMode      SyncPolicyMode
 	Labels          []LabelPlan
 	Milestones      []MilestonePlan
 	BootstrapIssues []BootstrapIssuePlan
@@ -80,6 +81,27 @@ type SyncPlan struct {
 
 type SyncPlanOptions struct {
 	EnableBootstrapIssues bool
+	PolicyMode            SyncPolicyMode
+}
+
+type SyncPolicyMode string
+
+const (
+	SyncPolicyMerge   SyncPolicyMode = "merge"
+	SyncPolicyAdopt   SyncPolicyMode = "adopt"
+	SyncPolicyEnforce SyncPolicyMode = "enforce"
+)
+
+func ParseSyncPolicyMode(value string) (SyncPolicyMode, error) {
+	mode := SyncPolicyMode(strings.ToLower(strings.TrimSpace(value)))
+	switch mode {
+	case "", SyncPolicyMerge:
+		return SyncPolicyMerge, nil
+	case SyncPolicyAdopt, SyncPolicyEnforce:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid sync policy mode %q: must be one of adopt|merge|enforce", value)
+	}
 }
 
 type SyncClient interface {
@@ -386,6 +408,11 @@ var DesiredBootstrapIssues = []BootstrapIssueDef{
 }
 
 func BuildSyncPlan(client SyncClient, opts SyncPlanOptions) (SyncPlan, error) {
+	mode, err := ParseSyncPolicyMode(string(opts.PolicyMode))
+	if err != nil {
+		return SyncPlan{}, err
+	}
+
 	labels, err := client.ListLabels()
 	if err != nil {
 		return SyncPlan{}, err
@@ -409,11 +436,24 @@ func BuildSyncPlan(client SyncClient, opts SyncPlanOptions) (SyncPlan, error) {
 		}
 	}
 
-	return SyncPlan{
+	plan := SyncPlan{
+		PolicyMode:      mode,
 		Labels:          PlanLabels(DesiredLabels, labels),
 		Milestones:      PlanMilestones(DesiredMilestones, milestones),
 		BootstrapIssues: bootstrapPlan,
-	}, nil
+	}
+	if mode == SyncPolicyAdopt {
+		for i := range plan.Labels {
+			plan.Labels[i].Action = PlanSkip
+		}
+		for i := range plan.Milestones {
+			plan.Milestones[i].Action = PlanSkip
+		}
+		for i := range plan.BootstrapIssues {
+			plan.BootstrapIssues[i].Action = PlanSkip
+		}
+	}
+	return plan, nil
 }
 
 func ApplySyncPlan(client SyncClient, plan SyncPlan) error {
@@ -527,6 +567,11 @@ func FormatSyncPlan(plan SyncPlan, dryRun bool) string {
 	}
 	var b strings.Builder
 	b.WriteString("sync plan:\n")
+	mode := plan.PolicyMode
+	if mode == "" {
+		mode = SyncPolicyMerge
+	}
+	fmt.Fprintf(&b, "policy mode:      %s\n", mode)
 	fmt.Fprintf(&b, "labels:           %d %screate, %d %supdate, %d skip\n", countLabelActions(plan.Labels, PlanCreate), prefix, countLabelActions(plan.Labels, PlanUpdate), prefix, countLabelActions(plan.Labels, PlanSkip))
 	fmt.Fprintf(&b, "milestones:       %d %screate, %d %supdate, %d skip\n", countMilestoneActions(plan.Milestones, PlanCreate), prefix, countMilestoneActions(plan.Milestones, PlanUpdate), prefix, countMilestoneActions(plan.Milestones, PlanSkip))
 	fmt.Fprintf(&b, "bootstrap issues: %d %screate, %d skip\n", countBootstrapIssueActions(plan.BootstrapIssues, PlanCreate), prefix, countBootstrapIssueActions(plan.BootstrapIssues, PlanSkip))

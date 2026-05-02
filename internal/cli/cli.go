@@ -106,12 +106,13 @@ Flags:
 const syncHelp = `Sync Gira labels, milestones, and optionally bootstrap issues through gh.
 
 Usage:
-  gira sync --repo OWNER/REPO [--dry-run] [--bootstrap-issues]
+  gira sync --repo OWNER/REPO [--dry-run] [--bootstrap-issues] [--policy-mode adopt|merge|enforce]
 
 Flags:
   --repo string              Target GitHub repo in OWNER/REPO format
   --dry-run                  Plan sync without creating or updating GitHub metadata
   --bootstrap-issues         Enable creation of default Gira bootstrap issues
+  --policy-mode string       Metadata policy mode (adopt|merge|enforce). Default: merge. Can also be set by GIRA_SYNC_POLICY_MODE
   -h, --help                 Show help
 `
 
@@ -892,6 +893,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	dryRun := fs.Bool("dry-run", false, "Plan sync without creating or updating GitHub metadata")
 	bootstrapIssues := fs.Bool("bootstrap-issues", false, "Enable creation of default Gira bootstrap issues")
+	policyModeValue := fs.String("policy-mode", strings.TrimSpace(os.Getenv("GIRA_SYNC_POLICY_MODE")), "Metadata policy mode (adopt|merge|enforce)")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
 
@@ -922,7 +924,12 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 
 	client := newSyncClient(repo)
-	plan, err := gira.BuildSyncPlan(client, gira.SyncPlanOptions{EnableBootstrapIssues: *bootstrapIssues})
+	mode, err := gira.ParseSyncPolicyMode(*policyModeValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	plan, err := gira.BuildSyncPlan(client, gira.SyncPlanOptions{EnableBootstrapIssues: *bootstrapIssues, PolicyMode: mode})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2

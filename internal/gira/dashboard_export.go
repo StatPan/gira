@@ -593,7 +593,7 @@ func FormatDashboardExportPlan(plan DashboardExportPlan) string {
 	for _, artifact := range plan.Artifacts {
 		lines = append(lines, fmt.Sprintf("  - %s (%s) will_write=%t", artifact.Path, artifact.Kind, artifact.WillWrite))
 	}
-	lines = append(lines, fmt.Sprintf("counts:"))
+	lines = append(lines, "counts:")
 	lines = append(lines, fmt.Sprintf("  issues: %d", plan.Counts.Issues))
 	lines = append(lines, fmt.Sprintf("  pull_requests: %d", plan.Counts.PullRequests))
 	lines = append(lines, fmt.Sprintf("  milestones: %d", plan.Counts.Milestones))

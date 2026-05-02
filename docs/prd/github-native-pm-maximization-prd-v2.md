@@ -91,6 +91,54 @@
 - acceptance_criteria: 체크리스트 형태로 완료 조건 명시
 - blocker_format: 고정 문자열 포맷을 그대로 포함
 
+### 크론 집행 가능성 체크
+- title은 작업 유형과 대상 산출물을 동시에 드러내야 한다.
+- scope는 "무엇을 한다"와 함께 "무엇을 하지 않는다"를 최소 1개 이상 포함한다.
+- verification_commands는 실행 성공/실패가 명확한 명령만 사용한다(자연어 설명 금지).
+- acceptance_criteria는 검증 명령 또는 산출물 파일과 1:1 대응되도록 작성한다.
+
+### 좋은 예시 (Good)
+```md
+### title
+[Task] 이슈 실행 계약 템플릿 규칙 문서화
+
+### goal
+모든 작업 이슈가 동일한 7개 필드를 사용하도록 표준 규칙을 확정한다.
+
+### scope
+- 템플릿 필수 필드 정의
+- 필드별 작성 규칙 명시
+- 자동 게시 구현은 제외
+
+### files_to_change
+- docs/prd/github-native-pm-maximization-prd-v2.md
+
+### verification_commands
+- git diff --check
+- rg "title|goal|scope|files_to_change|verification_commands|acceptance_criteria|blocker_format" docs/prd/github-native-pm-maximization-prd-v2.md
+
+### acceptance_criteria
+- [ ] 7개 필드 정의가 문서에 존재한다.
+- [ ] blocker_format 고정 문자열이 포함된다.
+
+### blocker_format
+BLOCKED: <reason> | needed: <specific decision/input> | owner: <person/role>
+```
+
+### 나쁜 예시 (Bad)
+```md
+### goal
+문서 좀 정리
+
+### scope
+- 필요한 것들 수정
+
+### verification_commands
+- 확인해보기
+```
+
+- 문제점: 필드 누락(title/files_to_change/acceptance_criteria/blocker_format), 검증 불가 문장, 경계 불명확.
+
 ---
 
 ## 8. 운영 정책 (MVP)

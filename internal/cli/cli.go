@@ -196,11 +196,17 @@ Flags:
   -h, --help             Show help
 `
 
-const triageHelp = `Backlog triage queue and policy apply helpers.
+const triageHelp = `Backlog triage normalization helpers.
 
 Usage:
-  gira triage queue --repo OWNER/REPO [--json]
-  gira triage apply --repo OWNER/REPO --policy FILE --dry-run|--apply [--json]
+  gira triage --repo OWNER/REPO --dry-run|--apply [--json]
+
+Flags:
+  --repo string  Target GitHub repo in OWNER/REPO format
+  --dry-run      Preview planned label additions only
+  --apply        Apply missing axis labels to open issues
+  --json         Emit stable JSON output
+  -h, --help     Show help
 `
 
 const sprintHelp = `Sprint/iteration command family.
@@ -363,6 +369,10 @@ var statusNow = func() time.Time {
 
 var reportNow = func() time.Time {
 	return time.Now()
+}
+
+var newTriageReport = func(repo gira.RepoRef, apply bool) (gira.TriageNormalizeReport, error) {
+	return gira.NormalizeOpenIssueTriage(gira.NewGHTriageClient(repo, gira.ExecCommandRunner{}), apply, time.Now())
 }
 
 var devCommandRunner gira.CommandRunner = gira.ExecCommandRunner{}
@@ -1355,88 +1365,49 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runTriage(args []string, stdout io.Writer, stderr io.Writer) int {
-	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprint(stdout, triageHelp)
-		return 0
-	}
-	switch args[0] {
-	case "queue":
-		fs := flag.NewFlagSet("triage queue", flag.ContinueOnError)
-		fs.SetOutput(io.Discard)
-		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
-		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
-		if err := fs.Parse(args[1:]); err != nil {
-			fmt.Fprintf(stderr, "%v\n\n", err)
-			fmt.Fprint(stderr, triageHelp)
-			return 2
-		}
-		if *repoValue == "" {
-			fmt.Fprint(stderr, "--repo is required\n\n")
-			fmt.Fprint(stderr, triageHelp)
-			return 2
-		}
-		repo, err := gira.ParseRepoRef(*repoValue)
-		if err != nil {
-			fmt.Fprintf(stderr, "%v\n", err)
-			return 2
-		}
-		report, err := gira.BuildTriageQueue(gira.NewGHTriageClient(repo, gira.ExecCommandRunner{}), time.Now())
-		if err != nil {
-			fmt.Fprintf(stderr, "%v\n", err)
-			return 2
-		}
-		output, _ := json.MarshalIndent(report, "", "  ")
-		if *jsonOutput {
-			fmt.Fprintf(stdout, "%s\n", output)
+	fs := flag.NewFlagSet("triage", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	dryRun := fs.Bool("dry-run", false, "Preview only")
+	apply := fs.Bool("apply", false, "Apply labels")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			fmt.Fprint(stdout, triageHelp)
 			return 0
 		}
-		fmt.Fprintf(stdout, "%s\n", output)
-		return 0
-	case "apply":
-		fs := flag.NewFlagSet("triage apply", flag.ContinueOnError)
-		fs.SetOutput(io.Discard)
-		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
-		policyPath := fs.String("policy", "", "Policy file path")
-		dryRun := fs.Bool("dry-run", false, "Preview only")
-		apply := fs.Bool("apply", false, "Apply labels")
-		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
-		if err := fs.Parse(args[1:]); err != nil {
-			fmt.Fprintf(stderr, "%v\n\n", err)
-			fmt.Fprint(stderr, triageHelp)
-			return 2
-		}
-		if *repoValue == "" || *policyPath == "" || (*dryRun == *apply) {
-			fmt.Fprint(stderr, "--repo, --policy and exactly one of --dry-run/--apply are required\n\n")
-			fmt.Fprint(stderr, triageHelp)
-			return 2
-		}
-		repo, err := gira.ParseRepoRef(*repoValue)
-		if err != nil {
-			fmt.Fprintf(stderr, "%v\n", err)
-			return 2
-		}
-		policy, err := gira.LoadTriagePolicy(*policyPath)
-		if err != nil {
-			fmt.Fprintf(stderr, "%v\n", err)
-			return 1
-		}
-		report, err := gira.ApplyTriagePolicy(gira.NewGHTriageClient(repo, gira.ExecCommandRunner{}), policy, *apply, time.Now())
-		if err != nil {
-			fmt.Fprintf(stderr, "%v\n", err)
-			return 1
-		}
-		output, _ := json.MarshalIndent(report, "", "  ")
-		if *jsonOutput {
-			fmt.Fprintf(stdout, "%s\n", output)
-			return 0
-		}
-		fmt.Fprintf(stdout, "%s\n", output)
-		return 0
-	default:
-		fmt.Fprintf(stderr, "unknown triage command: %s\n\n", args[0])
+		fmt.Fprintf(stderr, "%v\n\n", err)
 		fmt.Fprint(stderr, triageHelp)
 		return 2
 	}
+	if *help {
+		fmt.Fprint(stdout, triageHelp)
+		return 0
+	}
+	if *repoValue == "" || (*dryRun == *apply) {
+		fmt.Fprint(stderr, "--repo and exactly one of --dry-run/--apply are required\n\n")
+		fmt.Fprint(stderr, triageHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newTriageReport(repo, *apply)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	output, _ := json.MarshalIndent(report, "", "  ")
+	if *jsonOutput {
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprintf(stdout, "%s\n", output)
+	return 0
 }
 
 func runSprint(args []string, stdout io.Writer, stderr io.Writer) int {

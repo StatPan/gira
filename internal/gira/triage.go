@@ -25,6 +25,7 @@ type TriagePolicy struct {
 type TriageIssue struct {
 	Number    int      `json:"number"`
 	Title     string   `json:"title"`
+	Body      string   `json:"body,omitempty"`
 	State     string   `json:"state"`
 	Labels    []string `json:"labels"`
 	Assignees []string `json:"assignees"`
@@ -98,6 +99,7 @@ func (c GHTriageClient) ListOpenIssues() ([]TriageIssue, error) {
 		var raw struct {
 			Number int    `json:"number"`
 			Title  string `json:"title"`
+			Body   string `json:"body"`
 			State  string `json:"state"`
 			Labels []struct {
 				Name string `json:"name"`
@@ -131,7 +133,7 @@ func (c GHTriageClient) ListOpenIssues() ([]TriageIssue, error) {
 		if url == "" {
 			url = raw.URL
 		}
-		issues = append(issues, TriageIssue{Number: raw.Number, Title: raw.Title, State: raw.State, Labels: labels, Assignees: assignees, CreatedAt: raw.CreatedAt, UpdatedAt: raw.UpdatedAt, URL: url})
+		issues = append(issues, TriageIssue{Number: raw.Number, Title: raw.Title, Body: raw.Body, State: raw.State, Labels: labels, Assignees: assignees, CreatedAt: raw.CreatedAt, UpdatedAt: raw.UpdatedAt, URL: url})
 	}
 	sort.Slice(issues, func(i, j int) bool { return issues[i].Number < issues[j].Number })
 	return issues, nil
@@ -314,4 +316,135 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+type TriageNormalizeIssue struct {
+	Issue       int      `json:"issue"`
+	Add         []string `json:"add_labels"`
+	Action      string   `json:"action"`
+	Reason      []string `json:"reason"`
+	Skip        string   `json:"skip_reason,omitempty"`
+	Conflicts   []string `json:"conflict_axes,omitempty"`
+	Title       string   `json:"title,omitempty"`
+	Current     []string `json:"current_labels,omitempty"`
+	ResultLabel []string `json:"result_labels,omitempty"`
+}
+
+type TriageNormalizeReport struct {
+	Repo         string                 `json:"repo"`
+	Mode         string                 `json:"mode"`
+	GeneratedAt  string                 `json:"generated_at"`
+	TargetIssues int                    `json:"target_issues"`
+	Planned      int                    `json:"planned"`
+	Applied      int                    `json:"applied"`
+	Skipped      int                    `json:"skipped"`
+	Unchanged    int                    `json:"unchanged"`
+	Issues       []TriageNormalizeIssue `json:"issues"`
+}
+
+func NormalizeOpenIssueTriage(client TriageClient, apply bool, now time.Time) (TriageNormalizeReport, error) {
+	issues, err := client.ListOpenIssues()
+	if err != nil {
+		return TriageNormalizeReport{}, err
+	}
+	mode := "dry-run"
+	if apply {
+		mode = "apply"
+	}
+	report := TriageNormalizeReport{Repo: client.Repo().FullName(), Mode: mode, GeneratedAt: now.UTC().Format(time.RFC3339), TargetIssues: len(issues), Issues: make([]TriageNormalizeIssue, 0, len(issues))}
+	for _, issue := range issues {
+		row := TriageNormalizeIssue{Issue: issue.Number, Title: issue.Title, Current: append([]string{}, issue.Labels...)}
+		add, reasons, conflicts := triageLabelsForIssue(issue)
+		if len(conflicts) > 0 {
+			row.Action = "skip"
+			row.Skip = "needs-decision"
+			row.Conflicts = conflicts
+			row.Reason = []string{"multiple labels found in same axis"}
+			report.Skipped++
+			report.Issues = append(report.Issues, row)
+			continue
+		}
+		if len(add) == 0 {
+			row.Action = "unchanged"
+			report.Unchanged++
+			report.Issues = append(report.Issues, row)
+			continue
+		}
+		row.Action = "plan"
+		row.Add = add
+		row.Reason = reasons
+		row.ResultLabel = append(append([]string{}, issue.Labels...), add...)
+		report.Planned++
+		if apply {
+			if err := client.AddLabels(issue.Number, add); err != nil {
+				return TriageNormalizeReport{}, err
+			}
+			row.Action = "applied"
+			report.Applied++
+		}
+		report.Issues = append(report.Issues, row)
+	}
+	return report, nil
+}
+
+func triageLabelsForIssue(issue TriageIssue) (add []string, reasons []string, conflicts []string) {
+	typeLabels := labelsByPrefix(issue.Labels, "type:")
+	priorityLabels := labelsByPrefix(issue.Labels, "priority:")
+	areaLabels := labelsByPrefix(issue.Labels, "area:")
+
+	if len(typeLabels) > 1 {
+		conflicts = append(conflicts, "type")
+	}
+	if len(priorityLabels) > 1 {
+		conflicts = append(conflicts, "priority")
+	}
+	if len(areaLabels) > 1 {
+		conflicts = append(conflicts, "area")
+	}
+	if len(conflicts) > 0 {
+		sort.Strings(conflicts)
+		return nil, nil, conflicts
+	}
+
+	if len(typeLabels) == 0 {
+		add = append(add, "type:task")
+		reasons = append(reasons, "missing type:*")
+	}
+	if len(priorityLabels) == 0 {
+		add = append(add, "priority:p2")
+		reasons = append(reasons, "missing priority:*")
+	}
+	if len(areaLabels) == 0 {
+		add = append(add, inferAreaLabel(issue))
+		reasons = append(reasons, "missing area:*")
+	}
+	add = labelsNotPresent(add, issue.Labels)
+	return add, reasons, nil
+}
+
+func labelsByPrefix(labels []string, prefix string) []string {
+	out := make([]string, 0)
+	for _, l := range labels {
+		if strings.HasPrefix(strings.ToLower(l), prefix) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+func inferAreaLabel(issue TriageIssue) string {
+	content := strings.ToLower(issue.Title + "\n" + issue.Body)
+	if strings.Contains(content, "cli") || strings.Contains(content, "flag") || strings.Contains(content, "command") {
+		return "area:cli"
+	}
+	if strings.Contains(content, "sync") || strings.Contains(content, "milestone") || strings.Contains(content, "label") {
+		return "area:sync"
+	}
+	if strings.Contains(content, "test") || strings.Contains(content, "ci") || strings.Contains(content, "build") {
+		return "area:ci"
+	}
+	if strings.Contains(content, "doc") || strings.Contains(content, "readme") {
+		return "area:docs"
+	}
+	return "area:docs"
 }

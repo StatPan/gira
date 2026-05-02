@@ -42,6 +42,17 @@ func TestTriageHelpFlagPrintsHelpAndExitsZero(t *testing.T) {
 	}
 }
 
+func TestSprintRolloverMissingRepoReturnsTwo(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"sprint", "rollover", "--dry-run"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--repo and exactly one of --dry-run/--apply are required") {
+		t.Fatalf("stderr missing required-args message:\n%s", stderr.String())
+	}
+}
+
 func TestTriageMissingRepoReturnsTwo(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"triage", "--dry-run"}, &stdout, &stderr)

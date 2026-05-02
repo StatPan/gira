@@ -215,6 +215,7 @@ Usage:
   gira sprint plan --repo OWNER/REPO --iteration ID --capacity N --issues 1,2,3 --dry-run|--apply [--json]
   gira sprint start --repo OWNER/REPO --iteration ID --dry-run|--apply [--json]
   gira sprint close --repo OWNER/REPO --iteration ID --completed 1,2 --spillover-disposition carry|drop --rollover-reason TEXT --dry-run|--apply [--json]
+  gira sprint rollover --repo OWNER/REPO [--to MILESTONE] --dry-run|--apply [--json]
 `
 
 const workerHelp = `Worker coordination commands for issue ownership and handoff payloads.
@@ -1521,6 +1522,41 @@ func runSprint(args []string, stdout io.Writer, stderr io.Writer) int {
 			return 2
 		}
 		report, err := gira.CloseSprint(gira.SprintStatePath(repo), repo, *iteration, completedItems, *disposition, *reason, *apply, time.Now())
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		output, _ := json.MarshalIndent(report, "", "  ")
+		if *jsonOutput {
+			fmt.Fprintf(stdout, "%s\n", output)
+			return 0
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	case "rollover":
+		fs := flag.NewFlagSet("sprint rollover", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		toMilestone := fs.String("to", "", "Destination milestone title")
+		dryRun := fs.Bool("dry-run", false, "Preview only")
+		apply := fs.Bool("apply", false, "Apply rollover")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		if *repoValue == "" || (*dryRun == *apply) {
+			fmt.Fprint(stderr, "--repo and exactly one of --dry-run/--apply are required\n\n")
+			fmt.Fprint(stderr, sprintHelp)
+			return 2
+		}
+		repo, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		report, err := gira.SprintRollover(repo, *toMilestone, *apply, time.Now(), gira.ExecCommandRunner{})
 		if err != nil {
 			fmt.Fprintf(stderr, "%v\n", err)
 			return 1

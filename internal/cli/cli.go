@@ -434,9 +434,14 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) int {
 	loadedConfigPath := strings.TrimSpace(*configPath)
 	var loadedConfig gira.InitConfig
 	if loadedConfigPath == "" {
-		defaultConfigPath := gira.DefaultInitConfigPath()
+		defaultConfigPath := gira.DefaultInitConfigPath(".")
 		if stat, err := os.Stat(defaultConfigPath); err == nil && !stat.IsDir() {
 			loadedConfigPath = defaultConfigPath
+		} else {
+			workspaceConfigPath := gira.DefaultInitConfigPath(*pathValue)
+			if stat, err := os.Stat(workspaceConfigPath); err == nil && !stat.IsDir() {
+				loadedConfigPath = workspaceConfigPath
+			}
 		}
 	}
 	if loadedConfigPath != "" {

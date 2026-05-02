@@ -1240,6 +1240,43 @@ func TestInitUsesDefaultConfigPathWhenPresent(t *testing.T) {
 	}
 }
 
+func TestInitUsesWorkspaceDefaultConfigPathWhenPresent(t *testing.T) {
+	original := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = original })
+
+	workspace := t.TempDir()
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"gh --version": []byte("gh version 2"),
+		"git --version": []byte("git version 2"),
+		"gh auth status": []byte("ok"),
+		"gh repo view StatPan/gira --json name": []byte(`{"name":"gira"}`),
+		"git -C " + workspace + " rev-parse --is-inside-work-tree": []byte("true"),
+		"git -C " + workspace + " diff --quiet": nil,
+		"git -C " + workspace + " diff --cached --quiet": nil,
+	}}
+	giraDir := filepath.Join(workspace, ".gira")
+	if err := os.MkdirAll(giraDir, 0o755); err != nil {
+		t.Fatalf("mkdir .gira: %v", err)
+	}
+	configPath := filepath.Join(giraDir, "config.yaml")
+	err := os.WriteFile(configPath, []byte(`profiles:
+  default:
+    labels: ["type:task"]
+`), 0o644)
+	if err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"init", "--repo", "StatPan/gira", "--path", workspace, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"config_path": `) || !strings.Contains(stdout.String(), filepath.ToSlash(configPath)) {
+		t.Fatalf("expected workspace config path in output: %s", stdout.String())
+	}
+}
+
 func TestInitInvalidConfigFails(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yaml")

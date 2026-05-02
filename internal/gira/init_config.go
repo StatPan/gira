@@ -17,10 +17,12 @@ type InitProfile struct {
 	Labels         []string `yaml:"labels" json:"labels"`
 	Milestones     []string `yaml:"milestones" json:"milestones"`
 	IssueTemplates []string `yaml:"issue_templates" json:"issue_templates"`
-	ReviewPolicy   struct {
-		RequiredApprovals int  `yaml:"required_approvals" json:"required_approvals"`
-		RequireCodeOwners bool `yaml:"require_code_owners" json:"require_code_owners"`
-	} `yaml:"review_policy" json:"review_policy"`
+	ReviewPolicy   ReviewPolicy `yaml:"review_policy" json:"review_policy"`
+}
+
+type ReviewPolicy struct {
+	RequiredApprovals int  `yaml:"required_approvals" json:"required_approvals"`
+	RequireCodeOwners bool `yaml:"require_code_owners" json:"require_code_owners"`
 }
 
 func LoadInitConfig(path string) (InitConfig, error) {
@@ -50,6 +52,9 @@ func LoadInitConfig(path string) (InitConfig, error) {
 	return cfg, nil
 }
 
-func DefaultInitConfigPath() string {
-	return filepath.Join(".gira", "config.yaml")
+func DefaultInitConfigPath(basePath string) string {
+	if strings.TrimSpace(basePath) == "" {
+		basePath = "."
+	}
+	return filepath.Join(basePath, ".gira", "config.yaml")
 }

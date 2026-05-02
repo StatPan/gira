@@ -70,7 +70,7 @@ Usage:
 Flags:
   --repo string       Target GitHub repo in OWNER/REPO format
   --path string       Local git workspace path to validate (default ".")
-  --config string     Optional init profile schema path (.gira/config.yaml)
+  --config string     Optional init profile schema path (.gira/config.yaml|.gira/config.toml)
   --dry-run           Emit plan only (default true for this planning slice)
   --json              Emit stable JSON report for automation
   -h, --help          Show help

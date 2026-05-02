@@ -97,15 +97,33 @@ Recommended shape:
 - preserve `go install .../cmd/gira@latest` as the canonical path
 - keep smoke-test commands in README/DX
 
-## Suggested execution order
+## Epic #91 breakdown and execution order
 
-1. #35 capability probe
-2. transition planner dry-run
-3. project sync dry-run
-4. #25 target-repo-safe sync
-5. partial apply gates
-6. milestone/project completion automation
-7. #12 daily CLI polish as ongoing hardening
+Epic: #91 ([Full Jiraization of Gira](https://github.com/StatPan/gira/issues/91))
+
+Child issues (implementation queue):
+
+1. #92 Config schema for optional init profiles (YAML/TOML)
+2. #93 Merge policy modes: adopt/merge/enforce for existing GitHub metadata
+3. #94 Full CRUD capability matrix and command contract
+4. #95 Jira-style workflow state machine mapped to GitHub-native objects
+5. #96 Review/quality gate as command-first policy (no workflow dependency)
+6. #97 End-to-end automation loop: issue queue -> implement -> verify -> PR -> merge
+7. #98 Adoption/migration playbook for pre-configured GitHub repositories
+
+Execution order rationale:
+
+- Start with config and merge policy (#92, #93) so later commands have deterministic inputs.
+- Define command contract before behavior expansion (#94).
+- Implement state machine and quality gate policy next (#95, #96).
+- Add the orchestration loop after primitives stabilize (#97).
+- Finish with migration/adoption guidance once behavior is concrete (#98).
+
+## Safety boundaries (explicit)
+
+- No forced overwrite of pre-existing labels/milestones/issues/PR metadata without explicit opt-in.
+- No hidden destructive delete behavior; destructive operations must be explicit and reviewable.
+- Apply behavior remains capability-gated and idempotent where supported.
 
 ## Non-goals during this roadmap
 

@@ -1249,13 +1249,13 @@ func TestInitUsesWorkspaceDefaultConfigPathWhenPresent(t *testing.T) {
 
 	workspace := t.TempDir()
 	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
-		"gh --version": []byte("gh version 2"),
-		"git --version": []byte("git version 2"),
-		"gh auth status": []byte("ok"),
+		"gh --version":                          []byte("gh version 2"),
+		"git --version":                         []byte("git version 2"),
+		"gh auth status":                        []byte("ok"),
 		"gh repo view StatPan/gira --json name": []byte(`{"name":"gira"}`),
 		"git -C " + workspace + " rev-parse --is-inside-work-tree": []byte("true"),
-		"git -C " + workspace + " diff --quiet": nil,
-		"git -C " + workspace + " diff --cached --quiet": nil,
+		"git -C " + workspace + " diff --quiet":                    nil,
+		"git -C " + workspace + " diff --cached --quiet":           nil,
 	}}
 	giraDir := filepath.Join(workspace, ".gira")
 	if err := os.MkdirAll(giraDir, 0o755); err != nil {

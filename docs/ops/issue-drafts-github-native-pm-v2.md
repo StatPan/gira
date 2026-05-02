@@ -69,6 +69,7 @@
 
 ### template_standard_notes
 - 고정 필드 순서: `title → goal → scope → files_to_change → verification_commands → acceptance_criteria → blocker_format`
+- 각 필드는 누락 없이 모두 포함되어야 하며, 순서 변경은 허용하지 않는다.
 - 좋은 예시/나쁜 예시를 함께 제시해 작성 편차를 줄인다.
 - 각 acceptance 항목은 검증 명령 또는 산출물 파일과 직접 매핑되어야 한다.
 - 규약 설명은 "에이전트가 즉시 실행 가능한가" 기준으로 작성한다.

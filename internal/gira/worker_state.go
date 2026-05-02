@@ -10,7 +10,7 @@ import (
 )
 
 type WorkerState struct {
-	Claim   *WorkerClaim         `json:"claim,omitempty"`
+	Claim   *WorkerClaim          `json:"claim,omitempty"`
 	Handoff *WorkerHandoffPayload `json:"handoff,omitempty"`
 }
 

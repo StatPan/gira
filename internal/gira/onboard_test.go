@@ -11,11 +11,11 @@ func TestBuildOnboardVerifyReportSteadyStateReady(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := onboardFakeRunner{responses: map[string]string{
 		"gh --version": `gh version 2.0.0`,
-		"gh repo view StatPan/gira --json nameWithOwner,viewerPermission,defaultBranchRef": `{"nameWithOwner":"StatPan/gira","viewerPermission":"ADMIN","defaultBranchRef":{"name":"main"}}`,
-		"gh label list --repo StatPan/gira --json name,color,description --limit 1000":                  desiredLabelsJSON(),
-		"gh api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":  `[[{"number":1,"title":"MVP","description":"CLI-first Gira bootstrapper with templates and GitHub metadata sync.","due_on":null,"state":"open","open_issues":1,"closed_issues":0},{"number":2,"title":"Beta","description":"Broader validation and hardening after the MVP workflow is usable.","due_on":null,"state":"open","open_issues":0,"closed_issues":0},{"number":3,"title":"v1","description":"Stable first release of the GitHub-native project OS workflow.","due_on":null,"state":"open","open_issues":0,"closed_issues":0}]]`,
+		"gh repo view StatPan/gira --json nameWithOwner,viewerPermission,defaultBranchRef":                             `{"nameWithOwner":"StatPan/gira","viewerPermission":"ADMIN","defaultBranchRef":{"name":"main"}}`,
+		"gh label list --repo StatPan/gira --json name,color,description --limit 1000":                                 desiredLabelsJSON(),
+		"gh api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                  `[[{"number":1,"title":"MVP","description":"CLI-first Gira bootstrapper with templates and GitHub metadata sync.","due_on":null,"state":"open","open_issues":1,"closed_issues":0},{"number":2,"title":"Beta","description":"Broader validation and hardening after the MVP workflow is usable.","due_on":null,"state":"open","open_issues":0,"closed_issues":0},{"number":3,"title":"v1","description":"Stable first release of the GitHub-native project OS workflow.","due_on":null,"state":"open","open_issues":0,"closed_issues":0}]]`,
 		"gh issue list --repo StatPan/gira --state all --label gira:bootstrap --json number,title,labels --limit 1000": desiredBootstrapIssuesJSON(),
-		"gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100":      `[[{"number":71,"title":"Onboarding","state":"open","labels":[{"name":"status:ready"}],"milestone":{"title":"MVP"},"updated_at":"2026-04-26T12:00:00Z","html_url":"https://github.com/StatPan/gira/issues/71"}]]`,
+		"gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100":                      `[[{"number":71,"title":"Onboarding","state":"open","labels":[{"name":"status:ready"}],"milestone":{"title":"MVP"},"updated_at":"2026-04-26T12:00:00Z","html_url":"https://github.com/StatPan/gira/issues/71"}]]`,
 	}}
 
 	report := BuildOnboardVerifyReport(repo, OnboardStageSteadyState, runner, time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC))
@@ -40,9 +40,9 @@ func TestBuildOnboardVerifyReportFailsClosedWithRemediation(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := onboardFakeRunner{responses: map[string]string{
 		"gh --version": `gh version 2.0.0`,
-		"gh repo view StatPan/gira --json nameWithOwner,viewerPermission,defaultBranchRef": `{"nameWithOwner":"StatPan/gira","viewerPermission":"WRITE","defaultBranchRef":{"name":"main"}}`,
-		"gh label list --repo StatPan/gira --json name,color,description --limit 1000": desiredLabelsJSON(),
-		"gh api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100": `[[{"number":1,"title":"MVP","description":"CLI-first Gira bootstrapper with templates and GitHub metadata sync.","due_on":null,"state":"open","open_issues":1,"closed_issues":0},{"number":2,"title":"Beta","description":"Broader validation and hardening after the MVP workflow is usable.","due_on":null,"state":"open","open_issues":0,"closed_issues":0},{"number":3,"title":"v1","description":"Stable first release of the GitHub-native project OS workflow.","due_on":null,"state":"open","open_issues":0,"closed_issues":0}]]`,
+		"gh repo view StatPan/gira --json nameWithOwner,viewerPermission,defaultBranchRef":                             `{"nameWithOwner":"StatPan/gira","viewerPermission":"WRITE","defaultBranchRef":{"name":"main"}}`,
+		"gh label list --repo StatPan/gira --json name,color,description --limit 1000":                                 desiredLabelsJSON(),
+		"gh api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                  `[[{"number":1,"title":"MVP","description":"CLI-first Gira bootstrapper with templates and GitHub metadata sync.","due_on":null,"state":"open","open_issues":1,"closed_issues":0},{"number":2,"title":"Beta","description":"Broader validation and hardening after the MVP workflow is usable.","due_on":null,"state":"open","open_issues":0,"closed_issues":0},{"number":3,"title":"v1","description":"Stable first release of the GitHub-native project OS workflow.","due_on":null,"state":"open","open_issues":0,"closed_issues":0}]]`,
 		"gh issue list --repo StatPan/gira --state all --label gira:bootstrap --json number,title,labels --limit 1000": `[]`,
 	}}
 

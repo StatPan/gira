@@ -26,13 +26,13 @@ func TestBuildInitReportReady(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	path := "/repo"
 	runner := &initRunner{outputs: map[string][]byte{
-		"gh --version":                                       []byte("gh version 2"),
-		"git --version":                                      []byte("git version 2"),
-		"gh auth status":                                     []byte("ok"),
-		"gh repo view StatPan/gira --json name":              []byte(`{"name":"gira"}`),
-		"git -C /repo rev-parse --is-inside-work-tree":       []byte("true"),
-		"git -C /repo diff --quiet":                          nil,
-		"git -C /repo diff --cached --quiet":                 nil,
+		"gh --version":                                 []byte("gh version 2"),
+		"git --version":                                []byte("git version 2"),
+		"gh auth status":                               []byte("ok"),
+		"gh repo view StatPan/gira --json name":        []byte(`{"name":"gira"}`),
+		"git -C /repo rev-parse --is-inside-work-tree": []byte("true"),
+		"git -C /repo diff --quiet":                    nil,
+		"git -C /repo diff --cached --quiet":           nil,
 	}}
 	report, err := BuildInitReport(repo, path, true, runner)
 	if err != nil {

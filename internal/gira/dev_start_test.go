@@ -28,7 +28,7 @@ func TestStartDevBranchDryRunReadyIssue(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	issueJSON := `{"number":59,"title":"Add API: start branch","state":"open","labels":[{"name":"status:ready"}]}`
 	runner := &devStartRunner{outputs: map[string][]byte{
-		"gh api repos/StatPan/gira/issues/59":                     []byte(issueJSON),
+		"gh api repos/StatPan/gira/issues/59":                                    []byte(issueJSON),
 		"git show-ref --verify --quiet refs/heads/issue-59-add-api-start-branch": nil,
 	}, errs: map[string]error{
 		"git show-ref --verify --quiet refs/heads/issue-59-add-api-start-branch": fmt.Errorf("exit status 1"),
@@ -60,7 +60,7 @@ func TestStartDevBranchRemoteConflict(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	issueJSON := `{"number":59,"title":"Add API: start branch","state":"open","labels":[{"name":"status:ready"}]}`
 	runner := &devStartRunner{outputs: map[string][]byte{
-		"gh api repos/StatPan/gira/issues/59":                       []byte(issueJSON),
+		"gh api repos/StatPan/gira/issues/59":                                    []byte(issueJSON),
 		"git ls-remote --exit-code --heads origin issue-59-add-api-start-branch": []byte("abc\trefs/heads/issue-59-add-api-start-branch"),
 	}, errs: map[string]error{
 		"git show-ref --verify --quiet refs/heads/issue-59-add-api-start-branch": fmt.Errorf("exit status 1"),
@@ -75,10 +75,10 @@ func TestStartDevBranchReusesExistingLocalBranch(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	issueJSON := `{"number":59,"title":"Add API: start branch","state":"open","labels":[{"name":"status:ready"}]}`
 	runner := &devStartRunner{outputs: map[string][]byte{
-		"gh api repos/StatPan/gira/issues/59":                       []byte(issueJSON),
+		"gh api repos/StatPan/gira/issues/59":                                    []byte(issueJSON),
 		"git show-ref --verify --quiet refs/heads/issue-59-add-api-start-branch": nil,
 		"git ls-remote --exit-code --heads origin issue-59-add-api-start-branch": []byte("abc\trefs/heads/issue-59-add-api-start-branch"),
-		"git checkout issue-59-add-api-start-branch":                nil,
+		"git checkout issue-59-add-api-start-branch":                             nil,
 	}}
 
 	result, err := StartDevBranch(repo, 59, DefaultDevBranchPattern, false, false, runner)

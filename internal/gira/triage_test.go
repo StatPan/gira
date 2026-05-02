@@ -11,7 +11,7 @@ type fakeTriageClient struct {
 	edits  map[int][]string
 }
 
-func (f *fakeTriageClient) Repo() RepoRef { return f.repo }
+func (f *fakeTriageClient) Repo() RepoRef                          { return f.repo }
 func (f *fakeTriageClient) ListOpenIssues() ([]TriageIssue, error) { return f.issues, nil }
 func (f *fakeTriageClient) AddLabels(issue int, labels []string) error {
 	if f.edits == nil {

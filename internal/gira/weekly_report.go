@@ -16,17 +16,19 @@ type WeeklyReport struct {
 }
 
 type WeeklyReportKPIs struct {
-	BacklogHealth             string  `json:"backlog_health"`
-	OpenIssues                int     `json:"open_issues"`
-	StaleIssues               int     `json:"stale_issues"`
-	SLABreaches               int     `json:"sla_breaches"`
-	SprintCommitment          int     `json:"sprint_commitment"`
-	SprintCompleted           int     `json:"sprint_completed"`
-	BlockedIssues             int     `json:"blocked_issues"`
-	BlockedAgingDaysP95       int     `json:"blocked_aging_days_p95"`
-	ReviewPendingPRs          int     `json:"review_pending_prs"`
-	ReviewLatencyHoursAverage float64 `json:"review_latency_hours_avg"`
-	ReleaseBlockers           int     `json:"release_blockers"`
+	BacklogHealth                string  `json:"backlog_health"`
+	OpenIssues                   int     `json:"open_issues"`
+	StaleIssues                  int     `json:"stale_issues"`
+	SLABreaches                  int     `json:"sla_breaches"`
+	SprintCommitment             int     `json:"sprint_commitment"`
+	SprintCompleted              int     `json:"sprint_completed"`
+	BlockedIssues                int     `json:"blocked_issues"`
+	BlockedAgingDaysP95          int     `json:"blocked_aging_days_p95"`
+	ReviewPendingPRs             int     `json:"review_pending_prs"`
+	ReviewLatencyHoursAverage    float64 `json:"review_latency_hours_avg"`
+	ReleaseBlockers              int     `json:"release_blockers"`
+	ClosureLinkMissingOpenIssues int     `json:"closure_link_missing_open_issues"`
+	PRsMissingClosureLink        int     `json:"prs_missing_closure_link"`
 }
 
 type WeeklyReportException struct {
@@ -103,6 +105,8 @@ func BuildWeeklyReport(repo RepoRef, now time.Time, dashboard DashboardExportCli
 		avgReview = reviewAgeHoursTotal / float64(len(reviewPending))
 	}
 
+	prsMissingClosure, closureLinkMissingIssues := closureLinkGapMetricsFromReviewPRs(prs)
+
 	backlogHealth := "green"
 	if staleIssues > 0 || len(blockedIssues) > 0 {
 		backlogHealth = "amber"
@@ -112,17 +116,19 @@ func BuildWeeklyReport(repo RepoRef, now time.Time, dashboard DashboardExportCli
 	}
 
 	kpis := WeeklyReportKPIs{
-		BacklogHealth:             backlogHealth,
-		OpenIssues:                len(openIssues),
-		StaleIssues:               staleIssues,
-		SLABreaches:               staleIssues,
-		SprintCommitment:          len(openIssues),
-		SprintCompleted:           0,
-		BlockedIssues:             len(blockedIssues),
-		BlockedAgingDaysP95:       blockedP95,
-		ReviewPendingPRs:          len(reviewPending),
-		ReviewLatencyHoursAverage: avgReview,
-		ReleaseBlockers:           len(release.BlockingPRs) + len(release.OpenBlockers) + len(release.OpenMustFix),
+		BacklogHealth:                backlogHealth,
+		OpenIssues:                   len(openIssues),
+		StaleIssues:                  staleIssues,
+		SLABreaches:                  staleIssues,
+		SprintCommitment:             len(openIssues),
+		SprintCompleted:              0,
+		BlockedIssues:                len(blockedIssues),
+		BlockedAgingDaysP95:          blockedP95,
+		ReviewPendingPRs:             len(reviewPending),
+		ReviewLatencyHoursAverage:    avgReview,
+		ReleaseBlockers:              len(release.BlockingPRs) + len(release.OpenBlockers) + len(release.OpenMustFix),
+		ClosureLinkMissingOpenIssues: closureLinkMissingIssues,
+		PRsMissingClosureLink:        prsMissingClosure,
 	}
 
 	exceptions := append([]WeeklyReportException{}, blockedIssues...)
@@ -181,6 +187,19 @@ func hasSubstring(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func closureLinkGapMetricsFromReviewPRs(prs []ReviewPR) (int, int) {
+	missingPRs := 0
+	for _, pr := range prs {
+		if pr.IsDraft {
+			continue
+		}
+		if len(ExtractClosureIssueNumbers(pr.Body)) == 0 {
+			missingPRs++
+		}
+	}
+	return missingPRs, missingPRs
 }
 
 func (r WeeklyReport) MarshalJSON() ([]byte, error) {

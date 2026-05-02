@@ -43,8 +43,8 @@ func TestBuildMergeQueueDryRunAndApply(t *testing.T) {
 	repo, _ := ParseRepoRef("StatPan/gira")
 	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	client := &fakeReviewGateClient{repo: repo, prs: []ReviewPR{
-		{Number: 20, ReviewDecision: "APPROVED", CheckStatus: "passing", UpdatedAt: "2026-04-30T00:00:00Z"},
-		{Number: 21, ReviewDecision: "", CheckStatus: "passing", UpdatedAt: "2026-04-30T00:00:00Z"},
+		{Number: 20, Body: "Closes #20", ReviewDecision: "APPROVED", CheckStatus: "passing", UpdatedAt: "2026-04-30T00:00:00Z"},
+		{Number: 21, Body: "", ReviewDecision: "", CheckStatus: "passing", UpdatedAt: "2026-04-30T00:00:00Z"},
 	}}
 	report, err := BuildMergeQueue(client, now, false)
 	if err != nil {
@@ -66,7 +66,7 @@ func TestBuildReleaseReadiness(t *testing.T) {
 	repo, _ := ParseRepoRef("StatPan/gira")
 	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	client := &fakeReviewGateClient{repo: repo,
-		prs:    []ReviewPR{{Number: 30, ReviewDecision: "", CheckStatus: "failing", UpdatedAt: "2026-04-30T00:00:00Z"}},
+		prs:    []ReviewPR{{Number: 30, Body: "Fixes #40", ReviewDecision: "", CheckStatus: "failing", UpdatedAt: "2026-04-30T00:00:00Z"}},
 		issues: []ReviewIssue{{Number: 40, Labels: []string{"blocker"}}, {Number: 41, Labels: []string{"must-fix"}}},
 	}
 	report, err := BuildReleaseReadiness(client, now)
@@ -78,5 +78,19 @@ func TestBuildReleaseReadiness(t *testing.T) {
 	}
 	if len(report.BlockingPRs) != 1 || len(report.OpenBlockers) != 1 || len(report.OpenMustFix) != 1 {
 		t.Fatalf("unexpected readiness report: %+v", report)
+	}
+}
+
+func TestExtractClosureIssueNumbers(t *testing.T) {
+	issues := ExtractClosureIssueNumbers("Implements feature. Fixes #12 and resolves #13; closes #12")
+	if len(issues) != 2 || issues[0] != 12 || issues[1] != 13 {
+		t.Fatalf("unexpected closure issues: %+v", issues)
+	}
+}
+
+func TestClassifyPRBlockersIncludesMissingClosureLink(t *testing.T) {
+	blockers := classifyPRBlockers(ReviewPR{ReviewDecision: "APPROVED", CheckStatus: "passing", Body: "no closure keyword"})
+	if len(blockers) != 1 || blockers[0] != BlockerPolicyViolation {
+		t.Fatalf("unexpected blockers: %+v", blockers)
 	}
 }

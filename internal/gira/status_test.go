@@ -72,6 +72,7 @@ func TestBuildStatusSummaryFetchesWithGhShape(t *testing.T) {
 		responses: map[string]string{
 			"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100": `[[{"number":1,"title":"MVP","state":"open","description":null,"due_on":null,"open_issues":2,"closed_issues":3}]]`,
 			"api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100":     `[[{"number":1,"title":"Issue 1","state":"open","labels":[{"name":"status:blocked"}],"milestone":{"title":"MVP"},"updated_at":"2026-04-25T12:00:00Z","html_url":"https://github.com/StatPan/gira/issues/1"},{"number":2,"title":"PR 2","state":"open","pull_request":{},"labels":[],"updated_at":"2026-04-25T12:00:00Z","html_url":"https://github.com/StatPan/gira/pull/2"}]]`,
+			"api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=open -f per_page=100":     `[[{"body":"Implements changes","draft":false},{"body":"Fixes #1","draft":false}]]`,
 		},
 	}
 
@@ -81,6 +82,9 @@ func TestBuildStatusSummaryFetchesWithGhShape(t *testing.T) {
 	}
 	if summary.Counts.Issues.Total != 1 {
 		t.Fatalf("total issues = %d, want 1", summary.Counts.Issues.Total)
+	}
+	if summary.Counts.Issues.PRsMissingClosureLink != 1 || summary.Counts.Issues.ClosureLinkMissingOpenIssues != 1 {
+		t.Fatalf("unexpected closure-link metrics: %+v", summary.Counts.Issues)
 	}
 	if summary.Counts.Milestones.Total != 1 || summary.Milestones[0].ProgressPercent != 60 {
 		t.Fatalf("unexpected milestone summary: %+v", summary.Milestones)

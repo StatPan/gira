@@ -79,11 +79,13 @@ type StatusCounts struct {
 }
 
 type IssueCounts struct {
-	Total       int `json:"total"`
-	Open        int `json:"open"`
-	Closed      int `json:"closed"`
-	StaleOpen   int `json:"stale_open"`
-	BlockedOpen int `json:"blocked_open"`
+	Total                        int `json:"total"`
+	Open                         int `json:"open"`
+	Closed                       int `json:"closed"`
+	StaleOpen                    int `json:"stale_open"`
+	BlockedOpen                  int `json:"blocked_open"`
+	ClosureLinkMissingOpenIssues int `json:"closure_link_missing_open_issues"`
+	PRsMissingClosureLink        int `json:"prs_missing_closure_link"`
 }
 
 type MilestoneCounts struct {
@@ -140,6 +142,11 @@ type normalizedMilestone struct {
 	ClosedIssues int
 }
 
+type statusPullRequest struct {
+	Body  string
+	Draft bool
+}
+
 func BuildStatusSummary(client StatusClient, fetchedAt time.Time, staleDays int) (StatusSummary, error) {
 	milestones, err := FetchMilestones(client)
 	if err != nil {
@@ -149,7 +156,15 @@ func BuildStatusSummary(client StatusClient, fetchedAt time.Time, staleDays int)
 	if err != nil {
 		return StatusSummary{}, err
 	}
-	return SummarizeStatus(client.Repo().FullName(), milestones, issues, fetchedAt, staleDays)
+	summary, err := SummarizeStatus(client.Repo().FullName(), milestones, issues, fetchedAt, staleDays)
+	if err != nil {
+		return StatusSummary{}, err
+	}
+	prs, err := FetchOpenPullRequests(client)
+	if err == nil {
+		summary.Counts.Issues.PRsMissingClosureLink, summary.Counts.Issues.ClosureLinkMissingOpenIssues = closureLinkGapMetrics(prs)
+	}
+	return summary, nil
 }
 
 func FetchMilestones(client StatusClient) ([]normalizedMilestone, error) {
@@ -275,6 +290,54 @@ func FetchIssues(client StatusClient) ([]normalizedIssue, error) {
 		})
 	}
 	return issues, nil
+}
+
+func FetchOpenPullRequests(client StatusClient) ([]statusPullRequest, error) {
+	var pages json.RawMessage
+	err := client.JSON([]string{
+		"api",
+		"repos/" + client.Repo().FullName() + "/pulls",
+		"--paginate",
+		"--slurp",
+		"-X",
+		"GET",
+		"-f",
+		"state=open",
+		"-f",
+		"per_page=100",
+	}, &pages)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := flattenPages(pages)
+	if err != nil {
+		return nil, err
+	}
+	prs := make([]statusPullRequest, 0, len(rows))
+	for _, row := range rows {
+		var raw struct {
+			Body  string `json:"body"`
+			Draft bool   `json:"draft"`
+		}
+		if err := json.Unmarshal(row, &raw); err != nil {
+			return nil, fmt.Errorf("parse pull request: %w", err)
+		}
+		prs = append(prs, statusPullRequest{Body: raw.Body, Draft: raw.Draft})
+	}
+	return prs, nil
+}
+
+func closureLinkGapMetrics(prs []statusPullRequest) (int, int) {
+	missingPRs := 0
+	for _, pr := range prs {
+		if pr.Draft {
+			continue
+		}
+		if len(ExtractClosureIssueNumbers(pr.Body)) == 0 {
+			missingPRs++
+		}
+	}
+	return missingPRs, missingPRs
 }
 
 func SummarizeStatus(repo string, milestones []normalizedMilestone, issues []normalizedIssue, fetchedAt time.Time, staleDays int) (StatusSummary, error) {

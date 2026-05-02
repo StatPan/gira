@@ -43,7 +43,7 @@ func TestBuildWeeklyReportDeterministic(t *testing.T) {
 		{IssueNumber: 70, Title: "Blocked item", State: "open", Labels: []string{"blocked"}, UpdatedAt: now.Add(-20 * 24 * time.Hour).Format(time.RFC3339), URL: "https://example/issues/70"},
 		{IssueNumber: 71, Title: "Fresh item", State: "open", Labels: nil, UpdatedAt: now.Add(-2 * 24 * time.Hour).Format(time.RFC3339), URL: "https://example/issues/71"},
 	}}
-	review := weeklyReviewClient{repo: repo, prs: []ReviewPR{{Number: 77, Title: "Needs review", URL: "https://example/pr/77", ReviewDecision: "", UpdatedAt: now.Add(-96 * time.Hour).Format(time.RFC3339), RequestedReviewers: []string{"alice"}}}, issues: []ReviewIssue{{Number: 70, Labels: []string{"blocker"}}}}
+	review := weeklyReviewClient{repo: repo, prs: []ReviewPR{{Number: 77, Title: "Needs review", Body: "Implements queue", URL: "https://example/pr/77", ReviewDecision: "", UpdatedAt: now.Add(-96 * time.Hour).Format(time.RFC3339), RequestedReviewers: []string{"alice"}}}, issues: []ReviewIssue{{Number: 70, Labels: []string{"blocker"}}}}
 
 	a, err := BuildWeeklyReport(repo, now, dash, review)
 	if err != nil {
@@ -55,6 +55,9 @@ func TestBuildWeeklyReportDeterministic(t *testing.T) {
 	}
 	if a.KPIs.SLABreaches != 1 || a.KPIs.BlockedIssues != 1 || a.KPIs.ReleaseBlockers == 0 {
 		t.Fatalf("unexpected kpis: %+v", a.KPIs)
+	}
+	if a.KPIs.PRsMissingClosureLink != 1 || a.KPIs.ClosureLinkMissingOpenIssues != 1 {
+		t.Fatalf("unexpected closure-link kpis: %+v", a.KPIs)
 	}
 	if len(a.Exceptions) != len(b.Exceptions) || a.Exceptions[0].Title != b.Exceptions[0].Title {
 		t.Fatalf("non-deterministic exceptions ordering")

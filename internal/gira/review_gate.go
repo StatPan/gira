@@ -3,7 +3,9 @@ package gira
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,6 +20,7 @@ const (
 type ReviewPR struct {
 	Number             int      `json:"number"`
 	Title              string   `json:"title"`
+	Body               string   `json:"body"`
 	URL                string   `json:"url"`
 	IsDraft            bool     `json:"is_draft"`
 	ReviewDecision     string   `json:"review_decision"`
@@ -55,13 +58,14 @@ func NewGHReviewGateClient(repo RepoRef, runner CommandRunner) GHReviewGateClien
 func (c GHReviewGateClient) Repo() RepoRef { return c.repo }
 
 func (c GHReviewGateClient) ListOpenPRs() ([]ReviewPR, error) {
-	out, err := c.runner.Run("gh", "pr", "list", "--repo", c.repo.FullName(), "--state", "open", "--limit", "200", "--json", "number,title,url,isDraft,reviewDecision,statusCheckRollup,labels,reviewRequests,assignees,updatedAt")
+	out, err := c.runner.Run("gh", "pr", "list", "--repo", c.repo.FullName(), "--state", "open", "--limit", "200", "--json", "number,title,body,url,isDraft,reviewDecision,statusCheckRollup,labels,reviewRequests,assignees,updatedAt")
 	if err != nil {
 		return nil, err
 	}
 	var rows []struct {
 		Number         int    `json:"number"`
 		Title          string `json:"title"`
+		Body           string `json:"body"`
 		URL            string `json:"url"`
 		IsDraft        bool   `json:"isDraft"`
 		ReviewDecision string `json:"reviewDecision"`
@@ -124,7 +128,7 @@ func (c GHReviewGateClient) ListOpenPRs() ([]ReviewPR, error) {
 				check = "passing"
 			}
 		}
-		prs = append(prs, ReviewPR{Number: row.Number, Title: row.Title, URL: row.URL, IsDraft: row.IsDraft, ReviewDecision: strings.ToUpper(row.ReviewDecision), CheckStatus: check, Labels: labels, RequestedReviewers: reviewers, Assignees: assignees, UpdatedAt: row.UpdatedAt})
+		prs = append(prs, ReviewPR{Number: row.Number, Title: row.Title, Body: row.Body, URL: row.URL, IsDraft: row.IsDraft, ReviewDecision: strings.ToUpper(row.ReviewDecision), CheckStatus: check, Labels: labels, RequestedReviewers: reviewers, Assignees: assignees, UpdatedAt: row.UpdatedAt})
 	}
 	sort.Slice(prs, func(i, j int) bool { return prs[i].Number < prs[j].Number })
 	return prs, nil
@@ -312,6 +316,9 @@ func classifyPRBlockers(pr ReviewPR) []string {
 	if pr.CheckStatus == "failing" {
 		blockers = append(blockers, BlockerFailingChecks)
 	}
+	if len(ExtractClosureIssueNumbers(pr.Body)) == 0 && !hasSubstring(pr.Labels, "docs") && !hasSubstring(pr.Labels, "chore") {
+		blockers = append(blockers, BlockerPolicyViolation)
+	}
 	for _, label := range pr.Labels {
 		if strings.Contains(strings.ToLower(label), "blocker") {
 			blockers = append(blockers, BlockerUnresolvedBlocker)
@@ -320,4 +327,28 @@ func classifyPRBlockers(pr ReviewPR) []string {
 	}
 	sort.Strings(blockers)
 	return blockers
+}
+
+var closureKeywordPattern = regexp.MustCompile(`(?i)\b(?:closes|fixes|resolves)\s+#([0-9]+)\b`)
+
+func ExtractClosureIssueNumbers(body string) []int {
+	matches := closureKeywordPattern.FindAllStringSubmatch(body, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := map[int]struct{}{}
+	issues := make([]int, 0, len(matches))
+	for _, m := range matches {
+		n, err := strconv.Atoi(m[1])
+		if err != nil {
+			continue
+		}
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		issues = append(issues, n)
+	}
+	sort.Ints(issues)
+	return issues
 }

@@ -74,6 +74,49 @@
 - 각 acceptance 항목은 검증 명령 또는 산출물 파일과 직접 매핑되어야 한다.
 - 규약 설명은 "에이전트가 즉시 실행 가능한가" 기준으로 작성한다.
 
+### good_example
+```md
+### title
+[Task] 실행 계약 템플릿 표준안 문서화
+
+### goal
+모든 작업 이슈가 동일한 7개 필드를 따르도록 규약을 확정한다.
+
+### scope
+- 필수 필드 정의
+- 필드별 작성 규칙 명시
+- GitHub 게시 자동화 구현은 제외
+
+### files_to_change
+- docs/ops/issue-drafts-github-native-pm-v2.md
+- docs/prd/github-native-pm-maximization-prd-v2.md
+
+### verification_commands
+- git diff --check
+- rg "title|goal|scope|files_to_change|verification_commands|acceptance_criteria|blocker_format" docs/prd/github-native-pm-maximization-prd-v2.md
+
+### acceptance_criteria
+- [ ] 7개 필드가 누락 없이 정의되어 있다.
+- [ ] blocker_format이 고정 문자열로 포함되어 있다.
+
+### blocker_format
+BLOCKED: <reason> | needed: <specific decision/input> | owner: <person/role>
+```
+
+### bad_example
+```md
+### goal
+문서 정리
+
+### scope
+- 필요한 것 수정
+
+### verification_commands
+- 확인해보기
+```
+
+- 문제점: 필수 필드 누락, 파일 경계 부재, 검증 불가 명령, 완료 기준 불명확.
+
 ### blocker_format
 `BLOCKED: <reason> | needed: <specific decision/input> | owner: <person/role>`
 

@@ -39,6 +39,7 @@ Commands:
   merge       Policy-checked merge queue (dry-run/apply)
   release     Release readiness gate report
   report      Weekly PM cockpit report
+  contract    CRUD capability matrix and command contract
 
 Flags:
   -h, --help  Show help
@@ -248,6 +249,19 @@ Usage:
   gira report weekly --repo OWNER/REPO [--json|--md]
 `
 
+const contractHelp = `CRUD capability matrix and command contract.
+
+Usage:
+  gira contract crud
+
+Commands:
+  crud         Show per-surface create/read/update/delete support contract
+
+Notes:
+  MVP-safe surfaces: labels, milestones, issues, PR loop, and project inspection.
+  Destructive operations are opt-in: no broad delete/apply without explicit apply flags.
+`
+
 const devHelp = `Developer workflow helpers for issue-to-branch execution.
 
 Usage:
@@ -395,6 +409,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runRelease(args[1:], stdout, stderr)
 	case "report":
 		return runReport(args[1:], stdout, stderr)
+	case "contract":
+		return runContract(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
@@ -1952,6 +1968,30 @@ func runRelease(args []string, stdout io.Writer, stderr io.Writer) int {
 	if !report.Ready {
 		return 1
 	}
+	return 0
+}
+
+func runContract(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, contractHelp)
+		return 0
+	}
+	if args[0] != "crud" {
+		fmt.Fprintf(stderr, "unsupported contract operation: %s\n", args[0])
+		fmt.Fprint(stderr, "supported operation: gira contract crud\n\n")
+		fmt.Fprint(stderr, contractHelp)
+		return 2
+	}
+
+	fmt.Fprint(stdout, `CRUD capability matrix (MVP contract)
+
+surface   create                             read                              update                                delete
+labels    gira sync --repo OWNER/REPO        gira sync --repo OWNER/REPO       gira sync --repo OWNER/REPO          unsupported (intentional in MVP)
+milestones gira sync --repo OWNER/REPO       gira sync --repo OWNER/REPO       gira sync --repo OWNER/REPO          unsupported (intentional in MVP)
+issues    gira sync --repo OWNER/REPO --bootstrap-issues  gira status --repo OWNER/REPO  gira triage apply --apply / gira worker claim  unsupported (intentional in MVP)
+pr_loop   gira dev pr open --repo OWNER/REPO --issue N    gira dev pr status --repo OWNER/REPO --issue N  gira review queue / gira merge queue --apply  unsupported direct delete; close via GitHub UI/API
+project_fields_views  unsupported (MVP non-goal)  gira project capability|sync --dry-run|transitions --dry-run  unsupported (dry-run inspect only in MVP)  unsupported (MVP non-goal)
+`)
 	return 0
 }
 

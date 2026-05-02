@@ -65,11 +65,12 @@ Flags:
 const initHelp = `One-command onboarding with prerequisite checks and fail-closed planning.
 
 Usage:
-  gira init --repo OWNER/REPO [--path .] [--dry-run] [--json]
+  gira init --repo OWNER/REPO [--path .] [--config PATH] [--dry-run] [--json]
 
 Flags:
   --repo string       Target GitHub repo in OWNER/REPO format
   --path string       Local git workspace path to validate (default ".")
+  --config string     Optional init profile schema path (.gira/config.yaml)
   --dry-run           Emit plan only (default true for this planning slice)
   --json              Emit stable JSON report for automation
   -h, --help          Show help
@@ -405,6 +406,7 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs.SetOutput(io.Discard)
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	pathValue := fs.String("path", ".", "Local git workspace path to validate")
+	configPath := fs.String("config", "", "Optional init profile schema path")
 	dryRun := fs.Bool("dry-run", true, "Emit plan only")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
@@ -429,6 +431,13 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
+	if strings.TrimSpace(*configPath) != "" {
+		if _, err := gira.LoadInitConfig(*configPath); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+	}
+
 	report, err := gira.BuildInitReport(repo, *pathValue, *dryRun, devCommandRunner)
 	if err != nil {
 		if *jsonOutput {

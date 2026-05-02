@@ -1154,6 +1154,62 @@ func TestInitJSONReady(t *testing.T) {
 	}
 }
 
+func TestInitReadsConfig(t *testing.T) {
+	original := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = original })
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"gh --version":                                 []byte("gh version 2"),
+		"git --version":                                []byte("git version 2"),
+		"gh auth status":                               []byte("ok"),
+		"gh repo view StatPan/gira --json name":        []byte(`{"name":"gira"}`),
+		"git -C /repo rev-parse --is-inside-work-tree": []byte("true"),
+		"git -C /repo diff --quiet":                    nil,
+		"git -C /repo diff --cached --quiet":           nil,
+	}}
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(configPath, []byte(`profiles:
+  default:
+    labels: ["type:task"]
+    review_policy:
+      required_approvals: 1
+`), 0o644)
+	if err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"init", "--repo", "StatPan/gira", "--path", "/repo", "--config", configPath, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"ready": true`) {
+		t.Fatalf("expected ready true: %s", stdout.String())
+	}
+}
+
+func TestInitInvalidConfigFails(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(configPath, []byte(`profiles:
+  default:
+    review_policy:
+      required_approvals: -1
+`), 0o644)
+	if err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"init", "--repo", "StatPan/gira", "--config", configPath}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero for invalid config")
+	}
+	if !strings.Contains(stderr.String(), "required_approvals") {
+		t.Fatalf("expected actionable config error: %s", stderr.String())
+	}
+}
+
 func TestReportWeeklyJSON(t *testing.T) {
 	restoreDash := newDashboardExportClient
 	restoreReview := newReviewGateClient

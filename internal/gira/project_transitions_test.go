@@ -627,8 +627,35 @@ func TestApplyProjectTransitionsForClientAppliesAndSkips(t *testing.T) {
 	if len(report.Skipped) != 0 {
 		t.Fatalf("unexpected skipped items: %#v", report.Skipped)
 	}
+	if report.BlockedCount != 0 {
+		t.Fatalf("blocked_count = %d, want 0", report.BlockedCount)
+	}
 	if len(runner.calls) != 1 || !strings.Contains(runner.calls[0], "issues/100/labels") {
 		t.Fatalf("unexpected runner calls: %#v", runner.calls)
+	}
+}
+
+func TestApplyProjectTransitionsForClientSetsBlockedCount(t *testing.T) {
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	repo := ParseRepoRefMust("StatPan/gira")
+	client := fakeTransitionsClient{
+		repo: repo,
+		snapshot: ProjectTransitionSnapshot{
+			Issues: []ProjectTransitionIssue{
+				{Number: 201, Title: "Blocked by explicit label", State: "open", Labels: []string{"blocked"}},
+				{Number: 202, Title: "Blocked by managed status", State: "open", Labels: []string{"status:blocked"}},
+				{Number: 203, Title: "Closed blocked should not count", State: "closed", Labels: []string{"blocked", "status:blocked"}},
+				{Number: 204, Title: "Ready", State: "open", Labels: []string{"status:ready"}},
+			},
+		},
+	}
+	runner := &fakeTransitionsRunner{}
+	report, err := ApplyProjectTransitionsForClient(client, runner, now)
+	if err != nil {
+		t.Fatalf("ApplyProjectTransitionsForClient returned error: %v", err)
+	}
+	if report.BlockedCount != 2 {
+		t.Fatalf("blocked_count = %d, want 2", report.BlockedCount)
 	}
 }
 

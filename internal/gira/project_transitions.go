@@ -332,11 +332,12 @@ func ApplyProjectTransitionsForClient(client ProjectTransitionsClient, runner Co
 	}
 
 	apply := ProjectTransitionsApplyReport{
-		Repo:    client.Repo().FullName(),
-		Command: "project transitions",
-		DryRun:  false,
-		Applied: make([]ProjectTransitionApplyResultItem, 0),
-		Skipped: make([]ProjectTransitionApplySkippedItem, 0),
+		Repo:         client.Repo().FullName(),
+		Command:      "project transitions",
+		DryRun:       false,
+		Applied:      make([]ProjectTransitionApplyResultItem, 0),
+		Skipped:      make([]ProjectTransitionApplySkippedItem, 0),
+		BlockedCount: countBlockedIssues(snapshot.Issues),
 	}
 
 	issueByNumber := map[int]ProjectTransitionIssue{}
@@ -862,6 +863,19 @@ func hasBlockedLabel(labels []string) bool {
 		}
 	}
 	return false
+}
+
+func countBlockedIssues(issues []ProjectTransitionIssue) int {
+	count := 0
+	for _, issue := range issues {
+		if !strings.EqualFold(issue.State, "open") {
+			continue
+		}
+		if hasBlockedLabel(issue.Labels) || inferIssueStatus(issue) == "Blocked" {
+			count++
+		}
+	}
+	return count
 }
 
 func triageCriteriaMet(issue ProjectTransitionIssue) bool {

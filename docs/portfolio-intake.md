@@ -70,6 +70,8 @@ Optional fields:
 - `target_date`
 - `non_goals`
 
+The default bootstrap template installs `.github/ISSUE_TEMPLATE/portfolio.yml` so operators can create valid top-level tickets without memorizing this body contract. Use that form in the portfolio repo. Execution repos should keep using the task, story, spike, bug, and epic templates for repo-local work packets.
+
 ## Commands
 
 ```bash

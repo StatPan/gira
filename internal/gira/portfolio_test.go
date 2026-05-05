@@ -113,6 +113,25 @@ func TestParsePortfolioTicketsValidatesChildIssues(t *testing.T) {
 	}
 }
 
+func TestParsePortfolioTicketsTreatsGitHubIssueFormNoResponseAsBlank(t *testing.T) {
+	repos := []RepoRef{mustRepoRefForPortfolio("StatPan/gira")}
+	body := "### Goal\nShip portfolio intake\n\n### Scope\nPlan only\n\n### Routing\nunrouted\n\n### Target Repos\n_No response_\n\n### Acceptance Criteria\n- plan is stable\n\n### Child Issues\n_No response_\n\n### Priority\n_No response_\n"
+
+	tickets, diagnostics := ParsePortfolioTickets([]PortfolioRawTicket{
+		{Number: 38, Title: "Unrouted", State: "open", Body: body},
+	}, repos)
+
+	if len(diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v, want none", diagnostics)
+	}
+	if len(tickets) != 1 {
+		t.Fatalf("tickets = %+v, want one parsed ticket", tickets)
+	}
+	if len(tickets[0].TargetRepos) != 0 || len(tickets[0].ChildIssues) != 0 || tickets[0].Priority != "" {
+		t.Fatalf("ticket = %+v, want no-response fields treated as blank", tickets[0])
+	}
+}
+
 func TestParsePortfolioTicketsReportsMissingRouting(t *testing.T) {
 	repos := []RepoRef{mustRepoRefForPortfolio("StatPan/gira")}
 	_, diagnostics := ParsePortfolioTickets([]PortfolioRawTicket{

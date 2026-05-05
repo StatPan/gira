@@ -1,0 +1,66 @@
+name: Portfolio Ticket
+
+description: Top-level planning ticket before repository execution lowering
+
+title: "[Portfolio] "
+labels: ["type:epic"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What outcome should exist?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is included and excluded?
+    validations:
+      required: true
+  - type: dropdown
+    id: routing
+    attributes:
+      label: Routing
+      description: Choose how this top-level ticket should lower into execution repos.
+      options:
+        - unrouted
+        - single_repo
+        - multi_repo
+        - deferred
+    validations:
+      required: true
+  - type: textarea
+    id: target_repos
+    attributes:
+      label: Target Repos
+      description: Required for single_repo and multi_repo routing.
+      placeholder: "OWNER/REPO"
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      placeholder: "- [ ] Observable completion condition"
+    validations:
+      required: true
+  - type: textarea
+    id: child_issues
+    attributes:
+      label: Child Issues
+      description: Execution issues linked to this top-level ticket.
+      placeholder: "OWNER/REPO#123"
+  - type: input
+    id: priority
+    attributes:
+      label: Priority
+      placeholder: "p1 | p2 | p3"
+  - type: input
+    id: target_date
+    attributes:
+      label: Target Date
+      placeholder: "YYYY-MM-DD"
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non Goals

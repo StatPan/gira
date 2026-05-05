@@ -164,10 +164,45 @@ func TestBuildPortfolioPlanReportJSONShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal report: %v", err)
 	}
-	for _, key := range []string{"portfolio_repo", "repos", "dry_run", "counts", "tickets", "actions", "diagnostics"} {
+	for _, key := range []string{"portfolio_repo", "repos", "dry_run", "counts", "execution_ready", "blocked", "skipped", "linked", "create_needed", "tickets", "actions", "diagnostics"} {
 		if !strings.Contains(string(output), `"`+key+`"`) {
 			t.Fatalf("portfolio JSON missing %q:\n%s", key, output)
 		}
+	}
+}
+
+func TestPortfolioCountsClassifyOperatorFlow(t *testing.T) {
+	repos := []RepoRef{mustRepoRefForPortfolio("StatPan/gira"), mustRepoRefForPortfolio("StatPan/docs")}
+	tickets, diagnostics := ParsePortfolioTickets([]PortfolioRawTicket{
+		{Number: 30, Title: "Unrouted", State: "open", Body: portfolioBody("unrouted", "", "")},
+		{Number: 31, Title: "Create", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "")},
+		{Number: 32, Title: "Link", State: "open", Body: portfolioBody("multi_repo", "StatPan/gira\n- StatPan/docs", "StatPan/gira#10")},
+		{Number: 33, Title: "Invalid", State: "open", Body: portfolioBody("single_repo", "StatPan/missing", "")},
+		{Number: 34, Title: "Closed", State: "closed", Body: portfolioBody("single_repo", "StatPan/gira", "")},
+	}, repos)
+	actions := PortfolioPlan(tickets, diagnostics, repos)
+
+	counts := portfolioCounts(tickets, diagnostics, actions)
+
+	if counts.ExecutionReady != 2 || counts.Blocked != 1 || counts.Skipped != 2 || counts.Linked != 1 || counts.CreateNeeded != 2 {
+		t.Fatalf("counts = %+v, want ready=2 blocked=1 skipped=2 linked=1 create_needed=2", counts)
+	}
+}
+
+func TestPortfolioCountsUseTicketLevelFlowCounts(t *testing.T) {
+	repos := []RepoRef{mustRepoRefForPortfolio("StatPan/gira"), mustRepoRefForPortfolio("StatPan/docs")}
+	tickets, diagnostics := ParsePortfolioTickets([]PortfolioRawTicket{
+		{Number: 31, Title: "Multi create", State: "open", Body: portfolioBody("multi_repo", "StatPan/gira\n- StatPan/docs", "")},
+	}, repos)
+	actions := PortfolioPlan(tickets, diagnostics, repos)
+
+	counts := portfolioCounts(tickets, diagnostics, actions)
+
+	if counts.ExecutionReady != 1 || counts.CreateNeeded != 1 {
+		t.Fatalf("counts = %+v, want one ready ticket and one create-needed ticket", counts)
+	}
+	if len(actions) != 2 {
+		t.Fatalf("actions = %+v, want two repo-level create actions", actions)
 	}
 }
 
@@ -214,8 +249,33 @@ func TestResolvePortfolioConfigValidatesAllowlist(t *testing.T) {
 func TestFormatPortfolioReportIncludesNextStep(t *testing.T) {
 	report := PortfolioReport{Command: "portfolio status", PortfolioRepo: "StatPan/portfolio", Repos: []string{"StatPan/gira"}, Counts: PortfolioCounts{Tickets: 1, OpenTickets: 1, Unlinked: 1}}
 	text := FormatPortfolioReport(report)
-	if !strings.Contains(text, "next step: gira portfolio plan --dry-run --config .gira/config.yaml") {
+	if !strings.Contains(text, "next step: gira portfolio validate --config .gira/config.yaml") {
 		t.Fatalf("text missing next step:\n%s", text)
+	}
+}
+
+func TestFormatPortfolioReportNextSteps(t *testing.T) {
+	cleanValidate := FormatPortfolioReport(PortfolioReport{Command: "portfolio validate", PortfolioRepo: "StatPan/portfolio", Repos: []string{"StatPan/gira"}})
+	if !strings.Contains(cleanValidate, "next step: gira portfolio lower --dry-run --config .gira/config.yaml") {
+		t.Fatalf("clean validate next step mismatch:\n%s", cleanValidate)
+	}
+
+	diagnosticValidate := FormatPortfolioReport(PortfolioReport{
+		Command:       "portfolio validate",
+		PortfolioRepo: "StatPan/portfolio",
+		Repos:         []string{"StatPan/gira"},
+		Diagnostics:   []PortfolioDiagnostic{{Ticket: 1, RuleID: "missing_required_field", Detail: "goal is required"}},
+	})
+	if !strings.Contains(diagnosticValidate, "next step: fix diagnostics before planning portfolio lowering") {
+		t.Fatalf("diagnostic validate next step mismatch:\n%s", diagnosticValidate)
+	}
+
+	plan := FormatPortfolioReport(PortfolioReport{Command: "portfolio plan", PortfolioRepo: "StatPan/portfolio", Repos: []string{"StatPan/gira"}})
+	if !strings.Contains(plan, "next step: gira portfolio lower --dry-run --config .gira/config.yaml") {
+		t.Fatalf("plan next step mismatch:\n%s", plan)
+	}
+	if strings.Contains(plan, "not implemented") {
+		t.Fatalf("plan still claims lower behavior is not implemented:\n%s", plan)
 	}
 }
 

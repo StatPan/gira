@@ -46,6 +46,11 @@ type PortfolioLowerAction struct {
 type PortfolioLowerCounts struct {
 	Tickets          int `json:"tickets"`
 	OpenTickets      int `json:"open_tickets"`
+	ExecutionReady   int `json:"execution_ready"`
+	Blocked          int `json:"blocked"`
+	Skipped          int `json:"skipped"`
+	Linked           int `json:"linked"`
+	CreateNeeded     int `json:"create_needed"`
 	Actions          int `json:"actions"`
 	Applied          int `json:"applied"`
 	Diagnostics      int `json:"diagnostics"`
@@ -482,16 +487,38 @@ func portfolioInvalidTickets(diagnostics []PortfolioDiagnostic) map[int]struct{}
 
 func portfolioLowerCounts(tickets []PortfolioTicket, actions []PortfolioLowerAction, diagnostics []PortfolioDiagnostic, permissionBlocks []PortfolioCapabilityBlock) PortfolioLowerCounts {
 	counts := PortfolioLowerCounts{Tickets: len(tickets), Actions: len(actions), Diagnostics: len(diagnostics), PermissionBlocks: len(permissionBlocks)}
+	invalid := portfolioInvalidTickets(diagnostics)
+	blockedTickets := map[int]struct{}{}
+	skippedTickets := map[int]struct{}{}
+	linkedTickets := map[int]struct{}{}
+	createNeededTickets := map[int]struct{}{}
 	for _, ticket := range tickets {
 		if strings.EqualFold(ticket.State, "open") {
 			counts.OpenTickets++
+			if _, blocked := invalid[ticket.Number]; !blocked && (ticket.Routing == "single_repo" || ticket.Routing == "multi_repo") {
+				counts.ExecutionReady++
+			}
 		}
 	}
 	for _, action := range actions {
 		if action.Applied {
 			counts.Applied++
 		}
+		switch action.Action {
+		case "execution_issue:create":
+			createNeededTickets[action.Ticket] = struct{}{}
+		case "execution_issue:link_existing":
+			linkedTickets[action.Ticket] = struct{}{}
+		case "ticket:blocked_invalid_repo", "execution_issue:blocked_permission", "execution_issue:ambiguous_existing":
+			blockedTickets[action.Ticket] = struct{}{}
+		case "ticket:needs_routing", "ticket:deferred":
+			skippedTickets[action.Ticket] = struct{}{}
+		}
 	}
+	counts.Blocked = len(blockedTickets)
+	counts.Skipped = len(skippedTickets)
+	counts.Linked = len(linkedTickets)
+	counts.CreateNeeded = len(createNeededTickets)
 	return counts
 }
 
@@ -500,6 +527,7 @@ func FormatPortfolioLowerReport(report PortfolioLowerReport) string {
 	fmt.Fprintf(&b, "%s:\n", report.Command)
 	fmt.Fprintf(&b, "portfolio repo: %s\n", report.PortfolioRepo)
 	fmt.Fprintf(&b, "repos:          %s\n", strings.Join(report.Repos, ", "))
+	fmt.Fprintf(&b, "flow:           ready=%d blocked=%d skipped=%d linked=%d create_needed=%d\n", report.Counts.ExecutionReady, report.Counts.Blocked, report.Counts.Skipped, report.Counts.Linked, report.Counts.CreateNeeded)
 	fmt.Fprintf(&b, "actions:        %d applied=%d\n", report.Counts.Actions, report.Counts.Applied)
 	for _, action := range report.Actions {
 		if action.IssueNumber > 0 {
@@ -518,8 +546,21 @@ func FormatPortfolioLowerReport(report PortfolioLowerReport) string {
 	}
 	if report.Apply {
 		b.WriteString("next step: review created child issues and rerun gira portfolio lower --dry-run --config .gira/config.yaml\n")
+	} else if len(report.Diagnostics) > 0 || len(report.PermissionBlocks) > 0 || report.Counts.Blocked > 0 {
+		b.WriteString("next step: fix blocked portfolio lower actions, then rerun gira portfolio lower --dry-run --config .gira/config.yaml\n")
+	} else if !portfolioLowerHasApplyableActions(report.Actions) {
+		b.WriteString("next step: route or refine skipped portfolio tickets, then rerun gira portfolio lower --dry-run --config .gira/config.yaml\n")
 	} else {
 		b.WriteString("next step: gira portfolio lower --apply --config .gira/config.yaml\n")
 	}
 	return b.String()
+}
+
+func portfolioLowerHasApplyableActions(actions []PortfolioLowerAction) bool {
+	for _, action := range actions {
+		if action.Action == "execution_issue:create" || action.Action == "portfolio_ticket:update_child_issues" {
+			return true
+		}
+	}
+	return false
 }

@@ -85,6 +85,33 @@ func TestStartWorkApplyReusesExistingBranch(t *testing.T) {
 	}
 }
 
+func TestStartWorkApplyRerunReusesInProgressBranch(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	issueJSON := []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`)
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126":                            issueJSON,
+		"git show-ref --verify --quiet refs/heads/issue-126-work-command": nil,
+		"git ls-remote --exit-code --heads origin issue-126-work-command": nil,
+		"git checkout issue-126-work-command":                             nil,
+	}}
+
+	result, err := StartWork(repo, 126, false, runner)
+	if err != nil {
+		t.Fatalf("StartWork error: %v", err)
+	}
+	if result.CreatedBranch || result.Status != "In progress" || result.NextStatus != "In progress" {
+		t.Fatalf("expected idempotent in-progress reuse, got %+v", result)
+	}
+	if !containsCall(runner.calls, "git checkout issue-126-work-command") {
+		t.Fatalf("expected checkout existing branch, calls=%v", runner.calls)
+	}
+	for _, call := range runner.calls {
+		if strings.Contains(call, "/labels") {
+			t.Fatalf("in-progress rerun should not mutate labels, calls=%v", runner.calls)
+		}
+	}
+}
+
 func TestOpenWorkPRApplyDraftKeepsInProgress(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	issueJSON := []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`)
@@ -165,6 +192,29 @@ func TestOpenWorkPRApplyReusesExistingLinkedPR(t *testing.T) {
 	}
 }
 
+func TestOpenWorkPRApplyDraftFlagReusesExistingNonDraftPR(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
+		"gh pr list --repo StatPan/gira --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[{"number":202,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/202","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
+		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                                                                                                    nil,
+		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":                                                                                            nil,
+	}}
+
+	result, err := OpenWorkPR(repo, 126, false, true, runner)
+	if err != nil {
+		t.Fatalf("OpenWorkPR error: %v", err)
+	}
+	if result.Created || result.Draft || result.NextStatus != "In review" || result.PRNumber != 202 {
+		t.Fatalf("expected existing non-draft PR to stay non-draft, got %+v", result)
+	}
+	for _, call := range runner.calls {
+		if strings.HasPrefix(call, "gh pr create ") {
+			t.Fatalf("unexpected PR create call: %v", runner.calls)
+		}
+	}
+}
+
 func TestOpenWorkPRExistingDraftStaysInProgress(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
@@ -198,6 +248,22 @@ func TestGetWorkStatusReportsNextAction(t *testing.T) {
 		t.Fatalf("GetWorkStatus error: %v", err)
 	}
 	if result.NextAction != "mark_pr_ready" {
+		t.Fatalf("next action = %q", result.NextAction)
+	}
+}
+
+func TestGetWorkStatusReadyWithoutPRSuggestsStartWork(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`),
+		"gh pr list --repo StatPan/gira --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
+	}}
+
+	result, err := GetWorkStatus(repo, 126, runner)
+	if err != nil {
+		t.Fatalf("GetWorkStatus error: %v", err)
+	}
+	if result.NextAction != "start_work" {
 		t.Fatalf("next action = %q", result.NextAction)
 	}
 }

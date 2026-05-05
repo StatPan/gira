@@ -48,7 +48,17 @@ func StartWork(repo RepoRef, issueNumber int, dryRun bool, runner CommandRunner)
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
-	start, err := StartDevBranch(repo, issueNumber, DefaultDevBranchPattern, dryRun, false, runner)
+	issue, err := fetchDevIssue(repo, issueNumber, runner)
+	if err != nil {
+		return WorkStartResult{}, err
+	}
+	status := displayStatus(managedStatusFromLabels(issue.Labels))
+	alreadyStarted := status == "In progress"
+	if alreadyStarted && !strings.EqualFold(issue.State, "open") {
+		return WorkStartResult{}, fmt.Errorf("issue #%d is not open", issue.Number)
+	}
+
+	start, err := StartDevBranch(repo, issueNumber, DefaultDevBranchPattern, dryRun, alreadyStarted, runner)
 	result := WorkStartResult{
 		Repo:          repo.FullName(),
 		Issue:         issueNumber,
@@ -56,7 +66,7 @@ func StartWork(repo RepoRef, issueNumber int, dryRun bool, runner CommandRunner)
 		Branch:        start.Branch,
 		DryRun:        dryRun,
 		CreatedBranch: start.Created,
-		Status:        "Ready",
+		Status:        status,
 		NextStatus:    "In progress",
 		Checks:        start.Checked,
 	}
@@ -65,10 +75,6 @@ func StartWork(repo RepoRef, issueNumber int, dryRun bool, runner CommandRunner)
 	}
 	if dryRun {
 		return result, nil
-	}
-	issue, err := fetchDevIssue(repo, issueNumber, runner)
-	if err != nil {
-		return result, err
 	}
 	if err := setIssueStatus(repo, issueNumber, issue.Labels, "status:in-progress", runner); err != nil {
 		return result, err
@@ -106,7 +112,7 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 		return result, err
 	}
 	if prStatus.PRNumber != 0 {
-		actualDraft := draft || hasWorkBlocker(prStatus.Blockers, "draft")
+		actualDraft := hasWorkBlocker(prStatus.Blockers, "draft")
 		targetStatus = "In review"
 		if actualDraft {
 			targetStatus = "In progress"
@@ -194,7 +200,10 @@ func statusLabelForDraft(draft bool) string {
 
 func nextWorkAction(status string, pr DevPRStatusResult) string {
 	if pr.PRNumber == 0 {
-		if status == "Ready" || status == "In progress" {
+		if status == "Ready" {
+			return "start_work"
+		}
+		if status == "In progress" {
 			return "open_pr"
 		}
 		return "start_work"

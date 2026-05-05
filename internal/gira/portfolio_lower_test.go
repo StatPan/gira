@@ -160,6 +160,82 @@ func TestPortfolioLowerCapabilityBlocks(t *testing.T) {
 	}
 }
 
+func TestPortfolioLowerCapabilityBlocksIncludesBlockedRead(t *testing.T) {
+	report := PortfolioCapabilityReport{
+		PortfolioRepo: "StatPan/portfolio",
+		Repos: []PortfolioRepoCapability{{
+			Repo: "StatPan/gira",
+			Role: "execution",
+			Capabilities: map[string]ProjectCapabilityStatus{
+				"issues:read": ProjectCapabilityDeniedScope,
+			},
+		}},
+	}
+
+	blocks := PortfolioLowerCapabilityBlocks(report, []PortfolioLowerAction{
+		{Action: "execution_issue:blocked_permission", Repo: "StatPan/gira"},
+	})
+
+	if len(blocks) != 1 {
+		t.Fatalf("blocks = %+v, want one blocked read", blocks)
+	}
+	if blocks[0].Repo != "StatPan/gira" || blocks[0].Required != "issues:read" {
+		t.Fatalf("block = %+v, want execution issues:read block", blocks[0])
+	}
+}
+
+func TestBuildPortfolioLowerReportCountsBlockedReadPermission(t *testing.T) {
+	portfolioClient := fakePortfolioClient{
+		repo: mustRepoRefForPortfolio("StatPan/portfolio"),
+		tickets: []PortfolioRawTicket{
+			{Number: 31, Title: "Create", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "")},
+		},
+	}
+	capability := PortfolioCapabilityReport{
+		PortfolioRepo: "StatPan/portfolio",
+		Repos: []PortfolioRepoCapability{{
+			Repo: "StatPan/gira",
+			Role: "execution",
+			Capabilities: map[string]ProjectCapabilityStatus{
+				"issues:read": ProjectCapabilityDeniedScope,
+			},
+		}},
+	}
+
+	report, err := BuildPortfolioLowerReport(portfolioClient, &fakePortfolioLowerClient{failOnSearch: true}, []RepoRef{mustRepoRefForPortfolio("StatPan/gira")}, capability, false, portfolioNowFixture)
+	if err != nil {
+		t.Fatalf("BuildPortfolioLowerReport error: %v", err)
+	}
+	if report.Counts.PermissionBlocks != 1 || len(report.PermissionBlocks) != 1 {
+		t.Fatalf("permission blocks = count %d values %+v, want one blocked read", report.Counts.PermissionBlocks, report.PermissionBlocks)
+	}
+	if report.Actions[0].Action != "execution_issue:blocked_permission" {
+		t.Fatalf("actions = %+v, want blocked permission action", report.Actions)
+	}
+}
+
+func TestLoweringEvidenceMatchesExactFields(t *testing.T) {
+	body := "## Gira Lowering\nportfolio_repo: StatPan/portfolio\nportfolio_ticket: 144\ntarget_repo: StatPan/gira\n"
+
+	if !loweringEvidenceMatches(body, mustRepoRefForPortfolio("StatPan/portfolio"), 144, mustRepoRefForPortfolio("StatPan/gira")) {
+		t.Fatalf("lowering evidence should match exact fields")
+	}
+	if loweringEvidenceMatches(body, mustRepoRefForPortfolio("StatPan/portfolio"), 14, mustRepoRefForPortfolio("StatPan/gira")) {
+		t.Fatalf("lowering evidence matched ticket prefix")
+	}
+	if loweringEvidenceMatches(body, mustRepoRefForPortfolio("StatPan/portfolio"), 144, mustRepoRefForPortfolio("StatPan/gira-docs")) {
+		t.Fatalf("lowering evidence matched repo prefix")
+	}
+}
+
+func TestLoweringEvidenceRequiresGiraLoweringSection(t *testing.T) {
+	body := "portfolio_repo: StatPan/portfolio\nportfolio_ticket: 144\ntarget_repo: StatPan/gira\n"
+
+	if loweringEvidenceMatches(body, mustRepoRefForPortfolio("StatPan/portfolio"), 144, mustRepoRefForPortfolio("StatPan/gira")) {
+		t.Fatalf("lowering evidence matched without Gira Lowering section")
+	}
+}
+
 func TestBuildPortfolioLowerReportJSONShape(t *testing.T) {
 	portfolioClient := fakePortfolioClient{
 		repo: mustRepoRefForPortfolio("StatPan/portfolio"),

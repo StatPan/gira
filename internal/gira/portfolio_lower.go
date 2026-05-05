@@ -248,10 +248,28 @@ func PortfolioLowerCapabilityBlocks(report PortfolioCapabilityReport, actions []
 		}
 	}
 	blocks := PortfolioCapabilityBlocksForActions(report, planActions)
+	seen := map[string]struct{}{}
+	for _, block := range blocks {
+		seen[block.CheckID] = struct{}{}
+	}
+	for _, action := range actions {
+		if action.Action != "execution_issue:blocked_permission" {
+			continue
+		}
+		block, _ := portfolioCapabilityBlockFor(report, action.Repo, "execution", "issues:read")
+		if _, ok := seen[block.CheckID]; ok {
+			continue
+		}
+		blocks = append(blocks, block)
+		seen[block.CheckID] = struct{}{}
+	}
 	for _, action := range actions {
 		if action.Action == "portfolio_ticket:update_child_issues" {
 			if block, ok := portfolioCapabilityBlockFor(report, report.PortfolioRepo, "portfolio", "issues:write"); ok {
-				blocks = append(blocks, block)
+				if _, seenBlock := seen[block.CheckID]; !seenBlock {
+					blocks = append(blocks, block)
+					seen[block.CheckID] = struct{}{}
+				}
 			}
 			break
 		}
@@ -396,9 +414,27 @@ func parsePortfolioListPreserveOrder(value string) []string {
 }
 
 func loweringEvidenceMatches(body string, portfolioRepo RepoRef, ticket int, targetRepo RepoRef) bool {
-	return strings.Contains(body, "portfolio_repo: "+portfolioRepo.FullName()) &&
-		strings.Contains(body, "portfolio_ticket: "+strconv.Itoa(ticket)) &&
-		strings.Contains(body, "target_repo: "+targetRepo.FullName())
+	evidence := parseLoweringEvidence(body)
+	return evidence["portfolio_repo"] == portfolioRepo.FullName() &&
+		evidence["portfolio_ticket"] == strconv.Itoa(ticket) &&
+		evidence["target_repo"] == targetRepo.FullName()
+}
+
+func parseLoweringEvidence(body string) map[string]string {
+	section := parsePortfolioFields(body)["gira_lowering"]
+	out := map[string]string{}
+	for _, line := range strings.Split(section, "\n") {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key = normalizePortfolioFieldName(key)
+		switch key {
+		case "portfolio_repo", "portfolio_ticket", "target_repo":
+			out[key] = strings.TrimSpace(value)
+		}
+	}
+	return out
 }
 
 type childIssueRef struct {

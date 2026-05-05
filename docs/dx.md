@@ -50,18 +50,20 @@ The first ten minutes after `gira bootstrap` should answer four questions: what 
 5. Inspect the project state:
 
    ```bash
-   gira status --repo OWNER/REPO
-   gira status --repo OWNER/REPO --json
+   # from the target checkout, or any directory with .gira/config.yaml repo set
+   gira status
+   gira status --json
    ```
 
 6. Verify go/no-go readiness before first daily use:
 
    ```bash
-   gira onboard verify --repo OWNER/REPO --stage init --json
-   gira onboard verify --repo OWNER/REPO --stage steady-state --json
+   # from the target checkout, or any directory with .gira/config.yaml repo set
+   gira onboard verify --stage init --json
+   gira onboard verify --stage steady-state --json
    ```
 
-After bootstrap, the operator should see a short install summary and use `gira sync --dry-run` as the next-step hint. After sync, the operator should use `gira status` to pick the next ready issue. `gira onboard verify` should provide the explicit go/no-go verdict and remediation checklist before the team treats the repo as daily-operable.
+After bootstrap, the operator should see a short install summary and use `gira sync --repo OWNER/REPO --dry-run` as the next-step hint. After sync, the operator should use `gira status` from a checkout with a GitHub `origin` remote, or from a directory with `.gira/config.yaml` containing `repo: OWNER/REPO`, to pick the next ready issue. `gira onboard verify` should provide the explicit go/no-go verdict and remediation checklist before the team treats the repo as daily-operable. Pass `--repo OWNER/REPO` when scripting or operating outside the target checkout/config directory.
 
 ## Command Taxonomy
 

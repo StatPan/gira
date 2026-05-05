@@ -11,6 +11,7 @@ import (
 )
 
 type InitConfig struct {
+	Repo     string                 `yaml:"repo" toml:"repo" json:"repo"`
 	Profiles map[string]InitProfile `yaml:"profiles" toml:"profiles" json:"profiles"`
 }
 
@@ -49,6 +50,11 @@ func LoadInitConfig(path string) (InitConfig, error) {
 	}
 	if len(cfg.Profiles) == 0 {
 		return InitConfig{}, fmt.Errorf("invalid init config %q: profiles must include at least one profile", path)
+	}
+	if strings.TrimSpace(cfg.Repo) != "" {
+		if _, err := ParseRepoRef(cfg.Repo); err != nil {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: repo must be in OWNER/REPO format", path)
+		}
 	}
 	for name, profile := range cfg.Profiles {
 		if strings.TrimSpace(name) == "" {

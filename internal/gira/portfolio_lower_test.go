@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -243,7 +244,8 @@ func TestBuildPortfolioLowerReportJSONShape(t *testing.T) {
 			{Number: 31, Title: "Create", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "")},
 		},
 	}
-	capability := PortfolioCapabilityReport{PortfolioRepo: "StatPan/portfolio", FetchedAt: portfolioNowFixture.Format(time.RFC3339)}
+	capability := allowAllPortfolioLowerCapability()
+	capability.FetchedAt = portfolioNowFixture.Format(time.RFC3339)
 	report, err := BuildPortfolioLowerReport(portfolioClient, &fakePortfolioLowerClient{}, []RepoRef{mustRepoRefForPortfolio("StatPan/gira")}, capability, false, portfolioNowFixture)
 	if err != nil {
 		t.Fatalf("BuildPortfolioLowerReport error: %v", err)
@@ -251,10 +253,110 @@ func TestBuildPortfolioLowerReportJSONShape(t *testing.T) {
 	if report.Command != "portfolio lower" || !report.DryRun || report.Apply {
 		t.Fatalf("report = %+v, want lower dry-run report", report)
 	}
+	output := mustMarshalPortfolioLowerReport(t, report)
+	for _, key := range []string{"execution_ready", "blocked", "skipped", "linked", "create_needed"} {
+		if !strings.Contains(output, `"`+key+`"`) {
+			t.Fatalf("portfolio lower JSON missing %q:\n%s", key, output)
+		}
+	}
 	text := FormatPortfolioLowerReport(report)
 	if !strings.Contains(text, "gira portfolio lower --apply") {
 		t.Fatalf("text missing apply next step:\n%s", text)
 	}
+}
+
+func TestPortfolioLowerCountsClassifyOperatorFlow(t *testing.T) {
+	client := &fakePortfolioLowerClient{
+		existing: map[string][]PortfolioLoweredIssue{
+			"StatPan/gira:32": {{Repo: "StatPan/gira", Number: 10, URL: "https://github.com/StatPan/gira/issues/10"}},
+		},
+	}
+	portfolioClient := fakePortfolioClient{
+		repo: mustRepoRefForPortfolio("StatPan/portfolio"),
+		tickets: []PortfolioRawTicket{
+			{Number: 30, Title: "Unrouted", State: "open", Body: portfolioBody("unrouted", "", "")},
+			{Number: 31, Title: "Create", State: "open", Body: portfolioBody("single_repo", "StatPan/docs", "")},
+			{Number: 32, Title: "Link", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "")},
+			{Number: 33, Title: "Invalid", State: "open", Body: portfolioBody("single_repo", "StatPan/missing", "")},
+		},
+	}
+
+	report, err := BuildPortfolioLowerReport(portfolioClient, client, []RepoRef{mustRepoRefForPortfolio("StatPan/gira"), mustRepoRefForPortfolio("StatPan/docs")}, allowAllPortfolioLowerCapability(), false, portfolioNowFixture)
+	if err != nil {
+		t.Fatalf("BuildPortfolioLowerReport error: %v", err)
+	}
+
+	if report.Counts.ExecutionReady != 2 || report.Counts.Blocked != 1 || report.Counts.Skipped != 1 || report.Counts.Linked != 1 || report.Counts.CreateNeeded != 1 {
+		t.Fatalf("counts = %+v, want ready=2 blocked=1 skipped=1 linked=1 create_needed=1", report.Counts)
+	}
+}
+
+func TestPortfolioLowerCountsUseTicketLevelFlowCounts(t *testing.T) {
+	portfolioClient := fakePortfolioClient{
+		repo: mustRepoRefForPortfolio("StatPan/portfolio"),
+		tickets: []PortfolioRawTicket{
+			{Number: 31, Title: "Multi create", State: "open", Body: portfolioBody("multi_repo", "StatPan/gira\n- StatPan/docs", "")},
+		},
+	}
+
+	report, err := BuildPortfolioLowerReport(portfolioClient, &fakePortfolioLowerClient{}, []RepoRef{mustRepoRefForPortfolio("StatPan/gira"), mustRepoRefForPortfolio("StatPan/docs")}, allowAllPortfolioLowerCapability(), false, portfolioNowFixture)
+	if err != nil {
+		t.Fatalf("BuildPortfolioLowerReport error: %v", err)
+	}
+
+	if report.Counts.ExecutionReady != 1 || report.Counts.CreateNeeded != 1 {
+		t.Fatalf("counts = %+v, want one ready ticket and one create-needed ticket", report.Counts)
+	}
+	if len(report.Actions) != 4 {
+		t.Fatalf("actions = %+v, want create and parent-update actions per target repo", report.Actions)
+	}
+}
+
+func TestFormatPortfolioLowerReportBlockedNextStep(t *testing.T) {
+	report := PortfolioLowerReport{
+		Command:       "portfolio lower",
+		PortfolioRepo: "StatPan/portfolio",
+		Repos:         []string{"StatPan/gira"},
+		DryRun:        true,
+		Counts:        PortfolioLowerCounts{Blocked: 1},
+		Actions:       []PortfolioLowerAction{{Ticket: 31, Action: "execution_issue:ambiguous_existing", Repo: "StatPan/gira", Reason: "multiple matching lowered issues exist"}},
+	}
+
+	text := FormatPortfolioLowerReport(report)
+	if strings.Contains(text, "gira portfolio lower --apply") {
+		t.Fatalf("blocked lower report suggested apply:\n%s", text)
+	}
+	if !strings.Contains(text, "next step: fix blocked portfolio lower actions") {
+		t.Fatalf("blocked lower report missing remediation next step:\n%s", text)
+	}
+}
+
+func TestFormatPortfolioLowerReportSkippedOnlyNextStep(t *testing.T) {
+	report := PortfolioLowerReport{
+		Command:       "portfolio lower",
+		PortfolioRepo: "StatPan/portfolio",
+		Repos:         []string{"StatPan/gira"},
+		DryRun:        true,
+		Counts:        PortfolioLowerCounts{Skipped: 1},
+		Actions:       []PortfolioLowerAction{{Ticket: 31, Action: "ticket:needs_routing", Reason: "routing is not execution-ready"}},
+	}
+
+	text := FormatPortfolioLowerReport(report)
+	if strings.Contains(text, "gira portfolio lower --apply") {
+		t.Fatalf("skipped-only lower report suggested apply:\n%s", text)
+	}
+	if !strings.Contains(text, "next step: route or refine skipped portfolio tickets") {
+		t.Fatalf("skipped-only lower report missing refinement next step:\n%s", text)
+	}
+}
+
+func mustMarshalPortfolioLowerReport(t *testing.T, report PortfolioLowerReport) string {
+	t.Helper()
+	output, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal lower report: %v", err)
+	}
+	return string(output)
 }
 
 func TestAppendPortfolioChildIssuesPreservesFollowingSections(t *testing.T) {

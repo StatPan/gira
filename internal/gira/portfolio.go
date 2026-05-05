@@ -117,12 +117,17 @@ type PortfolioConfigResolved struct {
 }
 
 type PortfolioCounts struct {
-	Tickets       int `json:"tickets"`
-	OpenTickets   int `json:"open_tickets"`
-	LinkedTickets int `json:"linked_tickets"`
-	Unlinked      int `json:"unlinked_tickets"`
-	Diagnostics   int `json:"diagnostics"`
-	Actions       int `json:"actions,omitempty"`
+	Tickets        int `json:"tickets"`
+	OpenTickets    int `json:"open_tickets"`
+	LinkedTickets  int `json:"linked_tickets"`
+	Unlinked       int `json:"unlinked_tickets"`
+	ExecutionReady int `json:"execution_ready"`
+	Blocked        int `json:"blocked"`
+	Skipped        int `json:"skipped"`
+	Linked         int `json:"linked"`
+	CreateNeeded   int `json:"create_needed"`
+	Diagnostics    int `json:"diagnostics"`
+	Actions        int `json:"actions,omitempty"`
 }
 
 type PortfolioDiagnostic struct {
@@ -340,6 +345,7 @@ func FormatPortfolioReport(report PortfolioReport) string {
 	fmt.Fprintf(&b, "portfolio repo: %s\n", report.PortfolioRepo)
 	fmt.Fprintf(&b, "repos:          %s\n", strings.Join(report.Repos, ", "))
 	fmt.Fprintf(&b, "tickets:        %d open=%d linked=%d unlinked=%d\n", report.Counts.Tickets, report.Counts.OpenTickets, report.Counts.LinkedTickets, report.Counts.Unlinked)
+	fmt.Fprintf(&b, "flow:           ready=%d blocked=%d skipped=%d linked=%d create_needed=%d\n", report.Counts.ExecutionReady, report.Counts.Blocked, report.Counts.Skipped, report.Counts.Linked, report.Counts.CreateNeeded)
 	if len(report.Actions) > 0 {
 		fmt.Fprintf(&b, "actions:        %d\n", len(report.Actions))
 		for _, action := range report.Actions {
@@ -364,11 +370,15 @@ func FormatPortfolioReport(report PortfolioReport) string {
 	}
 	switch report.Command {
 	case "portfolio plan":
-		b.WriteString("next step: review the dry-run actions; apply/lower behavior is not implemented yet\n")
+		b.WriteString("next step: gira portfolio lower --dry-run --config .gira/config.yaml\n")
 	case "portfolio validate":
-		b.WriteString("next step: fix diagnostics before planning portfolio lowering\n")
+		if len(report.Diagnostics) > 0 {
+			b.WriteString("next step: fix diagnostics before planning portfolio lowering\n")
+		} else {
+			b.WriteString("next step: gira portfolio lower --dry-run --config .gira/config.yaml\n")
+		}
 	default:
-		b.WriteString("next step: gira portfolio plan --dry-run --config .gira/config.yaml\n")
+		b.WriteString("next step: gira portfolio validate --config .gira/config.yaml\n")
 	}
 	return b.String()
 }
@@ -519,16 +529,70 @@ func parsePortfolioList(value string) []string {
 
 func portfolioCounts(tickets []PortfolioTicket, diagnostics []PortfolioDiagnostic, actions []PortfolioPlanAction) PortfolioCounts {
 	counts := PortfolioCounts{Tickets: len(tickets), Diagnostics: len(diagnostics), Actions: len(actions)}
+	invalid := portfolioInvalidTickets(diagnostics)
+	linkedTickets := map[int]struct{}{}
+	createNeededTickets := map[int]struct{}{}
 	for _, ticket := range tickets {
 		if strings.EqualFold(ticket.State, "open") {
 			counts.OpenTickets++
+		} else {
+			counts.Skipped++
 		}
 		if len(ticket.ChildIssues) > 0 {
 			counts.LinkedTickets++
 		} else {
 			counts.Unlinked++
 		}
+		if !strings.EqualFold(ticket.State, "open") {
+			continue
+		}
+		if _, blocked := invalid[ticket.Number]; blocked {
+			counts.Blocked++
+			continue
+		}
+		if ticket.Routing != "single_repo" && ticket.Routing != "multi_repo" {
+			counts.Skipped++
+			continue
+		}
+		if len(ticket.TargetRepos) == 0 {
+			counts.Skipped++
+			continue
+		}
+		counts.ExecutionReady++
 	}
+	if len(actions) > 0 {
+		for _, action := range actions {
+			switch action.Action {
+			case "execution_issue:create":
+				createNeededTickets[action.Ticket] = struct{}{}
+			case "execution_issue:link_existing":
+				linkedTickets[action.Ticket] = struct{}{}
+			}
+		}
+	} else {
+		for _, ticket := range tickets {
+			if !strings.EqualFold(ticket.State, "open") {
+				continue
+			}
+			if _, blocked := invalid[ticket.Number]; blocked {
+				continue
+			}
+			if ticket.Routing != "single_repo" && ticket.Routing != "multi_repo" {
+				continue
+			}
+			childRepos := childIssueRepos(ticket.ChildIssues)
+			if len(childRepos) > 0 {
+				linkedTickets[ticket.Number] = struct{}{}
+			}
+			for _, repo := range ticket.TargetRepos {
+				if _, ok := childRepos[repo]; !ok {
+					createNeededTickets[ticket.Number] = struct{}{}
+				}
+			}
+		}
+	}
+	counts.Linked = len(linkedTickets)
+	counts.CreateNeeded = len(createNeededTickets)
 	return counts
 }
 

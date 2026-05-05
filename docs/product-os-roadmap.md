@@ -125,6 +125,10 @@ Execution order rationale:
 - No hidden destructive delete behavior; destructive operations must be explicit and reviewable.
 - Apply behavior remains capability-gated and idempotent where supported.
 
+## Jira-vs-Gira operating boundary
+
+The explicit capability matrix, top-level ticket -> repo issue -> PR contract, assistant/dev-agent ownership split, and proposed `gira work` UX layer are documented in [jira-gira-operating-boundary.md](jira-gira-operating-boundary.md).
+
 ## Non-goals during this roadmap
 
 - no Jira-style separate database

@@ -28,7 +28,9 @@ Commands:
   work        Daily issue lifecycle command
   dev         Issue to branch execution helpers
   sync        Sync Gira labels, milestones, and optionally bootstrap issues through gh
+  detach      Plan/apply safe removal of Gira-managed repository artifacts
   status      Show a compact read-only GitHub status summary
+  jira        Import Jira work into GitHub issues and export Jira-friendly artifacts
   export      Export dashboard artifacts from read-only GitHub data
   portfolio   Plan top-level portfolio intake lowering from a portfolio repo
   parity      Compute deterministic Jira-replacement parity scorecard
@@ -132,6 +134,19 @@ Flags:
   -h, --help                 Show help
 `
 
+const detachHelp = `Detach Gira-managed repository artifacts safely.
+
+Usage:
+  gira detach --repo OWNER/REPO --dry-run|--apply [--json]
+
+Flags:
+  --repo string  Target GitHub repo in OWNER/REPO format
+  --dry-run      Plan safe detach actions without mutation
+  --apply        Apply only planned safe GitHub detach actions
+  --json         Emit stable JSON output
+  -h, --help     Show help
+`
+
 const projectHelp = `Project OS capability utilities for permission-aware automation.
 
 Usage:
@@ -216,6 +231,29 @@ Flags:
   --repo string  Target GitHub repo in OWNER/REPO format
   --json         Emit stable JSON summary
   -h, --help     Show help
+`
+
+const jiraHelp = `Jira import/export command family.
+
+Usage:
+  gira jira import --repo OWNER/REPO --source PATH --dry-run|--apply [--json]
+  gira jira import --repo OWNER/REPO --api-base URL --project KEY --dry-run|--apply [--json]
+  gira jira export --repo OWNER/REPO --output PATH [--json]
+
+Commands:
+  import      Import Jira CSV/JSON or read-only Jira API issues into GitHub issues
+  export      Export GitHub issue state into Jira-friendly JSON and CSV artifacts
+
+Flags:
+  --repo string      Target GitHub repo in OWNER/REPO format
+  --source string    CSV or JSON import source path
+  --api-base string  Jira API base URL, for example https://example.atlassian.net
+  --project string   Jira project key for API import
+  --output string    Output directory for export artifacts
+  --dry-run          Preview import without creating GitHub issues
+  --apply            Create GitHub issues for non-duplicate Jira items
+  --json             Emit stable JSON output
+  -h, --help         Show help
 `
 
 const guardrailsHelp = `Audit and apply repository guardrails policy.
@@ -355,6 +393,20 @@ var newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
 	return gira.NewGHSyncClient(repo, gira.ExecCommandRunner{})
 }
 
+var newDetachReport = func(repo gira.RepoRef, dryRun bool, apply bool) (gira.DetachReport, error) {
+	client := gira.NewGHDetachClient(repo, gira.ExecCommandRunner{})
+	report, err := gira.BuildDetachReport(client, dryRun)
+	if err != nil {
+		return gira.DetachReport{}, err
+	}
+	if apply {
+		if err := gira.ApplyDetachReport(client, &report); err != nil {
+			return gira.DetachReport{}, err
+		}
+	}
+	return report, nil
+}
+
 var newProjectCapabilityReport = func(repo gira.RepoRef) (gira.ProjectCapabilityReport, error) {
 	return gira.BuildProjectCapabilityReport(repo, gira.ExecCommandRunner{})
 }
@@ -484,6 +536,23 @@ var newJiraParityReport = func(repo gira.RepoRef) (gira.JiraParityReport, error)
 	return gira.BuildJiraParityReport(repo, capability, time.Now()), nil
 }
 
+var jiraCommandRunner gira.CommandRunner = gira.ExecCommandRunner{}
+
+var newJiraImportReport = func(repo gira.RepoRef, source string, apiBase string, project string, dryRun bool, apply bool) (gira.JiraImportReport, error) {
+	if strings.TrimSpace(source) != "" {
+		items, err := gira.LoadJiraImportFile(source)
+		if err != nil {
+			return gira.JiraImportReport{}, err
+		}
+		return gira.ImportJiraItems(repo, source, items, dryRun, apply, jiraCommandRunner)
+	}
+	return gira.ImportJiraFromAPI(repo, apiBase, project, dryRun, apply, jiraCommandRunner)
+}
+
+var newJiraExportReport = func(repo gira.RepoRef, outputRoot string) (gira.JiraExportReport, error) {
+	return gira.ExportJiraIssues(repo, outputRoot, jiraCommandRunner)
+}
+
 var dashboardExportNow = func() time.Time {
 	return time.Now()
 }
@@ -538,8 +607,12 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runDev(args[1:], stdout, stderr)
 	case "sync":
 		return runSync(args[1:], stdout, stderr)
+	case "detach":
+		return runDetach(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
+	case "jira":
+		return runJira(args[1:], stdout, stderr)
 	case "export":
 		return runExport(args[1:], stdout, stderr)
 	case "portfolio":
@@ -749,7 +822,145 @@ func runParity(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0
 	}
-	fmt.Fprintf(stdout, "%s\n", out)
+	fmt.Fprint(stdout, gira.FormatJiraParityReport(report))
+	return 0
+}
+
+func runJira(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		_, _ = io.WriteString(stdout, jiraHelp)
+		return 0
+	}
+	switch args[0] {
+	case "import":
+		return runJiraImport(args[1:], stdout, stderr)
+	case "export":
+		return runJiraExport(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown jira command: %s\n\n", args[0])
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+}
+
+func runJiraImport(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("jira import", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	source := fs.String("source", "", "CSV or JSON import source path")
+	apiBase := fs.String("api-base", "", "Jira API base URL")
+	project := fs.String("project", "", "Jira project key")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply GitHub issue creates")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, jiraHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required\n\n")
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	fileMode := strings.TrimSpace(*source) != ""
+	apiMode := strings.TrimSpace(*apiBase) != "" || strings.TrimSpace(*project) != ""
+	if fileMode == apiMode {
+		fmt.Fprint(stderr, "exactly one of --source or --api-base/--project is required\n\n")
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if apiMode && (strings.TrimSpace(*apiBase) == "" || strings.TrimSpace(*project) == "") {
+		fmt.Fprint(stderr, "--api-base and --project are required for Jira API import\n\n")
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newJiraImportReport(repo, *source, *apiBase, *project, *dryRun, *apply)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode jira import JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatJiraImportReport(report))
+	return 0
+}
+
+func runJiraExport(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("jira export", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	outputRoot := fs.String("output", "", "Output directory for artifacts")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, jiraHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if *repoValue == "" || *outputRoot == "" {
+		fmt.Fprint(stderr, "--repo and --output are required\n\n")
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newJiraExportReport(repo, *outputRoot)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode jira export JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatJiraExportReport(report))
 	return 0
 }
 
@@ -1530,6 +1741,66 @@ func syncNextStep(repo gira.RepoRef, dryRun bool, bootstrapIssues bool, mode gir
 		return "next step: " + command
 	}
 	return "next step: gira status --repo " + repo.FullName()
+}
+
+func runDetach(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("detach", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	dryRun := fs.Bool("dry-run", false, "Plan safe detach actions without mutation")
+	applyMode := fs.Bool("apply", false, "Apply only planned safe GitHub detach actions")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, detachHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, detachHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, detachHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, detachHelp)
+		return 2
+	}
+	if (*dryRun && *applyMode) || (!*dryRun && !*applyMode) {
+		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required\n\n")
+		fmt.Fprint(stderr, detachHelp)
+		return 2
+	}
+
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+
+	report, err := newDetachReport(repo, *dryRun, *applyMode)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode detach JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatDetachReport(report))
+	return 0
 }
 
 func runGuardrails(args []string, stdout io.Writer, stderr io.Writer) int {

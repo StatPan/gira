@@ -267,3 +267,11 @@ func TestGetWorkStatusReadyWithoutPRSuggestsStartWork(t *testing.T) {
 		t.Fatalf("next action = %q", result.NextAction)
 	}
 }
+
+func TestWorkStatusNextStepExplainsCheckBlockers(t *testing.T) {
+	result := WorkStatusResult{Repo: "StatPan/gira", Issue: 126, NextAction: "wait_for_checks"}
+
+	if got := workStatusNextStep(result); got != "wait for required checks to finish or fix failing checks" {
+		t.Fatalf("next step = %q", got)
+	}
+}

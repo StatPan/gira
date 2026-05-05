@@ -42,6 +42,7 @@ type WorkStatusResult struct {
 	PRState    string   `json:"pr_state,omitempty"`
 	Blockers   []string `json:"blockers"`
 	NextAction string   `json:"next_action"`
+	NextStep   string   `json:"next_step"`
 }
 
 func StartWork(repo RepoRef, issueNumber int, dryRun bool, runner CommandRunner) (WorkStartResult, error) {
@@ -168,6 +169,7 @@ func GetWorkStatus(repo RepoRef, issueNumber int, runner CommandRunner) (WorkSta
 		return WorkStatusResult{}, err
 	}
 	status := displayStatus(managedStatusFromLabels(issue.Labels))
+	nextAction := nextWorkAction(status, prStatus)
 	result := WorkStatusResult{
 		Repo:       repo.FullName(),
 		Issue:      issueNumber,
@@ -178,8 +180,9 @@ func GetWorkStatus(repo RepoRef, issueNumber int, runner CommandRunner) (WorkSta
 		PRURL:      prStatus.PRURL,
 		PRState:    prStatus.State,
 		Blockers:   prStatus.Blockers,
-		NextAction: nextWorkAction(status, prStatus),
+		NextAction: nextAction,
 	}
+	result.NextStep = workStatusNextStep(result)
 	return result, nil
 }
 
@@ -283,6 +286,8 @@ func workStatusNextStep(result WorkStatusResult) string {
 		return "mark the PR ready for review"
 	case "address_review":
 		return "address review blockers"
+	case "wait_for_checks":
+		return "wait for required checks to finish or fix failing checks"
 	case "merge_when_policy_allows":
 		return "merge when policy checks pass"
 	default:

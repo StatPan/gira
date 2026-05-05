@@ -11,9 +11,14 @@ This guide defines a safe, deterministic migration path for adopting Gira on rep
 
 ## Preconditions
 
+- Install `gira` from the official release path unless you are intentionally testing local source:
+  `curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh`
 - `gh` authenticated with repository admin/maintainer access.
 - Working tree clean, and local `main` up to date.
 - Run from the repository root.
+- `gira doctor --repo OWNER/REPO` passes or any failures are understood before applying migration changes.
+
+The install script upgrades or replaces only the local Go-built `gira` binary. It does not change repository files, labels, milestones, issues, or GitHub settings. Package-manager wrappers, when added, must remain distribution channels for the same Go-built release binary and are not alternate Gira runtimes.
 
 ## Migration Modes
 

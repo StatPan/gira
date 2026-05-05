@@ -26,26 +26,56 @@ go run ./cmd/gira onboard verify --repo OWNER/REPO --stage steady-state --json
 
 ## Install, Upgrade, and Remove
 
-Gira is implemented as a Go-built CLI. Until the first tagged GitHub release is published, the usable install paths are the developer `go install` path or a local source install from this checkout.
+Gira is implemented as a Go-built CLI. For v1 users, `install.sh` is the official release install and upgrade path. It installs the Go-built binary from GitHub release assets; it does not build from source and does not mutate any repository.
 
-### Developer Go Install (Current)
+### Install Script
 
-Use `go install` when you want a `gira` binary on `PATH` without staying in a source checkout:
+Install the latest tagged release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
+```
+
+Pin a version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v0.1.0 sh
+```
+
+Install to a custom directory:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_INSTALL_DIR="${HOME}/bin" sh
+```
+
+The install script:
+
+- Detects `os` and `arch`, then selects the matching GitHub release archive.
+- Installs `latest` by default and accepts an explicit version, for example `GIRA_VERSION=v0.1.0`.
+- Downloads from GitHub release assets, not from a source checkout or CI artifact.
+- Requires the release `checksums.txt` asset and verifies the selected archive before unpacking it.
+- Installs to `${GIRA_INSTALL_DIR}` when set, otherwise to `${HOME}/.local/bin`.
+- Prints PATH guidance when the install directory is not already on `PATH`.
+- Replaces an existing `gira` binary in the selected install directory atomically when possible.
+- Never modifies repository files, GitHub labels, milestones, or issues during binary installation.
+
+Verification:
+
+```bash
+command -v gira
+gira --help
+gira doctor --repo OWNER/REPO
+```
+
+### Developer Go Install
+
+Use `go install` for source and development workflows, not as the preferred v1 user install path:
 
 ```bash
 go install github.com/StatPan/gira/cmd/gira@latest
 ```
 
 The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. If the repository is private in your environment, configure Go private module access first, for example with `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication.
-
-Verification:
-
-```bash
-gira --help
-gira status --repo OWNER/REPO --json
-```
-
-### Local Source Install (Current)
 
 From this checkout, build and install the current source version:
 
@@ -60,43 +90,9 @@ GOBIN="$(mktemp -d)" go install ./cmd/gira
 "${GOBIN}/gira" --help
 ```
 
-### Install Script (After First Tagged Release)
+### GitHub Release Archives
 
-`install.sh` is the future official release install contract. It is intentionally present in the repository now, but it will not be a usable install path until a tagged GitHub release with matching binary archives exists.
-
-After the first tagged release, the official happy path will be:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
-```
-
-Pin a version with:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v0.1.0 sh
-```
-
-The install script:
-
-- Detect `os` and `arch`, then select the matching GitHub release archive.
-- Install `latest` by default and accept an explicit version, for example `GIRA_VERSION=v0.1.0`.
-- Download from GitHub release assets, not from a source checkout.
-- Verify checksums when the release publishes checksum assets; fail closed if a checksum exists but does not match.
-- Install to `${GIRA_INSTALL_DIR}` when set, otherwise to `${HOME}/.local/bin`.
-- Print PATH guidance when the install directory is not already on `PATH`.
-- Replace an existing `gira` binary in the selected install directory atomically when possible.
-- Never modify repository files, GitHub labels, milestones, or issues during binary installation.
-
-Verification:
-
-```bash
-gira --help
-gira status --repo OWNER/REPO --json
-```
-
-### GitHub Release Archives (After First Tagged Release)
-
-Manual release-archive installation will use the same release assets as the install script after the first tagged release is published. Release archive names follow:
+Manual release-archive installation uses the same release assets as the install script. Release archive names follow:
 
 ```text
 gira_VERSION_linux_amd64.tar.gz
@@ -116,13 +112,13 @@ install -m 0755 "gira_${version}_linux_amd64/gira" "${HOME}/.local/bin/gira"
 gira --help
 ```
 
-If checksum assets are published for the release, verify the archive before installing the binary.
+Verify the archive with the release `checksums.txt` before installing the binary. Every v1 release should publish `checksums.txt`; treat a missing checksum asset as a release defect.
 
-### Planned Package Channels
+### Wrapper Distribution Boundaries
 
-Homebrew is the near-term official package-manager target for macOS and Linuxbrew users, but the tap is not yet an available install path.
+Package-manager wrappers such as Homebrew, npm, bun, or `uv` are allowed only as distribution channels for the Go-built release binary. They must not reimplement Gira in another runtime, change the command surface, or install unversioned CI artifacts.
 
-npm, bun, and `uv` packages are experimental candidate wrapper channels for AI-era developer workflows. These wrappers should install or dispatch the same Go-built release binary rather than reimplementing the CLI. Until those packages exist, use the developer `go install` path or local source install above.
+No package-manager packages are implemented in this repository yet. Until a wrapper channel exists, use `install.sh` for release installs or `go install` for source/developer workflows.
 
 Wrapper packages must preserve the same command surface as the native binary:
 
@@ -135,22 +131,17 @@ gira status --repo OWNER/REPO --json
 
 apt/deb packaging is a future target, not an initial official channel. It should wait until usage justifies signing keys, repository hosting, architecture matrix maintenance, and upgrade policy support.
 
-Unsupported distribution channels are source snapshots, unversioned binaries copied from CI artifacts, and package wrappers that do not execute the official Go-built binary.
+Unsupported distribution channels are source snapshots, unversioned binaries copied from CI artifacts, package wrappers that do not execute the official Go-built binary, and alternate product runtimes.
 
 ### Upgrade
 
 Use the same channel that installed Gira:
 
 ```bash
-go install github.com/StatPan/gira/cmd/gira@latest
-GOBIN="${HOME}/.local/bin" go install ./cmd/gira
-```
-
-After the first tagged release, install-script upgrades will use the same command as installation:
-
-```bash
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v0.1.0 sh
+go install github.com/StatPan/gira/cmd/gira@latest
+GOBIN="${HOME}/.local/bin" go install ./cmd/gira
 ```
 
 When Homebrew, npm, bun, or `uv` wrappers become available, upgrade with the same package manager used for installation.
@@ -160,7 +151,7 @@ An upgrade replaces only the local `gira` binary or package wrapper. It must not
 ```bash
 command -v gira
 gira --help
-gira status --repo OWNER/REPO --json
+gira doctor --repo OWNER/REPO
 ```
 
 ### Binary Uninstall
@@ -268,7 +259,7 @@ GOBIN="$(mktemp -d)" go install ./cmd/gira
 
 ## Release Flow
 
-Tagged Go releases are built by `.github/workflows/release.yml`. The workflow runs `go test ./...`, builds Linux, macOS, and Windows CLI archives, and publishes those archives to the GitHub release for tags that start with `v`.
+Tagged Go releases are built by `.github/workflows/release.yml`. The workflow checks `install.sh` syntax, runs `go test ./...`, builds Linux, macOS, and Windows CLI archives, generates `checksums.txt`, verifies the checksum manifest, and publishes those assets to the GitHub release for tags that start with `v`.
 
 Maintainer flow:
 
@@ -279,8 +270,27 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+Expected release assets:
+
+```text
+checksums.txt
+gira_VERSION_linux_amd64.tar.gz
+gira_VERSION_linux_arm64.tar.gz
+gira_VERSION_darwin_amd64.tar.gz
+gira_VERSION_darwin_arm64.tar.gz
+gira_VERSION_windows_amd64.zip
+```
+
+After publishing, smoke-test the official installer against the tag:
+
+```bash
+tmpdir="$(mktemp -d)"
+GIRA_INSTALL_DIR="${tmpdir}" GIRA_VERSION=v0.1.0 sh install.sh
+"${tmpdir}/gira" --help
+```
+
 Developer experience conventions for first-run onboarding, dry-run/apply output, JSON, recovery, and the issue-to-PR loop are documented in [docs/dx.md](docs/dx.md).
 
 The GitHub-native Product OS schema for future Projects v2 planning, roadmap date semantics, permission/secret model, and dry-run-first automation is documented in [docs/product-os-schema.md](docs/product-os-schema.md). The execution roadmap for that phase is tracked in [docs/product-os-roadmap.md](docs/product-os-roadmap.md). The Jira-vs-Gira operating boundary, work decomposition contract, and assistant/dev-agent split are documented in [docs/jira-gira-operating-boundary.md](docs/jira-gira-operating-boundary.md). The portfolio intake layer for top-level tickets and multi-repo lowering plans is documented in [docs/portfolio-intake.md](docs/portfolio-intake.md). The vendor-neutral dashboard/export boundary for Notion and other consumers is documented in [docs/dashboard-consumer-contract.md](docs/dashboard-consumer-contract.md), and the first concrete export bundle layout is documented in [docs/dashboard-export-artifacts.md](docs/dashboard-export-artifacts.md). The MVP CRUD support contract is documented in [docs/crud-capability-matrix.md](docs/crud-capability-matrix.md). Adoption on pre-configured repositories is documented in [docs/adoption-migration-playbook.md](docs/adoption-migration-playbook.md).
 
-Explicit non-goals for MVP: GitHub Projects v2 automation, LLM PRD-to-issue decomposition, Web UI, Jira import/export, and chat-bot integration.
+Explicit non-goals for v1: GitHub Projects v2 automation, LLM PRD-to-issue decomposition, Web UI/TUI, and chat-bot integration. Jira import/export is part of v1 migration readiness through the `gira jira` command family.

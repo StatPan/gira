@@ -95,7 +95,13 @@ go run ./cmd/gira onboard verify --repo OWNER/REPO --stage init --json
 go run ./cmd/gira onboard verify --repo OWNER/REPO --stage steady-state --json
 ```
 
-The CLI can be installed for daily use from source:
+The official release install path is `install.sh`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
+```
+
+The CLI can also be installed from source for development:
 
 ```bash
 go install github.com/StatPan/gira/cmd/gira@latest
@@ -104,8 +110,9 @@ go install github.com/StatPan/gira/cmd/gira@latest
 Canonical daily operator path (fresh shell, outside source checkout):
 
 ```bash
-export PATH="$(go env GOPATH)/bin:$PATH"
+export PATH="${HOME}/.local/bin:$PATH"
 gira --help
+gira doctor --repo OWNER/REPO
 gira bootstrap --repo OWNER/REPO --template default --dry-run
 gira sync --repo OWNER/REPO --dry-run
 gira status --repo OWNER/REPO --json
@@ -113,9 +120,9 @@ gira status --repo OWNER/REPO --json
 
 The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. Private repository installs need Go private module access, such as `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication. The bootstrap path embeds the default template so output and local installs are independent of the caller's working directory. `sync` shells out through `gh` to create or update only Gira-managed labels, milestones, and bootstrap issues. `status` is read-only and shells out through `gh api` with stable JSON for worker automation.
 
-Package-manager wrappers such as `uv`, npm, bun, or Homebrew may be used as distribution channels when they install or invoke the Go-built `gira` binary. They should not introduce a second product runtime.
+Package-manager wrappers such as `uv`, npm, bun, or Homebrew may be used as distribution channels when they install or invoke the Go-built `gira` release binary. They should not introduce a second product runtime.
 
-Tagged Go releases are built by `.github/workflows/release.yml`. Maintainers publish one by tagging `main` with a `v*` tag and pushing the tag; the workflow runs Go tests, builds Linux/macOS/Windows archives, and attaches them to the GitHub release.
+Tagged Go releases are built by `.github/workflows/release.yml`. Maintainers publish one by tagging `main` with a `v*` tag and pushing the tag; the workflow checks the installer syntax, runs Go tests, builds Linux/macOS/Windows archives, generates `checksums.txt`, verifies it, and attaches the assets to the GitHub release.
 
 ## Output Conventions
 

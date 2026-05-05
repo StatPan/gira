@@ -30,6 +30,12 @@ Gira ships as one Go-built binary. Package-manager channels are wrappers around 
 
 Publishing requires `NPM_TOKEN`. If the secret is missing, the release workflow skips npm publishing without blocking the GitHub Release.
 
+### PyPI
+
+`gira-cli` is a Python packaging wrapper for pip and pipx installs. It resolves the package version to the matching GitHub tag, downloads the release archive on first command execution, verifies `checksums.txt`, and caches the native binary under the user cache directory.
+
+Publishing requires `PYPI_API_TOKEN`. If the secret is missing, the release workflow skips PyPI publishing without blocking the GitHub Release.
+
 ### Homebrew
 
 Homebrew publishing targets `StatPan/homebrew-tap`. The release workflow updates `Formula/gira.rb` with the tagged archive URLs and checksums.
@@ -42,4 +48,5 @@ Publishing requires `HOMEBREW_TAP_TOKEN`. If the secret is missing, the release 
 - `gira version --json` includes `version`, `commit`, and `date`.
 - `install.sh` succeeds against the release archive and checksum asset.
 - npm wrapper tests pass.
+- PyPI wrapper tests pass.
 - GitHub Release assets include Linux, macOS, Windows archives and `checksums.txt`.

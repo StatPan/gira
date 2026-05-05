@@ -216,11 +216,11 @@ func FormatPortfolioCapabilityReport(report PortfolioCapabilityReport) string {
 		for _, block := range report.BlockedActions {
 			lines = append(lines, "  - "+block.CheckID+" requires "+block.Required+" ("+block.Reason+")")
 		}
-		lines = append(lines, "next step: fix blocked repo permissions before portfolio lower --apply")
+		lines = append(lines, "next step: fix blocked repo permissions before implementing portfolio lower --apply")
 	} else {
 		lines = append(lines, "")
 		lines = append(lines, "all portfolio capability checks passed")
-		lines = append(lines, "next step: gira portfolio lower --dry-run --config .gira/config.yaml")
+		lines = append(lines, "next step: gira portfolio plan --dry-run --config .gira/config.yaml")
 	}
 	lines = append(lines, "fetched_at: "+report.FetchedAt)
 	lines = append(lines, "")

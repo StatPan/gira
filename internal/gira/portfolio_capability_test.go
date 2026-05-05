@@ -75,8 +75,20 @@ func TestBuildPortfolioCapabilityReportPartialDenied(t *testing.T) {
 		t.Fatalf("blocked actions = %+v, want docs read/write and gira write", report.BlockedActions)
 	}
 	text := FormatPortfolioCapabilityReport(report)
-	if !strings.Contains(text, "fix blocked repo permissions") {
+	if !strings.Contains(text, "fix blocked repo permissions before implementing portfolio lower --apply") {
 		t.Fatalf("text missing remediation:\n%s", text)
+	}
+}
+
+func TestFormatPortfolioCapabilityReportUsesImplementedNextStep(t *testing.T) {
+	text := FormatPortfolioCapabilityReport(PortfolioCapabilityReport{
+		PortfolioRepo: "StatPan/portfolio",
+		Token:         ProjectCapabilityTokenSummary{Kind: "pat", Identity: "alice"},
+		Repos:         []PortfolioRepoCapability{},
+		FetchedAt:     "2026-05-05T12:00:00Z",
+	})
+	if !strings.Contains(text, "next step: gira portfolio plan --dry-run --config .gira/config.yaml") {
+		t.Fatalf("text missing implemented next step:\n%s", text)
 	}
 }
 

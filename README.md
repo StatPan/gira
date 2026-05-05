@@ -2,7 +2,7 @@
 
 Gira is a GitHub-native project OS bootstrapper: it turns a repository into an AI-ready workspace for PRD, issues, milestones, PR workflow, and worker handoff.
 
-Korean shorthand: **기라(Gira): 깃허브로 굴리는 지라.**
+Name shorthand: **Gira: Jira-style project flow on GitHub.**
 
 ## MVP Direction
 

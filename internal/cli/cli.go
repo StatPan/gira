@@ -80,10 +80,10 @@ Flags:
 const statusHelp = `Show a compact read-only status summary from GitHub issues and milestones.
 
 Usage:
-  gira status --repo OWNER/REPO [--json] [--stale-days N]
+  gira status [--repo OWNER/REPO] [--json] [--stale-days N]
 
 Flags:
-  --repo string       Target GitHub repo in OWNER/REPO format
+  --repo string       Target GitHub repo in OWNER/REPO format (default: infer from git origin)
   --json              Emit stable JSON for automation
   --stale-days int    Days since update before open issues count as stale (default 14)
   -h, --help          Show help
@@ -92,13 +92,13 @@ Flags:
 const onboardHelp = `Verify onboarding readiness from init to daily operation.
 
 Usage:
-  gira onboard verify --repo OWNER/REPO --stage init|bootstrap|first-sprint|steady-state [--json]
+  gira onboard verify [--repo OWNER/REPO] --stage init|bootstrap|first-sprint|steady-state [--json]
 
 Commands:
   verify       Run prerequisite, bootstrap, metadata, and daily-run checks
 
 Flags:
-  --repo string   Target GitHub repo in OWNER/REPO format
+  --repo string   Target GitHub repo in OWNER/REPO format (default: infer from git origin)
   --stage string  Readiness stage to verify
   --json          Emit stable JSON readiness artifact
   -h, --help      Show help
@@ -235,7 +235,7 @@ Usage:
 const reviewHelp = `Review/approval routing queue.
 
 Usage:
-  gira review queue --repo OWNER/REPO [--json]
+  gira review queue [--repo OWNER/REPO] [--json]
   gira review gate [--json]
 `
 
@@ -254,7 +254,7 @@ Usage:
 const reportHelp = `Weekly PM cockpit report with deterministic KPIs and top exceptions.
 
 Usage:
-  gira report weekly --repo OWNER/REPO [--json|--md]
+  gira report weekly [--repo OWNER/REPO] [--json|--md]
 `
 
 const contractHelp = `CRUD capability matrix and command contract.
@@ -377,6 +377,7 @@ var newTriageReport = func(repo gira.RepoRef, apply bool) (gira.TriageNormalizeR
 }
 
 var devCommandRunner gira.CommandRunner = gira.ExecCommandRunner{}
+var repoContextRunner gira.CommandRunner = gira.ExecCommandRunner{}
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
@@ -430,6 +431,16 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, rootHelp)
 		return 2
 	}
+}
+
+func resolveRepoContext(repoValue string, stderr io.Writer, help string) (gira.RepoRef, bool) {
+	repo, err := gira.ResolveRepoContext(repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, help)
+		return gira.RepoRef{}, false
+	}
+	return repo, true
 }
 
 func runInit(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -785,14 +796,13 @@ func runOnboard(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, onboardHelp)
 		return 2
 	}
-	if *repoValue == "" || *stageValue == "" {
-		fmt.Fprint(stderr, "--repo and --stage are required\n\n")
+	if *stageValue == "" {
+		fmt.Fprint(stderr, "--stage is required\n\n")
 		fmt.Fprint(stderr, onboardHelp)
 		return 2
 	}
-	repo, err := gira.ParseRepoRef(*repoValue)
-	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
+	repo, ok := resolveRepoContext(*repoValue, stderr, onboardHelp)
+	if !ok {
 		return 2
 	}
 	stage, err := gira.ParseOnboardStage(*stageValue)
@@ -1330,20 +1340,14 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, statusHelp)
 		return 2
 	}
-	if *repoValue == "" {
-		fmt.Fprint(stderr, "--repo is required\n\n")
-		fmt.Fprint(stderr, statusHelp)
-		return 2
-	}
 	if *staleDays < 1 {
 		fmt.Fprint(stderr, "--stale-days must be at least 1\n\n")
 		fmt.Fprint(stderr, statusHelp)
 		return 2
 	}
 
-	repo, err := gira.ParseRepoRef(*repoValue)
-	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
+	repo, ok := resolveRepoContext(*repoValue, stderr, statusHelp)
+	if !ok {
 		return 2
 	}
 
@@ -1890,14 +1894,8 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, reviewHelp)
 		return 2
 	}
-	if *repoValue == "" {
-		fmt.Fprint(stderr, "--repo is required\n\n")
-		fmt.Fprint(stderr, reviewHelp)
-		return 2
-	}
-	repo, err := gira.ParseRepoRef(*repoValue)
-	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
+	repo, ok := resolveRepoContext(*repoValue, stderr, reviewHelp)
+	if !ok {
 		return 2
 	}
 	report, err := gira.BuildReviewQueue(newReviewGateClient(repo), time.Now())
@@ -2053,14 +2051,8 @@ func runReport(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, reportHelp)
 		return 2
 	}
-	if *repoValue == "" {
-		fmt.Fprint(stderr, "--repo is required\n\n")
-		fmt.Fprint(stderr, reportHelp)
-		return 2
-	}
-	repo, err := gira.ParseRepoRef(*repoValue)
-	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
+	repo, ok := resolveRepoContext(*repoValue, stderr, reportHelp)
+	if !ok {
 		return 2
 	}
 	report, err := gira.BuildWeeklyReport(repo, reportNow(), newDashboardExportClient(repo), newReviewGateClient(repo))

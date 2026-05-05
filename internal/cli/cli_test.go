@@ -288,8 +288,8 @@ func TestOnboardVerifyRequiresRepoAndStage(t *testing.T) {
 	if code == 0 {
 		t.Fatal("exit code = 0, want non-zero")
 	}
-	if !strings.Contains(stderr.String(), "--repo and --stage are required") {
-		t.Fatalf("stderr missing repo/stage requirement:\n%s", stderr.String())
+	if !strings.Contains(stderr.String(), "--stage is required") {
+		t.Fatalf("stderr missing stage requirement:\n%s", stderr.String())
 	}
 }
 
@@ -726,15 +726,89 @@ func TestStatusTextUsesInjectedClient(t *testing.T) {
 	}
 }
 
-func TestStatusRequiresRepo(t *testing.T) {
+func TestStatusInfersRepoFromGitOrigin(t *testing.T) {
+	restoreClient, restoreRunner, restoreNow := newStatusClient, repoContextRunner, statusNow
+	t.Cleanup(func() {
+		newStatusClient = restoreClient
+		repoContextRunner = restoreRunner
+		statusNow = restoreNow
+	})
+	repoContextRunner = devCLIRunner{outputs: map[string][]byte{
+		"git remote get-url origin": []byte("git@github.com:StatPan/gira.git\n"),
+	}}
+	newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
+		if repo.FullName() != "StatPan/gira" {
+			t.Fatalf("repo = %s, want StatPan/gira", repo.FullName())
+		}
+		return cliFakeStatusClient{
+			repo: repo,
+			responses: map[string]string{
+				"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100": `[]`,
+				"api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100":     `[]`,
+			},
+		}
+	}
+	statusNow = func() time.Time { return time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC) }
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"status", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"repo": "StatPan/gira"`) {
+		t.Fatalf("stdout missing inferred repo:\n%s", stdout.String())
+	}
+}
+
+func TestStatusRepoOverrideWinsOverContext(t *testing.T) {
+	restoreClient, restoreRunner, restoreNow := newStatusClient, repoContextRunner, statusNow
+	t.Cleanup(func() {
+		newStatusClient = restoreClient
+		repoContextRunner = restoreRunner
+		statusNow = restoreNow
+	})
+	repoContextRunner = devCLIRunner{errs: map[string]error{
+		"git remote get-url origin": fmt.Errorf("repo context runner should not be called"),
+	}}
+	newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
+		if repo.FullName() != "StatPan/override" {
+			t.Fatalf("repo = %s, want StatPan/override", repo.FullName())
+		}
+		return cliFakeStatusClient{
+			repo: repo,
+			responses: map[string]string{
+				"api repos/StatPan/override/milestones --paginate --slurp -X GET -f state=all -f per_page=100": `[]`,
+				"api repos/StatPan/override/issues --paginate --slurp -X GET -f state=all -f per_page=100":     `[]`,
+			},
+		}
+	}
+	statusNow = func() time.Time { return time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC) }
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"status", "--repo", "StatPan/override", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"repo": "StatPan/override"`) {
+		t.Fatalf("stdout missing override repo:\n%s", stdout.String())
+	}
+}
+
+func TestStatusMissingRepoContextReturnsRemediation(t *testing.T) {
+	restoreRunner := repoContextRunner
+	t.Cleanup(func() { repoContextRunner = restoreRunner })
+	repoContextRunner = devCLIRunner{errs: map[string]error{
+		"git remote get-url origin": fmt.Errorf("exit status 2"),
+	}}
+
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"status"}, &stdout, &stderr)
 
 	if code == 0 {
 		t.Fatal("exit code = 0, want non-zero")
 	}
-	if !strings.Contains(stderr.String(), "--repo is required") {
-		t.Fatalf("stderr missing repo requirement:\n%s", stderr.String())
+	if !strings.Contains(stderr.String(), "pass --repo OWNER/REPO") {
+		t.Fatalf("stderr missing repo context remediation:\n%s", stderr.String())
 	}
 }
 

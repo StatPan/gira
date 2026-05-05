@@ -29,8 +29,89 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "ops") {
 		t.Fatalf("help output missing ops command:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "version") {
+		t.Fatalf("help output missing version command:\n%s", stdout.String())
+	}
 	if strings.Contains(stdout.String(), "portfolio   ") || strings.Contains(stdout.String(), "jira        ") {
 		t.Fatalf("help output should not frontload advanced commands:\n%s", stdout.String())
+	}
+}
+
+func TestVersionCommandHumanOutput(t *testing.T) {
+	originalVersion, originalCommit, originalDate := gira.Version, gira.Commit, gira.Date
+	t.Cleanup(func() {
+		gira.Version, gira.Commit, gira.Date = originalVersion, originalCommit, originalDate
+	})
+	gira.Version = "v1.2.3"
+	gira.Commit = "abc123"
+	gira.Date = "2026-05-05T12:00:00Z"
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"version"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if got, want := stdout.String(), "gira v1.2.3 (abc123, 2026-05-05T12:00:00Z)\n"; got != want {
+		t.Fatalf("version output = %q, want %q", got, want)
+	}
+}
+
+func TestVersionCommandJSON(t *testing.T) {
+	originalVersion, originalCommit, originalDate := gira.Version, gira.Commit, gira.Date
+	t.Cleanup(func() {
+		gira.Version, gira.Commit, gira.Date = originalVersion, originalCommit, originalDate
+	})
+	gira.Version = "v1.2.3"
+	gira.Commit = "abc123"
+	gira.Date = "2026-05-05T12:00:00Z"
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"version", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"version": "v1.2.3"`, `"commit": "abc123"`, `"date": "2026-05-05T12:00:00Z"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("version JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestRootVersionFlag(t *testing.T) {
+	originalVersion, originalCommit, originalDate := gira.Version, gira.Commit, gira.Date
+	t.Cleanup(func() {
+		gira.Version, gira.Commit, gira.Date = originalVersion, originalCommit, originalDate
+	})
+	gira.Version = "v9.9.9"
+	gira.Commit = "abc123"
+	gira.Date = "2026-05-05T12:00:00Z"
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--version"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.HasPrefix(stdout.String(), "gira v9.9.9 ") {
+		t.Fatalf("--version output unexpected:\n%s", stdout.String())
+	}
+}
+
+func TestVersionCommandFallsBackForEmptyBuildValues(t *testing.T) {
+	originalVersion, originalCommit, originalDate := gira.Version, gira.Commit, gira.Date
+	t.Cleanup(func() {
+		gira.Version, gira.Commit, gira.Date = originalVersion, originalCommit, originalDate
+	})
+	gira.Version = ""
+	gira.Commit = ""
+	gira.Date = ""
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"version"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if got, want := stdout.String(), "gira dev (unknown, unknown)\n"; got != want {
+		t.Fatalf("version fallback output = %q, want %q", got, want)
 	}
 }
 

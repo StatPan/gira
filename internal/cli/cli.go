@@ -24,6 +24,7 @@ Daily commands:
   sprint      Sprint iteration planning/start/close workflow
   release     Release readiness gate report
   status      Show a compact read-only GitHub status summary
+  version     Show Gira build version
   start       Shortcut for ticket start
 
 Setup:
@@ -35,7 +36,8 @@ Advanced:
   dev         Compatibility developer workflow helpers
 
 Flags:
-  -h, --help  Show help
+  -h, --help   Show help
+  --version    Show Gira build version
 `
 
 const bootstrapHelp = `Bootstrap a repository into a Gira-managed project workspace.
@@ -80,6 +82,17 @@ Flags:
   --json              Emit stable JSON for automation
   --stale-days int    Days since update before open issues count as stale (default 14)
   -h, --help          Show help
+`
+
+const versionHelp = `Show Gira build version.
+
+Usage:
+  gira version [--json]
+  gira --version
+
+Flags:
+  --json      Emit stable JSON version info
+  -h, --help  Show help
 `
 
 const onboardHelp = `Verify onboarding readiness from init to daily operation.
@@ -630,6 +643,9 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stdout, rootHelp)
 		return 0
 	}
+	if args[0] == "--version" {
+		return runVersion(nil, stdout, stderr)
+	}
 
 	switch args[0] {
 	case "init":
@@ -656,6 +672,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runDetach(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
+	case "version":
+		return runVersion(args[1:], stdout, stderr)
 	case "jira":
 		return runJira(args[1:], stdout, stderr)
 	case "export":
@@ -693,6 +711,41 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, rootHelp)
 		return 2
 	}
+}
+
+func runVersion(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON version info")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, versionHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, versionHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, versionHelp)
+		return 2
+	}
+
+	info := gira.BuildVersionInfo()
+	if *jsonOutput {
+		out, err := json.MarshalIndent(info, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode version JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatVersionInfo(info))
+	return 0
 }
 
 func runOps(args []string, stdout io.Writer, stderr io.Writer) int {

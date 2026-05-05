@@ -14,38 +14,25 @@ import (
 	"github.com/StatPan/gira/internal/gira"
 )
 
-const rootHelp = `Gira: GitHub-native project OS bootstrapper.
+const rootHelp = `Gira: Jira-style project flow on GitHub.
 
 Usage:
   gira <command> [flags]
 
-Commands:
-  init        One-command onboarding with prerequisite checks and next-step plan
-  start       Alias for work start
-  bootstrap   Bootstrap a repository into a Gira-managed project workspace
-  onboard     Verify onboarding readiness from init to steady-state
-  doctor      Diagnose install, auth, repo, drift, and local git readiness
-  work        Daily issue lifecycle command
-  dev         Issue to branch execution helpers
-  sync        Sync Gira labels, milestones, and optionally bootstrap issues through gh
-  detach      Plan/apply safe removal of Gira-managed repository artifacts
-  status      Show a compact read-only GitHub status summary
-  jira        Import Jira work into GitHub issues and export Jira-friendly artifacts
-  export      Export dashboard artifacts from read-only GitHub data
-  portfolio   Plan top-level portfolio intake lowering from a portfolio repo
-  parity      Compute deterministic Jira-replacement parity scorecard
-  project     Inspect permission capability for Project OS lifecycle actions
-  audit       Verify audit ledgers for mutation integrity
-  worker      Manage worker claim/handoff/release state for issues
-  guardrails  Audit and apply branch protection/ruleset policy
-  triage      Backlog triage queue and policy apply helpers
+Daily commands:
+  ticket      Jira-style ticket lifecycle commands
   sprint      Sprint iteration planning/start/close workflow
-  graph       Work graph validation (parent/depends_on/blocks)
-  review      Review routing queue with stale-review detection
-  merge       Policy-checked merge queue (dry-run/apply)
   release     Release readiness gate report
-  report      Weekly PM cockpit report
-  contract    CRUD capability matrix and command contract
+  status      Show a compact read-only GitHub status summary
+  start       Shortcut for ticket start
+
+Setup:
+  init        One-command onboarding with prerequisite checks and next-step plan
+
+Advanced:
+  ops         Advanced setup, migration, policy, audit, and raw GitHub controls
+  work        Compatibility alias for ticket lifecycle commands
+  dev         Compatibility developer workflow helpers
 
 Flags:
   -h, --help  Show help
@@ -294,6 +281,29 @@ Usage:
   gira sprint rollover --repo OWNER/REPO [--to MILESTONE] --dry-run|--apply [--json]
 `
 
+const ticketHelp = `Jira-style ticket lifecycle commands.
+
+Usage:
+  gira ticket start --repo OWNER/REPO --ticket N --dry-run|--apply [--json]
+  gira ticket pr --repo OWNER/REPO --ticket N --dry-run|--apply [--draft] [--json]
+  gira ticket status --repo OWNER/REPO --ticket N [--json]
+
+Commands:
+  start   Verify a ready ticket, create/reuse its branch, and move to in-progress on apply. Alias: gira start
+  pr      Validate or create a linked PR with Closes #N and update review status on apply
+  status  Report ticket status, linked PR blockers, and next action
+
+Flags:
+  --repo string    Target GitHub repo in OWNER/REPO format
+  --ticket int     Ticket number. GitHub issue number in v1
+  --issue int      Compatibility alias for --ticket
+  --dry-run        Preview without mutation
+  --apply          Apply branch, PR, and status label changes
+  --draft          Create/keep PR as draft for ticket pr
+  --json           Emit stable JSON output
+  -h, --help       Show help
+`
+
 const workerHelp = `Worker coordination commands for issue ownership and handoff payloads.
 
 Usage:
@@ -375,6 +385,37 @@ Flags:
   --draft        Create/keep PR as draft for work pr
   --json         Emit stable JSON output
   -h, --help     Show help
+`
+
+const opsHelp = `Advanced Gira controls.
+
+Usage:
+  gira ops <command> [flags]
+
+Commands:
+  sync        Sync labels, milestones, and bootstrap issues
+  detach      Plan/apply safe removal of Gira-managed repository artifacts
+  doctor      Diagnose install, auth, repo, drift, and local git readiness
+  onboard     Verify onboarding readiness from init to steady-state
+  bootstrap   Bootstrap a repository into a Gira-managed project workspace
+  project     Inspect permission capability for Project OS lifecycle actions
+  guardrails  Audit and apply branch protection/ruleset policy
+  audit       Verify audit ledgers for mutation integrity
+  export      Export dashboard artifacts from read-only GitHub data
+  portfolio   Plan top-level portfolio intake lowering from a portfolio repo
+  contract    CRUD capability matrix and command contract
+  parity      Compute deterministic Jira-replacement parity scorecard
+  jira        Import/export Jira migration artifacts
+  triage      Backlog triage queue and policy apply helpers
+  graph       Work graph validation
+  review      Review routing queue
+  merge       Policy-checked merge queue
+  report      Weekly PM cockpit report
+  worker      Manage worker claim/handoff/release state for tickets
+  dev         Lower-level issue-to-branch execution helpers
+
+Flags:
+  -h, --help  Show help
 `
 
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
@@ -594,7 +635,11 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	case "init":
 		return runInit(args[1:], stdout, stderr)
 	case "start":
-		return runWorkStart(args[1:], stdout, stderr)
+		return runTicketStart(args[1:], stdout, stderr)
+	case "ticket":
+		return runTicket(args[1:], stdout, stderr)
+	case "ops":
+		return runOps(args[1:], stdout, stderr)
 	case "bootstrap":
 		return runBootstrap(args[1:], stdout, stderr)
 	case "onboard":
@@ -646,6 +691,59 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
+		return 2
+	}
+}
+
+func runOps(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, opsHelp)
+		return 0
+	}
+	switch args[0] {
+	case "bootstrap":
+		return runBootstrap(args[1:], stdout, stderr)
+	case "onboard":
+		return runOnboard(args[1:], stdout, stderr)
+	case "doctor":
+		return runDoctor(args[1:], stdout, stderr)
+	case "sync":
+		return runSyncWithCommand(args[1:], stdout, stderr, "gira ops sync")
+	case "detach":
+		return runDetach(args[1:], stdout, stderr)
+	case "jira":
+		return runJira(args[1:], stdout, stderr)
+	case "export":
+		return runExport(args[1:], stdout, stderr)
+	case "portfolio":
+		return runPortfolio(args[1:], stdout, stderr)
+	case "parity":
+		return runParity(args[1:], stdout, stderr)
+	case "project":
+		return runProject(args[1:], stdout, stderr)
+	case "audit":
+		return runAudit(args[1:], stdout, stderr)
+	case "guardrails":
+		return runGuardrails(args[1:], stdout, stderr)
+	case "triage":
+		return runTriage(args[1:], stdout, stderr)
+	case "graph":
+		return runGraph(args[1:], stdout, stderr)
+	case "review":
+		return runReview(args[1:], stdout, stderr)
+	case "merge":
+		return runMerge(args[1:], stdout, stderr)
+	case "report":
+		return runReport(args[1:], stdout, stderr)
+	case "worker":
+		return runWorker(args[1:], stdout, stderr)
+	case "dev":
+		return runDev(args[1:], stdout, stderr)
+	case "contract":
+		return runContract(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown ops command: %s\n\n", args[0])
+		fmt.Fprint(stderr, opsHelp)
 		return 2
 	}
 }
@@ -1101,6 +1199,170 @@ func runWork(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 }
 
+func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	switch args[0] {
+	case "start":
+		return runTicketStart(args[1:], stdout, stderr)
+	case "pr":
+		return runTicketPR(args[1:], stdout, stderr)
+	case "status":
+		return runTicketStatus(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown ticket command: %s\n\n", args[0])
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+}
+
+func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("ticket start", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply changes")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	ticketNumber, ok := resolveTicketFlag(*ticket, *issue, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	repo, ok := parseTicketRequiredFlags(*repoValue, ticketNumber, *dryRun, *apply, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	result, err := newWorkStartResult(repo, ticketNumber, *dryRun)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, formatTicketStart(result))
+	return 0
+}
+
+func runTicketPR(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("ticket pr", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply changes")
+	draft := fs.Bool("draft", false, "Create/keep PR as draft")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	ticketNumber, ok := resolveTicketFlag(*ticket, *issue, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	repo, ok := parseTicketRequiredFlags(*repoValue, ticketNumber, *dryRun, *apply, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	result, err := newWorkPRResult(repo, ticketNumber, *dryRun, *draft)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, formatTicketPR(result))
+	return 0
+}
+
+func runTicketStatus(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("ticket status", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	ticketNumber, ok := resolveTicketFlag(*ticket, *issue, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *repoValue == "" || ticketNumber <= 0 {
+		fmt.Fprint(stderr, "--repo and --ticket are required\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	result, err := newWorkStatusResult(repo, ticketNumber)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	result.NextStep = ticketStatusNextStep(result)
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, formatTicketStatus(result))
+	return 0
+}
+
 func runWorkStart(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs := flag.NewFlagSet("work start", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -1238,6 +1500,92 @@ func parseWorkRequiredFlags(repoValue string, issue int, dryRun bool, apply bool
 		return gira.RepoRef{}, false
 	}
 	return repo, true
+}
+
+func resolveTicketFlag(ticket int, issue int, stderr io.Writer) (int, bool) {
+	if ticket > 0 && issue > 0 && ticket != issue {
+		fmt.Fprint(stderr, "--ticket and --issue must refer to the same number when both are provided\n\n")
+		return 0, false
+	}
+	if ticket > 0 {
+		return ticket, true
+	}
+	return issue, true
+}
+
+func parseTicketRequiredFlags(repoValue string, ticket int, dryRun bool, apply bool, stderr io.Writer) (gira.RepoRef, bool) {
+	if repoValue == "" || ticket <= 0 || dryRun == apply {
+		fmt.Fprint(stderr, "--repo, --ticket, and exactly one of --dry-run/--apply are required\n\n")
+		return gira.RepoRef{}, false
+	}
+	repo, err := gira.ParseRepoRef(repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return gira.RepoRef{}, false
+	}
+	return repo, true
+}
+
+func formatTicketStart(result gira.WorkStartResult) string {
+	return fmt.Sprintf(
+		"ticket start: ticket #%d branch=%s status=%s\nnext step: gira ticket pr --repo %s --ticket %d --dry-run\n",
+		result.Issue,
+		result.Branch,
+		result.NextStatus,
+		result.Repo,
+		result.Issue,
+	)
+}
+
+func formatTicketPR(result gira.WorkPRResult) string {
+	created := "reused"
+	if result.Created {
+		created = "created"
+	}
+	url := strings.TrimSpace(result.PRURL)
+	if url == "" {
+		url = "(planned)"
+	}
+	next := fmt.Sprintf("gira ticket status --repo %s --ticket %d", result.Repo, result.Issue)
+	if result.Draft {
+		next = "mark the PR ready, then " + next
+	}
+	return fmt.Sprintf("ticket pr: ticket #%d pr=%s status=%s %s\nnext step: %s\n", result.Issue, url, result.NextStatus, created, next)
+}
+
+func formatTicketStatus(result gira.WorkStatusResult) string {
+	blockers := strings.Join(result.Blockers, ",")
+	if blockers == "" {
+		blockers = "none"
+	}
+	return fmt.Sprintf(
+		"ticket status: ticket #%d status=%s pr=%d blockers=%s next=%s\nnext step: %s\n",
+		result.Issue,
+		result.Status,
+		result.PRNumber,
+		blockers,
+		result.NextAction,
+		ticketStatusNextStep(result),
+	)
+}
+
+func ticketStatusNextStep(result gira.WorkStatusResult) string {
+	switch result.NextAction {
+	case "start_work":
+		return fmt.Sprintf("gira ticket start --repo %s --ticket %d --apply", result.Repo, result.Issue)
+	case "open_pr":
+		return fmt.Sprintf("gira ticket pr --repo %s --ticket %d --apply", result.Repo, result.Issue)
+	case "mark_pr_ready":
+		return "mark the PR ready for review"
+	case "address_review":
+		return "address review blockers"
+	case "wait_for_checks":
+		return "wait for required checks to finish or fix failing checks"
+	case "merge_when_policy_allows":
+		return "merge when policy checks pass"
+	default:
+		return fmt.Sprintf("gira status --repo %s", result.Repo)
+	}
 }
 
 func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -1658,6 +2006,10 @@ func runExportDashboard(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
+	return runSyncWithCommand(args, stdout, stderr, "gira sync")
+}
+
+func runSyncWithCommand(args []string, stdout io.Writer, stderr io.Writer, commandName string) int {
 	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
@@ -1725,12 +2077,12 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stdout, "sync complete")
 	}
-	fmt.Fprintln(stdout, syncNextStep(repo, *dryRun, *bootstrapIssues, mode, pinPolicyMode))
+	fmt.Fprintln(stdout, syncNextStep(commandName, repo, *dryRun, *bootstrapIssues, mode, pinPolicyMode))
 	return 0
 }
 
-func syncNextStep(repo gira.RepoRef, dryRun bool, bootstrapIssues bool, mode gira.SyncPolicyMode, pinPolicyMode bool) string {
-	command := "gira sync --repo " + repo.FullName()
+func syncNextStep(commandName string, repo gira.RepoRef, dryRun bool, bootstrapIssues bool, mode gira.SyncPolicyMode, pinPolicyMode bool) string {
+	command := commandName + " --repo " + repo.FullName()
 	if mode != "" && (pinPolicyMode || mode != gira.SyncPolicyMerge) {
 		command += " --policy-mode " + string(mode)
 	}

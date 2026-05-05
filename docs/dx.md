@@ -75,11 +75,11 @@ After bootstrap, the operator should see a short install summary and use `gira s
 
 This taxonomy keeps a clean recovery model: rerun `bootstrap` for local files, rerun `sync` for GitHub metadata, rerun `status` to decide what to do next, and rerun `onboard verify` to confirm the repo is truly ready for daily operation.
 
-## Go CLI Development Path
+## CLI Development Path
 
-The Python CLI remains the working MVP and reference implementation. The Go CLI is the forward product path and should move in narrow, testable slices.
+The Go-built `gira` binary is the sole product implementation. Development should continue in narrow, testable slices against the Go CLI.
 
-Current Go scope:
+Current scope:
 
 ```bash
 go run ./cmd/gira --help
@@ -93,7 +93,7 @@ go run ./cmd/gira onboard verify --repo OWNER/REPO --stage init --json
 go run ./cmd/gira onboard verify --repo OWNER/REPO --stage steady-state --json
 ```
 
-The Go CLI can be installed for daily use from source:
+The CLI can be installed for daily use from source:
 
 ```bash
 go install github.com/StatPan/gira/cmd/gira@latest
@@ -109,7 +109,9 @@ gira sync --repo OWNER/REPO --dry-run
 gira status --repo OWNER/REPO --json
 ```
 
-The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. Private repository installs need Go private module access, such as `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication. The Go bootstrap path embeds the default template so output and local installs are independent of the caller's working directory. Go `sync` shells out through `gh` to create or update only Gira-managed labels, milestones, and bootstrap issues. Go `status` is read-only and shells out through `gh api` to match the Python MVP JSON contract closely enough for worker automation. The Python CLI remains the reference and fallback implementation until final cutover.
+The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. Private repository installs need Go private module access, such as `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication. The bootstrap path embeds the default template so output and local installs are independent of the caller's working directory. `sync` shells out through `gh` to create or update only Gira-managed labels, milestones, and bootstrap issues. `status` is read-only and shells out through `gh api` with stable JSON for worker automation.
+
+Package-manager wrappers such as `uv`, npm, bun, or Homebrew may be used as distribution channels when they install or invoke the Go-built `gira` binary. They should not introduce a second product runtime.
 
 Tagged Go releases are built by `.github/workflows/release.yml`. Maintainers publish one by tagging `main` with a `v*` tag and pushing the tag; the workflow runs Go tests, builds Linux/macOS/Windows archives, and attaches them to the GitHub release.
 

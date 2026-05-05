@@ -6,17 +6,7 @@ Korean shorthand: **기라(Gira): 깃허브로 굴리는 지라.**
 
 ## MVP Direction
 
-The Python MVP currently owns the full CLI-first workflow:
-
-- `gira bootstrap --repo OWNER/REPO --template default --dry-run`
-- `gira bootstrap --repo OWNER/REPO --path PATH`
-- `gira sync --repo OWNER/REPO --dry-run`
-- `gira sync --repo OWNER/REPO --dry-run --bootstrap-issues`  # Gira self-bootstrap only
-- `gira sync --repo OWNER/REPO`
-- `gira sync --repo OWNER/REPO --bootstrap-issues`            # Gira self-bootstrap only
-- `gira status --repo OWNER/REPO`
-
-The Go CLI is being introduced in small slices as the long-term product CLI. The current Go path supports bootstrap dry-run/local install, GitHub metadata sync, status, and onboarding verification:
+The Go-built `gira` binary is the sole product implementation. The current product path supports bootstrap dry-run/local install, GitHub metadata sync, status, and onboarding verification:
 
 ```bash
 go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
@@ -30,8 +20,6 @@ go run ./cmd/gira status --repo OWNER/REPO --json
 go run ./cmd/gira onboard verify --repo OWNER/REPO --stage init --json
 go run ./cmd/gira onboard verify --repo OWNER/REPO --stage steady-state --json
 ```
-
-Python remains the reference and fallback implementation until final cutover. Do not remove it while Go parity is still being completed.
 
 ## Install, Upgrade, and Remove
 
@@ -93,7 +81,7 @@ gira --help
 
 If checksum assets are published for the release, verify the archive before installing the binary.
 
-### Developer Fallback: Go Install
+### Developer Go Install
 
 `go install` remains available for developers and contributors, but it is not the default product onboarding path because it requires Go and module access.
 
@@ -207,6 +195,8 @@ gira status --repo OWNER/REPO --json
 ```
 
 This is the canonical operator path for daily use.
+
+Package-manager wrappers such as `uv`, npm, bun, or Homebrew may be added as distribution channels when they install or invoke the Go-built `gira` binary. They are not alternate product implementations.
 
 For local development from this checkout:
 

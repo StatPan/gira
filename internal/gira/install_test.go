@@ -98,7 +98,7 @@ func TestInstallTemplatesRequiresExistingGitRepo(t *testing.T) {
 	}
 }
 
-func TestFormatInstallSummaryMatchesPythonShape(t *testing.T) {
+func TestFormatInstallSummaryUsesStableShape(t *testing.T) {
 	got := FormatInstallSummary(InstallResult{
 		Created:     []string{"AGENTS.md"},
 		Skipped:     []string{"tasks/backlog.md"},

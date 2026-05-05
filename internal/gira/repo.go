@@ -3,7 +3,12 @@ package gira
 import (
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
+
+	"github.com/pelletier/go-toml/v2"
+	"gopkg.in/yaml.v3"
 )
 
 type RepoRef struct {
@@ -27,18 +32,59 @@ func ResolveRepoContext(repoValue string, runner CommandRunner) (RepoRef, error)
 	if strings.TrimSpace(repoValue) != "" {
 		return ParseRepoRef(repoValue)
 	}
+	if repo, ok, err := repoContextFromConfig(DefaultInitConfigPath(".")); err != nil {
+		return RepoRef{}, err
+	} else if ok {
+		return repo, nil
+	}
+	if repo, ok, err := repoContextFromConfig(filepath.Join(".", ".gira", "config.toml")); err != nil {
+		return RepoRef{}, err
+	} else if ok {
+		return repo, nil
+	}
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
 	output, err := runner.Run("git", "remote", "get-url", "origin")
 	if err != nil {
-		return RepoRef{}, fmt.Errorf("repo context unavailable: pass --repo OWNER/REPO or run from a git checkout with a GitHub origin remote")
+		return RepoRef{}, fmt.Errorf("repo context unavailable: pass --repo OWNER/REPO, set repo in .gira/config.yaml, or run from a git checkout with a GitHub origin remote")
 	}
 	repo, err := ParseGitHubRemoteRepo(strings.TrimSpace(string(output)))
 	if err != nil {
-		return RepoRef{}, fmt.Errorf("repo context unavailable: origin remote is not a GitHub OWNER/REPO URL; pass --repo OWNER/REPO")
+		return RepoRef{}, fmt.Errorf("repo context unavailable: origin remote is not a GitHub OWNER/REPO URL; pass --repo OWNER/REPO or set repo in .gira/config.yaml")
 	}
 	return repo, nil
+}
+
+func repoContextFromConfig(path string) (RepoRef, bool, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return RepoRef{}, false, nil
+		}
+		return RepoRef{}, false, fmt.Errorf("read repo context config %q: %w", path, err)
+	}
+	var cfg struct {
+		Repo string `yaml:"repo" toml:"repo"`
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".toml":
+		if err := toml.Unmarshal(content, &cfg); err != nil {
+			return RepoRef{}, false, fmt.Errorf("parse repo context config %q: %w", path, err)
+		}
+	default:
+		if err := yaml.Unmarshal(content, &cfg); err != nil {
+			return RepoRef{}, false, fmt.Errorf("parse repo context config %q: %w", path, err)
+		}
+	}
+	if strings.TrimSpace(cfg.Repo) == "" {
+		return RepoRef{}, false, nil
+	}
+	repo, err := ParseRepoRef(cfg.Repo)
+	if err != nil {
+		return RepoRef{}, false, fmt.Errorf("invalid repo context config %q: repo must be in OWNER/REPO format", path)
+	}
+	return repo, true, nil
 }
 
 func ParseGitHubRemoteRepo(remoteURL string) (RepoRef, error) {

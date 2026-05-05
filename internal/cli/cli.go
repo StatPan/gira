@@ -83,7 +83,7 @@ Usage:
   gira status [--repo OWNER/REPO] [--json] [--stale-days N]
 
 Flags:
-  --repo string       Target GitHub repo in OWNER/REPO format (default: infer from git origin)
+  --repo string       Target GitHub repo in OWNER/REPO format (default: infer from .gira/config.yaml or git origin)
   --json              Emit stable JSON for automation
   --stale-days int    Days since update before open issues count as stale (default 14)
   -h, --help          Show help
@@ -98,7 +98,7 @@ Commands:
   verify       Run prerequisite, bootstrap, metadata, and daily-run checks
 
 Flags:
-  --repo string   Target GitHub repo in OWNER/REPO format (default: infer from git origin)
+  --repo string   Target GitHub repo in OWNER/REPO format (default: infer from .gira/config.yaml or git origin)
   --stage string  Readiness stage to verify
   --json          Emit stable JSON readiness artifact
   -h, --help      Show help

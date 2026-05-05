@@ -2,6 +2,8 @@ package gira
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -51,6 +53,64 @@ func TestResolveRepoContextFromHTTPSOrigin(t *testing.T) {
 	}
 	if repo.FullName() != "StatPan/gira" {
 		t.Fatalf("repo = %s, want StatPan/gira", repo.FullName())
+	}
+}
+
+func TestResolveRepoContextFromConfig(t *testing.T) {
+	dir := t.TempDir()
+	giraDir := filepath.Join(dir, ".gira")
+	if err := os.MkdirAll(giraDir, 0o755); err != nil {
+		t.Fatalf("mkdir .gira: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(giraDir, "config.yaml"), []byte("repo: StatPan/configured\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+
+	repo, err := ResolveRepoContext("", repoContextTestRunner{
+		errs: map[string]error{"git remote get-url origin": fmt.Errorf("config should win before origin")},
+	})
+	if err != nil {
+		t.Fatalf("ResolveRepoContext returned error: %v", err)
+	}
+	if repo.FullName() != "StatPan/configured" {
+		t.Fatalf("repo = %s, want StatPan/configured", repo.FullName())
+	}
+}
+
+func TestResolveRepoContextOverrideWinsOverConfig(t *testing.T) {
+	dir := t.TempDir()
+	giraDir := filepath.Join(dir, ".gira")
+	if err := os.MkdirAll(giraDir, 0o755); err != nil {
+		t.Fatalf("mkdir .gira: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(giraDir, "config.yaml"), []byte("repo: StatPan/configured\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+
+	repo, err := ResolveRepoContext("StatPan/override", repoContextTestRunner{
+		errs: map[string]error{"git remote get-url origin": fmt.Errorf("should not be called")},
+	})
+	if err != nil {
+		t.Fatalf("ResolveRepoContext returned error: %v", err)
+	}
+	if repo.FullName() != "StatPan/override" {
+		t.Fatalf("repo = %s, want StatPan/override", repo.FullName())
 	}
 }
 

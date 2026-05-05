@@ -50,6 +50,7 @@ The first ten minutes after `gira bootstrap` should answer four questions: what 
 5. Inspect the project state:
 
    ```bash
+   # from the target checkout, or any directory with .gira/config.yaml repo set
    gira status
    gira status --json
    ```
@@ -57,11 +58,12 @@ The first ten minutes after `gira bootstrap` should answer four questions: what 
 6. Verify go/no-go readiness before first daily use:
 
    ```bash
+   # from the target checkout, or any directory with .gira/config.yaml repo set
    gira onboard verify --stage init --json
    gira onboard verify --stage steady-state --json
    ```
 
-After bootstrap, the operator should see a short install summary and use `gira sync --dry-run` as the next-step hint. After sync, the operator should use `gira status` from a checkout with a GitHub `origin` remote to pick the next ready issue. `gira onboard verify` should provide the explicit go/no-go verdict and remediation checklist before the team treats the repo as daily-operable. Pass `--repo OWNER/REPO` when scripting or operating outside the target checkout.
+After bootstrap, the operator should see a short install summary and use `gira sync --repo OWNER/REPO --dry-run` as the next-step hint. After sync, the operator should use `gira status` from a checkout with a GitHub `origin` remote, or from a directory with `.gira/config.yaml` containing `repo: OWNER/REPO`, to pick the next ready issue. `gira onboard verify` should provide the explicit go/no-go verdict and remediation checklist before the team treats the repo as daily-operable. Pass `--repo OWNER/REPO` when scripting or operating outside the target checkout/config directory.
 
 ## Command Taxonomy
 
@@ -87,10 +89,10 @@ go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
 go run ./cmd/gira bootstrap --repo OWNER/REPO --path /path/to/repo
 go run ./cmd/gira sync --repo OWNER/REPO --dry-run
 go run ./cmd/gira sync --repo OWNER/REPO
-go run ./cmd/gira status
-go run ./cmd/gira status --json
-go run ./cmd/gira onboard verify --stage init --json
-go run ./cmd/gira onboard verify --stage steady-state --json
+go run ./cmd/gira status --repo OWNER/REPO
+go run ./cmd/gira status --repo OWNER/REPO --json
+go run ./cmd/gira onboard verify --repo OWNER/REPO --stage init --json
+go run ./cmd/gira onboard verify --repo OWNER/REPO --stage steady-state --json
 ```
 
 The CLI can be installed for daily use from source:
@@ -106,7 +108,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 gira --help
 gira bootstrap --repo OWNER/REPO --template default --dry-run
 gira sync --repo OWNER/REPO --dry-run
-gira status --json
+gira status --repo OWNER/REPO --json
 ```
 
 The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. Private repository installs need Go private module access, such as `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication. The bootstrap path embeds the default template so output and local installs are independent of the caller's working directory. `sync` shells out through `gh` to create or update only Gira-managed labels, milestones, and bootstrap issues. `status` is read-only and shells out through `gh api` with stable JSON for worker automation.

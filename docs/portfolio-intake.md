@@ -73,6 +73,7 @@ Optional fields:
 ## Commands
 
 ```bash
+gira portfolio capability --config .gira/config.yaml
 gira portfolio status --config .gira/config.yaml
 gira portfolio validate --config .gira/config.yaml
 gira portfolio plan --dry-run --config .gira/config.yaml
@@ -83,6 +84,7 @@ gira portfolio lower --apply --config .gira/config.yaml
 JSON variants are stable automation surfaces:
 
 ```bash
+gira portfolio capability --config .gira/config.yaml --json
 gira portfolio plan --dry-run --config .gira/config.yaml --json
 gira portfolio lower --dry-run --config .gira/config.yaml --json
 ```

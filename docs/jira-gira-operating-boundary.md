@@ -4,6 +4,25 @@ Gira is GitHub-native project operating software, not a full Jira clone. Jira ow
 
 The current product is execution-strong and portfolio/backlog-weak. That is an intentional MVP tradeoff: Gira should make repository work reliable before adding a separate intake or portfolio layer.
 
+## Canonical Concept Mapping
+
+Gira uses Jira-like language at the CLI boundary, then maps that language onto durable GitHub objects. The mapping below is the v1 contract.
+
+| Jira concept | GitHub source of truth | Gira command surface | Notes |
+| --- | --- | --- | --- |
+| Project | Repository | `gira ops bootstrap`, `gira ops sync`, `gira status` | A repository is the normal execution space. Portfolio-level intake is only for work that has not yet been routed to a repo. |
+| Epic | Parent issue or top-level ticket | `gira portfolio ...`, issue templates | A large outcome stays as an issue. Cross-repo epics coordinate child repo issues instead of creating a separate planning database. |
+| Story / Task / Bug | Issue | `gira ticket ...`, templates, `gira ops sync` | The issue is the executable work packet for humans and agents. Labels carry type, status, priority, and blocked state. |
+| Sprint | Milestone | `gira sprint plan|start|close|rollover` | Milestones are the canonical sprint or phase boundary. |
+| Workflow status | Status labels plus PR evidence | `gira ticket start|pr|status`, `gira status` | Status labels are visible in GitHub; branch, PR, review, and check state provide execution evidence. |
+| Assignee / owner | GitHub assignee plus optional labels | `gira status`, worker commands | Ownership remains GitHub-visible and does not require a hidden Gira user table. |
+| Priority | Managed label | `gira ops sync`, triage/status commands | Priority is intentionally lightweight in v1. |
+| Branch | Git branch linked to an issue | `gira ticket start` | Branches prove work has started, but they are not the source of truth without an issue or PR link. |
+| Pull request | Pull request with closing keyword | `gira ticket pr` | PRs are change units. PR bodies must include `Closes #N`, `Fixes #N`, or `Resolves #N` unless the issue intentionally stays open. |
+| Done | Merged PR and closed issue | `gira ticket status`, release/readiness commands | Completion is derived from GitHub evidence, not a local-only status file. |
+| Release | GitHub Release plus readiness evidence | `gira release readiness` | Releases are delivery checkpoints backed by issue, PR, milestone, review, and check state. |
+| Board / roadmap | Future or external view over GitHub state | Dashboard export, Project inspection | Projects v2 automation and UI surfaces are not v1 sources of truth. |
+
 ## Capability Matrix
 
 | Capability | Jira native behavior | Current Gira state | Target direction |
@@ -14,7 +33,7 @@ The current product is execution-strong and portfolio/backlog-weak. That is an i
 | Assignee / priority / SLA semantics | First-class assignees, priorities, queues, and SLA policies. | Partially supported. Priority and ownership are labels or GitHub metadata; stale/blocked/review signals are reported. SLA policy is not first-class. | Add clearer policy docs and reports before adding heavier automation. |
 | Sprint / milestone planning | Sprints and releases are native planning objects. | Supported for MVP. Milestones represent sprint or phase boundaries; sprint plan/start/close/rollover commands exist. | Keep milestones as the canonical sprint boundary and avoid separate state unless needed. |
 | Roadmap / project views | Roadmaps, boards, filters, and dashboards are native UI surfaces. | Partially supported. Gira can inspect Product OS state and export dashboard artifacts; Projects v2 automation is not MVP scope. | Keep export and inspection vendor-neutral; defer full Project v2 automation. |
-| Automation / integrations | Rich automation rules and app ecosystem. | Partially supported. Gira is `gh`-first, dry-run-first, and command-driven; Jira import/export now exists for migration readiness, while chat bots remain out of scope. | Prefer explicit CLI workflows over hidden automation until behavior is stable. |
+| Automation / integrations | Rich automation rules and app ecosystem. | Partially supported. Gira is `gh`-first, dry-run-first, and command-driven; Jira import/export, chat bots, and UI integrations are not v1 product workflows. | Prefer explicit CLI workflows over hidden automation until behavior is stable. |
 | Auditability / GitHub constraints | Jira audit trails live in Jira. | Supported through GitHub-native evidence: issues, PRs, labels, milestones, review state, and append-only Gira audit ledgers for mutations. | Preserve traceability without creating a shadow source of truth. |
 
 GitHub-native does not mean full Jira parity. It means the canonical state stays on GitHub objects that developers already use. Gira fills the operational gaps around setup, state normalization, handoff, review, reporting, and safe command execution.
@@ -29,7 +48,7 @@ Jira parity is only half of the decision. Gira can execute reliably only where G
 | Labels | Lightweight taxonomy and status flags. | Type, status, priority, agent/owner, blocked, bootstrap metadata. | Strong for simple deterministic state. | Labels are flat strings, so complex workflow policy needs Gira conventions and validation. |
 | Milestones | Sprint, phase, or release boundary with due dates and issue counts. | Sprint planning, sprint close, rollover, milestone progress, phase completion reporting. | Strong for repo-local sprint cadence. | Cross-repo portfolio planning needs an external parent layer or dashboard export. |
 | Pull requests | Change unit, review, checks, merge state, closing keywords. | PR creation/status, closure-link gates, review queue, merge queue, release readiness. | Strong. PRs are the best source of execution evidence. | Draft/review/check semantics need a friendlier issue-lifecycle wrapper for daily UX. |
-| Branches | Work-start signal and local execution context. | `dev start` creates issue branches and transition planning can infer in-progress work. | Medium. Useful as evidence, but less durable than issues/PRs. | Branch-only work is ambiguous until linked back to an issue or PR. |
+| Branches | Work-start signal and local execution context. | `ticket start` creates issue branches and transition planning can infer in-progress work. | Medium. Useful as evidence, but less durable than issues/PRs. | Branch-only work is ambiguous until linked back to an issue or PR. |
 | GitHub Projects v2 | Boards, fields, roadmap views, project items. | Capability probing and dry-run/project inspection; mutation is deliberately limited. | Medium for visibility, weak for MVP mutation. | Projects v2 automation is not MVP scope and has separate permission complexity. |
 | GitHub Actions / checks | CI status, scheduled jobs, policy checks. | Review gate, release readiness, quality gate, scheduled reporting concepts. | Medium. Good for verification and monitoring. | Poor default for primary development execution; failures often need interactive repair. |
 | Rulesets / branch protection | Merge safety, required checks, review policy. | Guardrails audit/apply and merge readiness inputs. | Strong for enforcement. | Requires admin capability and careful non-destructive policy ownership. |
@@ -93,20 +112,20 @@ Live session orchestration is justified only for narrow exceptions:
 
 ## Everyday UX Target
 
-The current CLI exposes good primitives, but operators still need to compose several commands to get a Jira-like flow. The next UX slice is tracked by #126 and should add a thin `gira work` command family over existing primitives:
+The current CLI exposes the Jira-style daily loop through `gira ticket`. Advanced setup and policy controls stay under `gira ops` so new users do not need to learn GitHub-native internals before starting work.
 
 ```bash
-gira work start --repo OWNER/REPO --issue N --dry-run
-gira work start --repo OWNER/REPO --issue N --apply
-gira work pr --repo OWNER/REPO --issue N --dry-run
-gira work pr --repo OWNER/REPO --issue N --apply
-gira work status --repo OWNER/REPO --issue N --json
+gira ticket start --repo OWNER/REPO --ticket N --dry-run
+gira ticket start --repo OWNER/REPO --ticket N --apply
+gira ticket pr --repo OWNER/REPO --ticket N --dry-run
+gira ticket pr --repo OWNER/REPO --ticket N --apply --draft
+gira ticket status --repo OWNER/REPO --ticket N --json
 ```
 
 Expected behavior:
 
-- `work start --apply` verifies the issue is ready, creates or checks out the branch, and applies `status:in-progress`.
-- `work pr --apply` opens a linked PR with `Closes #N`; draft PRs keep `status:in-progress`, non-draft PRs move to `status:in-review`.
-- `work status` shows linked PR state, checks, review blockers, current issue status, and the next suggested command.
+- `ticket start --apply` verifies the ticket is ready, creates or checks out the branch, and applies `status:in-progress`.
+- `ticket pr --apply` opens a linked PR with `Closes #N`; draft PRs keep `status:in-progress`, non-draft PRs move to `status:in-review`.
+- `ticket status` shows linked PR state, checks, review blockers, current issue status, and the next suggested command.
 
-This keeps advanced adoption commands such as `sync --policy-mode adopt|merge|enforce` available for migrations while making daily Jira-style work feel like one coherent issue lifecycle.
+This keeps advanced adoption commands such as `gira ops sync --policy-mode adopt|merge|enforce` available for migrations while making daily Jira-style work feel like one coherent ticket lifecycle.

@@ -22,7 +22,7 @@ The install script upgrades or replaces only the local Go-built `gira` binary. I
 
 ## Migration Modes
 
-Gira supports three metadata policy modes on `sync`:
+Gira supports three metadata policy modes on `gira ops sync`:
 
 - `adopt`: observe existing metadata and do not create/update labels, milestones, or bootstrap issues.
 - `merge` (default): preserve user-owned metadata while creating/updating only Gira-owned desired state.
@@ -33,9 +33,9 @@ Gira supports three metadata policy modes on `sync`:
 Always run these in order:
 
 ```bash
-gira sync --repo OWNER/REPO --dry-run --policy-mode adopt
-gira sync --repo OWNER/REPO --dry-run --policy-mode merge
-gira sync --repo OWNER/REPO --dry-run --policy-mode enforce
+gira ops sync --repo OWNER/REPO --dry-run --policy-mode adopt
+gira ops sync --repo OWNER/REPO --dry-run --policy-mode merge
+gira ops sync --repo OWNER/REPO --dry-run --policy-mode enforce
 ```
 
 Why this order:
@@ -62,9 +62,9 @@ Use this matrix for decisioning:
 1. Run all three dry-runs and capture output in CI or artifacts.
 2. Choose mode using the conflict matrix.
 3. Apply in smallest safe scope:
-   - First: `gira sync --repo OWNER/REPO --policy-mode <mode>`
+   - First: `gira ops sync --repo OWNER/REPO --policy-mode <mode>`
    - Optional second pass for bootstrap issue creation:
-     `gira sync --repo OWNER/REPO --policy-mode <mode> --bootstrap-issues`
+     `gira ops sync --repo OWNER/REPO --policy-mode <mode> --bootstrap-issues`
 4. Re-run dry-run in same mode and verify plan converges to mostly `skip`.
 
 ## Rollback & Recovery

@@ -127,7 +127,7 @@ Execution order rationale:
 
 ## Jira-vs-Gira operating boundary
 
-The explicit capability matrix, top-level ticket -> repo issue -> PR contract, assistant/dev-agent ownership split, and proposed `gira work` UX layer are documented in [jira-gira-operating-boundary.md](jira-gira-operating-boundary.md).
+The explicit capability matrix, Jira-to-GitHub concept mapping, top-level ticket -> repo issue -> PR contract, assistant/dev-agent ownership split, and `gira ticket` UX layer are documented in [jira-gira-operating-boundary.md](jira-gira-operating-boundary.md).
 
 ## Portfolio intake phase
 
@@ -142,7 +142,7 @@ The next implementation slice is portfolio lowering. It should land in this orde
 
 The lowering command is the first apply slice for the portfolio layer. The remaining work is to make valid ticket creation easier and make post-lowering summaries more operator-friendly.
 
-Apply must remain bounded to GitHub issues and labels. Projects v2, Web UI/TUI, chat integrations, and LLM decomposition remain out of scope for v1; Jira import/export is handled by the `gira jira` migration command family.
+Apply must remain bounded to GitHub issues and labels. Projects v2, Web UI/TUI, chat integrations, LLM decomposition, and Jira import/export remain out of scope for v1.
 
 ## Non-goals during this roadmap
 

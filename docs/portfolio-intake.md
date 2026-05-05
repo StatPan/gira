@@ -215,6 +215,6 @@ Out of scope for this phase:
 
 - GitHub Projects v2 automation
 - Web UI
-- Jira import/export is handled separately by `gira jira` migration commands; portfolio lowering should not own that responsibility.
+- Jira import/export is not a v1 product workflow; portfolio lowering should not own that responsibility.
 - LLM decomposition
 - org-wide repo discovery

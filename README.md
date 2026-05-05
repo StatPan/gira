@@ -64,6 +64,25 @@ The Go-built `gira` binary is the sole product implementation. The default user 
 - `gira ops ...` contains advanced setup, migration, policy, audit, and raw GitHub controls.
 - `gira start` and `gira work ...` remain compatibility aliases.
 
+## Jira To GitHub Mapping
+
+Gira keeps the user-facing workflow close to Jira while storing canonical state in GitHub. The v1 model is intentionally small:
+
+| Jira concept | GitHub object | Gira behavior |
+| --- | --- | --- |
+| Project | Repository | A repo is the default execution space. Multi-repo work starts as a top-level ticket and is lowered into repo issues when ownership is clear. |
+| Epic | Parent or top-level issue | A milestone-sized outcome. Cross-repo epics coordinate child repo issues instead of becoming a separate database record. |
+| Story / Task / Bug | Issue | The main work packet. Type, priority, blocked, and status are represented with managed labels and issue metadata. |
+| Sprint | Milestone | `gira sprint` plans, starts, closes, and rolls over milestone-scoped work. |
+| Status | Labels plus PR evidence | Gira reads and updates status labels, then cross-checks branch, PR, review, and check state. |
+| Assignee | GitHub assignee | Ownership stays visible in GitHub and can be supplemented with owner or worker labels. |
+| Branch | Issue execution context | `gira ticket start` verifies the ticket, creates or reuses a branch, and moves work to in-progress on apply. |
+| Pull request | Change unit | `gira ticket pr` creates or validates a linked PR with a closing keyword such as `Closes #12`. |
+| Done | Merged PR plus closed issue | Completion is proven by GitHub merge and close evidence, not by hidden local state. |
+| Release | GitHub Release plus readiness report | `gira release readiness` checks whether issue, PR, review, and milestone evidence are ready for delivery. |
+
+GitHub Projects v2 boards, Web UI/TUI, chat bots, LLM decomposition, and Jira import/export are not v1 product workflows. They can be future integration layers, but v1 stays CLI-first on Issues, Labels, Milestones, PRs, and Releases.
+
 ## Install, Upgrade, and Remove
 
 Gira is implemented as a Go-built CLI. For v1 users, `install.sh` is the official release install and upgrade path. It installs the Go-built binary from GitHub release assets; it does not build from source and does not mutate any repository.
@@ -368,4 +387,4 @@ The release policy and package-manager channel details are documented in [docs/r
 
 The GitHub-native Product OS schema for future Projects v2 planning, roadmap date semantics, permission/secret model, and dry-run-first automation is documented in [docs/product-os-schema.md](docs/product-os-schema.md). The execution roadmap for that phase is tracked in [docs/product-os-roadmap.md](docs/product-os-roadmap.md). The Jira-vs-Gira operating boundary, work decomposition contract, and assistant/dev-agent split are documented in [docs/jira-gira-operating-boundary.md](docs/jira-gira-operating-boundary.md). The portfolio intake layer for top-level tickets and multi-repo lowering plans is documented in [docs/portfolio-intake.md](docs/portfolio-intake.md). The vendor-neutral dashboard/export boundary for Notion and other consumers is documented in [docs/dashboard-consumer-contract.md](docs/dashboard-consumer-contract.md), and the first concrete export bundle layout is documented in [docs/dashboard-export-artifacts.md](docs/dashboard-export-artifacts.md). The MVP CRUD support contract is documented in [docs/crud-capability-matrix.md](docs/crud-capability-matrix.md). Adoption on pre-configured repositories is documented in [docs/adoption-migration-playbook.md](docs/adoption-migration-playbook.md).
 
-Explicit non-goals for v1: GitHub Projects v2 automation, LLM PRD-to-issue decomposition, Web UI/TUI, and chat-bot integration. Jira import/export is part of v1 migration readiness through the `gira ops jira` command family. The legacy `gira jira` entrypoint remains available for compatibility.
+Explicit non-goals for v1: GitHub Projects v2 automation, LLM PRD-to-issue decomposition, Web UI/TUI, chat-bot integration, and Jira import/export. Gira may keep compatibility or migration inspection commands behind `gira ops`, but the v1 source of truth is the GitHub execution loop.

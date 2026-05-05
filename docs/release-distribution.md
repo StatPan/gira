@@ -15,7 +15,7 @@ Gira ships as one Go-built binary. Package-manager channels are wrappers around 
 1. Merge feature PRs into `main`.
 2. Verify `go test ./...`, release workflow checks, and the release readiness gate.
 3. Update `CHANGELOG.md`.
-4. Tag `main`, for example `git tag v0.1.0 && git push origin v0.1.0`.
+4. Tag `main`, for example `git tag -a v1.0.0 -m "gira v1.0.0" && git push origin v1.0.0`.
 5. The GitHub Actions release workflow builds archives, verifies checksums, publishes the GitHub Release, and then publishes configured package-manager channels.
 
 ## Channels

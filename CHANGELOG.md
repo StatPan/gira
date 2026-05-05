@@ -2,9 +2,11 @@
 
 All notable Gira release changes are tracked here.
 
-Gira uses SemVer tags. During `v0.x`, user-facing features normally increment the minor version and fixes increment the patch version.
+Gira uses SemVer tags. User-facing features normally increment the minor version and fixes increment the patch version.
 
 ## Unreleased
+
+## v1.0.0 - 2026-05-05
 
 - Added Jira-style `gira ticket start|pr|status` as the default daily work facade.
 - Added `gira ops` as the advanced command namespace for setup, migration, policy, audit, and raw controls.

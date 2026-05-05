@@ -39,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 Pin a version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v1.0.0 sh
 ```
 
 Install to a custom directory:
@@ -51,7 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA
 The install script:
 
 - Detects `os` and `arch`, then selects the matching GitHub release archive.
-- Installs `latest` by default and accepts an explicit version, for example `GIRA_VERSION=v0.1.0`.
+- Installs `latest` by default and accepts an explicit version, for example `GIRA_VERSION=v1.0.0`.
 - Downloads from GitHub release assets, not from a source checkout or CI artifact.
 - Requires the release `checksums.txt` asset and verifies the selected archive before unpacking it.
 - Installs to `${GIRA_INSTALL_DIR}` when set, otherwise to `${HOME}/.local/bin`.
@@ -107,7 +107,7 @@ gira_VERSION_windows_amd64.zip
 Example:
 
 ```bash
-version=v0.1.0
+version=v1.0.0
 curl -fLO "https://github.com/StatPan/gira/releases/download/${version}/gira_${version}_linux_amd64.tar.gz"
 tar -xzf "gira_${version}_linux_amd64.tar.gz"
 install -m 0755 "gira_${version}_linux_amd64/gira" "${HOME}/.local/bin/gira"
@@ -155,7 +155,7 @@ Use the same channel that installed Gira:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
-curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v1.0.0 sh
 go install github.com/StatPan/gira/cmd/gira@latest
 GOBIN="${HOME}/.local/bin" go install ./cmd/gira
 npm update -g @statpan/gira
@@ -295,8 +295,8 @@ Maintainer flow:
 git checkout main
 git pull --ff-only origin main
 $EDITOR CHANGELOG.md
-git tag v0.1.0
-git push origin v0.1.0
+git tag -a v1.0.0 -m "gira v1.0.0"
+git push origin v1.0.0
 ```
 
 Expected release assets:
@@ -314,7 +314,7 @@ After publishing, smoke-test the official installer against the tag:
 
 ```bash
 tmpdir="$(mktemp -d)"
-GIRA_INSTALL_DIR="${tmpdir}" GIRA_VERSION=v0.1.0 sh install.sh
+GIRA_INSTALL_DIR="${tmpdir}" GIRA_VERSION=v1.0.0 sh install.sh
 "${tmpdir}/gira" --help
 "${tmpdir}/gira" version
 ```

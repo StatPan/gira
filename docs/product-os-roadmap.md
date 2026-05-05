@@ -12,7 +12,7 @@ This roadmap keeps three constraints fixed:
 
 Shipped before this roadmap:
 
-- Go CLI slices for `bootstrap`, `sync`, and `status`, while Python remains the reference/fallback implementation
+- Go CLI slices for `bootstrap`, `sync`, and `status`; the Go-built `gira` binary is the sole product implementation
 - Product OS schema and roadmap date semantics in `docs/product-os-schema.md`
 - Lifecycle transition matrix design for issue/PR/milestone/project state changes
 - Permission model documented for future `project` commands

@@ -282,9 +282,6 @@ func ParsePortfolioTickets(raw []PortfolioRawTicket, repos []RepoRef) ([]Portfol
 			TargetDate:         fields["target_date"],
 			NonGoals:           fields["non_goals"],
 		}
-		if ticket.Routing == "" {
-			ticket.Routing = "unrouted"
-		}
 		tickets = append(tickets, ticket)
 		diagnostics = append(diagnostics, validatePortfolioTicket(ticket, allowed)...)
 	}
@@ -313,7 +310,11 @@ func PortfolioPlan(tickets []PortfolioTicket, diagnostics []PortfolioDiagnostic,
 			actions = append(actions, PortfolioPlanAction{Ticket: ticket.Number, Action: "ticket:blocked_invalid_repo", Reason: "ticket has validation errors"})
 			continue
 		}
-		if ticket.Routing == "unrouted" || len(ticket.TargetRepos) == 0 {
+		if ticket.Routing != "single_repo" && ticket.Routing != "multi_repo" {
+			actions = append(actions, PortfolioPlanAction{Ticket: ticket.Number, Action: "ticket:needs_routing", Reason: "routing is not execution-ready"})
+			continue
+		}
+		if len(ticket.TargetRepos) == 0 {
 			actions = append(actions, PortfolioPlanAction{Ticket: ticket.Number, Action: "ticket:needs_routing", Reason: "routing or target_repos is not execution-ready"})
 			continue
 		}

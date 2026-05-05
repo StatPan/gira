@@ -61,6 +61,7 @@ func TestPortfolioPlanActions(t *testing.T) {
 		{Number: 32, Title: "Link", State: "open", Body: portfolioBody("multi_repo", "StatPan/gira\n- StatPan/docs", "StatPan/gira#10")},
 		{Number: 33, Title: "Invalid", State: "open", Body: portfolioBody("single_repo", "StatPan/missing", "")},
 		{Number: 34, Title: "Closed", State: "closed", Body: portfolioBody("single_repo", "StatPan/gira", "")},
+		{Number: 38, Title: "Deferred", State: "open", Body: portfolioBody("deferred", "StatPan/gira", "")},
 	}, repos)
 
 	actions := PortfolioPlan(tickets, diagnostics, repos)
@@ -68,8 +69,8 @@ func TestPortfolioPlanActions(t *testing.T) {
 	for _, action := range actions {
 		countByAction[action.Action]++
 	}
-	if countByAction["ticket:needs_routing"] != 1 {
-		t.Fatalf("actions = %+v, want one needs_routing", actions)
+	if countByAction["ticket:needs_routing"] != 2 {
+		t.Fatalf("actions = %+v, want two needs_routing", actions)
 	}
 	if countByAction["execution_issue:create"] != 2 {
 		t.Fatalf("actions = %+v, want two create", actions)
@@ -110,6 +111,20 @@ func TestParsePortfolioTicketsValidatesChildIssues(t *testing.T) {
 	if !foundMalformed || !foundOutside || !foundTargetMismatch {
 		t.Fatalf("diagnostics = %+v, want malformed, outside, and target mismatch child issue diagnostics", diagnostics)
 	}
+}
+
+func TestParsePortfolioTicketsReportsMissingRouting(t *testing.T) {
+	repos := []RepoRef{mustRepoRefForPortfolio("StatPan/gira")}
+	_, diagnostics := ParsePortfolioTickets([]PortfolioRawTicket{
+		{Number: 39, Title: "Missing routing", State: "open", Body: "## Goal\nShip portfolio intake\n\n## Scope\nPlan only\n\n## Target Repos\nStatPan/gira\n\n## Acceptance Criteria\n- plan is stable\n"},
+	}, repos)
+
+	for _, diag := range diagnostics {
+		if diag.Ticket == 39 && diag.RuleID == "missing_required_field" && diag.Detail == "routing is required" {
+			return
+		}
+	}
+	t.Fatalf("diagnostics = %+v, want missing routing diagnostic", diagnostics)
 }
 
 func TestBuildPortfolioPlanReportJSONShape(t *testing.T) {

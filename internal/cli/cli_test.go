@@ -42,6 +42,77 @@ func TestTriageHelpFlagPrintsHelpAndExitsZero(t *testing.T) {
 	}
 }
 
+func TestWorkStartRequiresRepoIssueAndMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"work", "start", "--repo", "StatPan/gira", "--issue", "126"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run/--apply") {
+		t.Fatalf("stderr missing mode guidance:\n%s", stderr.String())
+	}
+}
+
+func TestWorkStartDryRunJSON(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 || !dryRun {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t", repo.FullName(), issue, dryRun)
+		}
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-126-work-command", DryRun: true, NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"work", "start", "--repo", "StatPan/gira", "--issue", "126", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"branch": "issue-126-work-command"`) {
+		t.Fatalf("stdout missing branch JSON:\n%s", stdout.String())
+	}
+}
+
+func TestWorkPRApplyDraftJSON(t *testing.T) {
+	restore := newWorkPRResult
+	t.Cleanup(func() { newWorkPRResult = restore })
+	newWorkPRResult = func(repo gira.RepoRef, issue int, dryRun bool, draft bool) (gira.WorkPRResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 || dryRun || !draft {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t draft=%t", repo.FullName(), issue, dryRun, draft)
+		}
+		return gira.WorkPRResult{Repo: repo.FullName(), Issue: issue, Draft: true, PRNumber: 204, NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"work", "pr", "--repo", "StatPan/gira", "--issue", "126", "--apply", "--draft", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"draft": true`) {
+		t.Fatalf("stdout missing draft JSON:\n%s", stdout.String())
+	}
+}
+
+func TestWorkStatusJSON(t *testing.T) {
+	restore := newWorkStatusResult
+	t.Cleanup(func() { newWorkStatusResult = restore })
+	newWorkStatusResult = func(repo gira.RepoRef, issue int) (gira.WorkStatusResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 {
+			t.Fatalf("unexpected args repo=%s issue=%d", repo.FullName(), issue)
+		}
+		return gira.WorkStatusResult{Repo: repo.FullName(), Issue: issue, Status: "In progress", Blockers: []string{"draft"}, NextAction: "mark_pr_ready"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"work", "status", "--repo", "StatPan/gira", "--issue", "126", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"next_action": "mark_pr_ready"`) {
+		t.Fatalf("stdout missing next action JSON:\n%s", stdout.String())
+	}
+}
+
 func TestSprintRolloverMissingRepoReturnsTwo(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"sprint", "rollover", "--dry-run"}, &stdout, &stderr)

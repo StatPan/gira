@@ -15,6 +15,9 @@ go run ./cmd/gira sync --repo OWNER/REPO --dry-run
 go run ./cmd/gira sync --repo OWNER/REPO --dry-run --bootstrap-issues  # Gira self-bootstrap only
 go run ./cmd/gira sync --repo OWNER/REPO
 go run ./cmd/gira sync --repo OWNER/REPO --bootstrap-issues            # Gira self-bootstrap only
+go run ./cmd/gira work start --repo OWNER/REPO --issue 12 --dry-run
+go run ./cmd/gira work pr --repo OWNER/REPO --issue 12 --apply --draft
+go run ./cmd/gira work status --repo OWNER/REPO --issue 12 --json
 go run ./cmd/gira status --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO --json
 go run ./cmd/gira onboard verify --repo OWNER/REPO --stage init --json

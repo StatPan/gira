@@ -182,12 +182,12 @@ Status recovery:
 
 ## Issue To PR Loop
 
-1. Start from a ready GitHub issue.
-2. Create a branch named for the issue, for example `feat/issue-12-status-json` or `docs/issue-7-dx-workflow`.
+1. Start from a ready GitHub issue with `gira work start --repo OWNER/REPO --issue N --apply`.
+2. Create or reuse the issue branch; `work start --apply` moves the issue to `status:in-progress`.
 3. Keep the change bounded to the issue body and acceptance criteria.
 4. Run the relevant local verification.
-5. Open a PR using the repo template.
-6. Include `Closes #N`, `Fixes #N`, or `Resolves #N` unless the issue is intentionally kept open.
+5. Open or validate the linked PR with `gira work pr --repo OWNER/REPO --issue N --apply [--draft]`.
+6. Include `Closes #N`, `Fixes #N`, or `Resolves #N`; `work pr` creates PRs with `Closes #N`.
 7. Add a verification comment or test plan note when a reviewer or worker needs exact reproduction commands.
 8. Merge only after review and passing checks.
 

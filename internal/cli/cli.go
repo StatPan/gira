@@ -23,6 +23,7 @@ Commands:
   init        One-command onboarding with prerequisite checks and next-step plan
   bootstrap   Bootstrap a repository into a Gira-managed project workspace
   onboard     Verify onboarding readiness from init to steady-state
+  work        Daily issue lifecycle command
   dev         Issue to branch execution helpers
   sync        Sync Gira labels, milestones, and optionally bootstrap issues through gh
   status      Show a compact read-only GitHub status summary
@@ -278,6 +279,28 @@ Usage:
   gira dev pr status --repo OWNER/REPO --issue N [--json]
 `
 
+const workHelp = `Daily issue lifecycle command.
+
+Usage:
+  gira work start --repo OWNER/REPO --issue N --dry-run|--apply [--json]
+  gira work pr --repo OWNER/REPO --issue N --dry-run|--apply [--draft] [--json]
+  gira work status --repo OWNER/REPO --issue N [--json]
+
+Commands:
+  start   Verify a ready issue, create/reuse its branch, and move to in-progress on apply
+  pr      Validate or create a linked PR with Closes #N and update review status on apply
+  status  Report issue status, linked PR blockers, and next action
+
+Flags:
+  --repo string  Target GitHub repo in OWNER/REPO format
+  --issue int    Issue number
+  --dry-run      Preview without mutation
+  --apply        Apply branch, PR, and status label changes
+  --draft        Create/keep PR as draft for work pr
+  --json         Emit stable JSON output
+  -h, --help     Show help
+`
+
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
 	return gira.NewGHStatusClient(repo, gira.ExecCommandRunner{})
 }
@@ -378,6 +401,18 @@ var newTriageReport = func(repo gira.RepoRef, apply bool) (gira.TriageNormalizeR
 
 var devCommandRunner gira.CommandRunner = gira.ExecCommandRunner{}
 
+var newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+	return gira.StartWork(repo, issue, dryRun, devCommandRunner)
+}
+
+var newWorkPRResult = func(repo gira.RepoRef, issue int, dryRun bool, draft bool) (gira.WorkPRResult, error) {
+	return gira.OpenWorkPR(repo, issue, dryRun, draft, devCommandRunner)
+}
+
+var newWorkStatusResult = func(repo gira.RepoRef, issue int) (gira.WorkStatusResult, error) {
+	return gira.GetWorkStatus(repo, issue, devCommandRunner)
+}
+
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(stdout, rootHelp)
@@ -391,6 +426,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runBootstrap(args[1:], stdout, stderr)
 	case "onboard":
 		return runOnboard(args[1:], stdout, stderr)
+	case "work":
+		return runWork(args[1:], stdout, stderr)
 	case "dev":
 		return runDev(args[1:], stdout, stderr)
 	case "sync":
@@ -674,6 +711,164 @@ func runDevPR(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, devHelp)
 		return 2
 	}
+}
+
+func runWork(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		_, _ = io.WriteString(stdout, workHelp)
+		return 0
+	}
+	switch args[0] {
+	case "start":
+		return runWorkStart(args[1:], stdout, stderr)
+	case "pr":
+		return runWorkPR(args[1:], stdout, stderr)
+	case "status":
+		return runWorkStatus(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown work command: %s\n\n", args[0])
+		_, _ = io.WriteString(stderr, workHelp)
+		return 2
+	}
+}
+
+func runWorkStart(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("work start", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	issue := fs.Int("issue", 0, "Issue number")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply changes")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, workHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, workHelp)
+		return 0
+	}
+	repo, ok := parseWorkRequiredFlags(*repoValue, *issue, *dryRun, *apply, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, workHelp)
+		return 2
+	}
+	result, err := newWorkStartResult(repo, *issue, *dryRun)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatWorkStart(result))
+	return 0
+}
+
+func runWorkPR(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("work pr", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	issue := fs.Int("issue", 0, "Issue number")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply changes")
+	draft := fs.Bool("draft", false, "Create/keep PR as draft")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, workHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, workHelp)
+		return 0
+	}
+	repo, ok := parseWorkRequiredFlags(*repoValue, *issue, *dryRun, *apply, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, workHelp)
+		return 2
+	}
+	result, err := newWorkPRResult(repo, *issue, *dryRun, *draft)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatWorkPR(result))
+	return 0
+}
+
+func runWorkStatus(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("work status", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	issue := fs.Int("issue", 0, "Issue number")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, workHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, workHelp)
+		return 0
+	}
+	if *repoValue == "" || *issue <= 0 {
+		fmt.Fprint(stderr, "--repo and --issue are required\n\n")
+		_, _ = io.WriteString(stderr, workHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	result, err := newWorkStatusResult(repo, *issue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatWorkStatus(result))
+	return 0
+}
+
+func parseWorkRequiredFlags(repoValue string, issue int, dryRun bool, apply bool, stderr io.Writer) (gira.RepoRef, bool) {
+	if repoValue == "" || issue <= 0 || dryRun == apply {
+		fmt.Fprint(stderr, "--repo, --issue, and exactly one of --dry-run/--apply are required\n\n")
+		return gira.RepoRef{}, false
+	}
+	repo, err := gira.ParseRepoRef(repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return gira.RepoRef{}, false
+	}
+	return repo, true
 }
 
 func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {

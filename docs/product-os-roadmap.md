@@ -135,7 +135,7 @@ The next Jira gap is the project-agnostic backlog layer. Gira's first portfolio 
 
 The next implementation slice is portfolio lowering. It should land in this order:
 
-1. capability checks for portfolio and execution repo issue access
+1. `gira portfolio capability` checks for portfolio and execution repo issue access
 2. `gira portfolio lower --dry-run` using the same action model as `portfolio plan`
 3. `gira portfolio lower --apply` for idempotent execution issue creation and parent child-link updates
 4. portfolio ticket templates and post-lowering validation UX

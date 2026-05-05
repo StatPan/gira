@@ -42,6 +42,74 @@ func TestPortfolioPlanRequiresDryRun(t *testing.T) {
 	}
 }
 
+func TestPortfolioCapabilityJSON(t *testing.T) {
+	restore := newPortfolioCapabilityReport
+	t.Cleanup(func() { newPortfolioCapabilityReport = restore })
+	newPortfolioCapabilityReport = func(configPath string) (gira.PortfolioCapabilityReport, error) {
+		if configPath != "testdata/portfolio.yaml" {
+			t.Fatalf("unexpected config path: %s", configPath)
+		}
+		return gira.PortfolioCapabilityReport{
+			Command:       "portfolio capability",
+			PortfolioRepo: "StatPan/portfolio",
+			Token:         gira.ProjectCapabilityTokenSummary{Kind: "pat", Identity: "alice"},
+			Repos: []gira.PortfolioRepoCapability{{
+				Repo: "StatPan/gira",
+				Role: "execution",
+				Mode: "write",
+				Capabilities: map[string]gira.ProjectCapabilityStatus{
+					"issues:read":  gira.ProjectCapabilityAllowed,
+					"issues:write": gira.ProjectCapabilityAllowed,
+				},
+			}},
+			FetchedAt: "2026-05-05T12:00:00Z",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"portfolio", "capability", "--config", "testdata/portfolio.yaml", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "portfolio capability"`, `"portfolio_repo": "StatPan/portfolio"`, `"issues:write": "allowed"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("portfolio capability JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestPortfolioCapabilityBlockedExitOne(t *testing.T) {
+	restore := newPortfolioCapabilityReport
+	t.Cleanup(func() { newPortfolioCapabilityReport = restore })
+	newPortfolioCapabilityReport = func(configPath string) (gira.PortfolioCapabilityReport, error) {
+		return gira.PortfolioCapabilityReport{
+			Command:       "portfolio capability",
+			PortfolioRepo: "StatPan/portfolio",
+			Token:         gira.ProjectCapabilityTokenSummary{Kind: "pat", Identity: "alice"},
+			Repos: []gira.PortfolioRepoCapability{{
+				Repo: "StatPan/gira",
+				Role: "execution",
+				Mode: "read-only",
+				Capabilities: map[string]gira.ProjectCapabilityStatus{
+					"issues:read":  gira.ProjectCapabilityAllowed,
+					"issues:write": gira.ProjectCapabilityDeniedScope,
+				},
+			}},
+			BlockedActions: []gira.PortfolioCapabilityBlock{{CheckID: "execution:StatPan/gira:issues:write", Repo: "StatPan/gira", Role: "execution", Required: "issues:write", Reason: "token scope or repository permission is insufficient"}},
+			FetchedAt:      "2026-05-05T12:00:00Z",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"portfolio", "capability"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "blocked actions") {
+		t.Fatalf("stdout missing blocked actions:\n%s", stdout.String())
+	}
+}
+
 func TestPortfolioPlanJSON(t *testing.T) {
 	restore := newPortfolioReport
 	t.Cleanup(func() { newPortfolioReport = restore })
@@ -71,6 +139,31 @@ func TestPortfolioPlanJSON(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "next step:") {
 		t.Fatalf("portfolio JSON contains human prose:\n%s", stdout.String())
+	}
+}
+
+func TestPortfolioPlanPermissionBlocksExitOne(t *testing.T) {
+	restore := newPortfolioReport
+	t.Cleanup(func() { newPortfolioReport = restore })
+	newPortfolioReport = func(command string, configPath string, dryRun bool) (gira.PortfolioReport, error) {
+		return gira.PortfolioReport{
+			Command:          "portfolio plan",
+			PortfolioRepo:    "StatPan/portfolio",
+			Repos:            []string{"StatPan/gira"},
+			DryRun:           true,
+			Counts:           gira.PortfolioCounts{Tickets: 1, OpenTickets: 1, Actions: 1},
+			Actions:          []gira.PortfolioPlanAction{{Ticket: 145, Action: "execution_issue:create", Repo: "StatPan/gira", Reason: "no child issue linked for target repo"}},
+			PermissionBlocks: []gira.PortfolioCapabilityBlock{{CheckID: "execution:StatPan/gira:issues:write", Repo: "StatPan/gira", Role: "execution", Required: "issues:write", Reason: "issue write capability cannot be proven non-destructively with this token"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"portfolio", "plan", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"permission_blocks"`) {
+		t.Fatalf("stdout missing permission blocks:\n%s", stdout.String())
 	}
 }
 

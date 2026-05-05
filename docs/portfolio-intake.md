@@ -73,6 +73,7 @@ Optional fields:
 ## Commands
 
 ```bash
+gira portfolio capability --config .gira/config.yaml
 gira portfolio status --config .gira/config.yaml
 gira portfolio validate --config .gira/config.yaml
 gira portfolio plan --dry-run --config .gira/config.yaml
@@ -83,6 +84,7 @@ gira portfolio lower --apply --config .gira/config.yaml
 JSON variants are stable automation surfaces:
 
 ```bash
+gira portfolio capability --config .gira/config.yaml --json
 gira portfolio plan --dry-run --config .gira/config.yaml --json
 gira portfolio lower --dry-run --config .gira/config.yaml --json
 ```
@@ -96,6 +98,8 @@ Plan actions:
 - `execution_issue:link_existing`: linked child issues already exist and should be reused.
 - `execution_issue:ambiguous_existing`: multiple matching execution issues exist for the same parent/target pair.
 - `portfolio_ticket:update_child_issues`: a future apply command would append missing child issue links to the parent portfolio ticket.
+
+`gira portfolio plan --dry-run --json` includes the same capability summary used by `gira portfolio capability` plus `permission_blocks` for planned actions that cannot safely apply with the active credential.
 
 ## Lowering Contract
 

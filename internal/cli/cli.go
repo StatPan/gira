@@ -169,11 +169,13 @@ Flags:
 const portfolioHelp = `Plan top-level portfolio intake lowering from a portfolio repo.
 
 Usage:
+  gira portfolio capability [--config .gira/config.yaml] [--json]
   gira portfolio status [--config .gira/config.yaml] [--json]
   gira portfolio validate [--config .gira/config.yaml] [--json]
   gira portfolio plan --dry-run [--config .gira/config.yaml] [--json]
 
 Commands:
+  capability  Probe repo issue permissions required for future lowering
   status    Summarize portfolio tickets and configured execution repos
   validate  Validate top-level ticket schema, routing, and links
   plan      Compute read-only lowering actions for top-level tickets
@@ -400,10 +402,28 @@ var newPortfolioReport = func(command string, configPath string, dryRun bool) (g
 		if !dryRun {
 			return gira.PortfolioReport{}, fmt.Errorf("--dry-run is required for portfolio plan")
 		}
-		return gira.BuildPortfolioPlanReport(client, resolved.Repos, time.Now())
+		report, err := gira.BuildPortfolioPlanReport(client, resolved.Repos, time.Now())
+		if err != nil {
+			return gira.PortfolioReport{}, err
+		}
+		capability, err := gira.BuildPortfolioCapabilityReport(resolved.PortfolioRepo, resolved.Repos, gira.ExecCommandRunner{}, time.Now())
+		if err != nil {
+			return gira.PortfolioReport{}, err
+		}
+		report.Capability = &capability
+		report.PermissionBlocks = gira.PortfolioCapabilityBlocksForActions(capability, report.Actions)
+		return report, nil
 	default:
 		return gira.PortfolioReport{}, fmt.Errorf("unknown portfolio command: %s", command)
 	}
+}
+
+var newPortfolioCapabilityReport = func(configPath string) (gira.PortfolioCapabilityReport, error) {
+	resolved, err := gira.ResolvePortfolioConfig(configPath)
+	if err != nil {
+		return gira.PortfolioCapabilityReport{}, err
+	}
+	return gira.BuildPortfolioCapabilityReport(resolved.PortfolioRepo, resolved.Repos, gira.ExecCommandRunner{}, time.Now())
 }
 
 var newGraphClient = func(repo gira.RepoRef) gira.GraphClient {
@@ -1156,6 +1176,8 @@ func runPortfolio(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	switch args[0] {
+	case "capability":
+		return runPortfolioCapability(args[1:], stdout, stderr)
 	case "status", "validate", "plan":
 		return runPortfolioCommand(args[0], args[1:], stdout, stderr)
 	default:
@@ -1212,10 +1234,61 @@ func runPortfolioCommand(command string, args []string, stdout io.Writer, stderr
 		if len(report.Diagnostics) > 0 {
 			return 1
 		}
+		if len(report.PermissionBlocks) > 0 {
+			return 1
+		}
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatPortfolioReport(report))
 	if len(report.Diagnostics) > 0 {
+		return 1
+	}
+	if len(report.PermissionBlocks) > 0 {
+		return 1
+	}
+	return 0
+}
+
+func runPortfolioCapability(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("portfolio capability", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Portfolio config path")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, portfolioHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, portfolioHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, portfolioHelp)
+		return 2
+	}
+	report, err := newPortfolioCapabilityReport(*configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode portfolio capability JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		if len(report.BlockedActions) > 0 {
+			return 1
+		}
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatPortfolioCapabilityReport(report))
+	if len(report.BlockedActions) > 0 {
 		return 1
 	}
 	return 0

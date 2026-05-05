@@ -118,6 +118,25 @@ func TestApplyPortfolioLowerActionsSkipsPermissionBlockedCreate(t *testing.T) {
 	}
 }
 
+func TestApplyPortfolioLowerActionsSkipsCreateWhenParentUpdateBlocked(t *testing.T) {
+	client := &fakePortfolioLowerClient{}
+	tickets, _ := ParsePortfolioTickets([]PortfolioRawTicket{
+		{Number: 31, Title: "Create", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "")},
+	}, []RepoRef{mustRepoRefForPortfolio("StatPan/gira")})
+	actions := []PortfolioLowerAction{
+		{Ticket: 31, Action: "execution_issue:create", Repo: "StatPan/gira"},
+		{Ticket: 31, Action: "portfolio_ticket:update_child_issues", Repo: "StatPan/gira"},
+	}
+
+	applied, err := ApplyPortfolioLowerActions(actions, tickets, mustRepoRefForPortfolio("StatPan/portfolio"), client, []PortfolioCapabilityBlock{{Repo: "StatPan/portfolio", Required: "issues:write"}})
+	if err != nil {
+		t.Fatalf("ApplyPortfolioLowerActions error: %v", err)
+	}
+	if len(client.created) != 0 || applied[0].Applied || applied[1].Applied {
+		t.Fatalf("created=%+v applied=%+v, want create skipped when parent update is blocked", client.created, applied)
+	}
+}
+
 func TestPortfolioLowerCapabilityBlocks(t *testing.T) {
 	report := PortfolioCapabilityReport{
 		PortfolioRepo: "StatPan/portfolio",
@@ -181,6 +200,17 @@ func TestAppendPortfolioChildIssuesUpdatesNormalizedHeadingAndPreservesOrder(t *
 	}
 	if !strings.Contains(updated, "StatPan/zeta#9\nStatPan/alpha#1\nStatPan/docs#2") {
 		t.Fatalf("updated body did not preserve append order:\n%s", updated)
+	}
+}
+
+func TestAppendPortfolioChildIssuesUpdatesEmptyHeading(t *testing.T) {
+	body := "## Goal\nG\n\n### Child Issues\n\n## Non Goals\nN\n"
+	updated := appendPortfolioChildIssues(body, []string{"StatPan/docs#2"})
+	if strings.Count(updated, "Child Issues") != 1 {
+		t.Fatalf("updated body duplicated child heading:\n%s", updated)
+	}
+	if !strings.Contains(updated, "### Child Issues\n\nStatPan/docs#2\n## Non Goals") {
+		t.Fatalf("updated body did not fill empty child section:\n%s", updated)
 	}
 }
 

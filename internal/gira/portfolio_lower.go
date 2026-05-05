@@ -168,12 +168,27 @@ func ApplyPortfolioLowerActions(actions []PortfolioLowerAction, tickets []Portfo
 	}
 	created := map[string]PortfolioLoweredIssue{}
 	out := append([]PortfolioLowerAction(nil), actions...)
+	parentWriteBlocked := false
+	if _, ok := blocked[portfolioRepo.FullName()+":issues:write"]; ok {
+		parentWriteBlocked = true
+	}
+	createNeedsParentUpdate := map[string]struct{}{}
+	for _, action := range out {
+		if action.Action == "portfolio_ticket:update_child_issues" {
+			createNeedsParentUpdate[actionKey(action)] = struct{}{}
+		}
+	}
 	for i, action := range out {
 		if action.Action != "execution_issue:create" {
 			continue
 		}
 		if _, ok := blocked[action.Repo+":issues:write"]; ok {
 			continue
+		}
+		if parentWriteBlocked {
+			if _, ok := createNeedsParentUpdate[actionKey(action)]; ok {
+				continue
+			}
 		}
 		repo, err := ParseRepoRef(action.Repo)
 		if err != nil {
@@ -345,19 +360,17 @@ func appendPortfolioChildIssues(body string, childIssues []string) string {
 		}
 	}
 	base := body
-	if strings.TrimSpace(existing) != "" {
-		ranges := portfolioHeadingRe.FindAllStringSubmatchIndex(body, -1)
-		for i, match := range ranges {
-			name := normalizePortfolioFieldName(body[match[2]:match[3]])
-			if name != "child_issues" {
-				continue
-			}
-			end := len(body)
-			if i+1 < len(ranges) {
-				end = ranges[i+1][0]
-			}
-			return body[:match[1]] + "\n" + strings.Join(lines, "\n") + "\n" + body[end:]
+	ranges := portfolioHeadingRe.FindAllStringSubmatchIndex(body, -1)
+	for i, match := range ranges {
+		name := normalizePortfolioFieldName(body[match[2]:match[3]])
+		if name != "child_issues" {
+			continue
 		}
+		end := len(body)
+		if i+1 < len(ranges) {
+			end = ranges[i+1][0]
+		}
+		return body[:match[1]] + "\n" + strings.Join(lines, "\n") + "\n" + body[end:]
 	}
 	return strings.TrimRight(base, "\n") + "\n\n## Child Issues\n" + strings.Join(lines, "\n") + "\n"
 }

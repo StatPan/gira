@@ -1190,7 +1190,8 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	dryRun := fs.Bool("dry-run", false, "Plan sync without creating or updating GitHub metadata")
 	bootstrapIssues := fs.Bool("bootstrap-issues", false, "Enable creation of default Gira bootstrap issues")
-	policyModeValue := fs.String("policy-mode", strings.TrimSpace(os.Getenv("GIRA_SYNC_POLICY_MODE")), "Metadata policy mode (adopt|merge|enforce)")
+	envPolicyMode := strings.TrimSpace(os.Getenv("GIRA_SYNC_POLICY_MODE"))
+	policyModeValue := fs.String("policy-mode", envPolicyMode, "Metadata policy mode (adopt|merge|enforce)")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
 
@@ -1208,6 +1209,12 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, syncHelp)
 		return 2
 	}
+	pinPolicyMode := envPolicyMode != ""
+	fs.Visit(func(flag *flag.Flag) {
+		if flag.Name == "policy-mode" {
+			pinPolicyMode = true
+		}
+	})
 	if *repoValue == "" {
 		fmt.Fprint(stderr, "--repo is required\n\n")
 		fmt.Fprint(stderr, syncHelp)
@@ -1244,13 +1251,13 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stdout, "sync complete")
 	}
-	fmt.Fprintln(stdout, syncNextStep(repo, *dryRun, *bootstrapIssues, mode))
+	fmt.Fprintln(stdout, syncNextStep(repo, *dryRun, *bootstrapIssues, mode, pinPolicyMode))
 	return 0
 }
 
-func syncNextStep(repo gira.RepoRef, dryRun bool, bootstrapIssues bool, mode gira.SyncPolicyMode) string {
+func syncNextStep(repo gira.RepoRef, dryRun bool, bootstrapIssues bool, mode gira.SyncPolicyMode, pinPolicyMode bool) string {
 	command := "gira sync --repo " + repo.FullName()
-	if mode != "" && mode != gira.SyncPolicyMerge {
+	if mode != "" && (pinPolicyMode || mode != gira.SyncPolicyMerge) {
 		command += " --policy-mode " + string(mode)
 	}
 	if bootstrapIssues {

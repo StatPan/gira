@@ -221,7 +221,7 @@ From a fresh shell, make sure the install directory is on `PATH`, then run Gira 
 ```bash
 gira --help
 gira sync --repo OWNER/REPO --dry-run
-gira onboard verify --repo OWNER/REPO --stage steady-state --json
+gira onboard verify --repo OWNER/REPO --stage steady-state
 gira status --repo OWNER/REPO
 gira start --repo OWNER/REPO --issue 12 --dry-run
 gira work pr --repo OWNER/REPO --issue 12 --dry-run

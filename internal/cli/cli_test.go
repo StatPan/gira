@@ -114,7 +114,7 @@ func TestStartAliasHelpMentionsAlias(t *testing.T) {
 
 func TestSyncNextStepKeepsPolicyAndBootstrapFlags(t *testing.T) {
 	repo := gira.RepoRef{Owner: "StatPan", Name: "gira"}
-	got := syncNextStep(repo, true, true, gira.SyncPolicyAdopt)
+	got := syncNextStep(repo, true, true, gira.SyncPolicyAdopt, false)
 	want := "next step: gira sync --repo StatPan/gira --policy-mode adopt --bootstrap-issues"
 	if got != want {
 		t.Fatalf("syncNextStep = %q, want %q", got, want)
@@ -575,6 +575,37 @@ func TestSyncPolicyModeAdoptApplyPerformsNoMutations(t *testing.T) {
 	}
 	if len(client.calls) != 0 {
 		t.Fatalf("adopt mode should not mutate, calls=%v", client.calls)
+	}
+}
+
+func TestSyncDryRunNextStepPinsExplicitMergeWhenEnvEnforce(t *testing.T) {
+	t.Setenv("GIRA_SYNC_POLICY_MODE", "enforce")
+	restoreClient := newSyncClient
+	t.Cleanup(func() {
+		newSyncClient = restoreClient
+	})
+	client := &cliFakeSyncClient{repo: mustCLIRepo(t, "StatPan/gira")}
+	newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
+		client.repo = repo
+		return client
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"sync", "--repo", "StatPan/gira", "--dry-run", "--policy-mode", "merge"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "policy mode:      merge") {
+		t.Fatalf("sync output missing reviewed merge policy mode:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "next step: gira sync --repo StatPan/gira --policy-mode merge") {
+		t.Fatalf("next step must pin explicit merge policy mode:\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "next step: gira sync --repo StatPan/gira --policy-mode enforce") {
+		t.Fatalf("next step would apply env enforce policy:\n%s", stdout.String())
+	}
+	if len(client.calls) != 0 {
+		t.Fatalf("dry-run applied calls: %v", client.calls)
 	}
 }
 

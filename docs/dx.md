@@ -13,38 +13,38 @@ Gira should make a GitHub repository feel like a small, explicit project operati
 
 ## First 10 Minutes
 
-The first ten minutes after `gira bootstrap` should answer four questions: what changed, what is safe to rerun, what should I do next, and what can an AI worker consume.
+The first ten minutes after `gira ops bootstrap` should answer four questions: what changed, what is safe to rerun, what should I do next, and what can an AI worker consume.
 
 1. Preview the repo template:
 
    ```bash
-   gira bootstrap --repo OWNER/REPO --template default --dry-run
+   gira ops bootstrap --repo OWNER/REPO --template default --dry-run
    ```
 
 2. Install project files into a local git repo on a bootstrap branch:
 
    ```bash
-   gira bootstrap --repo OWNER/REPO --template default --path .
+   gira ops bootstrap --repo OWNER/REPO --template default --path .
    git status --short
    ```
 
 3. Preview GitHub metadata sync (bootstrap issues are opt-in):
 
    ```bash
-   gira sync --repo OWNER/REPO --dry-run
+   gira ops sync --repo OWNER/REPO --dry-run
    ```
 
 4. Apply labels and milestones after the plan looks right:
 
    ```bash
-   gira sync --repo OWNER/REPO
+   gira ops sync --repo OWNER/REPO
    ```
 
    For Gira self-dogfood bootstrap issues, opt in explicitly:
 
    ```bash
-   gira sync --repo StatPan/gira --dry-run --bootstrap-issues
-   gira sync --repo StatPan/gira --bootstrap-issues
+   gira ops sync --repo StatPan/gira --dry-run --bootstrap-issues
+   gira ops sync --repo StatPan/gira --bootstrap-issues
    ```
 
 5. Inspect the project state:
@@ -59,11 +59,11 @@ The first ten minutes after `gira bootstrap` should answer four questions: what 
 
    ```bash
    # from the target checkout, or any directory with .gira/config.yaml repo set
-   gira onboard verify --stage init --json
-   gira onboard verify --stage steady-state --json
+   gira ops onboard verify --stage init --json
+   gira ops onboard verify --stage steady-state --json
    ```
 
-After bootstrap, the operator should see a short install summary and use `gira sync --repo OWNER/REPO --dry-run` as the next-step hint. After sync, the operator should use `gira status` from a checkout with a GitHub `origin` remote, or from a directory with `.gira/config.yaml` containing `repo: OWNER/REPO`, to pick the next ready issue. `gira onboard verify` should provide the explicit go/no-go verdict and remediation checklist before the team treats the repo as daily-operable. Pass `--repo OWNER/REPO` when scripting or operating outside the target checkout/config directory.
+After bootstrap, the operator should see a short install summary and use `gira ops sync --repo OWNER/REPO --dry-run` as the next-step hint. After sync, the operator should use `gira status` from a checkout with a GitHub `origin` remote, or from a directory with `.gira/config.yaml` containing `repo: OWNER/REPO`, to pick the next ready ticket. `gira ops onboard verify` should provide the explicit go/no-go verdict and remediation checklist before the team treats the repo as daily-operable. Pass `--repo OWNER/REPO` when scripting or operating outside the target checkout/config directory.
 
 ## Command Taxonomy
 
@@ -85,14 +85,14 @@ Current scope:
 
 ```bash
 go run ./cmd/gira --help
-go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
-go run ./cmd/gira bootstrap --repo OWNER/REPO --path /path/to/repo
-go run ./cmd/gira sync --repo OWNER/REPO --dry-run
-go run ./cmd/gira sync --repo OWNER/REPO
+go run ./cmd/gira ops bootstrap --repo OWNER/REPO --template default --dry-run
+go run ./cmd/gira ops bootstrap --repo OWNER/REPO --path /path/to/repo
+go run ./cmd/gira ops sync --repo OWNER/REPO --dry-run
+go run ./cmd/gira ops sync --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO --json
-go run ./cmd/gira onboard verify --repo OWNER/REPO --stage init --json
-go run ./cmd/gira onboard verify --repo OWNER/REPO --stage steady-state --json
+go run ./cmd/gira ops onboard verify --repo OWNER/REPO --stage init --json
+go run ./cmd/gira ops onboard verify --repo OWNER/REPO --stage steady-state --json
 ```
 
 The official release install path is `install.sh`:
@@ -112,17 +112,18 @@ Canonical daily operator path (fresh shell, outside source checkout):
 ```bash
 export PATH="${HOME}/.local/bin:$PATH"
 gira --help
-gira doctor --repo OWNER/REPO
-gira bootstrap --repo OWNER/REPO --template default --dry-run
-gira sync --repo OWNER/REPO --dry-run
+gira version
+gira ops doctor --repo OWNER/REPO
+gira ops bootstrap --repo OWNER/REPO --template default --dry-run
+gira ops sync --repo OWNER/REPO --dry-run
 gira status --repo OWNER/REPO --json
 ```
 
 The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. Private repository installs need Go private module access, such as `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication. The bootstrap path embeds the default template so output and local installs are independent of the caller's working directory. `sync` shells out through `gh` to create or update only Gira-managed labels, milestones, and bootstrap issues. `status` is read-only and shells out through `gh api` with stable JSON for worker automation.
 
-Package-manager wrappers such as `uv`, npm, bun, or Homebrew may be used as distribution channels when they install or invoke the Go-built `gira` release binary. They should not introduce a second product runtime.
+Package-manager wrappers such as npm, bun, or Homebrew may be used as distribution channels when they install or invoke the Go-built `gira` release binary. They should not introduce a second product runtime. `uv` and apt/deb packaging remain future channels.
 
-Tagged Go releases are built by `.github/workflows/release.yml`. Maintainers publish one by tagging `main` with a `v*` tag and pushing the tag; the workflow checks the installer syntax, runs Go tests, builds Linux/macOS/Windows archives, generates `checksums.txt`, verifies it, and attaches the assets to the GitHub release.
+Tagged Go releases are built by `.github/workflows/release.yml`. Maintainers publish one by tagging `main` with a `v*` tag and pushing the tag; the workflow checks the installer syntax, runs Go tests and npm wrapper tests, builds Linux/macOS/Windows archives with version metadata, generates `checksums.txt`, verifies it, attaches the assets to the GitHub release, and publishes configured npm/Homebrew channels.
 
 ## Output Conventions
 
@@ -183,7 +184,7 @@ Sync recovery:
 - Create or update known labels and milestones by name/title.
 - Deduplicate bootstrap issues by title plus `gira:bootstrap`.
 - Never delete extra labels, milestones, or issues in MVP.
-- If `gh` fails midway, fix authentication, permissions, or the remote conflict, then rerun `gira sync --repo OWNER/REPO --dry-run` before applying again.
+- If `gh` fails midway, fix authentication, permissions, or the remote conflict, then rerun `gira ops sync --repo OWNER/REPO --dry-run` before applying again.
 
 Status recovery:
 
@@ -192,12 +193,12 @@ Status recovery:
 
 ## Issue To PR Loop
 
-1. Start from a ready GitHub issue with `gira work start --repo OWNER/REPO --issue N --apply`.
-2. Create or reuse the issue branch; `work start --apply` moves the issue to `status:in-progress`.
+1. Start from a ready ticket with `gira ticket start --repo OWNER/REPO --ticket N --apply`.
+2. Create or reuse the issue branch; `ticket start --apply` moves the issue to `status:in-progress`.
 3. Keep the change bounded to the issue body and acceptance criteria.
 4. Run the relevant local verification.
-5. Open or validate the linked PR with `gira work pr --repo OWNER/REPO --issue N --apply [--draft]`.
-6. Include `Closes #N`, `Fixes #N`, or `Resolves #N`; `work pr` creates PRs with `Closes #N`.
+5. Open or validate the linked PR with `gira ticket pr --repo OWNER/REPO --ticket N --apply [--draft]`.
+6. Include `Closes #N`, `Fixes #N`, or `Resolves #N`; `ticket pr` creates PRs with `Closes #N`.
 7. Add a verification comment or test plan note when a reviewer or worker needs exact reproduction commands.
 8. Merge only after review and passing checks.
 

@@ -1,0 +1,25 @@
+{
+  "name": "@statpan/gira",
+  "version": "0.0.0-dev",
+  "description": "Jira-style project flow on GitHub, distributed as the official Go-built gira binary.",
+  "license": "MIT",
+  "bin": {
+    "gira": "bin/gira.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "vendor/",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "test": "node --test test/*.test.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

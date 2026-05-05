@@ -64,6 +64,7 @@ Verification:
 ```bash
 command -v gira
 gira --help
+gira version
 gira doctor --repo OWNER/REPO
 ```
 
@@ -88,6 +89,7 @@ Use a temporary install directory for smoke tests:
 ```bash
 GOBIN="$(mktemp -d)" go install ./cmd/gira
 "${GOBIN}/gira" --help
+"${GOBIN}/gira" version
 ```
 
 ### GitHub Release Archives
@@ -118,17 +120,28 @@ Verify the archive with the release `checksums.txt` before installing the binary
 
 Package-manager wrappers such as Homebrew, npm, bun, or `uv` are allowed only as distribution channels for the Go-built release binary. They must not reimplement Gira in another runtime, change the command surface, or install unversioned CI artifacts.
 
-No package-manager packages are implemented in this repository yet. Until a wrapper channel exists, use `install.sh` for release installs or `go install` for source/developer workflows.
+The npm/bun wrapper package is maintained under `packages/npm`. Homebrew publishing targets the external `StatPan/homebrew-tap` repository. Both channels install the Go-built release binary and verify release checksums.
 
 Wrapper packages must preserve the same command surface as the native binary:
 
 ```bash
-gira --help
+gira version
 gira ticket start --repo OWNER/REPO --ticket 12 --dry-run
 gira ops bootstrap --repo OWNER/REPO --template default --dry-run
 gira ops sync --repo OWNER/REPO --dry-run
 gira status --repo OWNER/REPO --json
 ```
+
+Official wrapper channels:
+
+```bash
+npm install -g @statpan/gira
+bun install -g @statpan/gira
+brew tap StatPan/tap
+brew install gira
+```
+
+The npm and bun channel installs the same Go-built release binary through the npm registry. The Homebrew channel is published through `StatPan/homebrew-tap`.
 
 apt/deb packaging is a future target, not an initial official channel. It should wait until usage justifies signing keys, repository hosting, architecture matrix maintenance, and upgrade policy support.
 
@@ -143,15 +156,19 @@ curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v0.1.0 sh
 go install github.com/StatPan/gira/cmd/gira@latest
 GOBIN="${HOME}/.local/bin" go install ./cmd/gira
+npm update -g @statpan/gira
+bun install -g @statpan/gira
+brew update && brew upgrade gira
 ```
 
-When Homebrew, npm, bun, or `uv` wrappers become available, upgrade with the same package manager used for installation.
+Upgrade with the same package manager used for installation.
 
 An upgrade replaces only the local `gira` binary or package wrapper. It must not mutate repository files or GitHub metadata. After upgrading, verify the command still resolves from the expected install location:
 
 ```bash
 command -v gira
 gira --help
+gira version
 gira doctor --repo OWNER/REPO
 ```
 
@@ -167,7 +184,7 @@ gira_path="${gira_path:-$(command -v gira)}"
 rm "${gira_path}"
 ```
 
-If you installed to a custom directory, set `GIRA_INSTALL_DIR` to that same directory or remove the path printed by `command -v gira`. When Homebrew, npm, bun, or `uv` wrappers become available, uninstall with the same package manager used for installation.
+If you installed to a custom directory, set `GIRA_INSTALL_DIR` to that same directory or remove the path printed by `command -v gira`. For npm, bun, or Homebrew installs, uninstall with the same package manager used for installation.
 
 Verification:
 
@@ -254,6 +271,7 @@ To smoke-test the binary from outside the source checkout:
 ```bash
 GOBIN="$(mktemp -d)" go install ./cmd/gira
 (cd /tmp && "${GOBIN}/gira" --help)
+(cd /tmp && "${GOBIN}/gira" version)
 (cd /tmp && "${GOBIN}/gira" ops bootstrap --repo OWNER/REPO --template default --dry-run)
 (cd /tmp && "${GOBIN}/gira" ops bootstrap --repo OWNER/REPO --path /path/to/repo --no-branch)
 (cd /tmp && "${GOBIN}/gira" ops sync --repo OWNER/REPO --dry-run)
@@ -263,13 +281,16 @@ GOBIN="$(mktemp -d)" go install ./cmd/gira
 
 ## Release Flow
 
-Tagged Go releases are built by `.github/workflows/release.yml`. The workflow checks `install.sh` syntax, runs `go test ./...`, builds Linux, macOS, and Windows CLI archives, generates `checksums.txt`, verifies the checksum manifest, and publishes those assets to the GitHub release for tags that start with `v`.
+Tagged Go releases are built by `.github/workflows/release.yml`. Pull requests and `main` pushes run validation builds only. Tags that start with `v` publish stable GitHub Release assets, then publish configured package-manager channels.
+
+The workflow checks `install.sh` syntax, runs `go test ./...`, runs npm wrapper tests, builds Linux, macOS, and Windows CLI archives with version metadata, generates `checksums.txt`, verifies the checksum manifest, and publishes those assets to the GitHub release. Published release assets are treated as immutable; rerun with a new patch tag instead of replacing an existing release. If `NPM_TOKEN` is configured, it publishes `@statpan/gira`. If `HOMEBREW_TAP_TOKEN` is configured, it updates `StatPan/homebrew-tap`.
 
 Maintainer flow:
 
 ```bash
 git checkout main
 git pull --ff-only origin main
+$EDITOR CHANGELOG.md
 git tag v0.1.0
 git push origin v0.1.0
 ```
@@ -291,9 +312,10 @@ After publishing, smoke-test the official installer against the tag:
 tmpdir="$(mktemp -d)"
 GIRA_INSTALL_DIR="${tmpdir}" GIRA_VERSION=v0.1.0 sh install.sh
 "${tmpdir}/gira" --help
+"${tmpdir}/gira" version
 ```
 
-Developer experience conventions for first-run onboarding, dry-run/apply output, JSON, recovery, and the issue-to-PR loop are documented in [docs/dx.md](docs/dx.md).
+The release policy and package-manager channel details are documented in [docs/release-distribution.md](docs/release-distribution.md). Developer experience conventions for first-run onboarding, dry-run/apply output, JSON, recovery, and the issue-to-PR loop are documented in [docs/dx.md](docs/dx.md).
 
 The GitHub-native Product OS schema for future Projects v2 planning, roadmap date semantics, permission/secret model, and dry-run-first automation is documented in [docs/product-os-schema.md](docs/product-os-schema.md). The execution roadmap for that phase is tracked in [docs/product-os-roadmap.md](docs/product-os-roadmap.md). The Jira-vs-Gira operating boundary, work decomposition contract, and assistant/dev-agent split are documented in [docs/jira-gira-operating-boundary.md](docs/jira-gira-operating-boundary.md). The portfolio intake layer for top-level tickets and multi-repo lowering plans is documented in [docs/portfolio-intake.md](docs/portfolio-intake.md). The vendor-neutral dashboard/export boundary for Notion and other consumers is documented in [docs/dashboard-consumer-contract.md](docs/dashboard-consumer-contract.md), and the first concrete export bundle layout is documented in [docs/dashboard-export-artifacts.md](docs/dashboard-export-artifacts.md). The MVP CRUD support contract is documented in [docs/crud-capability-matrix.md](docs/crud-capability-matrix.md). Adoption on pre-configured repositories is documented in [docs/adoption-migration-playbook.md](docs/adoption-migration-playbook.md).
 

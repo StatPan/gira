@@ -61,6 +61,9 @@ func TestFormatStatusTextIsCompact(t *testing.T) {
 			t.Fatalf("status text missing %q:\n%s", want, text)
 		}
 	}
+	if !strings.HasSuffix(text, "next step: gira work status --repo StatPan/gira --issue 6\n") {
+		t.Fatalf("status text missing final next step:\n%s", text)
+	}
 	if lines := strings.Count(strings.TrimSpace(text), "\n") + 1; lines > 14 {
 		t.Fatalf("status text has %d lines, want <= 14:\n%s", lines, text)
 	}

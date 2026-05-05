@@ -129,7 +129,23 @@ func FormatDoctorReport(report DoctorReport) string {
 			fmt.Fprintf(&b, "  remediation: %s\n", check.Remediation)
 		}
 	}
+	fmt.Fprintf(&b, "next step: %s\n", doctorNextStep(report))
 	return b.String()
+}
+
+func doctorNextStep(report DoctorReport) string {
+	if report.Ready {
+		if strings.TrimSpace(report.Repo) != "" {
+			return "gira status --repo " + report.Repo
+		}
+		return "gira status"
+	}
+	for _, check := range report.Checks {
+		if check.Status == DoctorCheckFail && strings.TrimSpace(check.Remediation) != "" {
+			return fmt.Sprintf("fix %s: %s", check.ID, check.Remediation)
+		}
+	}
+	return "fix failed checks and rerun `gira doctor`"
 }
 
 func resolveDoctorRepo(repoValue string, runner CommandRunner, ghOK bool) (RepoRef, DoctorCheck) {

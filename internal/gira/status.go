@@ -469,7 +469,21 @@ func FormatStatusText(summary StatusSummary) string {
 	writeIssueSection(&builder, "stale open issues", summary.Issues.StaleOpen, 0)
 	writeIssueSection(&builder, "blocked issues", summary.Issues.BlockedOpen, 0)
 	writeIssueSection(&builder, "open issues", summary.Issues.Open, 8)
+	fmt.Fprintf(&builder, "next step: %s\n", statusNextStep(summary))
 	return builder.String()
+}
+
+func statusNextStep(summary StatusSummary) string {
+	if len(summary.Issues.BlockedOpen) > 0 {
+		return fmt.Sprintf("gira work status --repo %s --issue %d", summary.Repo, summary.Issues.BlockedOpen[0].Number)
+	}
+	if len(summary.Issues.StaleOpen) > 0 {
+		return fmt.Sprintf("gira work status --repo %s --issue %d", summary.Repo, summary.Issues.StaleOpen[0].Number)
+	}
+	if len(summary.Issues.Open) > 0 {
+		return fmt.Sprintf("gira work start --repo %s --issue %d --dry-run", summary.Repo, summary.Issues.Open[0].Number)
+	}
+	return "gira sync --repo " + summary.Repo + " --dry-run"
 }
 
 func flattenPages(value json.RawMessage) ([]json.RawMessage, error) {

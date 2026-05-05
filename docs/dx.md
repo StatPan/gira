@@ -120,6 +120,7 @@ Tagged Go releases are built by `.github/workflows/release.yml`. Maintainers pub
 ## Output Conventions
 
 Human output should be short, sectioned, and deterministic enough to compare between runs. Counts should come first; details should only list changed or attention-worthy items.
+When a safe continuation is known, human output should end with one concise `next step:` line. JSON output must not include prose-only hints.
 
 Dry-run output uses future-tense language:
 

@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -36,6 +37,10 @@ func TestBuildReviewQueueDeterministicOrderAndStale(t *testing.T) {
 	}
 	if !report.Items[0].StaleReview {
 		t.Fatalf("expected stale review for PR 10")
+	}
+	text := FormatReviewQueueText(report)
+	if !strings.HasSuffix(text, "next step: review PR #10\n") {
+		t.Fatalf("review queue text missing final next step:\n%s", text)
 	}
 }
 

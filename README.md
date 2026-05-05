@@ -214,20 +214,36 @@ gira sync --repo OWNER/REPO --dry-run
 
 `status` should make clear that the repository is not fully Gira-managed. `sync --dry-run` should show what would be recreated if the repository is adopted again.
 
-## Use it today (daily CLI path)
+## Daily Happy Path
 
 From a fresh shell, make sure the install directory is on `PATH`, then run Gira directly (no source checkout):
 
 ```bash
 gira --help
-gira bootstrap --repo OWNER/REPO --template default --dry-run
 gira sync --repo OWNER/REPO --dry-run
-gira onboard verify --repo OWNER/REPO --stage init --json
 gira onboard verify --repo OWNER/REPO --stage steady-state --json
-gira status --repo OWNER/REPO --json
+gira status --repo OWNER/REPO
+gira start --repo OWNER/REPO --issue 12 --dry-run
+gira work pr --repo OWNER/REPO --issue 12 --dry-run
 ```
 
 This is the canonical operator path for daily use.
+
+Use `--json` for automation only; human output ends with a concise `next step:` line where Gira can suggest a safe continuation.
+
+## Advanced Adoption And Migration
+
+Use the bootstrap and policy-mode commands when introducing Gira to a new or already-configured repository:
+
+```bash
+gira bootstrap --repo OWNER/REPO --template default --dry-run
+gira bootstrap --repo OWNER/REPO --path /path/to/repo
+gira sync --repo OWNER/REPO --dry-run --policy-mode adopt
+gira sync --repo OWNER/REPO --dry-run --policy-mode merge
+gira sync --repo OWNER/REPO --dry-run --policy-mode enforce
+gira onboard verify --repo OWNER/REPO --stage init --json
+gira status --repo OWNER/REPO --json
+```
 
 Package-manager wrappers such as `uv`, npm, bun, or Homebrew may be added as distribution channels when they install or invoke the Go-built `gira` binary. They are not alternate product implementations.
 

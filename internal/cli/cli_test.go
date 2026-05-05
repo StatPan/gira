@@ -71,6 +71,54 @@ func TestWorkStartDryRunJSON(t *testing.T) {
 	if !strings.Contains(stdout.String(), `"branch": "issue-126-work-command"`) {
 		t.Fatalf("stdout missing branch JSON:\n%s", stdout.String())
 	}
+	if strings.Contains(stdout.String(), "next step:") {
+		t.Fatalf("JSON stdout contains human prose:\n%s", stdout.String())
+	}
+}
+
+func TestStartAliasWrapsWorkStart(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 130 || dryRun {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t", repo.FullName(), issue, dryRun)
+		}
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-130-next-step-aliases", NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"start", "--repo", "StatPan/gira", "--issue", "130", "--apply"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"work start: issue #130",
+		"next step: gira work pr --repo StatPan/gira --issue 130 --dry-run",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("start alias output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestStartAliasHelpMentionsAlias(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"start", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Alias: gira start") {
+		t.Fatalf("help output missing start alias:\n%s", stdout.String())
+	}
+}
+
+func TestSyncNextStepKeepsPolicyAndBootstrapFlags(t *testing.T) {
+	repo := gira.RepoRef{Owner: "StatPan", Name: "gira"}
+	got := syncNextStep(repo, true, true, gira.SyncPolicyAdopt)
+	want := "next step: gira sync --repo StatPan/gira --policy-mode adopt --bootstrap-issues"
+	if got != want {
+		t.Fatalf("syncNextStep = %q, want %q", got, want)
+	}
 }
 
 func TestWorkPRApplyDraftJSON(t *testing.T) {

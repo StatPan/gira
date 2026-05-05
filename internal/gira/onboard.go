@@ -142,7 +142,29 @@ func FormatOnboardVerifyReport(report OnboardVerifyReport) string {
 			}
 		}
 	}
+	fmt.Fprintf(&b, "next step: %s\n", onboardNextStep(report))
 	return b.String()
+}
+
+func onboardNextStep(report OnboardVerifyReport) string {
+	if !report.Ready {
+		for _, check := range report.BlockingChecklist {
+			if strings.TrimSpace(check.Remediation) != "" {
+				return check.Remediation
+			}
+		}
+		return "fix blocking checks and rerun `gira onboard verify --repo " + report.Repo + " --stage " + report.Stage + "`"
+	}
+	switch OnboardStage(report.Stage) {
+	case OnboardStageInit:
+		return "gira bootstrap --repo " + report.Repo + " --path ."
+	case OnboardStageBootstrap:
+		return "gira sync --repo " + report.Repo + " --dry-run"
+	case OnboardStageFirstSprint, OnboardStageSteadyState:
+		return "gira status --repo " + report.Repo
+	default:
+		return "gira status --repo " + report.Repo
+	}
 }
 
 func onboardingStagesUpTo(target OnboardStage) []OnboardStage {

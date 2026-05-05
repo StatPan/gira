@@ -149,5 +149,8 @@ func FormatInitReport(report InitReport) string {
 			fmt.Fprintf(&b, "- %s\n", step)
 		}
 	}
+	if strings.TrimSpace(report.NextStep) != "" {
+		fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
+	}
 	return b.String()
 }

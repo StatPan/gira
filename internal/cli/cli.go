@@ -21,6 +21,7 @@ Usage:
 
 Commands:
   init        One-command onboarding with prerequisite checks and next-step plan
+  start       Alias for work start
   bootstrap   Bootstrap a repository into a Gira-managed project workspace
   onboard     Verify onboarding readiness from init to steady-state
   doctor      Diagnose install, auth, repo, drift, and local git readiness
@@ -294,12 +295,13 @@ Usage:
 const workHelp = `Daily issue lifecycle command.
 
 Usage:
+  gira start --repo OWNER/REPO --issue N --dry-run|--apply [--json]
   gira work start --repo OWNER/REPO --issue N --dry-run|--apply [--json]
   gira work pr --repo OWNER/REPO --issue N --dry-run|--apply [--draft] [--json]
   gira work status --repo OWNER/REPO --issue N [--json]
 
 Commands:
-  start   Verify a ready issue, create/reuse its branch, and move to in-progress on apply
+  start   Verify a ready issue, create/reuse its branch, and move to in-progress on apply. Alias: gira start
   pr      Validate or create a linked PR with Closes #N and update review status on apply
   status  Report issue status, linked PR blockers, and next action
 
@@ -439,6 +441,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "init":
 		return runInit(args[1:], stdout, stderr)
+	case "start":
+		return runWorkStart(args[1:], stdout, stderr)
 	case "bootstrap":
 		return runBootstrap(args[1:], stdout, stderr)
 	case "onboard":
@@ -1240,7 +1244,22 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stdout, "sync complete")
 	}
+	fmt.Fprintln(stdout, syncNextStep(repo, *dryRun, *bootstrapIssues, mode))
 	return 0
+}
+
+func syncNextStep(repo gira.RepoRef, dryRun bool, bootstrapIssues bool, mode gira.SyncPolicyMode) string {
+	command := "gira sync --repo " + repo.FullName()
+	if mode != "" && mode != gira.SyncPolicyMerge {
+		command += " --policy-mode " + string(mode)
+	}
+	if bootstrapIssues {
+		command += " --bootstrap-issues"
+	}
+	if dryRun {
+		return "next step: " + command
+	}
+	return "next step: gira status --repo " + repo.FullName()
 }
 
 func runGuardrails(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -2165,7 +2184,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0
 	}
-	fmt.Fprintf(stdout, "%s\n", out)
+	fmt.Fprint(stdout, gira.FormatReviewQueueText(report))
 	return 0
 }
 

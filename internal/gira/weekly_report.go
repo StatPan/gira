@@ -159,11 +159,13 @@ func FormatWeeklyReportMarkdown(report WeeklyReport) string {
 	fmt.Fprintf(&b, "## Top exceptions\n")
 	if len(report.Exceptions) == 0 {
 		b.WriteString("- none\n")
+		fmt.Fprintf(&b, "\nnext step: gira status --repo %s\n", report.Repo)
 		return b.String()
 	}
 	for _, ex := range report.Exceptions {
 		fmt.Fprintf(&b, "- [%s] [%s](%s) owner:%s age:%dd\n", ex.Kind, ex.Title, ex.URL, ex.Owner, ex.Age)
 	}
+	fmt.Fprintf(&b, "\nnext step: gira review queue --repo %s\n", report.Repo)
 	return b.String()
 }
 

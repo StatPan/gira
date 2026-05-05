@@ -22,6 +22,10 @@ func TestBuildDoctorReportReady(t *testing.T) {
 			t.Fatalf("check %s status = %s, want pass: %+v", id, check.Status, *check)
 		}
 	}
+	cliCheck := doctorCheckByID(report, "gira_cli_visible")
+	if !strings.Contains(cliCheck.Detail, "executable=") {
+		t.Fatalf("gira_cli_visible detail = %q, want executable detail", cliCheck.Detail)
+	}
 }
 
 func TestBuildDoctorReportMissingGhFailsAndSkipsGhDependentChecks(t *testing.T) {
@@ -88,6 +92,46 @@ func TestBuildDoctorReportDriftFailureHasSyncRemediation(t *testing.T) {
 		if !strings.Contains(check.Remediation+check.Detail, want) {
 			t.Fatalf("metadata_drift missing %q: %+v", want, *check)
 		}
+	}
+}
+
+func TestBuildDoctorReportDetachedHeadFailsReadiness(t *testing.T) {
+	runner := readyDoctorRunner()
+	runner.responses["git branch --show-current"] = ""
+	report := BuildDoctorReport("StatPan/gira", runner, time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC))
+
+	if report.Ready {
+		t.Fatal("ready = true, want false")
+	}
+	check := doctorCheckByID(report, "local_git_state")
+	if check == nil {
+		t.Fatal("local_git_state check missing")
+	}
+	if check.Status != DoctorCheckFail {
+		t.Fatalf("local_git_state status = %s, want fail: %+v", check.Status, *check)
+	}
+	if !strings.Contains(check.Detail, "detached HEAD") {
+		t.Fatalf("local_git_state detail = %q, want detached HEAD", check.Detail)
+	}
+}
+
+func TestBuildDoctorReportDirtyWorktreeFailsReadiness(t *testing.T) {
+	runner := readyDoctorRunner()
+	runner.responses["git status --porcelain"] = " M internal/gira/doctor.go\n?? scratch.txt\n"
+	report := BuildDoctorReport("StatPan/gira", runner, time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC))
+
+	if report.Ready {
+		t.Fatal("ready = true, want false")
+	}
+	check := doctorCheckByID(report, "local_git_state")
+	if check == nil {
+		t.Fatal("local_git_state check missing")
+	}
+	if check.Status != DoctorCheckFail {
+		t.Fatalf("local_git_state status = %s, want fail: %+v", check.Status, *check)
+	}
+	if !strings.Contains(check.Detail, "uncommitted changes=2") {
+		t.Fatalf("local_git_state detail = %q, want dirty count", check.Detail)
 	}
 }
 

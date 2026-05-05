@@ -3,6 +3,7 @@ package gira
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -41,12 +42,7 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 		Ready:     true,
 	}
 
-	report.Checks = append(report.Checks, DoctorCheck{
-		ID:          "gira_cli_visible",
-		Status:      DoctorCheckPass,
-		Detail:      "gira doctor command is available",
-		Remediation: "",
-	})
+	report.Checks = append(report.Checks, giraCLIVisibleDoctorCheck())
 
 	ghOK := false
 	if output, err := runner.Run("gh", "--version"); err != nil {
@@ -312,10 +308,16 @@ func localGitStateCheck(runner CommandRunner) DoctorCheck {
 		}
 	}
 	branch := strings.TrimSpace(string(branchOutput))
-	if branch == "" {
-		branch = "detached HEAD"
-	}
+	detached := branch == ""
 	if statusErr != nil {
+		if detached {
+			return DoctorCheck{
+				ID:          "local_git_state",
+				Status:      DoctorCheckFail,
+				Detail:      fmt.Sprintf("detached HEAD; could not read worktree status: %v", statusErr),
+				Remediation: "checkout a named branch and run `git status` to inspect the local worktree",
+			}
+		}
 		return DoctorCheck{
 			ID:          "local_git_state",
 			Status:      DoctorCheckWarn,
@@ -324,10 +326,22 @@ func localGitStateCheck(runner CommandRunner) DoctorCheck {
 		}
 	}
 	dirtyLines := countNonEmptyLines(statusOutput)
+	if detached {
+		detail := "detached HEAD; worktree clean"
+		if dirtyLines > 0 {
+			detail = fmt.Sprintf("detached HEAD; uncommitted changes=%d", dirtyLines)
+		}
+		return DoctorCheck{
+			ID:          "local_git_state",
+			Status:      DoctorCheckFail,
+			Detail:      detail,
+			Remediation: "checkout a named branch before running Gira readiness or mutation workflows",
+		}
+	}
 	if dirtyLines > 0 {
 		return DoctorCheck{
 			ID:          "local_git_state",
-			Status:      DoctorCheckWarn,
+			Status:      DoctorCheckFail,
 			Detail:      fmt.Sprintf("branch=%s; uncommitted changes=%d", branch, dirtyLines),
 			Remediation: "commit, stash, or intentionally keep local changes before running mutating Gira commands",
 		}
@@ -336,6 +350,24 @@ func localGitStateCheck(runner CommandRunner) DoctorCheck {
 		ID:          "local_git_state",
 		Status:      DoctorCheckPass,
 		Detail:      fmt.Sprintf("branch=%s; worktree clean", branch),
+		Remediation: "",
+	}
+}
+
+func giraCLIVisibleDoctorCheck() DoctorCheck {
+	executable, err := os.Executable()
+	if err != nil {
+		return DoctorCheck{
+			ID:          "gira_cli_visible",
+			Status:      DoctorCheckPass,
+			Detail:      "gira doctor command is available; executable path unavailable: " + err.Error(),
+			Remediation: "",
+		}
+	}
+	return DoctorCheck{
+		ID:          "gira_cli_visible",
+		Status:      DoctorCheckPass,
+		Detail:      "gira doctor command is available; executable=" + executable,
 		Remediation: "",
 	}
 }

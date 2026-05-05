@@ -19,6 +19,11 @@ profiles:
     review_policy:
       required_approvals: 1
       require_code_owners: true
+portfolio:
+  repo: StatPan/portfolio
+  repos:
+    - StatPan/gira
+    - StatPan/docs
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -32,6 +37,9 @@ profiles:
 	}
 	if cfg.Repo != "StatPan/gira" {
 		t.Fatalf("repo = %q, want StatPan/gira", cfg.Repo)
+	}
+	if cfg.Portfolio.Repo != "StatPan/portfolio" || len(cfg.Portfolio.Repos) != 2 {
+		t.Fatalf("portfolio config = %+v, want repo and two execution repos", cfg.Portfolio)
 	}
 }
 
@@ -72,6 +80,53 @@ profiles:
 	}
 	if !strings.Contains(err.Error(), "repo must be in OWNER/REPO format") {
 		t.Fatalf("expected actionable repo error, got: %v", err)
+	}
+}
+
+func TestLoadInitConfigInvalidPortfolioRepo(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `profiles:
+  default:
+    labels: ["type:task"]
+portfolio:
+  repo: bad-format
+  repos:
+    - StatPan/gira
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, err := LoadInitConfig(path)
+	if err == nil {
+		t.Fatal("expected error for invalid portfolio repo")
+	}
+	if !strings.Contains(err.Error(), "portfolio.repo must be in OWNER/REPO format") {
+		t.Fatalf("expected actionable portfolio repo error, got: %v", err)
+	}
+}
+
+func TestLoadInitConfigInvalidPortfolioRepos(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `profiles:
+  default:
+    labels: ["type:task"]
+portfolio:
+  repo: StatPan/portfolio
+  repos:
+    - StatPan/gira
+    - bad-format
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, err := LoadInitConfig(path)
+	if err == nil {
+		t.Fatal("expected error for invalid portfolio execution repo")
+	}
+	if !strings.Contains(err.Error(), "portfolio.repos[1] must be in OWNER/REPO format") {
+		t.Fatalf("expected actionable portfolio repos error, got: %v", err)
 	}
 }
 

@@ -26,6 +26,104 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "contract") {
 		t.Fatalf("help output missing contract command:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "portfolio") {
+		t.Fatalf("help output missing portfolio command:\n%s", stdout.String())
+	}
+}
+
+func TestPortfolioPlanRequiresDryRun(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"portfolio", "plan"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--dry-run is required for portfolio plan") {
+		t.Fatalf("stderr missing dry-run guidance:\n%s", stderr.String())
+	}
+}
+
+func TestPortfolioPlanJSON(t *testing.T) {
+	restore := newPortfolioReport
+	t.Cleanup(func() { newPortfolioReport = restore })
+	newPortfolioReport = func(command string, configPath string, dryRun bool) (gira.PortfolioReport, error) {
+		if command != "plan" || configPath != "testdata/portfolio.yaml" || !dryRun {
+			t.Fatalf("unexpected portfolio args command=%s config=%s dryRun=%t", command, configPath, dryRun)
+		}
+		return gira.PortfolioReport{
+			Command:       "portfolio plan",
+			PortfolioRepo: "StatPan/portfolio",
+			Repos:         []string{"StatPan/gira"},
+			DryRun:        true,
+			Counts:        gira.PortfolioCounts{Tickets: 1, OpenTickets: 1, Actions: 1},
+			Actions:       []gira.PortfolioPlanAction{{Ticket: 140, Action: "execution_issue:create", Repo: "StatPan/gira", Reason: "no child issue linked for target repo"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"portfolio", "plan", "--dry-run", "--config", "testdata/portfolio.yaml", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"portfolio_repo": "StatPan/portfolio"`, `"action": "execution_issue:create"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("portfolio JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "next step:") {
+		t.Fatalf("portfolio JSON contains human prose:\n%s", stdout.String())
+	}
+}
+
+func TestPortfolioValidateDiagnosticsExitOne(t *testing.T) {
+	restore := newPortfolioReport
+	t.Cleanup(func() { newPortfolioReport = restore })
+	newPortfolioReport = func(command string, configPath string, dryRun bool) (gira.PortfolioReport, error) {
+		if command != "validate" || dryRun {
+			t.Fatalf("unexpected portfolio args command=%s dryRun=%t", command, dryRun)
+		}
+		return gira.PortfolioReport{
+			Command:       "portfolio validate",
+			PortfolioRepo: "StatPan/portfolio",
+			Repos:         []string{"StatPan/gira"},
+			Counts:        gira.PortfolioCounts{Tickets: 1, OpenTickets: 1, Diagnostics: 1},
+			Diagnostics:   []gira.PortfolioDiagnostic{{Ticket: 140, RuleID: "missing_required_field", Detail: "goal is required"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"portfolio", "validate"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "ticket #140 missing_required_field") {
+		t.Fatalf("stdout missing diagnostic:\n%s", stdout.String())
+	}
+}
+
+func TestPortfolioValidateJSONDiagnosticsExitOne(t *testing.T) {
+	restore := newPortfolioReport
+	t.Cleanup(func() { newPortfolioReport = restore })
+	newPortfolioReport = func(command string, configPath string, dryRun bool) (gira.PortfolioReport, error) {
+		if command != "validate" || dryRun {
+			t.Fatalf("unexpected portfolio args command=%s dryRun=%t", command, dryRun)
+		}
+		return gira.PortfolioReport{
+			Command:       "portfolio validate",
+			PortfolioRepo: "StatPan/portfolio",
+			Repos:         []string{"StatPan/gira"},
+			Counts:        gira.PortfolioCounts{Tickets: 1, OpenTickets: 1, Diagnostics: 1},
+			Diagnostics:   []gira.PortfolioDiagnostic{{Ticket: 140, RuleID: "invalid_child_issue", Detail: "bad must be OWNER/REPO#N"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"portfolio", "validate", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"rule_id": "invalid_child_issue"`) {
+		t.Fatalf("stdout missing JSON diagnostic:\n%s", stdout.String())
+	}
 }
 
 func TestTriageHelpFlagPrintsHelpAndExitsZero(t *testing.T) {

@@ -30,6 +30,7 @@ Commands:
   sync        Sync Gira labels, milestones, and optionally bootstrap issues through gh
   status      Show a compact read-only GitHub status summary
   export      Export dashboard artifacts from read-only GitHub data
+  portfolio   Plan top-level portfolio intake lowering from a portfolio repo
   parity      Compute deterministic Jira-replacement parity scorecard
   project     Inspect permission capability for Project OS lifecycle actions
   audit       Verify audit ledgers for mutation integrity
@@ -163,6 +164,25 @@ Flags:
   --dry-run           Plan export without writing artifacts
   --json              Emit stable JSON summary
   -h, --help          Show help
+`
+
+const portfolioHelp = `Plan top-level portfolio intake lowering from a portfolio repo.
+
+Usage:
+  gira portfolio status [--config .gira/config.yaml] [--json]
+  gira portfolio validate [--config .gira/config.yaml] [--json]
+  gira portfolio plan --dry-run [--config .gira/config.yaml] [--json]
+
+Commands:
+  status    Summarize portfolio tickets and configured execution repos
+  validate  Validate top-level ticket schema, routing, and links
+  plan      Compute read-only lowering actions for top-level tickets
+
+Flags:
+  --config string  Portfolio config path (default ".gira/config.yaml")
+  --dry-run        Required for portfolio plan
+  --json           Emit stable JSON output
+  -h, --help       Show help
 `
 
 const auditHelp = `Audit utilities for append-only mutation ledger verification.
@@ -365,6 +385,27 @@ var newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClien
 	return gira.NewGHDashboardExportClient(repo, gira.ExecCommandRunner{})
 }
 
+var newPortfolioReport = func(command string, configPath string, dryRun bool) (gira.PortfolioReport, error) {
+	resolved, err := gira.ResolvePortfolioConfig(configPath)
+	if err != nil {
+		return gira.PortfolioReport{}, err
+	}
+	client := gira.NewGHPortfolioClient(resolved.PortfolioRepo, gira.ExecCommandRunner{})
+	switch command {
+	case "status":
+		return gira.BuildPortfolioStatusReport(client, resolved.Repos, time.Now())
+	case "validate":
+		return gira.BuildPortfolioValidateReport(client, resolved.Repos, time.Now())
+	case "plan":
+		if !dryRun {
+			return gira.PortfolioReport{}, fmt.Errorf("--dry-run is required for portfolio plan")
+		}
+		return gira.BuildPortfolioPlanReport(client, resolved.Repos, time.Now())
+	default:
+		return gira.PortfolioReport{}, fmt.Errorf("unknown portfolio command: %s", command)
+	}
+}
+
 var newGraphClient = func(repo gira.RepoRef) gira.GraphClient {
 	return gira.NewGHGraphClient(repo, gira.ExecCommandRunner{})
 }
@@ -459,6 +500,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runStatus(args[1:], stdout, stderr)
 	case "export":
 		return runExport(args[1:], stdout, stderr)
+	case "portfolio":
+		return runPortfolio(args[1:], stdout, stderr)
 	case "parity":
 		return runParity(args[1:], stdout, stderr)
 	case "project":
@@ -1105,6 +1148,77 @@ func runExport(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 
 	return runExportDashboard(args[1:], stdout, stderr)
+}
+
+func runPortfolio(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, portfolioHelp)
+		return 0
+	}
+	switch args[0] {
+	case "status", "validate", "plan":
+		return runPortfolioCommand(args[0], args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown portfolio command: %s\n\n", args[0])
+		fmt.Fprint(stderr, portfolioHelp)
+		return 2
+	}
+}
+
+func runPortfolioCommand(command string, args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("portfolio "+command, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Portfolio config path")
+	dryRun := fs.Bool("dry-run", false, "Compute plan without mutation")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, portfolioHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, portfolioHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, portfolioHelp)
+		return 2
+	}
+	if command != "plan" && *dryRun {
+		fmt.Fprintf(stderr, "--dry-run is only supported for portfolio plan\n\n")
+		fmt.Fprint(stderr, portfolioHelp)
+		return 2
+	}
+	if command == "plan" && !*dryRun {
+		fmt.Fprintf(stderr, "--dry-run is required for portfolio plan\n\n")
+		fmt.Fprint(stderr, portfolioHelp)
+		return 2
+	}
+	report, err := newPortfolioReport(command, *configPath, *dryRun)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode portfolio JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		if len(report.Diagnostics) > 0 {
+			return 1
+		}
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatPortfolioReport(report))
+	if len(report.Diagnostics) > 0 {
+		return 1
+	}
+	return 0
 }
 
 func runExportDashboard(args []string, stdout io.Writer, stderr io.Writer) int {

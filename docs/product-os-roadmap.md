@@ -129,6 +129,10 @@ Execution order rationale:
 
 The explicit capability matrix, top-level ticket -> repo issue -> PR contract, assistant/dev-agent ownership split, and proposed `gira work` UX layer are documented in [jira-gira-operating-boundary.md](jira-gira-operating-boundary.md).
 
+## Portfolio intake phase
+
+The next Jira gap is the project-agnostic backlog layer. Gira's first portfolio slice is read-only and dry-run-first: portfolio repo issues become top-level tickets, configured execution repos define the lowering allowlist, and `gira portfolio status|validate|plan --dry-run` reports how work would be routed without mutating GitHub. The contract is documented in [portfolio-intake.md](portfolio-intake.md).
+
 ## Non-goals during this roadmap
 
 - no Jira-style separate database

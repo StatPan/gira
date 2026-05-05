@@ -11,8 +11,14 @@ import (
 )
 
 type InitConfig struct {
-	Repo     string                 `yaml:"repo" toml:"repo" json:"repo"`
-	Profiles map[string]InitProfile `yaml:"profiles" toml:"profiles" json:"profiles"`
+	Repo      string                 `yaml:"repo" toml:"repo" json:"repo"`
+	Portfolio PortfolioConfig        `yaml:"portfolio" toml:"portfolio" json:"portfolio"`
+	Profiles  map[string]InitProfile `yaml:"profiles" toml:"profiles" json:"profiles"`
+}
+
+type PortfolioConfig struct {
+	Repo  string   `yaml:"repo" toml:"repo" json:"repo"`
+	Repos []string `yaml:"repos" toml:"repos" json:"repos"`
 }
 
 type InitProfile struct {
@@ -55,6 +61,25 @@ func LoadInitConfig(path string) (InitConfig, error) {
 		if _, err := ParseRepoRef(cfg.Repo); err != nil {
 			return InitConfig{}, fmt.Errorf("invalid init config %q: repo must be in OWNER/REPO format", path)
 		}
+	}
+	if strings.TrimSpace(cfg.Portfolio.Repo) != "" {
+		if _, err := ParseRepoRef(cfg.Portfolio.Repo); err != nil {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: portfolio.repo must be in OWNER/REPO format", path)
+		}
+	}
+	seenPortfolioRepos := map[string]struct{}{}
+	for i, repoValue := range cfg.Portfolio.Repos {
+		repoValue = strings.TrimSpace(repoValue)
+		if repoValue == "" {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: portfolio.repos[%d] cannot be empty", path, i)
+		}
+		if _, err := ParseRepoRef(repoValue); err != nil {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: portfolio.repos[%d] must be in OWNER/REPO format", path, i)
+		}
+		if _, ok := seenPortfolioRepos[repoValue]; ok {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: portfolio.repos contains duplicate repo %q", path, repoValue)
+		}
+		seenPortfolioRepos[repoValue] = struct{}{}
 	}
 	for name, profile := range cfg.Profiles {
 		if strings.TrimSpace(name) == "" {

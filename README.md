@@ -45,7 +45,13 @@ The official happy path is:
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 ```
 
-The install script contract is:
+Pin a version with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v0.1.0 sh
+```
+
+The install script:
 
 - Detect `os` and `arch`, then select the matching GitHub release archive.
 - Install `latest` by default and accept an explicit version, for example `GIRA_VERSION=v0.1.0`.
@@ -97,22 +103,11 @@ go install github.com/StatPan/gira/cmd/gira@latest
 
 The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. If the repository is private in your environment, configure Go private module access first, for example with `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication.
 
-### Near-Term Package Channels
+### Planned Package Channels
 
-Homebrew is the near-term official package-manager target for macOS and Linuxbrew users:
+Homebrew is the near-term official package-manager target for macOS and Linuxbrew users, but the tap is not yet an available install path.
 
-```bash
-brew install statpan/tap/gira
-brew upgrade gira
-```
-
-npm, bun, and `uv` packages are candidate wrapper channels for AI-era developer workflows. These wrappers should install or dispatch the same Go-built release binary rather than reimplementing the CLI:
-
-```bash
-npm install -g @statpan/gira
-bun install -g @statpan/gira
-uv tool install gira
-```
+npm, bun, and `uv` packages are experimental candidate wrapper channels for AI-era developer workflows. These wrappers should install or dispatch the same Go-built release binary rather than reimplementing the CLI. Until those packages exist, use the install script, manual release archive, or developer `go install` path above.
 
 Wrapper packages must preserve the same command surface as the native binary:
 
@@ -134,9 +129,10 @@ Use the same channel that installed Gira:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v0.1.0 sh
-brew upgrade gira
 go install github.com/StatPan/gira/cmd/gira@latest
 ```
+
+When Homebrew, npm, bun, or `uv` wrappers become available, upgrade with the same package manager used for installation.
 
 An upgrade replaces only the local `gira` binary or package wrapper. It must not mutate repository files or GitHub metadata. After upgrading, verify the command still resolves from the expected install location:
 
@@ -153,17 +149,12 @@ Binary uninstall removes the local CLI from the machine. It does not detach a re
 For install-script or manual installs:
 
 ```bash
-rm "${HOME}/.local/bin/gira"
+gira_path="${GIRA_INSTALL_DIR:+${GIRA_INSTALL_DIR}/gira}"
+gira_path="${gira_path:-$(command -v gira)}"
+rm "${gira_path}"
 ```
 
-For package-manager installs, use the matching package manager:
-
-```bash
-brew uninstall gira
-npm uninstall -g @statpan/gira
-bun remove -g @statpan/gira
-uv tool uninstall gira
-```
+If you installed to a custom directory, set `GIRA_INSTALL_DIR` to that same directory or remove the path printed by `command -v gira`. When Homebrew, npm, bun, or `uv` wrappers become available, uninstall with the same package manager used for installation.
 
 Verification:
 

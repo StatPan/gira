@@ -305,6 +305,28 @@ func BuildReleaseReadiness(client ReviewGateClient, now time.Time) (ReleaseReadi
 	return ReleaseReadinessReport{Repo: client.Repo().FullName(), Generated: now.UTC().Format(time.RFC3339), Ready: ready, BlockingPRs: blockingPRs, OpenBlockers: blockers, OpenMustFix: mustFix, BlockerTaxonomy: []string{BlockerMissingApproval, BlockerFailingChecks, BlockerUnresolvedBlocker, BlockerPolicyViolation}}, nil
 }
 
+func FormatReviewQueueText(report ReviewQueueReport) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "review queue: %s\n", report.Repo)
+	fmt.Fprintf(&b, "items: %d\n", len(report.Items))
+	for _, item := range report.Items {
+		blockers := strings.Join(item.Blockers, ",")
+		if blockers == "" {
+			blockers = "none"
+		}
+		fmt.Fprintf(&b, "- #%d %s route=%s blockers=%s\n", item.PR.Number, item.PR.Title, item.RouteTo, blockers)
+	}
+	fmt.Fprintf(&b, "next step: %s\n", reviewQueueNextStep(report))
+	return b.String()
+}
+
+func reviewQueueNextStep(report ReviewQueueReport) string {
+	if len(report.Items) == 0 {
+		return "gira status --repo " + report.Repo
+	}
+	return fmt.Sprintf("review PR #%d", report.Items[0].PR.Number)
+}
+
 func classifyPRBlockers(pr ReviewPR) []string {
 	blockers := make([]string, 0)
 	if pr.IsDraft {

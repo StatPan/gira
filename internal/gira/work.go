@@ -231,7 +231,14 @@ func hasWorkBlocker(blockers []string, target string) bool {
 }
 
 func FormatWorkStart(result WorkStartResult) string {
-	return fmt.Sprintf("work start: issue #%d branch=%s status=%s\n", result.Issue, result.Branch, result.NextStatus)
+	return fmt.Sprintf(
+		"work start: issue #%d branch=%s status=%s\nnext step: gira work pr --repo %s --issue %d --dry-run\n",
+		result.Issue,
+		result.Branch,
+		result.NextStatus,
+		result.Repo,
+		result.Issue,
+	)
 }
 
 func FormatWorkPR(result WorkPRResult) string {
@@ -243,7 +250,11 @@ func FormatWorkPR(result WorkPRResult) string {
 	if url == "" {
 		url = "(planned)"
 	}
-	return fmt.Sprintf("work pr: issue #%d pr=%s status=%s %s\n", result.Issue, url, result.NextStatus, created)
+	next := fmt.Sprintf("gira work status --repo %s --issue %d", result.Repo, result.Issue)
+	if result.Draft {
+		next = "mark the PR ready, then " + next
+	}
+	return fmt.Sprintf("work pr: issue #%d pr=%s status=%s %s\nnext step: %s\n", result.Issue, url, result.NextStatus, created, next)
 }
 
 func FormatWorkStatus(result WorkStatusResult) string {
@@ -251,5 +262,30 @@ func FormatWorkStatus(result WorkStatusResult) string {
 	if blockers == "" {
 		blockers = "none"
 	}
-	return fmt.Sprintf("work status: issue #%d status=%s pr=%d blockers=%s next=%s\n", result.Issue, result.Status, result.PRNumber, blockers, result.NextAction)
+	return fmt.Sprintf(
+		"work status: issue #%d status=%s pr=%d blockers=%s next=%s\nnext step: %s\n",
+		result.Issue,
+		result.Status,
+		result.PRNumber,
+		blockers,
+		result.NextAction,
+		workStatusNextStep(result),
+	)
+}
+
+func workStatusNextStep(result WorkStatusResult) string {
+	switch result.NextAction {
+	case "start_work":
+		return fmt.Sprintf("gira work start --repo %s --issue %d --apply", result.Repo, result.Issue)
+	case "open_pr":
+		return fmt.Sprintf("gira work pr --repo %s --issue %d --apply", result.Repo, result.Issue)
+	case "mark_pr_ready":
+		return "mark the PR ready for review"
+	case "address_review":
+		return "address review blockers"
+	case "merge_when_policy_allows":
+		return "merge when policy checks pass"
+	default:
+		return fmt.Sprintf("gira status --repo %s", result.Repo)
+	}
 }

@@ -44,6 +44,10 @@ func TestBuildInitReportReady(t *testing.T) {
 	if report.NextStep == "" || !strings.Contains(report.NextStep, "gira bootstrap") {
 		t.Fatalf("unexpected next step: %q", report.NextStep)
 	}
+	text := FormatInitReport(report)
+	if !strings.HasSuffix(text, "next step: "+report.NextStep+"\n") {
+		t.Fatalf("init text missing final next step:\n%s", text)
+	}
 }
 
 func TestBuildInitReportFailsWithRemediation(t *testing.T) {

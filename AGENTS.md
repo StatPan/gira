@@ -6,13 +6,13 @@ Gira turns a GitHub repository into an AI-ready project operating system. GitHub
 
 ## MVP Boundaries
 
-Keep the product CLI-first and small. The Python MVP remains the reference implementation, but the long-term product CLI is now moving to Go in narrow parity slices.
+Keep the product CLI-first and small. The Go-built `gira` binary is the only product implementation.
 
-- Go-first `gira` CLI for the product path.
-- Python CLI remains available until Go reaches parity.
+- Go `gira` CLI for the product path.
 - Default template only.
 - `gh` CLI first unless a direct Go GitHub API client is explicitly chosen for a slice.
 - Idempotent file install, label sync, milestone sync, bootstrap issue creation, and compact status summary.
+- Package-manager wrappers such as `uv`, npm, bun, or Homebrew are allowed only as distribution channels for the Go-built binary, not as alternate runtimes.
 
 Do not implement these in MVP unless explicitly requested:
 

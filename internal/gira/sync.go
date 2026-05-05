@@ -383,7 +383,7 @@ var DesiredBootstrapIssues = []BootstrapIssueDef{
 	},
 	{
 		Title:     "[Task] Slice 1: CLI skeleton + template dry-run",
-		Body:      "## Goal\nCreate the Python package, CLI entrypoint, and default project template dry-run.",
+		Body:      "## Goal\nCreate the Go CLI entrypoint and default project template dry-run.",
 		Labels:    []string{"gira:bootstrap", "type:task", "agent:worker", "status:ready"},
 		Milestone: stringPtr("MVP"),
 	},

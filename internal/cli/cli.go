@@ -173,12 +173,14 @@ Usage:
   gira portfolio status [--config .gira/config.yaml] [--json]
   gira portfolio validate [--config .gira/config.yaml] [--json]
   gira portfolio plan --dry-run [--config .gira/config.yaml] [--json]
+  gira portfolio lower (--dry-run | --apply) [--config .gira/config.yaml] [--json]
 
 Commands:
   capability  Probe repo issue permissions required for future lowering
   status    Summarize portfolio tickets and configured execution repos
   validate  Validate top-level ticket schema, routing, and links
   plan      Compute read-only lowering actions for top-level tickets
+  lower     Create or link execution issues from portfolio tickets
 
 Flags:
   --config string  Portfolio config path (default ".gira/config.yaml")
@@ -424,6 +426,26 @@ var newPortfolioCapabilityReport = func(configPath string) (gira.PortfolioCapabi
 		return gira.PortfolioCapabilityReport{}, err
 	}
 	return gira.BuildPortfolioCapabilityReport(resolved.PortfolioRepo, resolved.Repos, gira.ExecCommandRunner{}, time.Now())
+}
+
+var newPortfolioLowerReport = func(configPath string, apply bool) (gira.PortfolioLowerReport, error) {
+	resolved, err := gira.ResolvePortfolioConfig(configPath)
+	if err != nil {
+		return gira.PortfolioLowerReport{}, err
+	}
+	runner := gira.ExecCommandRunner{}
+	capability, err := gira.BuildPortfolioCapabilityReport(resolved.PortfolioRepo, resolved.Repos, runner, time.Now())
+	if err != nil {
+		return gira.PortfolioLowerReport{}, err
+	}
+	return gira.BuildPortfolioLowerReport(
+		gira.NewGHPortfolioClient(resolved.PortfolioRepo, runner),
+		gira.NewGHPortfolioLowerClient(resolved.PortfolioRepo, runner),
+		resolved.Repos,
+		capability,
+		apply,
+		time.Now(),
+	)
 }
 
 var newGraphClient = func(repo gira.RepoRef) gira.GraphClient {
@@ -1178,6 +1200,8 @@ func runPortfolio(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "capability":
 		return runPortfolioCapability(args[1:], stdout, stderr)
+	case "lower":
+		return runPortfolioLower(args[1:], stdout, stderr)
 	case "status", "validate", "plan":
 		return runPortfolioCommand(args[0], args[1:], stdout, stderr)
 	default:
@@ -1244,6 +1268,58 @@ func runPortfolioCommand(command string, args []string, stdout io.Writer, stderr
 		return 1
 	}
 	if len(report.PermissionBlocks) > 0 {
+		return 1
+	}
+	return 0
+}
+
+func runPortfolioLower(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("portfolio lower", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Portfolio config path")
+	dryRun := fs.Bool("dry-run", false, "Plan lowering without mutation")
+	apply := fs.Bool("apply", false, "Apply portfolio lowering mutations")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, portfolioHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, portfolioHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, portfolioHelp)
+		return 2
+	}
+	if *dryRun == *apply {
+		fmt.Fprintf(stderr, "exactly one of --dry-run or --apply is required for portfolio lower\n\n")
+		fmt.Fprint(stderr, portfolioHelp)
+		return 2
+	}
+	report, err := newPortfolioLowerReport(*configPath, *apply)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode portfolio lower JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		if len(report.Diagnostics) > 0 || len(report.PermissionBlocks) > 0 {
+			return 1
+		}
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatPortfolioLowerReport(report))
+	if len(report.Diagnostics) > 0 || len(report.PermissionBlocks) > 0 {
 		return 1
 	}
 	return 0

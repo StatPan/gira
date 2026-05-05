@@ -140,6 +140,8 @@ The next implementation slice is portfolio lowering. It should land in this orde
 3. `gira portfolio lower --apply` for idempotent execution issue creation and parent child-link updates
 4. portfolio ticket templates and post-lowering validation UX
 
+The lowering command is the first apply slice for the portfolio layer. The remaining work is to make valid ticket creation easier and make post-lowering summaries more operator-friendly.
+
 Apply must remain bounded to GitHub issues and labels. Projects v2, Web UI, Jira import/export, and LLM decomposition remain out of scope.
 
 ## Non-goals during this roadmap

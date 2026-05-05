@@ -205,8 +205,9 @@ Issue templates should serve both humans and workers:
 - Task: goal and checklist-style acceptance criteria.
 - Spike: question and expected output.
 - Bug: actual behavior and expected behavior.
+- Portfolio Ticket: goal, scope, routing, target repos, acceptance criteria, and child issue links for a top-level ticket before execution lowering.
 
-The default issue templates use labels that `gira sync` should manage: `type:epic`, `type:story`, `type:task`, `type:spike`, and `type:bug`.
+The default issue templates use labels that `gira sync` should manage: `type:epic`, `type:story`, `type:task`, `type:spike`, and `type:bug`. The portfolio template intentionally uses `type:epic` so it can work with the existing default label taxonomy while carrying the portfolio-specific routing fields in the issue body.
 
 The PR template should stay short and enforce the essentials:
 

@@ -459,7 +459,7 @@ func parsePortfolioFields(body string) map[string]string {
 		if i+1 < len(matches) {
 			end = matches[i+1][0]
 		}
-		fields[name] = strings.TrimSpace(body[start:end])
+		fields[name] = cleanPortfolioFieldValue(body[start:end])
 	}
 	for _, line := range strings.Split(body, "\n") {
 		key, value, ok := strings.Cut(line, ":")
@@ -470,11 +470,19 @@ func parsePortfolioFields(body string) map[string]string {
 		switch name {
 		case "goal", "scope", "routing", "target_repos", "acceptance_criteria", "child_issues", "priority", "target_date", "non_goals":
 			if strings.TrimSpace(fields[name]) == "" {
-				fields[name] = strings.TrimSpace(value)
+				fields[name] = cleanPortfolioFieldValue(value)
 			}
 		}
 	}
 	return fields
+}
+
+func cleanPortfolioFieldValue(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.EqualFold(value, "_No response_") {
+		return ""
+	}
+	return value
 }
 
 func normalizePortfolioFieldName(value string) string {
@@ -496,7 +504,7 @@ func parsePortfolioList(value string) []string {
 	for _, line := range strings.Split(value, "\n") {
 		item := strings.TrimSpace(strings.TrimPrefix(line, "-"))
 		item = strings.TrimSpace(strings.TrimPrefix(item, "*"))
-		if item == "" {
+		if item == "" || strings.EqualFold(item, "_No response_") {
 			continue
 		}
 		if _, ok := seen[item]; ok {

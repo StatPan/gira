@@ -396,6 +396,51 @@ func TestOnboardVerifyJSONUsesInjectedBuilder(t *testing.T) {
 	}
 }
 
+func TestDoctorJSONUsesInjectedReportAndExitCode(t *testing.T) {
+	restore := newDoctorReport
+	t.Cleanup(func() { newDoctorReport = restore })
+	newDoctorReport = func(repoValue string) gira.DoctorReport {
+		if repoValue != "StatPan/gira" {
+			t.Fatalf("repoValue = %q, want StatPan/gira", repoValue)
+		}
+		return gira.DoctorReport{
+			Repo:      "StatPan/gira",
+			Command:   "doctor",
+			CheckedAt: "2026-05-05T12:00:00Z",
+			Ready:     false,
+			Checks: []gira.DoctorCheck{{
+				ID:          "metadata_drift",
+				Status:      gira.DoctorCheckFail,
+				Detail:      "labels create=1 update=0; milestones create=0 update=0; bootstrap issues create=0",
+				Remediation: "run `gira sync --repo StatPan/gira --bootstrap-issues --dry-run`, then apply with `gira sync --repo StatPan/gira --bootstrap-issues`",
+			}},
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"doctor", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\"id\": \"metadata_drift\"") {
+		t.Fatalf("doctor JSON missing check id:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "\"remediation\": \"run `gira sync --repo StatPan/gira --bootstrap-issues --dry-run`") {
+		t.Fatalf("doctor JSON missing remediation:\n%s", stdout.String())
+	}
+}
+
+func TestDoctorHelpFlagPrintsHelpAndExitsZero(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"doctor", "-h"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "gira doctor [--repo OWNER/REPO] [--json]") {
+		t.Fatalf("stdout missing doctor help:\n%s", stdout.String())
+	}
+}
+
 func TestSyncDryRunUsesInjectedClientWithoutApplying(t *testing.T) {
 	restoreClient := newSyncClient
 	t.Cleanup(func() {

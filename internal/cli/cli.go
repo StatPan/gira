@@ -23,6 +23,7 @@ Commands:
   init        One-command onboarding with prerequisite checks and next-step plan
   bootstrap   Bootstrap a repository into a Gira-managed project workspace
   onboard     Verify onboarding readiness from init to steady-state
+  doctor      Diagnose install, auth, repo, drift, and local git readiness
   work        Daily issue lifecycle command
   dev         Issue to branch execution helpers
   sync        Sync Gira labels, milestones, and optionally bootstrap issues through gh
@@ -102,6 +103,17 @@ Flags:
   --repo string   Target GitHub repo in OWNER/REPO format (default: infer from .gira/config.yaml or git origin)
   --stage string  Readiness stage to verify
   --json          Emit stable JSON readiness artifact
+  -h, --help      Show help
+`
+
+const doctorHelp = `Diagnose install, auth, repo, drift, and local git readiness.
+
+Usage:
+  gira doctor [--repo OWNER/REPO] [--json]
+
+Flags:
+  --repo string   Target GitHub repo in OWNER/REPO format. Inferred from gh when omitted
+  --json          Emit stable JSON report for automation
   -h, --help      Show help
 `
 
@@ -309,6 +321,10 @@ var newOnboardVerifyReport = func(repo gira.RepoRef, stage gira.OnboardStage) (g
 	return gira.BuildOnboardVerifyReport(repo, stage, gira.ExecCommandRunner{}, time.Now().UTC()), nil
 }
 
+var newDoctorReport = func(repoValue string) gira.DoctorReport {
+	return gira.BuildDoctorReport(repoValue, gira.ExecCommandRunner{}, time.Now().UTC())
+}
+
 var newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
 	return gira.NewGHSyncClient(repo, gira.ExecCommandRunner{})
 }
@@ -427,6 +443,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runBootstrap(args[1:], stdout, stderr)
 	case "onboard":
 		return runOnboard(args[1:], stdout, stderr)
+	case "doctor":
+		return runDoctor(args[1:], stdout, stderr)
 	case "work":
 		return runWork(args[1:], stdout, stderr)
 	case "dev":
@@ -478,6 +496,46 @@ func resolveRepoContext(repoValue string, stderr io.Writer, help string) (gira.R
 		return gira.RepoRef{}, false
 	}
 	return repo, true
+}
+
+func runDoctor(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON report")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, doctorHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, doctorHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, doctorHelp)
+		return 2
+	}
+
+	report := newDoctorReport(*repoValue)
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode doctor JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+	} else {
+		fmt.Fprint(stdout, gira.FormatDoctorReport(report))
+	}
+	if !report.Ready {
+		return 1
+	}
+	return 0
 }
 
 func runInit(args []string, stdout io.Writer, stderr io.Writer) int {

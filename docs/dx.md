@@ -215,7 +215,7 @@ Issue templates should serve both humans and workers:
 - Bug: actual behavior and expected behavior.
 - Portfolio Ticket: goal, scope, routing, target repos, acceptance criteria, and child issue links for a top-level ticket before execution lowering.
 
-The default issue templates use labels that `gira sync` should manage: `type:epic`, `type:story`, `type:task`, `type:spike`, and `type:bug`. The portfolio template intentionally uses `type:epic` so it can work with the existing default label taxonomy while carrying the portfolio-specific routing fields in the issue body.
+The default issue templates use labels that `gira ops sync` should manage: `type:epic`, `type:story`, `type:task`, `type:spike`, and `type:bug`. The portfolio template intentionally uses `type:epic` so it can work with the existing default label taxonomy while carrying the portfolio-specific routing fields in the issue body.
 
 The PR template should stay short and enforce the essentials:
 
@@ -227,6 +227,6 @@ The PR template should stay short and enforce the essentials:
 
 - Local-only bootstrap is safe to dogfood in a temporary git repo because non-dry-run requires `--path` and fails before writing outside a git repo.
 - The default bootstrap branch name `chore/gira-bootstrap` makes first-run changes easy to inspect before opening a PR.
-- `sync --dry-run` is readable, but it currently lacks `--json`; automation should use `status --json` until a sync JSON contract is added.
+- `gira ops sync --dry-run` is readable, but it currently lacks `--json`; automation should use `status --json` until a sync JSON contract is added.
 - The default issue forms previously referenced `type:bug`, `type:story`, and `type:spike` labels that were not in the sync label set; those labels are now part of desired metadata.
 - A real issue-to-branch-to-PR loop was exercised by implementing this spike from Issue #7 on `docs/issue-7-dx-workflow` and opening the resulting PR.

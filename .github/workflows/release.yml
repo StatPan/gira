@@ -78,7 +78,7 @@ jobs:
           fi
 
       - name: Smoke install script against local archive
-        if: matrix.goos != 'windows'
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}

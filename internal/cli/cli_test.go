@@ -29,6 +29,79 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "portfolio") {
 		t.Fatalf("help output missing portfolio command:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "jira") {
+		t.Fatalf("help output missing jira command:\n%s", stdout.String())
+	}
+}
+
+func TestJiraImportRequiresMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"jira", "import", "--repo", "StatPan/gira", "--source", "jira.csv"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required") {
+		t.Fatalf("stderr missing mode guidance:\n%s", stderr.String())
+	}
+}
+
+func TestJiraImportJSON(t *testing.T) {
+	restore := newJiraImportReport
+	t.Cleanup(func() { newJiraImportReport = restore })
+	newJiraImportReport = func(repo gira.RepoRef, source string, apiBase string, project string, dryRun bool, apply bool) (gira.JiraImportReport, error) {
+		if repo.FullName() != "StatPan/gira" || source != "jira.csv" || apiBase != "" || project != "" || !dryRun || apply {
+			t.Fatalf("unexpected jira import args repo=%s source=%s apiBase=%s project=%s dryRun=%t apply=%t", repo.FullName(), source, apiBase, project, dryRun, apply)
+		}
+		return gira.JiraImportReport{
+			Command: "jira import",
+			Repo:    "StatPan/gira",
+			Source:  "jira.csv",
+			DryRun:  true,
+			Counts:  gira.JiraImportCounts{SourceItems: 1, Create: 1},
+			Actions: []gira.JiraImportAction{{Key: "GIRA-1", Action: "create", Title: "Import me"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"jira", "import", "--repo", "StatPan/gira", "--source", "jira.csv", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "jira import"`, `"key": "GIRA-1"`, `"create": 1`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("jira import JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestJiraExportJSON(t *testing.T) {
+	restore := newJiraExportReport
+	t.Cleanup(func() { newJiraExportReport = restore })
+	newJiraExportReport = func(repo gira.RepoRef, outputRoot string) (gira.JiraExportReport, error) {
+		if repo.FullName() != "StatPan/gira" || outputRoot != "out/jira" {
+			t.Fatalf("unexpected jira export args repo=%s output=%s", repo.FullName(), outputRoot)
+		}
+		report := gira.JiraExportReport{
+			Command:       "jira export",
+			Repo:          "StatPan/gira",
+			OutputRoot:    "out/jira",
+			SchemaVersion: gira.JiraExportSchemaVersion,
+			Artifacts:     []gira.JiraExportArtifact{{Path: "out/jira/issues.json", Kind: "json"}},
+		}
+		report.Counts.Issues = 2
+		return report, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"jira", "export", "--repo", "StatPan/gira", "--output", "out/jira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "jira export"`, `"output_root": "out/jira"`, `"issues": 2`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("jira export JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
 }
 
 func TestPortfolioPlanRequiresDryRun(t *testing.T) {
@@ -50,6 +123,72 @@ func TestPortfolioLowerRequiresMode(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required") {
 		t.Fatalf("stderr missing mode guidance:\n%s", stderr.String())
+	}
+}
+
+func TestDetachRequiresMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"detach", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required") {
+		t.Fatalf("stderr missing mode guidance:\n%s", stderr.String())
+	}
+}
+
+func TestDetachDryRunJSON(t *testing.T) {
+	restore := newDetachReport
+	t.Cleanup(func() { newDetachReport = restore })
+	newDetachReport = func(repo gira.RepoRef, dryRun bool, apply bool) (gira.DetachReport, error) {
+		if repo.FullName() != "StatPan/gira" || !dryRun || apply {
+			t.Fatalf("unexpected detach args repo=%s dryRun=%t apply=%t", repo.FullName(), dryRun, apply)
+		}
+		return gira.DetachReport{
+			Repo:         "StatPan/gira",
+			Command:      "detach",
+			DryRun:       true,
+			Counts:       gira.DetachCounts{CloseBootstrapIssues: 1, DeleteLabels: 1, ManualFiles: 1},
+			Actions:      []gira.DetachAction{{Kind: "bootstrap_issue", Action: "close", Target: "Slice", Number: 10, Reason: "bootstrap issues are closed instead of deleted", Status: "planned"}},
+			ManagedFiles: []gira.DetachManagedFile{{Path: "AGENTS.md", Action: "manual_remove", Reason: "detach has no local path flag in this slice"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"detach", "--repo", "StatPan/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "detach"`, `"dry_run": true`, `"managed_files"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("detach JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestDetachApplyText(t *testing.T) {
+	restore := newDetachReport
+	t.Cleanup(func() { newDetachReport = restore })
+	newDetachReport = func(repo gira.RepoRef, dryRun bool, apply bool) (gira.DetachReport, error) {
+		if repo.FullName() != "StatPan/gira" || dryRun || !apply {
+			t.Fatalf("unexpected detach args repo=%s dryRun=%t apply=%t", repo.FullName(), dryRun, apply)
+		}
+		return gira.DetachReport{
+			Repo:    "StatPan/gira",
+			Command: "detach",
+			DryRun:  false,
+			Counts:  gira.DetachCounts{CloseBootstrapIssues: 1},
+			Actions: []gira.DetachAction{{Kind: "bootstrap_issue", Action: "close", Target: "Slice", Number: 10, Status: "applied"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"detach", "--repo", "StatPan/gira", "--apply"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "mode: apply") || !strings.Contains(stdout.String(), "close bootstrap_issue: Slice") {
+		t.Fatalf("detach text missing apply summary:\n%s", stdout.String())
 	}
 }
 

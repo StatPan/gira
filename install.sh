@@ -4,6 +4,7 @@ set -eu
 repo="StatPan/gira"
 install_dir="${GIRA_INSTALL_DIR:-"$HOME/.local/bin"}"
 version="${GIRA_VERSION:-latest}"
+base_url_override="${GIRA_BASE_URL:-}"
 
 need() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -66,6 +67,10 @@ need mv
 need awk
 
 if [ "$version" = "latest" ]; then
+	if [ -n "$base_url_override" ]; then
+		printf '%s\n' "install.sh: GIRA_VERSION must be set when GIRA_BASE_URL is used" >&2
+		exit 1
+	fi
 	version="$(latest_version)"
 	if [ -z "$version" ] || [ "$version" = "latest" ]; then
 		printf '%s\n' "install.sh: could not resolve latest release version" >&2
@@ -75,7 +80,7 @@ fi
 
 name="gira_${version}_${os}_${arch}"
 archive="${name}.tar.gz"
-base_url="https://github.com/${repo}/releases/download/${version}"
+base_url="${base_url_override:-"https://github.com/${repo}/releases/download/${version}"}"
 tmpdir="$(mktemp -d)"
 cleanup() {
 	rm -rf "$tmpdir"
@@ -84,28 +89,22 @@ trap cleanup EXIT HUP INT TERM
 
 download "${base_url}/${archive}" "${tmpdir}/${archive}"
 
-checksum_file=""
-for candidate in checksums.txt SHA256SUMS sha256sums.txt; do
-	if download "${base_url}/${candidate}" "${tmpdir}/${candidate}" >/dev/null 2>&1; then
-		checksum_file="${tmpdir}/${candidate}"
-		break
-	fi
-done
-
-if [ -n "$checksum_file" ]; then
-	awk -v archive="$archive" '$2 == archive || $2 == "*" archive { print }' "$checksum_file" >"${tmpdir}/checksums.match"
-	if [ ! -s "${tmpdir}/checksums.match" ]; then
-		printf '%s\n' "install.sh: checksum asset does not include ${archive}" >&2
-		exit 1
-	fi
-	if command -v sha256sum >/dev/null 2>&1; then
-		(cd "$tmpdir" && sha256sum -c checksums.match)
-	elif command -v shasum >/dev/null 2>&1; then
-		(cd "$tmpdir" && shasum -a 256 -c checksums.match)
-	else
-		printf '%s\n' "install.sh: checksum asset exists but sha256sum/shasum is unavailable" >&2
-		exit 1
-	fi
+if ! download "${base_url}/checksums.txt" "${tmpdir}/checksums.txt"; then
+	printf '%s\n' "install.sh: release ${version} is missing required checksums.txt" >&2
+	exit 1
+fi
+awk -v archive="$archive" '$2 == archive || $2 == "*" archive { print }' "${tmpdir}/checksums.txt" >"${tmpdir}/checksums.match"
+if [ ! -s "${tmpdir}/checksums.match" ]; then
+	printf '%s\n' "install.sh: checksum asset does not include ${archive}" >&2
+	exit 1
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+	(cd "$tmpdir" && sha256sum -c checksums.match)
+elif command -v shasum >/dev/null 2>&1; then
+	(cd "$tmpdir" && shasum -a 256 -c checksums.match)
+else
+	printf '%s\n' "install.sh: checksum verification requires sha256sum or shasum" >&2
+	exit 1
 fi
 
 tar -xzf "${tmpdir}/${archive}" -C "$tmpdir"

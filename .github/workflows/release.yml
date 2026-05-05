@@ -46,6 +46,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Check install script
+        run: sh -n install.sh
+
       - name: Run Go tests
         run: go test ./...
 
@@ -74,6 +77,23 @@ jobs:
             tar -C dist -czf "release-assets/${name}.tar.gz" "${name}"
           fi
 
+      - name: Smoke install script against local archive
+        if: matrix.goos != 'windows'
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME//\//-}"
+          name="gira_${version}_${GOOS}_${GOARCH}"
+          archive="${name}.tar.gz"
+          asset_dir="$(mktemp -d)"
+          install_dir="$(mktemp -d)"
+          cp "release-assets/${archive}" "${asset_dir}/${archive}"
+          (cd "${asset_dir}" && sha256sum "${archive}" > checksums.txt)
+          GIRA_VERSION="${version}" GIRA_BASE_URL="file://${asset_dir}" GIRA_INSTALL_DIR="${install_dir}" sh install.sh
+          "${install_dir}/gira" --help >/dev/null
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -95,6 +115,25 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+
+      - name: Generate checksum asset
+        run: |
+          set -euo pipefail
+          cd release-assets
+          expected_assets=(
+            "gira_${GITHUB_REF_NAME}_darwin_amd64.tar.gz"
+            "gira_${GITHUB_REF_NAME}_darwin_arm64.tar.gz"
+            "gira_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
+            "gira_${GITHUB_REF_NAME}_linux_arm64.tar.gz"
+            "gira_${GITHUB_REF_NAME}_windows_amd64.zip"
+          )
+          for asset in "${expected_assets[@]}"; do
+            test -f "${asset}"
+          done
+          actual_count="$(find . -maxdepth 1 -type f ! -name checksums.txt | wc -l | tr -d ' ')"
+          test "${actual_count}" = "5"
+          sha256sum "${expected_assets[@]}" > checksums.txt
+          sha256sum -c checksums.txt
 
       - name: Publish release assets
         env:

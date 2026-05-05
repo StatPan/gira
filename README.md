@@ -33,9 +33,63 @@ go run ./cmd/gira onboard verify --repo OWNER/REPO --stage steady-state --json
 
 Python remains the reference and fallback implementation until final cutover. Do not remove it while Go parity is still being completed.
 
-## Install
+## Install, Upgrade, and Remove
 
-Install the daily Go CLI from the module source:
+Gira is implemented as a Go-built CLI, but users should not need Go installed to adopt it. The primary product install path is a versioned install script that downloads the matching GitHub release binary.
+
+### Install Script (Primary)
+
+The official happy path is:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
+```
+
+The install script contract is:
+
+- Detect `os` and `arch`, then select the matching GitHub release archive.
+- Install `latest` by default and accept an explicit version, for example `GIRA_VERSION=v0.1.0`.
+- Download from GitHub release assets, not from a source checkout.
+- Verify checksums when the release publishes checksum assets; fail closed if a checksum exists but does not match.
+- Install to `${GIRA_INSTALL_DIR}` when set, otherwise to `${HOME}/.local/bin`.
+- Print PATH guidance when the install directory is not already on `PATH`.
+- Replace an existing `gira` binary in the selected install directory atomically when possible.
+- Never modify repository files, GitHub labels, milestones, or issues during binary installation.
+
+Verification:
+
+```bash
+gira --help
+gira status --repo OWNER/REPO --json
+```
+
+### GitHub Release Archives (Manual)
+
+Manual installation uses the same release assets as the install script. Release archive names follow:
+
+```text
+gira_VERSION_linux_amd64.tar.gz
+gira_VERSION_linux_arm64.tar.gz
+gira_VERSION_darwin_amd64.tar.gz
+gira_VERSION_darwin_arm64.tar.gz
+gira_VERSION_windows_amd64.zip
+```
+
+Example:
+
+```bash
+version=v0.1.0
+curl -fLO "https://github.com/StatPan/gira/releases/download/${version}/gira_${version}_linux_amd64.tar.gz"
+tar -xzf "gira_${version}_linux_amd64.tar.gz"
+install -m 0755 "gira_${version}_linux_amd64/gira" "${HOME}/.local/bin/gira"
+gira --help
+```
+
+If checksum assets are published for the release, verify the archive before installing the binary.
+
+### Developer Fallback: Go Install
+
+`go install` remains available for developers and contributors, but it is not the default product onboarding path because it requires Go and module access.
 
 ```bash
 go install github.com/StatPan/gira/cmd/gira@latest
@@ -43,12 +97,116 @@ go install github.com/StatPan/gira/cmd/gira@latest
 
 The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. If the repository is private in your environment, configure Go private module access first, for example with `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication.
 
-## Use it today (daily CLI path)
+### Near-Term Package Channels
 
-From a fresh shell, make sure your Go bin directory is on `PATH`, then run Gira directly (no source checkout, no `uv run`):
+Homebrew is the near-term official package-manager target for macOS and Linuxbrew users:
 
 ```bash
-export PATH="$(go env GOPATH)/bin:$PATH"
+brew install statpan/tap/gira
+brew upgrade gira
+```
+
+npm, bun, and `uv` packages are candidate wrapper channels for AI-era developer workflows. These wrappers should install or dispatch the same Go-built release binary rather than reimplementing the CLI:
+
+```bash
+npm install -g @statpan/gira
+bun install -g @statpan/gira
+uv tool install gira
+```
+
+Wrapper packages must preserve the same command surface as the native binary:
+
+```bash
+gira --help
+gira bootstrap --repo OWNER/REPO --template default --dry-run
+gira sync --repo OWNER/REPO --dry-run
+gira status --repo OWNER/REPO --json
+```
+
+apt/deb packaging is a future target, not an initial official channel. It should wait until usage justifies signing keys, repository hosting, architecture matrix maintenance, and upgrade policy support.
+
+Unsupported distribution channels are source snapshots, unversioned binaries copied from CI artifacts, and package wrappers that do not execute the official Go-built binary.
+
+### Upgrade
+
+Use the same channel that installed Gira:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v0.1.0 sh
+brew upgrade gira
+go install github.com/StatPan/gira/cmd/gira@latest
+```
+
+An upgrade replaces only the local `gira` binary or package wrapper. It must not mutate repository files or GitHub metadata. After upgrading, verify the command still resolves from the expected install location:
+
+```bash
+command -v gira
+gira --help
+gira status --repo OWNER/REPO --json
+```
+
+### Binary Uninstall
+
+Binary uninstall removes the local CLI from the machine. It does not detach a repository from Gira and does not delete GitHub labels, milestones, issues, or files.
+
+For install-script or manual installs:
+
+```bash
+rm "${HOME}/.local/bin/gira"
+```
+
+For package-manager installs, use the matching package manager:
+
+```bash
+brew uninstall gira
+npm uninstall -g @statpan/gira
+bun remove -g @statpan/gira
+uv tool uninstall gira
+```
+
+Verification:
+
+```bash
+command -v gira
+```
+
+If `command -v gira` still prints a path, remove the remaining binary or package from that location.
+
+### Repository Detach
+
+Repository detach is separate from binary uninstall. Detach means removing or disabling Gira-managed repository files and GitHub metadata for one repository while leaving the local `gira` binary installed.
+
+Future command contract:
+
+```bash
+gira detach --repo OWNER/REPO --dry-run
+gira detach --repo OWNER/REPO --dry-run --json
+gira detach --repo OWNER/REPO --apply
+```
+
+Default behavior must be dry-run-first:
+
+- `gira detach --repo OWNER/REPO --dry-run` reports the Gira-managed files, labels, milestones, and bootstrap issues that would be removed, archived, or left in place.
+- `gira detach --repo OWNER/REPO --dry-run --json` emits the same plan in machine-readable form for review and automation.
+- `gira detach --repo OWNER/REPO --apply` performs only the actions shown by the dry-run plan and should require an explicit apply flag.
+- Destructive deletion is never default behavior. File deletion, GitHub issue closure, label deletion, and milestone deletion must be opt-in and visible in the dry-run plan before apply.
+- Detach must not delete user-authored project history by default. Prefer archiving, closing with an explanatory comment, or leaving unmanaged resources in place unless the operator explicitly requests cleanup.
+
+Verification after detach:
+
+```bash
+gira status --repo OWNER/REPO --json
+gira sync --repo OWNER/REPO --dry-run
+```
+
+`status` should make clear that the repository is not fully Gira-managed. `sync --dry-run` should show what would be recreated if the repository is adopted again.
+
+## Use it today (daily CLI path)
+
+From a fresh shell, make sure the install directory is on `PATH`, then run Gira directly (no source checkout):
+
+```bash
 gira --help
 gira bootstrap --repo OWNER/REPO --template default --dry-run
 gira sync --repo OWNER/REPO --dry-run

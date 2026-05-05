@@ -48,14 +48,14 @@ func TestBuildJiraParityReportRequiresJiraMigrationSurfaces(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	report := v1AllowedCapabilityReport()
 	evidence := allV1JiraParityEvidence()
-	evidence.Commands["gira jira import"] = false
-	evidence.Commands["gira jira export"] = false
+	evidence.Commands["gira ops jira import"] = false
+	evidence.Commands["gira ops jira export"] = false
 
 	out := BuildJiraParityReportWithEvidence(repo, report, evidence, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
 	if out.Ready {
 		t.Fatal("expected missing Jira migration surfaces to block readiness")
 	}
-	for _, want := range []string{"gira jira import", "gira jira export"} {
+	for _, want := range []string{"gira ops jira import", "gira ops jira export"} {
 		if !hasJiraParityGap(out.Missing, want) {
 			t.Fatalf("missing surfaces should include %q: %+v", want, out.Missing)
 		}
@@ -66,7 +66,7 @@ func TestBuildJiraParityReportOrdersBlockersBeforeMissingSurfaces(t *testing.T) 
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	report := v1AllowedCapabilityReport()
 	evidence := allV1JiraParityEvidence()
-	evidence.Commands["gira detach"] = false
+	evidence.Commands["gira ops detach"] = false
 
 	out := BuildJiraParityReportWithEvidence(repo, report, evidence, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
 	if out.Ready {
@@ -75,7 +75,7 @@ func TestBuildJiraParityReportOrdersBlockersBeforeMissingSurfaces(t *testing.T) 
 	if len(out.Blockers) == 0 || len(out.Missing) == 0 {
 		t.Fatalf("expected blockers and missing surfaces, got blockers=%v missing=%v", out.Blockers, out.Missing)
 	}
-	if out.Blockers[0].Command != "gira detach" || out.Missing[0].Command != "gira detach" {
+	if out.Blockers[0].Command != "gira ops detach" || out.Missing[0].Command != "gira ops detach" {
 		t.Fatalf("detach blocker not surfaced first: blockers=%v missing=%v", out.Blockers, out.Missing)
 	}
 
@@ -121,7 +121,7 @@ func v1AllowedCapabilityReport() ProjectCapabilityReport {
 
 func allV1JiraParityEvidence() JiraParityEvidence {
 	evidence := DefaultJiraParityEvidence()
-	evidence.Commands["gira detach"] = true
+	evidence.Commands["gira ops detach"] = true
 	return evidence
 }
 

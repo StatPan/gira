@@ -6,22 +6,22 @@ Korean shorthand: **기라(Gira): 깃허브로 굴리는 지라.**
 
 ## MVP Direction
 
-The Go-built `gira` binary is the sole product implementation. The current product path supports bootstrap dry-run/local install, GitHub metadata sync, status, and onboarding verification:
+The Go-built `gira` binary is the sole product implementation. The default user experience is Jira-style ticket work backed by GitHub issues, PRs, labels, and milestones:
 
 ```bash
-go run ./cmd/gira bootstrap --repo OWNER/REPO --template default --dry-run
-go run ./cmd/gira bootstrap --repo OWNER/REPO --path /path/to/repo
-go run ./cmd/gira sync --repo OWNER/REPO --dry-run
-go run ./cmd/gira sync --repo OWNER/REPO --dry-run --bootstrap-issues  # Gira self-bootstrap only
-go run ./cmd/gira sync --repo OWNER/REPO
-go run ./cmd/gira sync --repo OWNER/REPO --bootstrap-issues            # Gira self-bootstrap only
-go run ./cmd/gira work start --repo OWNER/REPO --issue 12 --dry-run
-go run ./cmd/gira work pr --repo OWNER/REPO --issue 12 --apply --draft
-go run ./cmd/gira work status --repo OWNER/REPO --issue 12 --json
+go run ./cmd/gira ops bootstrap --repo OWNER/REPO --template default --dry-run
+go run ./cmd/gira ops bootstrap --repo OWNER/REPO --path /path/to/repo
+go run ./cmd/gira ops sync --repo OWNER/REPO --dry-run
+go run ./cmd/gira ops sync --repo OWNER/REPO --dry-run --bootstrap-issues  # Gira self-bootstrap only
+go run ./cmd/gira ops sync --repo OWNER/REPO
+go run ./cmd/gira ops sync --repo OWNER/REPO --bootstrap-issues            # Gira self-bootstrap only
+go run ./cmd/gira ticket start --repo OWNER/REPO --ticket 12 --dry-run
+go run ./cmd/gira ticket pr --repo OWNER/REPO --ticket 12 --apply --draft
+go run ./cmd/gira ticket status --repo OWNER/REPO --ticket 12 --json
 go run ./cmd/gira status --repo OWNER/REPO
 go run ./cmd/gira status --repo OWNER/REPO --json
-go run ./cmd/gira onboard verify --repo OWNER/REPO --stage init --json
-go run ./cmd/gira onboard verify --repo OWNER/REPO --stage steady-state --json
+go run ./cmd/gira ops onboard verify --repo OWNER/REPO --stage init --json
+go run ./cmd/gira ops onboard verify --repo OWNER/REPO --stage steady-state --json
 ```
 
 ## Install, Upgrade, and Remove
@@ -124,8 +124,9 @@ Wrapper packages must preserve the same command surface as the native binary:
 
 ```bash
 gira --help
-gira bootstrap --repo OWNER/REPO --template default --dry-run
-gira sync --repo OWNER/REPO --dry-run
+gira ticket start --repo OWNER/REPO --ticket 12 --dry-run
+gira ops bootstrap --repo OWNER/REPO --template default --dry-run
+gira ops sync --repo OWNER/REPO --dry-run
 gira status --repo OWNER/REPO --json
 ```
 
@@ -183,16 +184,16 @@ Repository detach is separate from binary uninstall. Detach means removing or di
 Future command contract:
 
 ```bash
-gira detach --repo OWNER/REPO --dry-run
-gira detach --repo OWNER/REPO --dry-run --json
-gira detach --repo OWNER/REPO --apply
+gira ops detach --repo OWNER/REPO --dry-run
+gira ops detach --repo OWNER/REPO --dry-run --json
+gira ops detach --repo OWNER/REPO --apply
 ```
 
 Default behavior must be dry-run-first:
 
-- `gira detach --repo OWNER/REPO --dry-run` reports the Gira-managed files, labels, milestones, and bootstrap issues that would be removed, archived, or left in place.
-- `gira detach --repo OWNER/REPO --dry-run --json` emits the same plan in machine-readable form for review and automation.
-- `gira detach --repo OWNER/REPO --apply` performs only the actions shown by the dry-run plan and should require an explicit apply flag.
+- `gira ops detach --repo OWNER/REPO --dry-run` reports the Gira-managed files, labels, milestones, and bootstrap issues that would be removed, archived, or left in place.
+- `gira ops detach --repo OWNER/REPO --dry-run --json` emits the same plan in machine-readable form for review and automation.
+- `gira ops detach --repo OWNER/REPO --apply` performs only the actions shown by the dry-run plan and should require an explicit apply flag.
 - Destructive deletion is never default behavior. File deletion, GitHub issue closure, label deletion, and milestone deletion must be opt-in and visible in the dry-run plan before apply.
 - Detach must not delete user-authored project history by default. Prefer archiving, closing with an explanatory comment, or leaving unmanaged resources in place unless the operator explicitly requests cleanup.
 
@@ -200,7 +201,7 @@ Verification after detach:
 
 ```bash
 gira status --repo OWNER/REPO --json
-gira sync --repo OWNER/REPO --dry-run
+gira ops sync --repo OWNER/REPO --dry-run
 ```
 
 `status` should make clear that the repository is not fully Gira-managed. `sync --dry-run` should show what would be recreated if the repository is adopted again.
@@ -211,28 +212,31 @@ From a fresh shell, make sure the install directory is on `PATH`, then run Gira 
 
 ```bash
 gira --help
-gira sync --repo OWNER/REPO --dry-run
-gira onboard verify --repo OWNER/REPO --stage steady-state
+gira ops sync --repo OWNER/REPO --dry-run
+gira ops onboard verify --repo OWNER/REPO --stage steady-state
 gira status --repo OWNER/REPO
-gira start --repo OWNER/REPO --issue 12 --dry-run
-gira work pr --repo OWNER/REPO --issue 12 --dry-run
+gira ticket start --repo OWNER/REPO --ticket 12 --dry-run
+gira ticket pr --repo OWNER/REPO --ticket 12 --dry-run
+gira ticket status --repo OWNER/REPO --ticket 12
 ```
 
 This is the canonical operator path for daily use.
 
 Use `--json` for automation only; human output ends with a concise `next step:` line where Gira can suggest a safe continuation.
 
+`gira start` and `gira work start|pr|status` remain compatibility aliases for users and scripts that already adopted the earlier issue-oriented wording. New documentation uses `ticket` because the intended mental model is Jira-style tickets mapped onto GitHub issues.
+
 ## Advanced Adoption And Migration
 
 Use the bootstrap and policy-mode commands when introducing Gira to a new or already-configured repository:
 
 ```bash
-gira bootstrap --repo OWNER/REPO --template default --dry-run
-gira bootstrap --repo OWNER/REPO --path /path/to/repo
-gira sync --repo OWNER/REPO --dry-run --policy-mode adopt
-gira sync --repo OWNER/REPO --dry-run --policy-mode merge
-gira sync --repo OWNER/REPO --dry-run --policy-mode enforce
-gira onboard verify --repo OWNER/REPO --stage init --json
+gira ops bootstrap --repo OWNER/REPO --template default --dry-run
+gira ops bootstrap --repo OWNER/REPO --path /path/to/repo
+gira ops sync --repo OWNER/REPO --dry-run --policy-mode adopt
+gira ops sync --repo OWNER/REPO --dry-run --policy-mode merge
+gira ops sync --repo OWNER/REPO --dry-run --policy-mode enforce
+gira ops onboard verify --repo OWNER/REPO --stage init --json
 gira status --repo OWNER/REPO --json
 ```
 
@@ -250,10 +254,10 @@ To smoke-test the binary from outside the source checkout:
 ```bash
 GOBIN="$(mktemp -d)" go install ./cmd/gira
 (cd /tmp && "${GOBIN}/gira" --help)
-(cd /tmp && "${GOBIN}/gira" bootstrap --repo OWNER/REPO --template default --dry-run)
-(cd /tmp && "${GOBIN}/gira" bootstrap --repo OWNER/REPO --path /path/to/repo --no-branch)
-(cd /tmp && "${GOBIN}/gira" sync --repo OWNER/REPO --dry-run)
-(cd /tmp && "${GOBIN}/gira" sync --repo OWNER/REPO --dry-run --bootstrap-issues)
+(cd /tmp && "${GOBIN}/gira" ops bootstrap --repo OWNER/REPO --template default --dry-run)
+(cd /tmp && "${GOBIN}/gira" ops bootstrap --repo OWNER/REPO --path /path/to/repo --no-branch)
+(cd /tmp && "${GOBIN}/gira" ops sync --repo OWNER/REPO --dry-run)
+(cd /tmp && "${GOBIN}/gira" ops sync --repo OWNER/REPO --dry-run --bootstrap-issues)
 (cd /tmp && "${GOBIN}/gira" status --repo OWNER/REPO --json)
 ```
 
@@ -293,4 +297,4 @@ Developer experience conventions for first-run onboarding, dry-run/apply output,
 
 The GitHub-native Product OS schema for future Projects v2 planning, roadmap date semantics, permission/secret model, and dry-run-first automation is documented in [docs/product-os-schema.md](docs/product-os-schema.md). The execution roadmap for that phase is tracked in [docs/product-os-roadmap.md](docs/product-os-roadmap.md). The Jira-vs-Gira operating boundary, work decomposition contract, and assistant/dev-agent split are documented in [docs/jira-gira-operating-boundary.md](docs/jira-gira-operating-boundary.md). The portfolio intake layer for top-level tickets and multi-repo lowering plans is documented in [docs/portfolio-intake.md](docs/portfolio-intake.md). The vendor-neutral dashboard/export boundary for Notion and other consumers is documented in [docs/dashboard-consumer-contract.md](docs/dashboard-consumer-contract.md), and the first concrete export bundle layout is documented in [docs/dashboard-export-artifacts.md](docs/dashboard-export-artifacts.md). The MVP CRUD support contract is documented in [docs/crud-capability-matrix.md](docs/crud-capability-matrix.md). Adoption on pre-configured repositories is documented in [docs/adoption-migration-playbook.md](docs/adoption-migration-playbook.md).
 
-Explicit non-goals for v1: GitHub Projects v2 automation, LLM PRD-to-issue decomposition, Web UI/TUI, and chat-bot integration. Jira import/export is part of v1 migration readiness through the `gira jira` command family.
+Explicit non-goals for v1: GitHub Projects v2 automation, LLM PRD-to-issue decomposition, Web UI/TUI, and chat-bot integration. Jira import/export is part of v1 migration readiness through the `gira ops jira` command family. The legacy `gira jira` entrypoint remains available for compatibility.

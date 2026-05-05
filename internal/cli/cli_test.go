@@ -20,17 +20,17 @@ func TestHelpOutput(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "GitHub-native project OS bootstrapper") {
+	if !strings.Contains(stdout.String(), "Jira-style project flow on GitHub") {
 		t.Fatalf("help output missing product description:\n%s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "contract") {
-		t.Fatalf("help output missing contract command:\n%s", stdout.String())
+	if !strings.Contains(stdout.String(), "ticket") {
+		t.Fatalf("help output missing ticket command:\n%s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "portfolio") {
-		t.Fatalf("help output missing portfolio command:\n%s", stdout.String())
+	if !strings.Contains(stdout.String(), "ops") {
+		t.Fatalf("help output missing ops command:\n%s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "jira") {
-		t.Fatalf("help output missing jira command:\n%s", stdout.String())
+	if strings.Contains(stdout.String(), "portfolio   ") || strings.Contains(stdout.String(), "jira        ") {
+		t.Fatalf("help output should not frontload advanced commands:\n%s", stdout.String())
 	}
 }
 
@@ -423,6 +423,65 @@ func TestWorkStartRequiresRepoIssueAndMode(t *testing.T) {
 	}
 }
 
+func TestTicketStartDryRunJSON(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 || !dryRun {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t", repo.FullName(), issue, dryRun)
+		}
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-126-work-command", DryRun: true, NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "--repo", "StatPan/gira", "--ticket", "126", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"branch": "issue-126-work-command"`) {
+		t.Fatalf("stdout missing branch JSON:\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "next step:") {
+		t.Fatalf("JSON stdout contains human prose:\n%s", stdout.String())
+	}
+}
+
+func TestTicketStartIssueAlias(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 127 || dryRun {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t", repo.FullName(), issue, dryRun)
+		}
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-127-alias", NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "--repo", "StatPan/gira", "--issue", "127", "--apply"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"ticket start: ticket #127",
+		"next step: gira ticket pr --repo StatPan/gira --ticket 127 --dry-run",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket start output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestTicketStartRejectsConflictingTicketAndIssue(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "--repo", "StatPan/gira", "--ticket", "126", "--issue", "127", "--dry-run"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "must refer to the same number") {
+		t.Fatalf("stderr missing conflict guidance:\n%s", stderr.String())
+	}
+}
+
 func TestWorkStartDryRunJSON(t *testing.T) {
 	restore := newWorkStartResult
 	t.Cleanup(func() { newWorkStartResult = restore })
@@ -462,8 +521,8 @@ func TestStartAliasWrapsWorkStart(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"work start: issue #130",
-		"next step: gira work pr --repo StatPan/gira --issue 130 --dry-run",
+		"ticket start: ticket #130",
+		"next step: gira ticket pr --repo StatPan/gira --ticket 130 --dry-run",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("start alias output missing %q:\n%s", want, stdout.String())
@@ -484,8 +543,17 @@ func TestStartAliasHelpMentionsAlias(t *testing.T) {
 
 func TestSyncNextStepKeepsPolicyAndBootstrapFlags(t *testing.T) {
 	repo := gira.RepoRef{Owner: "StatPan", Name: "gira"}
-	got := syncNextStep(repo, true, true, gira.SyncPolicyAdopt, false)
+	got := syncNextStep("gira sync", repo, true, true, gira.SyncPolicyAdopt, false)
 	want := "next step: gira sync --repo StatPan/gira --policy-mode adopt --bootstrap-issues"
+	if got != want {
+		t.Fatalf("syncNextStep = %q, want %q", got, want)
+	}
+}
+
+func TestOpsSyncNextStepUsesOpsCommand(t *testing.T) {
+	repo := gira.RepoRef{Owner: "StatPan", Name: "gira"}
+	got := syncNextStep("gira ops sync", repo, true, true, gira.SyncPolicyMerge, false)
+	want := "next step: gira ops sync --repo StatPan/gira --bootstrap-issues"
 	if got != want {
 		t.Fatalf("syncNextStep = %q, want %q", got, want)
 	}
@@ -511,6 +579,26 @@ func TestWorkPRApplyDraftJSON(t *testing.T) {
 	}
 }
 
+func TestTicketPRApplyDraftJSON(t *testing.T) {
+	restore := newWorkPRResult
+	t.Cleanup(func() { newWorkPRResult = restore })
+	newWorkPRResult = func(repo gira.RepoRef, issue int, dryRun bool, draft bool) (gira.WorkPRResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 || dryRun || !draft {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t draft=%t", repo.FullName(), issue, dryRun, draft)
+		}
+		return gira.WorkPRResult{Repo: repo.FullName(), Issue: issue, Draft: true, PRNumber: 204, NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "pr", "--repo", "StatPan/gira", "--ticket", "126", "--apply", "--draft", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"draft": true`) {
+		t.Fatalf("stdout missing draft JSON:\n%s", stdout.String())
+	}
+}
+
 func TestWorkStatusJSON(t *testing.T) {
 	restore := newWorkStatusResult
 	t.Cleanup(func() { newWorkStatusResult = restore })
@@ -528,6 +616,82 @@ func TestWorkStatusJSON(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"next_action": "mark_pr_ready"`) {
 		t.Fatalf("stdout missing next action JSON:\n%s", stdout.String())
+	}
+}
+
+func TestTicketStatusHumanOutputUsesTicketNextStep(t *testing.T) {
+	restore := newWorkStatusResult
+	t.Cleanup(func() { newWorkStatusResult = restore })
+	newWorkStatusResult = func(repo gira.RepoRef, issue int) (gira.WorkStatusResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 {
+			t.Fatalf("unexpected args repo=%s issue=%d", repo.FullName(), issue)
+		}
+		return gira.WorkStatusResult{Repo: repo.FullName(), Issue: issue, Status: "In progress", NextAction: "open_pr"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "status", "--repo", "StatPan/gira", "--ticket", "126"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"ticket status: ticket #126",
+		"next step: gira ticket pr --repo StatPan/gira --ticket 126 --apply",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket status output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestTicketStatusJSONUsesTicketNextStep(t *testing.T) {
+	restore := newWorkStatusResult
+	t.Cleanup(func() { newWorkStatusResult = restore })
+	newWorkStatusResult = func(repo gira.RepoRef, issue int) (gira.WorkStatusResult, error) {
+		return gira.WorkStatusResult{Repo: repo.FullName(), Issue: issue, Status: "Ready", NextAction: "start_work", NextStep: "gira work start --repo StatPan/gira --issue 126 --apply"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "status", "--repo", "StatPan/gira", "--ticket", "126", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"next_step": "gira ticket start --repo StatPan/gira --ticket 126 --apply"`) {
+		t.Fatalf("ticket status JSON should use ticket next step:\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "gira work start") {
+		t.Fatalf("ticket status JSON leaked work next step:\n%s", stdout.String())
+	}
+}
+
+func TestOpsHelp(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ops", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Advanced Gira controls") || !strings.Contains(stdout.String(), "sync") {
+		t.Fatalf("stdout missing ops help:\n%s", stdout.String())
+	}
+}
+
+func TestOpsParityDelegatesToExistingCommand(t *testing.T) {
+	restore := newJiraParityReport
+	t.Cleanup(func() { newJiraParityReport = restore })
+	newJiraParityReport = func(repo gira.RepoRef) (gira.JiraParityReport, error) {
+		if repo.FullName() != "StatPan/gira" {
+			t.Fatalf("unexpected repo=%s", repo.FullName())
+		}
+		return gira.JiraParityReport{Command: "parity jira", Repo: repo.FullName(), Scores: gira.JiraParityScores{Earned: 100, Total: 100, Pct: 100}, Ready: true}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ops", "parity", "jira", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"command": "parity jira"`) {
+		t.Fatalf("stdout missing delegated parity JSON:\n%s", stdout.String())
 	}
 }
 

@@ -133,6 +133,15 @@ The explicit capability matrix, top-level ticket -> repo issue -> PR contract, a
 
 The next Jira gap is the project-agnostic backlog layer. Gira's first portfolio slice is read-only and dry-run-first: portfolio repo issues become top-level tickets, configured execution repos define the lowering allowlist, and `gira portfolio status|validate|plan --dry-run` reports how work would be routed without mutating GitHub. The contract is documented in [portfolio-intake.md](portfolio-intake.md).
 
+The next implementation slice is portfolio lowering. It should land in this order:
+
+1. capability checks for portfolio and execution repo issue access
+2. `gira portfolio lower --dry-run` using the same action model as `portfolio plan`
+3. `gira portfolio lower --apply` for idempotent execution issue creation and parent child-link updates
+4. portfolio ticket templates and post-lowering validation UX
+
+Apply must remain bounded to GitHub issues and labels. Projects v2, Web UI, Jira import/export, and LLM decomposition remain out of scope.
+
 ## Non-goals during this roadmap
 
 - no Jira-style separate database

@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,7 +19,7 @@ func TestPortfolioLowerPlanCreateLinkAndParentUpdate(t *testing.T) {
 		{Number: 32, Title: "Link", State: "open", Body: portfolioBody("multi_repo", "StatPan/gira\n- StatPan/docs", "StatPan/docs#20")},
 	}, []RepoRef{mustRepoRefForPortfolio("StatPan/gira"), mustRepoRefForPortfolio("StatPan/docs")})
 
-	actions, err := PortfolioLowerPlan(tickets, diagnostics, mustRepoRefForPortfolio("StatPan/portfolio"), []RepoRef{mustRepoRefForPortfolio("StatPan/gira"), mustRepoRefForPortfolio("StatPan/docs")}, client)
+	actions, err := PortfolioLowerPlan(tickets, diagnostics, mustRepoRefForPortfolio("StatPan/portfolio"), []RepoRef{mustRepoRefForPortfolio("StatPan/gira"), mustRepoRefForPortfolio("StatPan/docs")}, client, allowAllPortfolioLowerCapability())
 	if err != nil {
 		t.Fatalf("PortfolioLowerPlan error: %v", err)
 	}
@@ -42,7 +43,7 @@ func TestPortfolioLowerPlanAmbiguousExisting(t *testing.T) {
 		{Number: 31, Title: "Ambiguous", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "")},
 	}, []RepoRef{mustRepoRefForPortfolio("StatPan/gira")})
 
-	actions, err := PortfolioLowerPlan(tickets, diagnostics, mustRepoRefForPortfolio("StatPan/portfolio"), []RepoRef{mustRepoRefForPortfolio("StatPan/gira")}, client)
+	actions, err := PortfolioLowerPlan(tickets, diagnostics, mustRepoRefForPortfolio("StatPan/portfolio"), []RepoRef{mustRepoRefForPortfolio("StatPan/gira")}, client, allowAllPortfolioLowerCapability())
 	if err != nil {
 		t.Fatalf("PortfolioLowerPlan error: %v", err)
 	}
@@ -70,6 +71,34 @@ func TestApplyPortfolioLowerActionsCreatesAndUpdatesParent(t *testing.T) {
 	}
 	if !applied[0].Applied || !applied[1].Applied || applied[0].IssueNumber == 0 || applied[1].IssueNumber == 0 {
 		t.Fatalf("applied actions = %+v, want created issue numbers and applied flags", applied)
+	}
+}
+
+func TestPortfolioLowerPlanSkipsSearchWhenReadBlocked(t *testing.T) {
+	client := &fakePortfolioLowerClient{failOnSearch: true}
+	tickets, diagnostics := ParsePortfolioTickets([]PortfolioRawTicket{
+		{Number: 31, Title: "Create", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "")},
+	}, []RepoRef{mustRepoRefForPortfolio("StatPan/gira")})
+	capability := PortfolioCapabilityReport{
+		PortfolioRepo: "StatPan/portfolio",
+		Repos: []PortfolioRepoCapability{{
+			Repo: "StatPan/gira",
+			Role: "execution",
+			Capabilities: map[string]ProjectCapabilityStatus{
+				"issues:read": ProjectCapabilityDeniedScope,
+			},
+		}},
+	}
+
+	actions, err := PortfolioLowerPlan(tickets, diagnostics, mustRepoRefForPortfolio("StatPan/portfolio"), []RepoRef{mustRepoRefForPortfolio("StatPan/gira")}, client, capability)
+	if err != nil {
+		t.Fatalf("PortfolioLowerPlan error: %v", err)
+	}
+	if len(actions) != 1 || actions[0].Action != "execution_issue:blocked_permission" {
+		t.Fatalf("actions = %+v, want blocked permission without search", actions)
+	}
+	if client.searchCalls != 0 {
+		t.Fatalf("search calls = %d, want 0", client.searchCalls)
 	}
 }
 
@@ -144,13 +173,30 @@ func TestAppendPortfolioChildIssuesPreservesFollowingSections(t *testing.T) {
 	}
 }
 
+func TestAppendPortfolioChildIssuesUpdatesNormalizedHeadingAndPreservesOrder(t *testing.T) {
+	body := "## Goal\nG\n\n### Child-Issues\nStatPan/zeta#9\nStatPan/alpha#1\n\n## Non Goals\nN\n"
+	updated := appendPortfolioChildIssues(body, []string{"StatPan/docs#2"})
+	if strings.Count(updated, "Child") != 1 {
+		t.Fatalf("updated body duplicated child heading:\n%s", updated)
+	}
+	if !strings.Contains(updated, "StatPan/zeta#9\nStatPan/alpha#1\nStatPan/docs#2") {
+		t.Fatalf("updated body did not preserve append order:\n%s", updated)
+	}
+}
+
 type fakePortfolioLowerClient struct {
-	existing map[string][]PortfolioLoweredIssue
-	created  []PortfolioLoweredIssue
-	updated  map[int][]string
+	existing     map[string][]PortfolioLoweredIssue
+	created      []PortfolioLoweredIssue
+	updated      map[int][]string
+	failOnSearch bool
+	searchCalls  int
 }
 
 func (c *fakePortfolioLowerClient) SearchLoweredIssues(repo RepoRef, portfolioRepo RepoRef, ticket int) ([]PortfolioLoweredIssue, error) {
+	c.searchCalls++
+	if c.failOnSearch {
+		return nil, errors.New("unexpected search")
+	}
 	if c.existing == nil {
 		return nil, nil
 	}
@@ -173,4 +219,15 @@ func (c *fakePortfolioLowerClient) UpdatePortfolioChildIssues(ticket PortfolioTi
 
 func itoaForPortfolioLower(value int) string {
 	return strconv.Itoa(value)
+}
+
+func allowAllPortfolioLowerCapability() PortfolioCapabilityReport {
+	return PortfolioCapabilityReport{
+		PortfolioRepo: "StatPan/portfolio",
+		Repos: []PortfolioRepoCapability{
+			{Repo: "StatPan/portfolio", Role: "portfolio", Capabilities: map[string]ProjectCapabilityStatus{"issues:write": ProjectCapabilityAllowed}},
+			{Repo: "StatPan/gira", Role: "execution", Capabilities: map[string]ProjectCapabilityStatus{"issues:read": ProjectCapabilityAllowed, "issues:write": ProjectCapabilityAllowed}},
+			{Repo: "StatPan/docs", Role: "execution", Capabilities: map[string]ProjectCapabilityStatus{"issues:read": ProjectCapabilityAllowed, "issues:write": ProjectCapabilityAllowed}},
+		},
+	}
 }

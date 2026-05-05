@@ -3,8 +3,6 @@ package gira
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -75,7 +73,7 @@ func BuildPortfolioLowerReport(portfolioClient PortfolioClient, lowerClient Port
 		return PortfolioLowerReport{}, err
 	}
 	tickets, diagnostics := ParsePortfolioTickets(raw, repos)
-	actions, err := PortfolioLowerPlan(tickets, diagnostics, portfolioClient.PortfolioRepo(), repos, lowerClient)
+	actions, err := PortfolioLowerPlan(tickets, diagnostics, portfolioClient.PortfolioRepo(), repos, lowerClient, capability)
 	if err != nil {
 		return PortfolioLowerReport{}, err
 	}
@@ -103,7 +101,7 @@ func BuildPortfolioLowerReport(portfolioClient PortfolioClient, lowerClient Port
 	return report, nil
 }
 
-func PortfolioLowerPlan(tickets []PortfolioTicket, diagnostics []PortfolioDiagnostic, portfolioRepo RepoRef, repos []RepoRef, client PortfolioLowerClient) ([]PortfolioLowerAction, error) {
+func PortfolioLowerPlan(tickets []PortfolioTicket, diagnostics []PortfolioDiagnostic, portfolioRepo RepoRef, repos []RepoRef, client PortfolioLowerClient, capability PortfolioCapabilityReport) ([]PortfolioLowerAction, error) {
 	invalid := portfolioInvalidTickets(diagnostics)
 	actions := make([]PortfolioLowerAction, 0)
 	for _, ticket := range tickets {
@@ -127,6 +125,10 @@ func PortfolioLowerPlan(tickets []PortfolioTicket, diagnostics []PortfolioDiagno
 			repo, err := ParseRepoRef(repoName)
 			if err != nil {
 				actions = append(actions, PortfolioLowerAction{Ticket: ticket.Number, Action: "ticket:blocked_invalid_repo", Repo: repoName, Reason: "target repo is invalid"})
+				continue
+			}
+			if block, ok := portfolioCapabilityBlockFor(capability, repo.FullName(), "execution", "issues:read"); ok {
+				actions = append(actions, PortfolioLowerAction{Ticket: ticket.Number, Action: "execution_issue:blocked_permission", Repo: repo.FullName(), Reason: block.Reason})
 				continue
 			}
 			existing, err := client.SearchLoweredIssues(repo, portfolioRepo, ticket.Number)
@@ -331,7 +333,7 @@ func renderLoweredIssueBody(ticket PortfolioTicket, portfolioRepo RepoRef, targe
 
 func appendPortfolioChildIssues(body string, childIssues []string) string {
 	existing := parsePortfolioFields(body)["child_issues"]
-	lines := parsePortfolioList(existing)
+	lines := parsePortfolioListPreserveOrder(existing)
 	seen := map[string]struct{}{}
 	for _, line := range lines {
 		seen[line] = struct{}{}
@@ -342,23 +344,42 @@ func appendPortfolioChildIssues(body string, childIssues []string) string {
 			seen[child] = struct{}{}
 		}
 	}
-	sort.Strings(lines)
 	base := body
 	if strings.TrimSpace(existing) != "" {
-		re := regexp.MustCompile(`(?ms)^## Child Issues\s*\n.*?(?:\n## |\z)`)
-		base = re.ReplaceAllStringFunc(body, func(match string) string {
-			suffix := ""
-			if strings.HasSuffix(match, "\n## ") {
-				suffix = "\n## "
-				match = strings.TrimSuffix(match, "\n## ")
+		ranges := portfolioHeadingRe.FindAllStringSubmatchIndex(body, -1)
+		for i, match := range ranges {
+			name := normalizePortfolioFieldName(body[match[2]:match[3]])
+			if name != "child_issues" {
+				continue
 			}
-			return "## Child Issues\n" + strings.Join(lines, "\n") + "\n" + suffix
-		})
-		if base != body {
-			return base
+			end := len(body)
+			if i+1 < len(ranges) {
+				end = ranges[i+1][0]
+			}
+			return body[:match[1]] + "\n" + strings.Join(lines, "\n") + "\n" + body[end:]
 		}
 	}
 	return strings.TrimRight(base, "\n") + "\n\n## Child Issues\n" + strings.Join(lines, "\n") + "\n"
+}
+
+func parsePortfolioListPreserveOrder(value string) []string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, ",", "\n")
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, line := range strings.Split(value, "\n") {
+		item := strings.TrimSpace(strings.TrimPrefix(line, "-"))
+		item = strings.TrimSpace(strings.TrimPrefix(item, "*"))
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
 }
 
 func loweringEvidenceMatches(body string, portfolioRepo RepoRef, ticket int, targetRepo RepoRef) bool {

@@ -23,11 +23,45 @@ go run ./cmd/gira onboard verify --repo OWNER/REPO --stage steady-state --json
 
 ## Install, Upgrade, and Remove
 
-Gira is implemented as a Go-built CLI, but users should not need Go installed to adopt it. The primary product install path is a versioned install script that downloads the matching GitHub release binary.
+Gira is implemented as a Go-built CLI. Until the first tagged GitHub release is published, the usable install paths are the developer `go install` path or a local source install from this checkout.
 
-### Install Script (Primary)
+### Developer Go Install (Current)
 
-The official happy path is:
+Use `go install` when you want a `gira` binary on `PATH` without staying in a source checkout:
+
+```bash
+go install github.com/StatPan/gira/cmd/gira@latest
+```
+
+The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. If the repository is private in your environment, configure Go private module access first, for example with `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication.
+
+Verification:
+
+```bash
+gira --help
+gira status --repo OWNER/REPO --json
+```
+
+### Local Source Install (Current)
+
+From this checkout, build and install the current source version:
+
+```bash
+GOBIN="${HOME}/.local/bin" go install ./cmd/gira
+```
+
+Use a temporary install directory for smoke tests:
+
+```bash
+GOBIN="$(mktemp -d)" go install ./cmd/gira
+"${GOBIN}/gira" --help
+```
+
+### Install Script (After First Tagged Release)
+
+`install.sh` is the future official release install contract. It is intentionally present in the repository now, but it will not be a usable install path until a tagged GitHub release with matching binary archives exists.
+
+After the first tagged release, the official happy path will be:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
@@ -57,9 +91,9 @@ gira --help
 gira status --repo OWNER/REPO --json
 ```
 
-### GitHub Release Archives (Manual)
+### GitHub Release Archives (After First Tagged Release)
 
-Manual installation uses the same release assets as the install script. Release archive names follow:
+Manual release-archive installation will use the same release assets as the install script after the first tagged release is published. Release archive names follow:
 
 ```text
 gira_VERSION_linux_amd64.tar.gz
@@ -81,21 +115,11 @@ gira --help
 
 If checksum assets are published for the release, verify the archive before installing the binary.
 
-### Developer Go Install
-
-`go install` remains available for developers and contributors, but it is not the default product onboarding path because it requires Go and module access.
-
-```bash
-go install github.com/StatPan/gira/cmd/gira@latest
-```
-
-The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. If the repository is private in your environment, configure Go private module access first, for example with `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication.
-
 ### Planned Package Channels
 
 Homebrew is the near-term official package-manager target for macOS and Linuxbrew users, but the tap is not yet an available install path.
 
-npm, bun, and `uv` packages are experimental candidate wrapper channels for AI-era developer workflows. These wrappers should install or dispatch the same Go-built release binary rather than reimplementing the CLI. Until those packages exist, use the install script, manual release archive, or developer `go install` path above.
+npm, bun, and `uv` packages are experimental candidate wrapper channels for AI-era developer workflows. These wrappers should install or dispatch the same Go-built release binary rather than reimplementing the CLI. Until those packages exist, use the developer `go install` path or local source install above.
 
 Wrapper packages must preserve the same command surface as the native binary:
 
@@ -115,9 +139,15 @@ Unsupported distribution channels are source snapshots, unversioned binaries cop
 Use the same channel that installed Gira:
 
 ```bash
+go install github.com/StatPan/gira/cmd/gira@latest
+GOBIN="${HOME}/.local/bin" go install ./cmd/gira
+```
+
+After the first tagged release, install-script upgrades will use the same command as installation:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v0.1.0 sh
-go install github.com/StatPan/gira/cmd/gira@latest
 ```
 
 When Homebrew, npm, bun, or `uv` wrappers become available, upgrade with the same package manager used for installation.

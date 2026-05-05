@@ -90,9 +90,12 @@ gira portfolio lower --dry-run --config .gira/config.yaml --json
 Plan actions:
 
 - `ticket:needs_routing`: the ticket is not ready to lower.
+- `ticket:deferred`: the ticket is intentionally delayed and should not lower yet.
 - `ticket:blocked_invalid_repo`: a target repo is invalid or outside the allowlist.
 - `execution_issue:create`: a future apply command would create a repo execution issue.
 - `execution_issue:link_existing`: linked child issues already exist and should be reused.
+- `execution_issue:ambiguous_existing`: multiple matching execution issues exist for the same parent/target pair.
+- `portfolio_ticket:update_child_issues`: a future apply command would append missing child issue links to the parent portfolio ticket.
 
 ## Lowering Contract
 
@@ -104,16 +107,19 @@ The command is dry-run-first:
 - `gira portfolio lower --apply` may perform only the actions shown by the same dry-run under the same config and credential capability.
 - `--apply` and `--dry-run` are mutually exclusive. One of them is required.
 - JSON output is data-only. Human output ends with one next-step line.
+- Dry-run and apply must both perform the same discovery steps, including target repo searches for existing `## Gira Lowering` evidence. Apply must not discover a matching execution issue that dry-run would have missed.
 
 Supported ticket states:
 
 | Ticket condition | Lowering behavior |
 | --- | --- |
 | open + `single_repo` + one valid target repo + no child issue | create one execution issue |
+| open + `single_repo` + one valid child issue for the target repo | link/reuse the existing child issue |
 | open + `multi_repo` + valid target repos + no child issues | create one execution issue per target repo |
 | open + `multi_repo` + some valid child issues | link/reuse existing child issues and create only missing target repo issues |
+| open + all target repos already linked | no execution issue creation; optionally update missing parent child-link evidence |
 | open + `unrouted` | skip with `ticket:needs_routing` |
-| open + `deferred` | skip with `ticket:needs_routing` |
+| open + `deferred` | skip with `ticket:deferred` |
 | invalid schema, invalid target repo, or invalid child issue | block with diagnostics; no mutation for that ticket |
 | closed portfolio ticket | skip; no lowering action |
 
@@ -129,6 +135,15 @@ Copied from the portfolio ticket, narrowed to this repo when possible.
 ## Acceptance Criteria
 Copied from the portfolio ticket.
 
+## Files To Change
+Unknown until refined.
+
+## Verification Commands
+Unknown until refined.
+
+## Blocker Format
+Comment on this issue with the blocker, attempted command, and required decision.
+
 ## Parent Ticket
 OWNER/PORTFOLIO_REPO#123
 
@@ -138,11 +153,14 @@ portfolio_ticket: 123
 target_repo: OWNER/REPO
 ```
 
+Lowered issues are execution shells, not always worker-ready implementation packets. If `files_to_change` or `verification_commands` are unknown, the issue should remain `status:ready` only for triage/refinement, not direct worker handoff. A later UX slice may add `status:needs-design` or `status:needs-refinement` if the label taxonomy supports it.
+
 Required labels for created execution issues:
 
 - `type:task`
-- `status:ready`
-- `agent:worker` when the repo has that label
+- `status:ready` when enough implementation detail exists
+- `status:needs-design` when the repo has that label and files/verification are unknown
+- `agent:worker` only when the issue is ready for direct implementation
 
 If a required label is missing, apply must either create it through an existing label-sync path or block with a capability/remediation diagnostic. It must not silently create ad hoc labels outside the configured Gira taxonomy.
 
@@ -156,13 +174,15 @@ Idempotency keys:
 - target repo: `OWNER/REPO`
 - execution issue evidence: a `## Gira Lowering` block containing `portfolio_repo`, `portfolio_ticket`, and `target_repo`
 
-Before creating an execution issue, apply must search the target repo for an open or closed issue containing matching lowering evidence. If one exists, the action becomes `execution_issue:link_existing`. If multiple matches exist, the ticket is blocked with `execution_issue:ambiguous_existing` and no mutation is performed for that target repo.
+Before creating an execution issue, dry-run and apply must search the target repo for an open or closed issue containing matching lowering evidence. If one exists, the action becomes `execution_issue:link_existing`. If multiple matches exist, the ticket is blocked with `execution_issue:ambiguous_existing` and no mutation is performed for that target repo.
 
 The portfolio ticket's `## Child Issues` list is useful evidence but not the only idempotency source. Gira must not rely solely on parent body links because a user may edit the portfolio ticket manually.
 
 ## Parent Updates
 
 The first apply implementation may update the portfolio ticket only to append missing child issue links under `## Child Issues`.
+
+Dry-run must show this as an explicit `portfolio_ticket:update_child_issues` action. Apply must not update the parent unless that action is present in dry-run output.
 
 Parent updates must be:
 
@@ -179,11 +199,11 @@ Parent updates must not rewrite goal, scope, routing, target repos, acceptance c
 `portfolio lower --apply` requires:
 
 - read access to `portfolio.repo`
-- issue read access to every configured execution repo
+- issue read access to target execution repos for the tickets being lowered
 - issue write access for target repos that need creation
 - issue write access to the portfolio repo only if parent child-link updates are enabled
 
-Denied or unknown capability must produce stable diagnostics and skip mutation for the affected repo. Partial apply is allowed only when independent target repos are still safe to mutate and the dry-run output marks the denied repos as blocked.
+Denied or unknown capability must produce stable diagnostics and skip mutation for the affected repo. A denied configured repo does not block unrelated tickets that do not target that repo. For a multi-repo ticket, denied capability blocks only the affected target repo action; independent target repo actions may still apply when dry-run marks the denied repo as blocked and the remaining actions are idempotent.
 
 ## Future Apply Boundary
 

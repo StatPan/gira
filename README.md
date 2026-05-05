@@ -118,9 +118,9 @@ Verify the archive with the release `checksums.txt` before installing the binary
 
 ### Wrapper Distribution Boundaries
 
-Package-manager wrappers such as Homebrew, npm, bun, or `uv` are allowed only as distribution channels for the Go-built release binary. They must not reimplement Gira in another runtime, change the command surface, or install unversioned CI artifacts.
+Package-manager wrappers such as Homebrew, npm, bun, pip, pipx, or `uv` are allowed only as distribution channels for the Go-built release binary. They must not reimplement Gira in another runtime, change the command surface, or install unversioned CI artifacts.
 
-The npm/bun wrapper package is maintained under `packages/npm`. Homebrew publishing targets the external `StatPan/homebrew-tap` repository. Both channels install the Go-built release binary and verify release checksums.
+The npm/bun wrapper package is maintained under `packages/npm`, and the PyPI wrapper package is maintained under `packages/pypi`. Homebrew publishing targets the external `StatPan/homebrew-tap` repository. These channels install the Go-built release binary and verify release checksums.
 
 Wrapper packages must preserve the same command surface as the native binary:
 
@@ -137,11 +137,13 @@ Official wrapper channels:
 ```bash
 npm install -g @statpan/gira
 bun install -g @statpan/gira
+python -m pip install --user gira-cli
+pipx install gira-cli
 brew tap StatPan/tap
 brew install gira
 ```
 
-The npm and bun channel installs the same Go-built release binary through the npm registry. The Homebrew channel is published through `StatPan/homebrew-tap`.
+The npm and bun channel installs the same Go-built release binary through the npm registry. The pip and pipx channel installs the `gira-cli` wrapper from PyPI. The Homebrew channel is published through `StatPan/homebrew-tap`.
 
 apt/deb packaging is a future target, not an initial official channel. It should wait until usage justifies signing keys, repository hosting, architecture matrix maintenance, and upgrade policy support.
 
@@ -158,6 +160,8 @@ go install github.com/StatPan/gira/cmd/gira@latest
 GOBIN="${HOME}/.local/bin" go install ./cmd/gira
 npm update -g @statpan/gira
 bun install -g @statpan/gira
+python -m pip install --user --upgrade gira-cli
+pipx upgrade gira-cli
 brew update && brew upgrade gira
 ```
 
@@ -184,7 +188,7 @@ gira_path="${gira_path:-$(command -v gira)}"
 rm "${gira_path}"
 ```
 
-If you installed to a custom directory, set `GIRA_INSTALL_DIR` to that same directory or remove the path printed by `command -v gira`. For npm, bun, or Homebrew installs, uninstall with the same package manager used for installation.
+If you installed to a custom directory, set `GIRA_INSTALL_DIR` to that same directory or remove the path printed by `command -v gira`. For npm, bun, pip, pipx, or Homebrew installs, uninstall with the same package manager used for installation.
 
 Verification:
 
@@ -283,7 +287,7 @@ GOBIN="$(mktemp -d)" go install ./cmd/gira
 
 Tagged Go releases are built by `.github/workflows/release.yml`. Pull requests and `main` pushes run validation builds only. Tags that start with `v` publish stable GitHub Release assets, then publish configured package-manager channels.
 
-The workflow checks `install.sh` syntax, runs `go test ./...`, runs npm wrapper tests, builds Linux, macOS, and Windows CLI archives with version metadata, generates `checksums.txt`, verifies the checksum manifest, and publishes those assets to the GitHub release. Published release assets are treated as immutable; rerun with a new patch tag instead of replacing an existing release. If `NPM_TOKEN` is configured, it publishes `@statpan/gira`. If `HOMEBREW_TAP_TOKEN` is configured, it updates `StatPan/homebrew-tap`.
+The workflow checks `install.sh` syntax, runs `go test ./...`, runs npm and PyPI wrapper tests, builds Linux, macOS, and Windows CLI archives with version metadata, generates `checksums.txt`, verifies the checksum manifest, and publishes those assets to the GitHub release. Published release assets are treated as immutable; rerun with a new patch tag instead of replacing an existing release. If `NPM_TOKEN` is configured, it publishes `@statpan/gira`. If `PYPI_API_TOKEN` is configured, it publishes `gira-cli`. If `HOMEBREW_TAP_TOKEN` is configured, it updates `StatPan/homebrew-tap`.
 
 Maintainer flow:
 

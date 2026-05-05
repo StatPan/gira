@@ -121,9 +121,9 @@ gira status --repo OWNER/REPO --json
 
 The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. Private repository installs need Go private module access, such as `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication. The bootstrap path embeds the default template so output and local installs are independent of the caller's working directory. `sync` shells out through `gh` to create or update only Gira-managed labels, milestones, and bootstrap issues. `status` is read-only and shells out through `gh api` with stable JSON for worker automation.
 
-Package-manager wrappers such as npm, bun, or Homebrew may be used as distribution channels when they install or invoke the Go-built `gira` release binary. They should not introduce a second product runtime. `uv` and apt/deb packaging remain future channels.
+Package-manager wrappers such as npm, bun, pip, pipx, or Homebrew may be used as distribution channels when they install or invoke the Go-built `gira` release binary. They should not introduce a second product runtime. `uv` and apt/deb packaging remain future channels.
 
-Tagged Go releases are built by `.github/workflows/release.yml`. Maintainers publish one by tagging `main` with a `v*` tag and pushing the tag; the workflow checks the installer syntax, runs Go tests and npm wrapper tests, builds Linux/macOS/Windows archives with version metadata, generates `checksums.txt`, verifies it, attaches the assets to the GitHub release, and publishes configured npm/Homebrew channels.
+Tagged Go releases are built by `.github/workflows/release.yml`. Maintainers publish one by tagging `main` with a `v*` tag and pushing the tag; the workflow checks the installer syntax, runs Go tests plus npm and PyPI wrapper tests, builds Linux/macOS/Windows archives with version metadata, generates `checksums.txt`, verifies it, attaches the assets to the GitHub release, and publishes configured npm/PyPI/Homebrew channels.
 
 ## Output Conventions
 

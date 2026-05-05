@@ -56,6 +56,24 @@ jobs:
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         run: npm test --prefix packages/npm
 
+      - name: Set up Python
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Run PyPI wrapper tests
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: PYTHONPATH=packages/pypi/src python -m unittest discover -s packages/pypi/tests
+
+      - name: Build PyPI wrapper package
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade build twine
+          python -m build packages/pypi
+          python -m twine check packages/pypi/dist/*
+
       - name: Build archive
         env:
           GOOS: ${{ matrix.goos }}
@@ -110,6 +128,11 @@ jobs:
             GIRA_VERSION="${version}" GIRA_BASE_URL="file://${asset_dir}" npm install "${GITHUB_WORKSPACE}/packages/npm"
             ./node_modules/.bin/gira version --json | grep "\"version\": \"${version}\""
           )
+
+          py_project="$(mktemp -d)"
+          python -m venv "${py_project}/venv"
+          "${py_project}/venv/bin/python" -m pip install "${GITHUB_WORKSPACE}/packages/pypi"
+          GIRA_VERSION="${version}" GIRA_BASE_URL="file://${asset_dir}" GIRA_PYPI_CACHE_DIR="${py_project}/cache" "${py_project}/venv/bin/gira" version --json | grep "\"version\": \"${version}\""
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7.0.1
@@ -211,6 +234,63 @@ jobs:
           set -euo pipefail
           cd packages/npm
           npm publish --access public
+
+  pypi:
+    name: Publish PyPI wrapper
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    env:
+      PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+
+    steps:
+      - name: Check PyPI token
+        id: pypi-token
+        run: |
+          if [ -z "${PYPI_API_TOKEN}" ]; then
+            echo "publish=false" >>"${GITHUB_OUTPUT}"
+            echo "PYPI_API_TOKEN is not configured; skipping PyPI publish"
+          else
+            echo "publish=true" >>"${GITHUB_OUTPUT}"
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Test PyPI wrapper
+        run: PYTHONPATH=packages/pypi/src python -m unittest discover -s packages/pypi/tests
+
+      - name: Build PyPI wrapper
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("packages/pypi/pyproject.toml")
+          version = "${{ github.ref_name }}".removeprefix("v")
+          text = path.read_text()
+          path.write_text(text.replace('version = "0.0.0.dev0"', f'version = "{version}"'))
+          PY
+          python -m pip install --upgrade build twine
+          python -m build packages/pypi
+          python -m twine check packages/pypi/dist/*
+
+      - name: Smoke PyPI wrapper package
+        run: |
+          set -euo pipefail
+          py_project="$(mktemp -d)"
+          python -m venv "${py_project}/venv"
+          "${py_project}/venv/bin/python" -m pip install packages/pypi/dist/*.whl
+          GIRA_BASE_URL="https://github.com/StatPan/gira/releases/download/${GITHUB_REF_NAME}" GIRA_PYPI_CACHE_DIR="${py_project}/cache" "${py_project}/venv/bin/gira" version --json | grep "\"version\": \"${GITHUB_REF_NAME}\""
+
+      - name: Publish PyPI wrapper
+        if: steps.pypi-token.outputs.publish == 'true'
+        run: python -m twine upload packages/pypi/dist/* -u __token__ -p "${PYPI_API_TOKEN}"
 
   homebrew:
     name: Update Homebrew tap

@@ -4,25 +4,65 @@ Gira is a GitHub-native project OS bootstrapper: it turns a repository into an A
 
 Name shorthand: **Gira: Jira-style project flow on GitHub.**
 
-## MVP Direction
+## Quick Start
 
-The Go-built `gira` binary is the sole product implementation. The default user experience is Jira-style ticket work backed by GitHub issues, PRs, labels, and milestones:
+Install Gira:
 
 ```bash
-go run ./cmd/gira ops bootstrap --repo OWNER/REPO --template default --dry-run
-go run ./cmd/gira ops bootstrap --repo OWNER/REPO --path /path/to/repo
-go run ./cmd/gira ops sync --repo OWNER/REPO --dry-run
-go run ./cmd/gira ops sync --repo OWNER/REPO --dry-run --bootstrap-issues  # Gira self-bootstrap only
-go run ./cmd/gira ops sync --repo OWNER/REPO
-go run ./cmd/gira ops sync --repo OWNER/REPO --bootstrap-issues            # Gira self-bootstrap only
-go run ./cmd/gira ticket start --repo OWNER/REPO --ticket 12 --dry-run
-go run ./cmd/gira ticket pr --repo OWNER/REPO --ticket 12 --apply --draft
-go run ./cmd/gira ticket status --repo OWNER/REPO --ticket 12 --json
-go run ./cmd/gira status --repo OWNER/REPO
-go run ./cmd/gira status --repo OWNER/REPO --json
-go run ./cmd/gira ops onboard verify --repo OWNER/REPO --stage init --json
-go run ./cmd/gira ops onboard verify --repo OWNER/REPO --stage steady-state --json
+curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 ```
+
+Or install through a package manager:
+
+```bash
+pipx install gira-cli
+python -m pip install --user gira-cli
+brew tap StatPan/tap
+brew install gira
+```
+
+Prepare a repository without changing it:
+
+```bash
+gira doctor --repo OWNER/REPO
+gira ops bootstrap --repo OWNER/REPO --template default --dry-run
+gira ops sync --repo OWNER/REPO --dry-run
+```
+
+Apply the repository setup after reviewing the dry-run output:
+
+```bash
+gira ops bootstrap --repo OWNER/REPO --path /path/to/repo
+gira ops sync --repo OWNER/REPO
+gira ops onboard verify --repo OWNER/REPO --stage steady-state
+```
+
+Run the daily Jira-style ticket loop:
+
+```bash
+gira status --repo OWNER/REPO
+gira ticket start --repo OWNER/REPO --ticket 12 --dry-run
+gira ticket start --repo OWNER/REPO --ticket 12 --apply
+gira ticket pr --repo OWNER/REPO --ticket 12 --dry-run
+gira ticket pr --repo OWNER/REPO --ticket 12 --apply --draft
+gira ticket status --repo OWNER/REPO --ticket 12
+```
+
+Use `--json` for automation:
+
+```bash
+gira status --repo OWNER/REPO --json
+gira ticket status --repo OWNER/REPO --ticket 12 --json
+```
+
+## Command Model
+
+The Go-built `gira` binary is the sole product implementation. The default user experience is Jira-style ticket work backed by GitHub issues, PRs, labels, and milestones.
+
+- `gira ticket ...` is the daily issue -> branch -> PR workflow.
+- `gira sprint ...`, `gira release`, and `gira status` are daily planning and reporting commands.
+- `gira ops ...` contains advanced setup, migration, policy, audit, and raw GitHub controls.
+- `gira start` and `gira work ...` remain compatibility aliases.
 
 ## Install, Upgrade, and Remove
 
@@ -132,18 +172,25 @@ gira ops sync --repo OWNER/REPO --dry-run
 gira status --repo OWNER/REPO --json
 ```
 
-Official wrapper channels:
+Official install channels:
 
 ```bash
-npm install -g @statpan/gira
-bun install -g @statpan/gira
 python -m pip install --user gira-cli
 pipx install gira-cli
 brew tap StatPan/tap
 brew install gira
 ```
 
-The npm and bun channel installs the same Go-built release binary through the npm registry. The pip and pipx channel installs the `gira-cli` wrapper from PyPI. The Homebrew channel is published through `StatPan/homebrew-tap`.
+The pip and pipx channel installs the `gira-cli` wrapper from PyPI. The Homebrew channel is published through `StatPan/homebrew-tap`.
+
+Pending wrapper channels:
+
+```bash
+npm install -g @statpan/gira
+bun install -g @statpan/gira
+```
+
+The npm and bun channel will install the same Go-built release binary through the npm registry after npm publishing is enabled for `@statpan/gira`.
 
 apt/deb packaging is a future target, not an initial official channel. It should wait until usage justifies signing keys, repository hosting, architecture matrix maintenance, and upgrade policy support.
 
@@ -158,8 +205,6 @@ curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v1.0.0 sh
 go install github.com/StatPan/gira/cmd/gira@latest
 GOBIN="${HOME}/.local/bin" go install ./cmd/gira
-npm update -g @statpan/gira
-bun install -g @statpan/gira
 python -m pip install --user --upgrade gira-cli
 pipx upgrade gira-cli
 brew update && brew upgrade gira

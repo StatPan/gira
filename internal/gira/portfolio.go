@@ -300,12 +300,15 @@ func ParsePortfolioTickets(raw []PortfolioRawTicket, repos []RepoRef) ([]Portfol
 func PortfolioPlan(tickets []PortfolioTicket, diagnostics []PortfolioDiagnostic, repos []RepoRef) []PortfolioPlanAction {
 	invalid := map[int]struct{}{}
 	for _, diag := range diagnostics {
-		if diag.RuleID == "invalid_target_repo" || diag.RuleID == "missing_required_field" || diag.RuleID == "invalid_routing" {
+		if diag.RuleID == "invalid_target_repo" || diag.RuleID == "invalid_child_issue" || diag.RuleID == "missing_required_field" || diag.RuleID == "invalid_routing" {
 			invalid[diag.Ticket] = struct{}{}
 		}
 	}
 	actions := make([]PortfolioPlanAction, 0)
 	for _, ticket := range tickets {
+		if !strings.EqualFold(ticket.State, "open") {
+			continue
+		}
 		if _, blocked := invalid[ticket.Number]; blocked {
 			actions = append(actions, PortfolioPlanAction{Ticket: ticket.Number, Action: "ticket:blocked_invalid_repo", Reason: "ticket has validation errors"})
 			continue
@@ -314,14 +317,13 @@ func PortfolioPlan(tickets []PortfolioTicket, diagnostics []PortfolioDiagnostic,
 			actions = append(actions, PortfolioPlanAction{Ticket: ticket.Number, Action: "ticket:needs_routing", Reason: "routing or target_repos is not execution-ready"})
 			continue
 		}
-		if len(ticket.ChildIssues) > 0 {
-			for _, repo := range ticket.TargetRepos {
-				actions = append(actions, PortfolioPlanAction{Ticket: ticket.Number, Action: "execution_issue:link_existing", Repo: repo, Reason: "child_issues already references execution work"})
-			}
-			continue
-		}
+		childRepos := childIssueRepos(ticket.ChildIssues)
 		for _, repo := range ticket.TargetRepos {
-			actions = append(actions, PortfolioPlanAction{Ticket: ticket.Number, Action: "execution_issue:create", Repo: repo, Reason: "no child issue linked for target repo"})
+			if _, ok := childRepos[repo]; ok {
+				actions = append(actions, PortfolioPlanAction{Ticket: ticket.Number, Action: "execution_issue:link_existing", Repo: repo, Reason: "child_issues already references execution work"})
+			} else {
+				actions = append(actions, PortfolioPlanAction{Ticket: ticket.Number, Action: "execution_issue:create", Repo: repo, Reason: "no child issue linked for target repo"})
+			}
 		}
 	}
 	return actions
@@ -387,7 +389,51 @@ func validatePortfolioTicket(ticket PortfolioTicket, allowed map[string]struct{}
 			diagnostics = append(diagnostics, PortfolioDiagnostic{Ticket: ticket.Number, RuleID: "invalid_target_repo", Detail: fmt.Sprintf("%s is not in portfolio.repos", repo)})
 		}
 	}
+	for _, issue := range ticket.ChildIssues {
+		repo, ok := childIssueRepo(issue)
+		if !ok {
+			diagnostics = append(diagnostics, PortfolioDiagnostic{Ticket: ticket.Number, RuleID: "invalid_child_issue", Detail: fmt.Sprintf("%s must be OWNER/REPO#N", issue)})
+			continue
+		}
+		if _, ok := allowed[repo]; !ok {
+			diagnostics = append(diagnostics, PortfolioDiagnostic{Ticket: ticket.Number, RuleID: "invalid_child_issue", Detail: fmt.Sprintf("%s points outside portfolio.repos", issue)})
+			continue
+		}
+		if len(ticket.TargetRepos) > 0 && !containsString(ticket.TargetRepos, repo) {
+			diagnostics = append(diagnostics, PortfolioDiagnostic{Ticket: ticket.Number, RuleID: "invalid_child_issue", Detail: fmt.Sprintf("%s does not match target_repos", issue)})
+		}
+	}
 	return diagnostics
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func childIssueRepos(issues []string) map[string]struct{} {
+	repos := map[string]struct{}{}
+	for _, issue := range issues {
+		repo, ok := childIssueRepo(issue)
+		if ok {
+			repos[repo] = struct{}{}
+		}
+	}
+	return repos
+}
+
+var portfolioChildIssueRe = regexp.MustCompile(`^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#[1-9][0-9]*$`)
+
+func childIssueRepo(issue string) (string, bool) {
+	match := portfolioChildIssueRe.FindStringSubmatch(strings.TrimSpace(issue))
+	if match == nil {
+		return "", false
+	}
+	return match[1], true
 }
 
 var portfolioHeadingRe = regexp.MustCompile(`(?m)^#{2,4}\s+([A-Za-z0-9 _-]+)\s*$`)

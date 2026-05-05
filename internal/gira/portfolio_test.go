@@ -60,6 +60,7 @@ func TestPortfolioPlanActions(t *testing.T) {
 		{Number: 31, Title: "Create", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "")},
 		{Number: 32, Title: "Link", State: "open", Body: portfolioBody("multi_repo", "StatPan/gira\n- StatPan/docs", "StatPan/gira#10")},
 		{Number: 33, Title: "Invalid", State: "open", Body: portfolioBody("single_repo", "StatPan/missing", "")},
+		{Number: 34, Title: "Closed", State: "closed", Body: portfolioBody("single_repo", "StatPan/gira", "")},
 	}, repos)
 
 	actions := PortfolioPlan(tickets, diagnostics, repos)
@@ -70,14 +71,44 @@ func TestPortfolioPlanActions(t *testing.T) {
 	if countByAction["ticket:needs_routing"] != 1 {
 		t.Fatalf("actions = %+v, want one needs_routing", actions)
 	}
-	if countByAction["execution_issue:create"] != 1 {
-		t.Fatalf("actions = %+v, want one create", actions)
+	if countByAction["execution_issue:create"] != 2 {
+		t.Fatalf("actions = %+v, want two create", actions)
 	}
-	if countByAction["execution_issue:link_existing"] != 2 {
-		t.Fatalf("actions = %+v, want two link_existing", actions)
+	if countByAction["execution_issue:link_existing"] != 1 {
+		t.Fatalf("actions = %+v, want one link_existing", actions)
 	}
 	if countByAction["ticket:blocked_invalid_repo"] != 1 {
 		t.Fatalf("actions = %+v, want one blocked", actions)
+	}
+	for _, action := range actions {
+		if action.Ticket == 34 {
+			t.Fatalf("closed ticket planned action: %+v", action)
+		}
+	}
+}
+
+func TestParsePortfolioTicketsValidatesChildIssues(t *testing.T) {
+	repos := []RepoRef{mustRepoRefForPortfolio("StatPan/gira"), mustRepoRefForPortfolio("StatPan/docs")}
+	_, diagnostics := ParsePortfolioTickets([]PortfolioRawTicket{
+		{Number: 35, Title: "Malformed child", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "gira#10")},
+		{Number: 36, Title: "Outside allowlist", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "StatPan/missing#10")},
+		{Number: 37, Title: "Outside targets", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "StatPan/docs#10")},
+	}, repos)
+
+	var foundMalformed, foundOutside, foundTargetMismatch bool
+	for _, diag := range diagnostics {
+		if diag.Ticket == 35 && diag.RuleID == "invalid_child_issue" && strings.Contains(diag.Detail, "OWNER/REPO#N") {
+			foundMalformed = true
+		}
+		if diag.Ticket == 36 && diag.RuleID == "invalid_child_issue" && strings.Contains(diag.Detail, "outside portfolio.repos") {
+			foundOutside = true
+		}
+		if diag.Ticket == 37 && diag.RuleID == "invalid_child_issue" && strings.Contains(diag.Detail, "does not match target_repos") {
+			foundTargetMismatch = true
+		}
+	}
+	if !foundMalformed || !foundOutside || !foundTargetMismatch {
+		t.Fatalf("diagnostics = %+v, want malformed, outside, and target mismatch child issue diagnostics", diagnostics)
 	}
 }
 

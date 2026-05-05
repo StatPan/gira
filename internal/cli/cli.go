@@ -1209,6 +1209,9 @@ func runPortfolioCommand(command string, args []string, stdout io.Writer, stderr
 			return 2
 		}
 		fmt.Fprintf(stdout, "%s\n", output)
+		if len(report.Diagnostics) > 0 {
+			return 1
+		}
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatPortfolioReport(report))

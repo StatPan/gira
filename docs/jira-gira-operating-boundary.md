@@ -19,6 +19,25 @@ The current product is execution-strong and portfolio/backlog-weak. That is an i
 
 GitHub-native does not mean full Jira parity. It means the canonical state stays on GitHub objects that developers already use. Gira fills the operational gaps around setup, state normalization, handoff, review, reporting, and safe command execution.
 
+## GitHub Execution Matrix
+
+Jira parity is only half of the decision. Gira can execute reliably only where GitHub exposes durable objects, APIs, permissions, and reviewable history. This matrix shows which GitHub surfaces can carry Jira-like behavior today.
+
+| GitHub surface | Native capability | Gira use today | Execution strength | Main gap |
+| --- | --- | --- | --- | --- |
+| Issues | Work packets, comments, labels, assignees, task lists, closing references. | Primary execution issue layer, templates, status labels, triage normalization, worker handoff, stale/blocked reporting. | Strong. Issues are durable, scriptable, reviewable, and easy for humans and agents to share. | Repo-scoped by default; not a complete project-agnostic intake layer. |
+| Labels | Lightweight taxonomy and status flags. | Type, status, priority, agent/owner, blocked, bootstrap metadata. | Strong for simple deterministic state. | Labels are flat strings, so complex workflow policy needs Gira conventions and validation. |
+| Milestones | Sprint, phase, or release boundary with due dates and issue counts. | Sprint planning, sprint close, rollover, milestone progress, phase completion reporting. | Strong for repo-local sprint cadence. | Cross-repo portfolio planning needs an external parent layer or dashboard export. |
+| Pull requests | Change unit, review, checks, merge state, closing keywords. | PR creation/status, closure-link gates, review queue, merge queue, release readiness. | Strong. PRs are the best source of execution evidence. | Draft/review/check semantics need a friendlier issue-lifecycle wrapper for daily UX. |
+| Branches | Work-start signal and local execution context. | `dev start` creates issue branches and transition planning can infer in-progress work. | Medium. Useful as evidence, but less durable than issues/PRs. | Branch-only work is ambiguous until linked back to an issue or PR. |
+| GitHub Projects v2 | Boards, fields, roadmap views, project items. | Capability probing and dry-run/project inspection; mutation is deliberately limited. | Medium for visibility, weak for MVP mutation. | Projects v2 automation is not MVP scope and has separate permission complexity. |
+| GitHub Actions / checks | CI status, scheduled jobs, policy checks. | Review gate, release readiness, quality gate, scheduled reporting concepts. | Medium. Good for verification and monitoring. | Poor default for primary development execution; failures often need interactive repair. |
+| Rulesets / branch protection | Merge safety, required checks, review policy. | Guardrails audit/apply and merge readiness inputs. | Strong for enforcement. | Requires admin capability and careful non-destructive policy ownership. |
+| Releases | Delivery checkpoint and published artifact boundary. | Release readiness reports. | Medium. Good as an output checkpoint. | Not a planning object by itself; needs issues, milestones, and PR evidence. |
+| Repository settings / permissions | Auth, scopes, admin controls. | Capability reports gate apply behavior. | Strong as a safety boundary. | Permission failures must stay explicit and non-magical. |
+
+The practical execution baseline is therefore: Issues + Labels + Milestones + PRs are strong enough for a Jira-like repository operating loop. Projects v2, Actions, and dashboards improve visibility, but they should not become the hidden source of truth in the MVP.
+
 ## Work Decomposition Contract
 
 Gira has three work layers:

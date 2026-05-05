@@ -138,15 +138,17 @@ type PortfolioPlanAction struct {
 }
 
 type PortfolioReport struct {
-	Command       string                `json:"command"`
-	PortfolioRepo string                `json:"portfolio_repo"`
-	Repos         []string              `json:"repos"`
-	DryRun        bool                  `json:"dry_run"`
-	Counts        PortfolioCounts       `json:"counts"`
-	Tickets       []PortfolioTicket     `json:"tickets,omitempty"`
-	Actions       []PortfolioPlanAction `json:"actions,omitempty"`
-	Diagnostics   []PortfolioDiagnostic `json:"diagnostics,omitempty"`
-	FetchedAt     string                `json:"fetched_at"`
+	Command          string                     `json:"command"`
+	PortfolioRepo    string                     `json:"portfolio_repo"`
+	Repos            []string                   `json:"repos"`
+	DryRun           bool                       `json:"dry_run"`
+	Counts           PortfolioCounts            `json:"counts"`
+	Tickets          []PortfolioTicket          `json:"tickets,omitempty"`
+	Actions          []PortfolioPlanAction      `json:"actions,omitempty"`
+	Capability       *PortfolioCapabilityReport `json:"capability,omitempty"`
+	PermissionBlocks []PortfolioCapabilityBlock `json:"permission_blocks,omitempty"`
+	Diagnostics      []PortfolioDiagnostic      `json:"diagnostics,omitempty"`
+	FetchedAt        string                     `json:"fetched_at"`
 }
 
 func ResolvePortfolioConfig(path string) (PortfolioConfigResolved, error) {
@@ -350,6 +352,12 @@ func FormatPortfolioReport(report PortfolioReport) string {
 		fmt.Fprintf(&b, "diagnostics:    %d\n", len(report.Diagnostics))
 		for _, diag := range report.Diagnostics {
 			fmt.Fprintf(&b, "  ticket #%d %s: %s\n", diag.Ticket, diag.RuleID, diag.Detail)
+		}
+	}
+	if len(report.PermissionBlocks) > 0 {
+		fmt.Fprintf(&b, "permissions:    %d blocked\n", len(report.PermissionBlocks))
+		for _, block := range report.PermissionBlocks {
+			fmt.Fprintf(&b, "  %s requires %s (%s)\n", block.CheckID, block.Required, block.Reason)
 		}
 	}
 	switch report.Command {

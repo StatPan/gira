@@ -99,6 +99,8 @@ Plan actions:
 - `execution_issue:ambiguous_existing`: multiple matching execution issues exist for the same parent/target pair.
 - `portfolio_ticket:update_child_issues`: a future apply command would append missing child issue links to the parent portfolio ticket.
 
+`gira portfolio plan --dry-run --json` includes the same capability summary used by `gira portfolio capability` plus `permission_blocks` for planned actions that cannot safely apply with the active credential.
+
 ## Lowering Contract
 
 `gira portfolio lower` is the only planned mutation path from portfolio tickets to repo execution issues.

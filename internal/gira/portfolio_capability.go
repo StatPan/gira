@@ -56,7 +56,7 @@ func BuildPortfolioCapabilityReport(portfolioRepo RepoRef, repos []RepoRef, runn
 		FetchedAt:      now.UTC().Format(time.RFC3339),
 	}
 
-	portfolioCapability, err := buildPortfolioRepoCapability(portfolioRepo, "portfolio", runner)
+	portfolioCapability, err := buildPortfolioRepoCapability(portfolioRepo, "portfolio", runner, *host)
 	if err != nil {
 		portfolioCapability = blockedPortfolioRepoCapability(portfolioRepo, "portfolio")
 	}
@@ -65,7 +65,7 @@ func BuildPortfolioCapabilityReport(portfolioRepo RepoRef, repos []RepoRef, runn
 	orderedRepos := append([]RepoRef(nil), repos...)
 	sort.Slice(orderedRepos, func(i, j int) bool { return orderedRepos[i].FullName() < orderedRepos[j].FullName() })
 	for _, repo := range orderedRepos {
-		capability, err := buildPortfolioRepoCapability(repo, "execution", runner)
+		capability, err := buildPortfolioRepoCapability(repo, "execution", runner, *host)
 		if err != nil {
 			capability = blockedPortfolioRepoCapability(repo, "execution")
 		}
@@ -81,15 +81,16 @@ func BuildPortfolioCapabilityReport(portfolioRepo RepoRef, repos []RepoRef, runn
 	return report, nil
 }
 
-func buildPortfolioRepoCapability(repo RepoRef, role string, runner CommandRunner) (PortfolioRepoCapability, error) {
+func buildPortfolioRepoCapability(repo RepoRef, role string, runner CommandRunner, host ghAuthHost) (PortfolioRepoCapability, error) {
 	payload, err := fetchRepoPermissions(repo, runner)
 	if err != nil {
 		return PortfolioRepoCapability{}, err
 	}
-	canRead := payload.Permissions.Pull || payload.Permissions.Push || payload.Permissions.Triage || payload.Permissions.Maintain || payload.Permissions.Admin
-	canWrite := payload.Permissions.Push || payload.Permissions.Maintain || payload.Permissions.Admin
+	canRead := probeIssueRead(repo, runner)
+	canIssueRoleWrite := payload.Permissions.Triage || payload.Permissions.Push || payload.Permissions.Maintain || payload.Permissions.Admin
+	writeStatus := capabilityFromIssueWriteEvidence(canRead, canIssueRoleWrite, host)
 	mode := "inspect-only"
-	if canWrite {
+	if writeStatus == ProjectCapabilityAllowed {
 		mode = "write"
 	} else if canRead {
 		mode = "read-only"
@@ -100,9 +101,34 @@ func buildPortfolioRepoCapability(repo RepoRef, role string, runner CommandRunne
 		Mode: mode,
 		Capabilities: map[string]ProjectCapabilityStatus{
 			"issues:read":  capabilityFromBool(canRead),
-			"issues:write": capabilityFromBool(canWrite),
+			"issues:write": writeStatus,
 		},
 	}, nil
+}
+
+func probeIssueRead(repo RepoRef, runner CommandRunner) bool {
+	_, err := runner.Run("gh", "api", "repos/"+repo.FullName()+"/issues", "-X", "GET", "-f", "state=all", "-f", "per_page=1")
+	return err == nil
+}
+
+func capabilityFromIssueWriteEvidence(canRead bool, canIssueRoleWrite bool, host ghAuthHost) ProjectCapabilityStatus {
+	if !canRead || !canIssueRoleWrite {
+		return ProjectCapabilityDeniedScope
+	}
+	if tokenScopesAllowIssueWrite(host.Scopes) {
+		return ProjectCapabilityAllowed
+	}
+	return ProjectCapabilityUnsupported
+}
+
+func tokenScopesAllowIssueWrite(scopes string) bool {
+	for _, raw := range strings.FieldsFunc(scopes, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' }) {
+		scope := strings.TrimSpace(raw)
+		if scope == "repo" || scope == "public_repo" || scope == "issues" || scope == "issues:write" {
+			return true
+		}
+	}
+	return false
 }
 
 func blockedPortfolioRepoCapability(repo RepoRef, role string) PortfolioRepoCapability {
@@ -127,6 +153,8 @@ func (r *PortfolioCapabilityReport) addRepoCapability(capability PortfolioRepoCa
 		reason := "permission denied"
 		if status == ProjectCapabilityDeniedScope {
 			reason = "token scope or repository permission is insufficient"
+		} else if status == ProjectCapabilityUnsupported {
+			reason = "issue write capability cannot be proven non-destructively with this token"
 		}
 		r.BlockedActions = append(r.BlockedActions, PortfolioCapabilityBlock{
 			CheckID:  capability.Role + ":" + capability.Repo + ":" + name,
@@ -136,6 +164,32 @@ func (r *PortfolioCapabilityReport) addRepoCapability(capability PortfolioRepoCa
 			Reason:   reason,
 		})
 	}
+}
+
+func PortfolioCapabilityBlocksForActions(report PortfolioCapabilityReport, actions []PortfolioPlanAction) []PortfolioCapabilityBlock {
+	needed := map[string]map[string]struct{}{}
+	for _, action := range actions {
+		if action.Repo == "" {
+			continue
+		}
+		required := "issues:read"
+		if action.Action == "execution_issue:create" {
+			required = "issues:write"
+		}
+		if _, ok := needed[action.Repo]; !ok {
+			needed[action.Repo] = map[string]struct{}{}
+		}
+		needed[action.Repo][required] = struct{}{}
+	}
+	blocks := make([]PortfolioCapabilityBlock, 0)
+	for _, block := range report.BlockedActions {
+		if byCapability, ok := needed[block.Repo]; ok {
+			if _, ok := byCapability[block.Required]; ok {
+				blocks = append(blocks, block)
+			}
+		}
+	}
+	return blocks
 }
 
 func FormatPortfolioCapabilityReport(report PortfolioCapabilityReport) string {

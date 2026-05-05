@@ -142,6 +142,31 @@ func TestPortfolioPlanJSON(t *testing.T) {
 	}
 }
 
+func TestPortfolioPlanPermissionBlocksExitOne(t *testing.T) {
+	restore := newPortfolioReport
+	t.Cleanup(func() { newPortfolioReport = restore })
+	newPortfolioReport = func(command string, configPath string, dryRun bool) (gira.PortfolioReport, error) {
+		return gira.PortfolioReport{
+			Command:          "portfolio plan",
+			PortfolioRepo:    "StatPan/portfolio",
+			Repos:            []string{"StatPan/gira"},
+			DryRun:           true,
+			Counts:           gira.PortfolioCounts{Tickets: 1, OpenTickets: 1, Actions: 1},
+			Actions:          []gira.PortfolioPlanAction{{Ticket: 145, Action: "execution_issue:create", Repo: "StatPan/gira", Reason: "no child issue linked for target repo"}},
+			PermissionBlocks: []gira.PortfolioCapabilityBlock{{CheckID: "execution:StatPan/gira:issues:write", Repo: "StatPan/gira", Role: "execution", Required: "issues:write", Reason: "issue write capability cannot be proven non-destructively with this token"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"portfolio", "plan", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"permission_blocks"`) {
+		t.Fatalf("stdout missing permission blocks:\n%s", stdout.String())
+	}
+}
+
 func TestPortfolioValidateDiagnosticsExitOne(t *testing.T) {
 	restore := newPortfolioReport
 	t.Cleanup(func() { newPortfolioReport = restore })

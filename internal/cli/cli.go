@@ -402,7 +402,17 @@ var newPortfolioReport = func(command string, configPath string, dryRun bool) (g
 		if !dryRun {
 			return gira.PortfolioReport{}, fmt.Errorf("--dry-run is required for portfolio plan")
 		}
-		return gira.BuildPortfolioPlanReport(client, resolved.Repos, time.Now())
+		report, err := gira.BuildPortfolioPlanReport(client, resolved.Repos, time.Now())
+		if err != nil {
+			return gira.PortfolioReport{}, err
+		}
+		capability, err := gira.BuildPortfolioCapabilityReport(resolved.PortfolioRepo, resolved.Repos, gira.ExecCommandRunner{}, time.Now())
+		if err != nil {
+			return gira.PortfolioReport{}, err
+		}
+		report.Capability = &capability
+		report.PermissionBlocks = gira.PortfolioCapabilityBlocksForActions(capability, report.Actions)
+		return report, nil
 	default:
 		return gira.PortfolioReport{}, fmt.Errorf("unknown portfolio command: %s", command)
 	}
@@ -1224,10 +1234,16 @@ func runPortfolioCommand(command string, args []string, stdout io.Writer, stderr
 		if len(report.Diagnostics) > 0 {
 			return 1
 		}
+		if len(report.PermissionBlocks) > 0 {
+			return 1
+		}
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatPortfolioReport(report))
 	if len(report.Diagnostics) > 0 {
+		return 1
+	}
+	if len(report.PermissionBlocks) > 0 {
 		return 1
 	}
 	return 0

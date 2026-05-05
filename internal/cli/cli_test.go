@@ -42,6 +42,46 @@ func TestPortfolioPlanRequiresDryRun(t *testing.T) {
 	}
 }
 
+func TestPortfolioLowerRequiresMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"portfolio", "lower"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required") {
+		t.Fatalf("stderr missing mode guidance:\n%s", stderr.String())
+	}
+}
+
+func TestPortfolioLowerJSON(t *testing.T) {
+	restore := newPortfolioLowerReport
+	t.Cleanup(func() { newPortfolioLowerReport = restore })
+	newPortfolioLowerReport = func(configPath string, apply bool) (gira.PortfolioLowerReport, error) {
+		if configPath != "testdata/portfolio.yaml" || apply {
+			t.Fatalf("unexpected lower args config=%s apply=%t", configPath, apply)
+		}
+		return gira.PortfolioLowerReport{
+			Command:       "portfolio lower",
+			PortfolioRepo: "StatPan/portfolio",
+			Repos:         []string{"StatPan/gira"},
+			DryRun:        true,
+			Counts:        gira.PortfolioLowerCounts{Tickets: 1, OpenTickets: 1, Actions: 1},
+			Actions:       []gira.PortfolioLowerAction{{Ticket: 144, Action: "execution_issue:create", Repo: "StatPan/gira", Reason: "no lowered issue found for target repo"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"portfolio", "lower", "--dry-run", "--config", "testdata/portfolio.yaml", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "portfolio lower"`, `"action": "execution_issue:create"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("portfolio lower JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestPortfolioCapabilityJSON(t *testing.T) {
 	restore := newPortfolioCapabilityReport
 	t.Cleanup(func() { newPortfolioCapabilityReport = restore })

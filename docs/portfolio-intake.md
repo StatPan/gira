@@ -7,9 +7,9 @@ Gira's portfolio layer adds a project-agnostic backlog above repo execution issu
 - **Portfolio repo issues** own top-level tickets.
 - **Execution repo issues** own implementation packets.
 - **PRs** own code/doc change units and closing evidence.
-- **Gira** owns read-only validation, lowering plans, and future explicit apply behavior.
+- **Gira** owns read-only validation, lowering plans, and explicit lowering apply behavior.
 
-The first implementation is dry-run only. It must not create, edit, close, or label GitHub issues.
+Lowering apply is intentionally narrow. It may create execution issues and append child issue links to portfolio tickets, but it must not close issues, delete metadata, mutate Projects v2, or rewrite user-owned portfolio fields.
 
 ## Config
 
@@ -94,10 +94,10 @@ Plan actions:
 - `ticket:needs_routing`: the ticket is not ready to lower.
 - `ticket:deferred`: the ticket is intentionally delayed and should not lower yet.
 - `ticket:blocked_invalid_repo`: a target repo is invalid or outside the allowlist.
-- `execution_issue:create`: a future apply command would create a repo execution issue.
+- `execution_issue:create`: apply creates a repo execution issue.
 - `execution_issue:link_existing`: linked child issues already exist and should be reused.
 - `execution_issue:ambiguous_existing`: multiple matching execution issues exist for the same parent/target pair.
-- `portfolio_ticket:update_child_issues`: a future apply command would append missing child issue links to the parent portfolio ticket.
+- `portfolio_ticket:update_child_issues`: apply appends missing child issue links to the parent portfolio ticket.
 
 `gira portfolio plan --dry-run --json` includes the same capability summary used by `gira portfolio capability` plus `permission_blocks` for planned actions that cannot safely apply with the active credential.
 
@@ -162,11 +162,9 @@ Lowered issues are execution shells, not always worker-ready implementation pack
 Required labels for created execution issues:
 
 - `type:task`
-- `status:ready` when enough implementation detail exists
-- `status:needs-design` when the repo has that label and files/verification are unknown
-- `agent:worker` only when the issue is ready for direct implementation
+- `status:ready`
 
-If a required label is missing, apply must either create it through an existing label-sync path or block with a capability/remediation diagnostic. It must not silently create ad hoc labels outside the configured Gira taxonomy.
+The first apply implementation does not create labels and does not attach `agent:worker`. A later template/validation slice may refine this to `status:needs-design` when the configured repository taxonomy supports that label.
 
 ## Idempotency
 
@@ -209,7 +207,7 @@ Parent updates must not rewrite goal, scope, routing, target repos, acceptance c
 
 Denied or unknown capability must produce stable diagnostics and skip mutation for the affected repo. A denied configured repo does not block unrelated tickets that do not target that repo. For a multi-repo ticket, denied capability blocks only the affected target repo action; independent target repo actions may still apply when dry-run marks the denied repo as blocked and the remaining actions are idempotent.
 
-## Future Apply Boundary
+## Boundary
 
 Out of scope for this phase:
 

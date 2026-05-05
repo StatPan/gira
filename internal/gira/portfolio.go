@@ -99,6 +99,7 @@ type PortfolioTicket struct {
 	Title              string   `json:"title"`
 	State              string   `json:"state"`
 	URL                string   `json:"url,omitempty"`
+	Body               string   `json:"-"`
 	Goal               string   `json:"goal,omitempty"`
 	Scope              string   `json:"scope,omitempty"`
 	Routing            string   `json:"routing,omitempty"`
@@ -274,6 +275,7 @@ func ParsePortfolioTickets(raw []PortfolioRawTicket, repos []RepoRef) ([]Portfol
 			Title:              item.Title,
 			State:              item.State,
 			URL:                item.URL,
+			Body:               item.Body,
 			Goal:               fields["goal"],
 			Scope:              fields["scope"],
 			Routing:            normalizePortfolioRouting(fields["routing"]),

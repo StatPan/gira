@@ -30,6 +30,10 @@ workspace:
   inbox_repo: StatPan/backlog
   repos:
     - StatPan/gira
+  project:
+    owner: StatPan
+    number: 7
+    title: Gira
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -49,6 +53,9 @@ workspace:
 	}
 	if cfg.Workspace.InboxRepo != "StatPan/backlog" || len(cfg.Workspace.Repos) != 1 {
 		t.Fatalf("workspace config = %+v, want inbox repo and one execution repo", cfg.Workspace)
+	}
+	if cfg.Workspace.Project.Owner != "StatPan" || cfg.Workspace.Project.Number != 7 {
+		t.Fatalf("workspace project config = %+v", cfg.Workspace.Project)
 	}
 }
 
@@ -159,6 +166,32 @@ workspace:
 	}
 	if !strings.Contains(err.Error(), "workspace.repos[1] must be in OWNER/REPO format") {
 		t.Fatalf("expected actionable workspace repos error, got: %v", err)
+	}
+}
+
+func TestLoadInitConfigInvalidWorkspaceProject(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `profiles:
+  default:
+    labels: ["type:task"]
+workspace:
+  inbox_repo: StatPan/backlog
+  repos:
+    - StatPan/gira
+  project:
+    owner: StatPan
+    number: 0
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, err := LoadInitConfig(path)
+	if err == nil {
+		t.Fatal("expected error for invalid workspace project")
+	}
+	if !strings.Contains(err.Error(), "workspace.project.number must be > 0") {
+		t.Fatalf("expected actionable workspace project error, got: %v", err)
 	}
 }
 

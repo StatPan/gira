@@ -1,7 +1,13 @@
+repo: StatPan/gira
+profiles:
+  default:
+    labels: []
+    milestones: []
+    issue_templates: []
 workspace:
   name: personal
   owner: StatPan
-  inbox_repo: StatPan/backlog
+  inbox_repo: StatPan/gira
   repos:
     - StatPan/gira
   project:

@@ -589,6 +589,45 @@ func TestWorkspaceTicketRouteJSON(t *testing.T) {
 	}
 }
 
+func TestProjectsSyncRequiresMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"projects", "sync"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required for projects sync") {
+		t.Fatalf("stderr missing mode guidance:\n%s", stderr.String())
+	}
+}
+
+func TestProjectsSyncJSON(t *testing.T) {
+	restore := newProjectsSyncReport
+	t.Cleanup(func() { newProjectsSyncReport = restore })
+	newProjectsSyncReport = func(configPath string, dryRun bool) (gira.ProjectsSyncReport, error) {
+		if configPath != "testdata/workspace.yaml" || !dryRun {
+			t.Fatalf("unexpected projects sync args config=%s dryRun=%t", configPath, dryRun)
+		}
+		return gira.ProjectsSyncReport{
+			Command: "projects sync",
+			DryRun:  true,
+			Project: gira.ProjectsSyncProject{Owner: "StatPan", Number: 7, Title: "Gira"},
+			Counts:  gira.ProjectsSyncCounts{Issues: 1, ProjectItemsAdd: 1},
+			Actions: []gira.ProjectsSyncAction{{Action: "project_item:add", Repo: "StatPan/gira", Issue: 180, Status: "planned"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"projects", "sync", "--config", "testdata/workspace.yaml", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "projects sync"`, `"project_items_add": 1`, `"action": "project_item:add"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("projects sync JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestTriageHelpFlagPrintsHelpAndExitsZero(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"triage", "-h"}, &stdout, &stderr)

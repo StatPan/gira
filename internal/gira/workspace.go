@@ -18,6 +18,7 @@ type WorkspaceConfigResolved struct {
 	Owner     string
 	InboxRepo RepoRef
 	Repos     []RepoRef
+	Project   ProjectConfig
 }
 
 type WorkspaceClient interface {
@@ -207,7 +208,7 @@ func ResolveWorkspaceConfig(path string) (WorkspaceConfigResolved, error) {
 	if owner == "" {
 		owner = inboxRepo.Owner
 	}
-	return WorkspaceConfigResolved{Name: name, Owner: owner, InboxRepo: inboxRepo, Repos: repos}, nil
+	return WorkspaceConfigResolved{Name: name, Owner: owner, InboxRepo: inboxRepo, Repos: repos, Project: workspace.Project}, nil
 }
 
 func loadWorkspaceConfig(path string) (InitConfig, error) {
@@ -255,30 +256,32 @@ func (c GHWorkspaceClient) UpdateInboxTicketChildIssue(inboxRepo RepoRef, ticket
 }
 
 func BuildWorkspaceStatusReport(config WorkspaceConfigResolved, client WorkspaceClient, now time.Time, staleDays int) (WorkspaceReport, error) {
-	tickets, err := client.FetchInboxTickets(config.InboxRepo)
-	if err != nil {
-		return WorkspaceReport{}, err
-	}
-	parsed, diagnostics := ParsePortfolioTickets(tickets, config.Repos)
 	report := WorkspaceReport{
 		Workspace: WorkspaceSummary{Name: config.Name, Owner: config.Owner},
 		Inbox:     WorkspaceInbox{Repo: config.InboxRepo.FullName()},
 		FetchedAt: now.UTC().Format(time.RFC3339),
 	}
-	invalid := portfolioInvalidTickets(diagnostics)
-	for _, ticket := range parsed {
-		if !strings.EqualFold(ticket.State, "open") {
-			continue
+	if !workspaceContainsRepo(config.Repos, config.InboxRepo) {
+		tickets, err := client.FetchInboxTickets(config.InboxRepo)
+		if err != nil {
+			return WorkspaceReport{}, err
 		}
-		report.Inbox.Open++
-		status := workspaceInboxStatus(ticket, invalid)
-		item := WorkspaceBacklogItem{Source: "inbox", Repo: config.InboxRepo.FullName(), Number: ticket.Number, Title: ticket.Title, State: ticket.State, Status: status, Priority: ticket.Priority, URL: ticket.URL, NeedsRouting: status == "needs-routing"}
-		report.Backlog = append(report.Backlog, item)
-		if item.NeedsRouting {
-			report.Inbox.NeedsRouting++
-		}
-		if status == "ready-to-route" {
-			report.Inbox.ExecutionReady++
+		parsed, diagnostics := ParsePortfolioTickets(tickets, config.Repos)
+		invalid := portfolioInvalidTickets(diagnostics)
+		for _, ticket := range parsed {
+			if !strings.EqualFold(ticket.State, "open") {
+				continue
+			}
+			report.Inbox.Open++
+			status := workspaceInboxStatus(ticket, invalid)
+			item := WorkspaceBacklogItem{Source: "inbox", Repo: config.InboxRepo.FullName(), Number: ticket.Number, Title: ticket.Title, State: ticket.State, Status: status, Priority: ticket.Priority, URL: ticket.URL, NeedsRouting: status == "needs-routing"}
+			report.Backlog = append(report.Backlog, item)
+			if item.NeedsRouting {
+				report.Inbox.NeedsRouting++
+			}
+			if status == "ready-to-route" {
+				report.Inbox.ExecutionReady++
+			}
 		}
 	}
 	for _, repo := range config.Repos {

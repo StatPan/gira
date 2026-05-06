@@ -115,6 +115,33 @@ func TestBuildWorkspaceTicketRouteDryRun(t *testing.T) {
 	}
 }
 
+func TestBuildWorkspaceStatusReportSkipsInboxParsingWhenInboxIsExecutionRepo(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	client := fakeWorkspaceClient{
+		inbox: []PortfolioRawTicket{{Number: 1, Title: "Normal repo issue", State: "open", Body: "not a portfolio ticket"}},
+		status: map[string]StatusSummary{
+			"StatPan/gira": {
+				Repo:   "StatPan/gira",
+				Counts: StatusCounts{Issues: IssueCounts{Open: 1}},
+				Issues: StatusIssueLists{Open: []IssueStats{{Number: 1, Title: "Normal repo issue", State: "open", Labels: []string{"status:ready"}}}},
+			},
+		},
+	}
+
+	report, err := BuildWorkspaceStatusReport(config, client, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC), 14)
+	if err != nil {
+		t.Fatalf("BuildWorkspaceStatusReport error: %v", err)
+	}
+	if report.Inbox.Open != 0 || report.Counts.Backlog != 1 || len(report.Backlog) != 1 || report.Backlog[0].Source != "repo" {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
 type fakeWorkspaceClient struct {
 	inbox  []PortfolioRawTicket
 	status map[string]StatusSummary

@@ -54,7 +54,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		ticketType = "task"
 	}
 	if !validTicketType(ticketType) {
-		return TicketNewReport{}, fmt.Errorf("--type must be one of task, bug, story, chore")
+		return TicketNewReport{}, fmt.Errorf("--type must be one of epic, story, task, bug, spike, chore")
 	}
 	priority := strings.TrimSpace(input.Priority)
 	if priority != "" && !validTicketPriority(priority) {
@@ -172,7 +172,7 @@ func ticketNewLabels(ticketType string, priority string, extra []string) []strin
 
 func validTicketType(value string) bool {
 	switch value {
-	case "task", "bug", "story", "chore":
+	case "epic", "story", "task", "bug", "spike", "chore":
 		return true
 	default:
 		return false

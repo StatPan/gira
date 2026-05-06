@@ -1,0 +1,20 @@
+{
+  "repo": "StatPan/gira",
+  "iterations": {
+    "v1.1 Dogfood": {
+      "iteration": "v1.1 Dogfood",
+      "capacity_target": 3,
+      "committed_items": [
+        180,
+        181,
+        182
+      ],
+      "completed_items": null,
+      "spillover_items": null,
+      "rollover_reason": "",
+      "spillover_disposition": "",
+      "commitment_frozen": true,
+      "started_at": "2026-05-06T00:59:33Z"
+    }
+  }
+}

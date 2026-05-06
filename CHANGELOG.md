@@ -6,6 +6,8 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Added `gira ticket finish` to complete the ticket loop with linked PR validation, draft-ready handling, merge blockers, safe merge, local main sync, and convergence reporting.
+
 ## v1.1.1 - 2026-05-06
 
 - Fixed the npm/bun wrapper so the `gira` command can lazily download the native release binary when a package manager skips the install lifecycle script.

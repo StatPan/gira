@@ -857,6 +857,46 @@ func TestTicketPRApplyDraftJSON(t *testing.T) {
 	}
 }
 
+func TestTicketFinishDryRunJSON(t *testing.T) {
+	restore := newWorkFinishResult
+	t.Cleanup(func() { newWorkFinishResult = restore })
+	newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration) (gira.WorkFinishResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 219 || !dryRun || wait != 0 {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t wait=%s", repo.FullName(), issue, dryRun, wait)
+		}
+		return gira.WorkFinishResult{Repo: repo.FullName(), Issue: issue, DryRun: true, PRNumber: 220, Blockers: []string{"checks_pending"}, FinalStatus: gira.WorkStatusResult{Repo: repo.FullName(), Issue: issue, NextAction: "open_pr", NextStep: "gira work pr --repo StatPan/gira --issue 219 --apply"}, NextStep: "wait for required checks, then gira ticket finish --repo StatPan/gira --ticket 219 --apply"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "finish", "--repo", "StatPan/gira", "--ticket", "219", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"pr_number": 220`) || !strings.Contains(stdout.String(), `"checks_pending"`) {
+		t.Fatalf("ticket finish JSON missing expected fields:\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "gira work pr") {
+		t.Fatalf("ticket finish JSON leaked work next step:\n%s", stdout.String())
+	}
+}
+
+func TestTicketFinishApplyBlockedReturnsJSONAndError(t *testing.T) {
+	restore := newWorkFinishResult
+	t.Cleanup(func() { newWorkFinishResult = restore })
+	newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration) (gira.WorkFinishResult, error) {
+		return gira.WorkFinishResult{Repo: repo.FullName(), Issue: issue, PRNumber: 220, Blockers: []string{"review"}, NextStep: "resolve review requirements, then gira ticket finish --repo StatPan/gira --ticket 219 --apply"}, fmt.Errorf("ticket finish blocked: review")
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "finish", "--repo", "StatPan/gira", "--ticket", "219", "--apply", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), `"review"`) || !strings.Contains(stderr.String(), "ticket finish blocked") {
+		t.Fatalf("expected JSON result and error; stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
 func TestWorkStatusJSON(t *testing.T) {
 	restore := newWorkStatusResult
 	t.Cleanup(func() { newWorkStatusResult = restore })

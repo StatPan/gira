@@ -154,6 +154,7 @@ type WorkspaceRouteAction struct {
 	Action string `json:"action"`
 	Repo   string `json:"repo"`
 	Reason string `json:"reason"`
+	Issue  int    `json:"issue,omitempty"`
 }
 
 type WorkspaceProjectPlanReport struct {
@@ -391,6 +392,12 @@ func BuildWorkspaceTicketRouteReport(config WorkspaceConfigResolved, client Work
 		DryRun:     dryRun,
 		Actions:    []WorkspaceRouteAction{{Action: "execution_issue:create", Repo: targetRepo.FullName(), Reason: "route inbox ticket to execution repo"}},
 	}
+	if existing, ok := childIssueRefs(ticket.ChildIssues)[targetRepo.FullName()]; ok {
+		report.Actions = []WorkspaceRouteAction{{Action: "execution_issue:reuse", Repo: targetRepo.FullName(), Issue: existing.Number, Reason: "inbox ticket already links this execution repo"}}
+		report.Created = &PortfolioLoweredIssue{Repo: targetRepo.FullName(), Number: existing.Number, URL: fmt.Sprintf("https://github.com/%s/issues/%d", targetRepo.FullName(), existing.Number)}
+		report.NextSteps = []string{fmt.Sprintf("gira ticket start --repo %s --ticket %d --dry-run", targetRepo.FullName(), existing.Number)}
+		return report, nil
+	}
 	if dryRun {
 		report.NextSteps = []string{fmt.Sprintf("gira workspace ticket route --ticket %d --repo %s --apply", ticketNumber, targetRepo.FullName())}
 		return report, nil
@@ -474,7 +481,11 @@ func FormatWorkspaceTicketRouteReport(report WorkspaceTicketRouteReport) string 
 	}
 	fmt.Fprintf(&b, "workspace ticket route: %s inbox#%d -> %s\n", mode, report.Ticket, report.TargetRepo)
 	for _, action := range report.Actions {
-		fmt.Fprintf(&b, "  %s %s (%s)\n", action.Action, action.Repo, action.Reason)
+		issue := ""
+		if action.Issue > 0 {
+			issue = fmt.Sprintf("#%d ", action.Issue)
+		}
+		fmt.Fprintf(&b, "  %s %s %s(%s)\n", action.Action, action.Repo, issue, action.Reason)
 	}
 	if report.Created != nil {
 		fmt.Fprintf(&b, "created: %s#%d %s\n", report.TargetRepo, report.Created.Number, report.Created.URL)

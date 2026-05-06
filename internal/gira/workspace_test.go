@@ -115,6 +115,29 @@ func TestBuildWorkspaceTicketRouteDryRun(t *testing.T) {
 	}
 }
 
+func TestBuildWorkspaceTicketRouteReusesExistingChildIssue(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/backlog"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	client := fakeWorkspaceClient{
+		inbox: []PortfolioRawTicket{{Number: 5, Title: "Route me", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "StatPan/gira#77")}},
+	}
+
+	report, err := BuildWorkspaceTicketRouteReport(config, client, 5, ParseRepoRefMust("StatPan/gira"), false)
+	if err != nil {
+		t.Fatalf("BuildWorkspaceTicketRouteReport error: %v", err)
+	}
+	if len(report.Actions) != 1 || report.Actions[0].Action != "execution_issue:reuse" || report.Created == nil || report.Created.Number != 77 {
+		t.Fatalf("expected existing child issue reuse, got %+v", report)
+	}
+	if report.NextSteps[0] != "gira ticket start --repo StatPan/gira --ticket 77 --dry-run" {
+		t.Fatalf("next steps = %+v", report.NextSteps)
+	}
+}
+
 func TestBuildWorkspaceStatusReportSkipsInboxParsingWhenInboxIsExecutionRepo(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",

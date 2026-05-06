@@ -676,6 +676,32 @@ func TestWorkspaceTicketNewJSON(t *testing.T) {
 	}
 }
 
+func TestWorkspaceTicketNewAcceptsPositionalTitle(t *testing.T) {
+	restore := newWorkspaceTicketNewReport
+	t.Cleanup(func() { newWorkspaceTicketNewReport = restore })
+	newWorkspaceTicketNewReport = func(configPath string, title string, body string) (gira.WorkspaceTicketNewReport, error) {
+		if title != "Capture product idea" {
+			t.Fatalf("title = %q, want positional title", title)
+		}
+		return gira.WorkspaceTicketNewReport{
+			Command:   "workspace ticket new",
+			Workspace: gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			InboxRepo: "StatPan/backlog",
+			Title:     title,
+			Created:   gira.WorkspaceTicketRef{Repo: "StatPan/backlog", Number: 8},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "ticket", "new", "Capture", "product", "idea"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "workspace ticket new") {
+		t.Fatalf("stdout missing ticket new summary:\n%s", stdout.String())
+	}
+}
+
 func TestWorkspaceTicketRouteRequiresModeRepoAndTicket(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"workspace", "ticket", "route", "--ticket", "8", "--repo", "StatPan/gira"}, &stdout, &stderr)

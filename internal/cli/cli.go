@@ -211,6 +211,7 @@ const workspaceHelp = `Personal workspace inbox and backlog commands.
 
 Usage:
   gira workspace init --inbox-repo OWNER/REPO [--repo OWNER/REPO] --dry-run|--apply [--path .]
+  gira workspace validate [--config .gira/config.yaml] [--json]
   gira workspace status [--config .gira/config.yaml] [--json]
   gira workspace backlog [--config .gira/config.yaml] [--json]
   gira workspace sync --dry-run|--apply [--config .gira/config.yaml] [--bootstrap-issues] [--json]
@@ -221,6 +222,7 @@ Usage:
 
 Commands:
   init     Create a workspace config for personal or repo-bound backlog use
+  validate Validate inbox backlog routing readiness without mutation
   status   Show inbox and repo execution state in one Jira-like overview
   backlog  List inbox tickets and repo issues together
   sync     Sync Gira metadata across inbox and execution repos
@@ -782,6 +784,14 @@ var newWorkspaceCapabilityReport = func(configPath string) (gira.WorkspaceCapabi
 		return gira.WorkspaceCapabilityReport{}, err
 	}
 	return gira.BuildWorkspaceCapabilityReport(resolved, gira.ExecCommandRunner{}, time.Now())
+}
+
+var newWorkspaceValidateReport = func(configPath string) (gira.WorkspaceValidateReport, error) {
+	resolved, err := gira.ResolveWorkspaceConfig(configPath)
+	if err != nil {
+		return gira.WorkspaceValidateReport{}, err
+	}
+	return gira.BuildWorkspaceValidateReport(resolved, gira.NewGHWorkspaceClient(gira.ExecCommandRunner{}))
 }
 
 var newWorkspaceSyncReport = func(configPath string, dryRun bool, bootstrapIssues bool) (gira.WorkspaceSyncReport, error) {
@@ -2709,6 +2719,8 @@ func runWorkspace(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "init":
 		return runWorkspaceInit(args[1:], stdout, stderr)
+	case "validate":
+		return runWorkspaceValidate(args[1:], stdout, stderr)
 	case "status", "backlog":
 		return runWorkspaceStatus(args[0], args[1:], stdout, stderr)
 	case "sync":
@@ -2818,6 +2830,45 @@ func runWorkspaceCapability(args []string, stdout io.Writer, stderr io.Writer) i
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatWorkspaceCapabilityReport(report))
+	return 0
+}
+
+func runWorkspaceValidate(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("workspace validate", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	report, err := newWorkspaceValidateReport(*configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode workspace validate JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatWorkspaceValidateReport(report))
 	return 0
 }
 

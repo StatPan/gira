@@ -39,7 +39,10 @@ Authenticate GitHub first. Gira uses GitHub as the execution backend and shells 
 ```bash
 gira version
 gh auth status
+gira guide
 ```
+
+`gira guide` is built into the installed binary. Use `gira guide quickstart`, `gira guide ticket`, `gira guide agent`, or `gira guide concepts` when you need the workflow without opening this README. `gira docs` is an alias.
 
 Read before writing. For repository setup, run init from a clean checkout so Gira can fail closed before apply steps:
 

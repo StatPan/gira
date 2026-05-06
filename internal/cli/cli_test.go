@@ -26,6 +26,9 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "ticket") {
 		t.Fatalf("help output missing ticket command:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "guide") {
+		t.Fatalf("help output missing guide command:\n%s", stdout.String())
+	}
 	if !strings.Contains(stdout.String(), "ops") {
 		t.Fatalf("help output missing ops command:\n%s", stdout.String())
 	}
@@ -34,6 +37,52 @@ func TestHelpOutput(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "portfolio   ") || strings.Contains(stdout.String(), "jira        ") {
 		t.Fatalf("help output should not frontload advanced commands:\n%s", stdout.String())
+	}
+}
+
+func TestGuideQuickstartDefault(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"guide"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"Gira quickstart", "gira ticket new", "gira ticket checks", "gira ticket finish --apply"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("guide output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestDocsAliasAndGuideTopics(t *testing.T) {
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"docs", "agent"}, "Prefer Gira commands over raw gh"},
+		{[]string{"guide", "ticket"}, "Existing GitHub issue"},
+		{[]string{"guide", "concepts"}, "Jira terms on GitHub"},
+		{[]string{"guide", "--help"}, "Topics:"},
+	}
+	for _, tc := range cases {
+		var stdout, stderr bytes.Buffer
+		code := Run(tc.args, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("%v exit code = %d, want 0; stderr: %s", tc.args, code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), tc.want) {
+			t.Fatalf("%v output missing %q:\n%s", tc.args, tc.want, stdout.String())
+		}
+	}
+}
+
+func TestGuideUnknownTopic(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"guide", "missing"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unknown guide topic: missing") || !strings.Contains(stderr.String(), "gira guide [quickstart|ticket|agent|concepts]") {
+		t.Fatalf("stderr missing guide remediation:\n%s", stderr.String())
 	}
 }
 

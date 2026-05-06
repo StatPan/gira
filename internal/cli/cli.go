@@ -20,6 +20,7 @@ Usage:
   gira <command> [flags]
 
 Daily commands:
+  guide       Built-in quickstart and workflow guides
   workspace   Personal workspace inbox and backlog overview
   projects    Sync visible GitHub Projects board items
   ticket      Jira-style ticket lifecycle commands
@@ -40,6 +41,124 @@ Advanced:
 Flags:
   -h, --help   Show help
   --version    Show Gira build version
+`
+
+const guideHelp = `Built-in Gira guides for installed CLI users.
+
+Usage:
+  gira guide [quickstart|ticket|agent|concepts]
+  gira docs [quickstart|ticket|agent|concepts]
+
+Topics:
+  quickstart  First successful flow from auth to merged PR
+  ticket      Daily ticket lifecycle commands
+  agent       Minimal rules for AI/coding agents
+  concepts    Jira terms mapped to Gira and GitHub
+
+Start here:
+  gira guide quickstart
+`
+
+const guideQuickstart = `Gira quickstart: first ticket to merged PR
+
+1. Authenticate GitHub.
+   gh auth status
+
+2. Confirm repo state.
+   gira status
+   gira projects sync --config .gira/config.yaml --dry-run
+
+3. Create and start a ticket.
+   gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --apply --start
+
+4. Implement the bounded scope and verify locally.
+   go test ./...
+
+5. Open or reuse the linked PR.
+   gira ticket pr --apply --draft
+
+6. Watch readiness through Gira.
+   gira ticket checks
+   gira ticket wait --timeout 5m
+
+7. Finish the ticket.
+   gira ticket finish --apply
+   gira ticket status
+`
+
+const guideTicket = `Gira ticket guide
+
+Daily loop:
+  gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply --start
+  gira ticket pr --apply --draft
+  gira ticket checks
+  gira ticket wait --timeout 5m
+  gira ticket finish --apply
+
+Existing GitHub issue:
+  gira ticket start 42 --apply
+  gira ticket pr --apply --draft
+  gira ticket finish --apply
+
+Context rules:
+  After ticket start checks out issue-N-*, ticket pr/checks/wait/finish/status infer the ticket.
+  Use --repo OWNER/REPO and --ticket N only when outside a repo or branch context.
+
+Safety:
+  Use --dry-run before mutating commands when unsure.
+  PR bodies must contain Closes #N, Fixes #N, or Resolves #N.
+`
+
+const guideAgent = `Gira agent runbook
+
+Rules:
+  Start from a GitHub issue.
+  Use a feature branch per issue.
+  Prefer Gira commands over raw gh when a Gira command exists.
+  Keep changes bounded to the ticket.
+  Run tests before PR and before finish.
+
+Flow:
+  gira status
+  gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply --start
+  go test ./...
+  gira ticket pr --apply --draft
+  gira ticket checks
+  gira ticket wait --timeout 5m
+  gira ticket finish --apply
+  gira projects sync --config .gira/config.yaml --dry-run
+
+Do not:
+  Do not call raw gh pr checks when gira ticket checks/wait exists.
+  Do not merge without Gira finish unless explicitly instructed.
+  Do not change unrelated files or revert user changes.
+`
+
+const guideConcepts = `Gira concepts: Jira terms on GitHub
+
+Ticket:
+  GitHub issue with Gira labels and structured body.
+
+Epic:
+  Top-level or parent issue for a milestone-sized outcome.
+
+Story/task/bug/spike:
+  GitHub issue type labels such as type:story, type:task, type:bug, type:spike.
+
+Sprint or release phase:
+  GitHub milestone.
+
+Workflow status:
+  status:* labels and mirrored GitHub Project Status field when projects sync is configured.
+
+Branch:
+  Work-start evidence, usually issue-N-title.
+
+Pull request:
+  Change unit. Must link back with Closes #N, Fixes #N, or Resolves #N.
+
+Project board:
+  Visibility bridge. Issues, labels, milestones, and PRs remain the source of truth.
 `
 
 const bootstrapHelp = `Bootstrap a repository into a Gira-managed project workspace.
@@ -780,6 +899,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 
 	switch args[0] {
+	case "guide", "docs":
+		return runGuide(args[1:], stdout, stderr)
 	case "init":
 		return runInit(args[1:], stdout, stderr)
 	case "workspace":
@@ -847,6 +968,35 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, rootHelp)
 		return 2
 	}
+}
+
+func runGuide(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprint(stdout, guideQuickstart)
+		return 0
+	}
+	if len(args) > 1 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", args[1])
+		fmt.Fprint(stderr, guideHelp)
+		return 2
+	}
+	switch args[0] {
+	case "--help", "-h", "help":
+		fmt.Fprint(stdout, guideHelp)
+	case "quickstart":
+		fmt.Fprint(stdout, guideQuickstart)
+	case "ticket":
+		fmt.Fprint(stdout, guideTicket)
+	case "agent":
+		fmt.Fprint(stdout, guideAgent)
+	case "concepts":
+		fmt.Fprint(stdout, guideConcepts)
+	default:
+		fmt.Fprintf(stderr, "unknown guide topic: %s\n\n", args[0])
+		fmt.Fprint(stderr, guideHelp)
+		return 2
+	}
+	return 0
 }
 
 func runVersion(args []string, stdout io.Writer, stderr io.Writer) int {

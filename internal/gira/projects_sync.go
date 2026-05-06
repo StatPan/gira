@@ -22,6 +22,7 @@ type ProjectsSyncClient interface {
 	CreateProjectField(owner string, number int, field ProjectsSyncFieldDef) (string, error)
 	LinkRepo(owner string, number int, repo RepoRef) error
 	AddItem(owner string, number int, issue ProjectsSyncIssue) (string, error)
+	ArchiveItem(owner string, number int, itemID string) error
 	UpdateItemStatus(projectID string, itemID string, fieldID string, optionID string) error
 	UpdateItemDate(projectID string, itemID string, fieldID string, date string) error
 }
@@ -77,6 +78,7 @@ type ProjectsSyncItem struct {
 	ID         string `json:"id"`
 	Repo       string `json:"repo"`
 	Number     int    `json:"number"`
+	IssueState string `json:"issue_state,omitempty"`
 	Status     string `json:"status,omitempty"`
 	TargetDate string `json:"target_date,omitempty"`
 }
@@ -94,18 +96,19 @@ type ProjectsSyncReport struct {
 }
 
 type ProjectsSyncCounts struct {
-	Repos             int  `json:"repos"`
-	Issues            int  `json:"issues"`
-	FieldsCreate      int  `json:"fields_create"`
-	FieldsSkip        int  `json:"fields_skip"`
-	ProjectLinksAdd   int  `json:"project_links_add"`
-	ProjectItemsAdd   int  `json:"project_items_add"`
-	ProjectItemsSkip  int  `json:"project_items_skip"`
-	StatusUpdates     int  `json:"status_updates"`
-	StatusUpdateSkips int  `json:"status_update_skips"`
-	DateUpdates       int  `json:"date_updates"`
-	DateUpdateSkips   int  `json:"date_update_skips"`
-	ViewSetupRequired bool `json:"view_setup_required"`
+	Repos               int  `json:"repos"`
+	Issues              int  `json:"issues"`
+	FieldsCreate        int  `json:"fields_create"`
+	FieldsSkip          int  `json:"fields_skip"`
+	ProjectLinksAdd     int  `json:"project_links_add"`
+	ProjectItemsAdd     int  `json:"project_items_add"`
+	ProjectItemsSkip    int  `json:"project_items_skip"`
+	ProjectItemsArchive int  `json:"project_items_archive"`
+	StatusUpdates       int  `json:"status_updates"`
+	StatusUpdateSkips   int  `json:"status_update_skips"`
+	DateUpdates         int  `json:"date_updates"`
+	DateUpdateSkips     int  `json:"date_update_skips"`
+	ViewSetupRequired   bool `json:"view_setup_required"`
 }
 
 type ProjectsSyncAction struct {
@@ -360,7 +363,7 @@ func (c GHProjectsSyncClient) ProjectItems(owner string, number int) ([]Projects
 }
 
 func (c GHProjectsSyncClient) ProjectItemsGraphQL(projectID string) ([]ProjectsSyncItem, error) {
-	query := `query($id:ID!){node(id:$id){... on ProjectV2{items(first:100){nodes{id content{... on Issue{number repository{nameWithOwner}}} fieldValues(first:50){nodes{... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2FieldCommon{name}}} ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2FieldCommon{name}}}}}}}}}}`
+	query := `query($id:ID!){node(id:$id){... on ProjectV2{items(first:100){nodes{id content{... on Issue{number state repository{nameWithOwner}}} fieldValues(first:50){nodes{... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2FieldCommon{name}}} ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2FieldCommon{name}}}}}}}}}}`
 	output, err := c.runner.Run("gh", "api", "graphql", "-f", "query="+query, "-f", "id="+projectID)
 	if err != nil {
 		return nil, err
@@ -372,7 +375,8 @@ func (c GHProjectsSyncClient) ProjectItemsGraphQL(projectID string) ([]ProjectsS
 					Nodes []struct {
 						ID      string `json:"id"`
 						Content *struct {
-							Number     int `json:"number"`
+							Number     int    `json:"number"`
+							State      string `json:"state"`
 							Repository struct {
 								NameWithOwner string `json:"nameWithOwner"`
 							} `json:"repository"`
@@ -399,7 +403,7 @@ func (c GHProjectsSyncClient) ProjectItemsGraphQL(projectID string) ([]ProjectsS
 		if raw.Content == nil || raw.Content.Number == 0 || raw.Content.Repository.NameWithOwner == "" {
 			continue
 		}
-		item := ProjectsSyncItem{ID: raw.ID, Repo: raw.Content.Repository.NameWithOwner, Number: raw.Content.Number}
+		item := ProjectsSyncItem{ID: raw.ID, Repo: raw.Content.Repository.NameWithOwner, Number: raw.Content.Number, IssueState: strings.ToLower(raw.Content.State)}
 		for _, value := range raw.FieldValues.Nodes {
 			if value.Field == nil {
 				continue
@@ -459,6 +463,11 @@ func (c GHProjectsSyncClient) CreateProjectField(owner string, number int, field
 		return "", fmt.Errorf("parse project field-create JSON: %w", err)
 	}
 	return raw.ID, nil
+}
+
+func (c GHProjectsSyncClient) ArchiveItem(owner string, number int, itemID string) error {
+	_, err := c.runner.Run("gh", "project", "item-archive", strconv.Itoa(number), "--owner", owner, "--id", itemID)
+	return err
 }
 
 func (c GHProjectsSyncClient) UpdateItemStatus(projectID string, itemID string, fieldID string, optionID string) error {
@@ -535,6 +544,21 @@ func BuildProjectsSyncReport(config WorkspaceConfigResolved, client ProjectsSync
 	itemByIssue := map[string]ProjectsSyncItem{}
 	for _, item := range items {
 		itemByIssue[projectIssueKey(item.Repo, item.Number)] = item
+	}
+	for _, item := range items {
+		if item.ID == "" || item.IssueState != "closed" {
+			continue
+		}
+		action := ProjectsSyncAction{Action: "project_item:archive", Repo: item.Repo, Issue: item.Number, ItemID: item.ID, Status: actionStatus(dryRun), Reason: "backing issue is closed"}
+		if !dryRun {
+			if err := client.ArchiveItem(project.Owner, project.Number, item.ID); err != nil {
+				return ProjectsSyncReport{}, err
+			}
+			action.Status = "applied"
+		}
+		report.Actions = append(report.Actions, action)
+		report.Counts.ProjectItemsArchive++
+		delete(itemByIssue, projectIssueKey(item.Repo, item.Number))
 	}
 	repos := uniqueProjectRepos(config)
 	for _, repo := range repos {
@@ -720,7 +744,7 @@ func FormatProjectsSyncReport(report ProjectsSyncReport) string {
 	}
 	fmt.Fprintf(&b, "projects sync: %s\n", mode)
 	fmt.Fprintf(&b, "project: %s #%d\n", report.Project.Title, report.Project.Number)
-	fmt.Fprintf(&b, "repos: %d issues: %d fields-create: %d add-items: %d status-updates: %d date-updates: %d\n", report.Counts.Repos, report.Counts.Issues, report.Counts.FieldsCreate, report.Counts.ProjectItemsAdd, report.Counts.StatusUpdates, report.Counts.DateUpdates)
+	fmt.Fprintf(&b, "repos: %d issues: %d fields-create: %d add-items: %d archive-items: %d status-updates: %d date-updates: %d\n", report.Counts.Repos, report.Counts.Issues, report.Counts.FieldsCreate, report.Counts.ProjectItemsAdd, report.Counts.ProjectItemsArchive, report.Counts.StatusUpdates, report.Counts.DateUpdates)
 	for _, action := range report.Actions {
 		target := action.Repo
 		if action.Issue > 0 {

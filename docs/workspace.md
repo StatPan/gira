@@ -2,6 +2,8 @@
 
 Gira's workspace layer gives a single personal view over repo-agnostic intake and repo execution work. It is the v1 answer for users who want Jira-like backlog capture without starting from a GitHub repository project board.
 
+The operating model is intentionally close to Terraform: read current GitHub state, show a dry-run plan, then apply the reviewed change. Gira does not keep a separate planning database. It converges GitHub issues, labels, milestones, Projects, branches, and PRs into the workflow state described by `.gira/config.yaml` and Gira-managed conventions.
+
 The source of truth is still GitHub:
 
 | Gira term | GitHub source of truth | Purpose |

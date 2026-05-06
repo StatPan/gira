@@ -17,6 +17,7 @@ func TestBuildProjectsSyncReportPlansMissingItemsAndStatusUpdates(t *testing.T) 
 	client := &fakeProjectsSyncClient{
 		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
 		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
 		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "In Progress": "progress", "Done": "done"}},
 		linked:      map[string]bool{"StatPan/gira": false},
 		issues: map[string][]ProjectsSyncIssue{
@@ -56,6 +57,7 @@ func TestBuildProjectsSyncReportApplyIsIdempotentForExistingItems(t *testing.T) 
 	client := &fakeProjectsSyncClient{
 		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
 		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
 		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "In Progress": "progress", "Done": "done"}},
 		linked:      map[string]bool{"StatPan/gira": true},
 		issues: map[string][]ProjectsSyncIssue{
@@ -87,6 +89,7 @@ func TestBuildProjectsSyncReportApplyAddsAndUpdates(t *testing.T) {
 	client := &fakeProjectsSyncClient{
 		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
 		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
 		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "In Progress": "progress", "Done": "done"}},
 		linked:      map[string]bool{"StatPan/gira": false},
 		issues: map[string][]ProjectsSyncIssue{
@@ -115,6 +118,7 @@ func TestBuildProjectsSyncReportInfersSingleLinkedProject(t *testing.T) {
 	}
 	client := &fakeProjectsSyncClient{
 		project:        ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		fields:         allProjectsSyncCanonicalFields(),
 		statusField:    ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo"}},
 		linked:         map[string]bool{"StatPan/gira": true},
 		linkedProjects: map[string][]ProjectsSyncProject{"StatPan/gira": []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}}},
@@ -150,17 +154,116 @@ func TestBuildProjectsSyncReportRequiresTitleWhenLinkedProjectsAmbiguous(t *test
 	}
 }
 
+func TestBuildProjectsSyncReportPlansMissingFieldsAndDateUpdates(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      []ProjectsSyncField{{ID: "status-field", Name: "Status", Type: "SINGLE_SELECT", Options: map[string]string{"Todo": "todo"}}},
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues: map[string][]ProjectsSyncIssue{
+			"StatPan/gira": {{Repo: "StatPan/gira", Number: 199, Title: "Schedule", URL: "https://github.com/StatPan/gira/issues/199", Labels: []string{"status:ready"}, Milestone: "v1.2", MilestoneDueDate: "2026-06-01"}},
+		},
+		items: []ProjectsSyncItem{{ID: "item-199", Repo: "StatPan/gira", Number: 199, Status: "Todo"}},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, true, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if report.Counts.FieldsCreate != 5 || report.Counts.DateUpdateSkips != 1 || !report.Counts.ViewSetupRequired {
+		t.Fatalf("counts = %+v", report.Counts)
+	}
+	text := FormatProjectsSyncReport(report)
+	for _, want := range []string{"project_field:create", "Target date", "view setup"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("formatted report missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestBuildProjectsSyncReportApplyCreatesFieldsAndUpdatesTargetDate(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      []ProjectsSyncField{{ID: "status-field", Name: "Status", Type: "SINGLE_SELECT", Options: map[string]string{"Todo": "todo"}}},
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues: map[string][]ProjectsSyncIssue{
+			"StatPan/gira": {{Repo: "StatPan/gira", Number: 199, Title: "Schedule", URL: "https://github.com/StatPan/gira/issues/199", Labels: []string{"status:ready"}, Milestone: "v1.2", MilestoneDueDate: "2026-06-01"}},
+		},
+		items: []ProjectsSyncItem{{ID: "item-199", Repo: "StatPan/gira", Number: 199, Status: "Todo"}},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, false, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if report.Counts.FieldsCreate != 5 || report.Counts.DateUpdates != 1 {
+		t.Fatalf("counts = %+v", report.Counts)
+	}
+	if len(client.createdFields) != 5 || len(client.updatedDates) != 1 {
+		t.Fatalf("apply mutations fields=%v dates=%v", client.createdFields, client.updatedDates)
+	}
+}
+
+func TestBuildProjectsSyncReportSkipsMatchingTargetDate(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues: map[string][]ProjectsSyncIssue{
+			"StatPan/gira": {{Repo: "StatPan/gira", Number: 199, Title: "Schedule", URL: "https://github.com/StatPan/gira/issues/199", Labels: []string{"status:ready"}, Milestone: "v1.2", MilestoneDueDate: "2026-06-01"}},
+		},
+		items: []ProjectsSyncItem{{ID: "item-199", Repo: "StatPan/gira", Number: 199, Status: "Todo", TargetDate: "2026-06-01"}},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, false, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if report.Counts.DateUpdates != 0 || len(client.updatedDates) != 0 {
+		t.Fatalf("date update should be idempotent: %+v dates=%v", report.Counts, client.updatedDates)
+	}
+}
+
 type fakeProjectsSyncClient struct {
 	project        ProjectsSyncProject
 	projects       []ProjectsSyncProject
+	fields         []ProjectsSyncField
 	statusField    ProjectsSyncStatusField
 	linked         map[string]bool
 	linkedProjects map[string][]ProjectsSyncProject
 	issues         map[string][]ProjectsSyncIssue
 	items          []ProjectsSyncItem
 	linkedApplied  []string
+	createdFields  []ProjectsSyncFieldDef
 	added          []ProjectsSyncIssue
 	updated        []string
+	updatedDates   []string
 }
 
 func (c *fakeProjectsSyncClient) Project(owner string, number int) (ProjectsSyncProject, error) {
@@ -179,6 +282,10 @@ func (c *fakeProjectsSyncClient) StatusField(owner string, number int) (Projects
 	return c.statusField, nil
 }
 
+func (c *fakeProjectsSyncClient) ProjectFields(projectID string) ([]ProjectsSyncField, error) {
+	return c.fields, nil
+}
+
 func (c *fakeProjectsSyncClient) RepoLinked(owner string, number int, repo RepoRef) (bool, error) {
 	return c.linked[repo.FullName()], nil
 }
@@ -188,6 +295,10 @@ func (c *fakeProjectsSyncClient) OpenIssues(repo RepoRef) ([]ProjectsSyncIssue, 
 }
 
 func (c *fakeProjectsSyncClient) ProjectItems(owner string, number int) ([]ProjectsSyncItem, error) {
+	return c.items, nil
+}
+
+func (c *fakeProjectsSyncClient) ProjectItemsGraphQL(projectID string) ([]ProjectsSyncItem, error) {
 	return c.items, nil
 }
 
@@ -201,7 +312,31 @@ func (c *fakeProjectsSyncClient) AddItem(owner string, number int, issue Project
 	return "item-added", nil
 }
 
+func (c *fakeProjectsSyncClient) CreateProjectField(owner string, number int, field ProjectsSyncFieldDef) (string, error) {
+	c.createdFields = append(c.createdFields, field)
+	id := "field-" + strings.ToLower(strings.ReplaceAll(field.Name, " ", "-"))
+	c.fields = append(c.fields, ProjectsSyncField{ID: id, Name: field.Name, Type: field.Type})
+	return id, nil
+}
+
 func (c *fakeProjectsSyncClient) UpdateItemStatus(projectID string, itemID string, fieldID string, optionID string) error {
 	c.updated = append(c.updated, itemID+":"+optionID)
 	return nil
+}
+
+func (c *fakeProjectsSyncClient) UpdateItemDate(projectID string, itemID string, fieldID string, date string) error {
+	c.updatedDates = append(c.updatedDates, itemID+":"+fieldID+":"+date)
+	return nil
+}
+
+func allProjectsSyncCanonicalFields() []ProjectsSyncField {
+	fields := make([]ProjectsSyncField, 0, len(projectsSyncCanonicalFields))
+	for _, field := range projectsSyncCanonicalFields {
+		id := "field-" + strings.ToLower(strings.ReplaceAll(field.Name, " ", "-"))
+		if field.Name == "Status" {
+			id = "status-field"
+		}
+		fields = append(fields, ProjectsSyncField{ID: id, Name: field.Name, Type: field.Type})
+	}
+	return fields
 }

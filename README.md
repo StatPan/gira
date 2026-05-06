@@ -89,7 +89,7 @@ Gira keeps the user-facing workflow close to Jira while storing canonical state 
 | Done | Merged PR plus closed issue | Completion is proven by GitHub merge and close evidence, not by hidden local state. |
 | Release | GitHub Release plus readiness report | `gira release readiness` checks whether issue, PR, review, and milestone evidence are ready for delivery. |
 
-GitHub Projects v2 boards, Web UI/TUI, chat bots, LLM decomposition, and Jira import/export are not v1 product workflows. They can be future integration layers, but v1 stays CLI-first on Issues, Labels, Milestones, PRs, and Releases.
+Full GitHub Projects v2 view automation, Web UI/TUI, chat bots, LLM decomposition, and Jira import/export are not v1 product workflows. Projects sync is a visibility bridge over Issues, Labels, Milestones, PRs, and Releases.
 
 ## Workspace Backlog
 
@@ -120,7 +120,7 @@ gira projects sync --apply --config .gira/config.yaml
 
 `workspace ticket new` creates an inbox ticket. `workspace ticket route` creates a repo execution issue and links it back to the inbox ticket. After routing, the normal loop continues with `gira ticket start`, `gira ticket pr`, and `gira ticket status` on the target repo.
 
-`projects sync` keeps an existing GitHub Projects v2 board visible by linking configured repos, adding missing open issues as project items, and mirroring basic Gira status labels to the board's standard Status field. It does not create Projects or custom fields in this slice.
+`projects sync` keeps an existing GitHub Projects v2 board visible by linking configured repos, adding missing open issues as project items, mirroring basic Gira status labels to the board's standard Status field, creating supported planning fields, and copying milestone due dates into `Target date`. GitHub does not expose supported Project view creation APIs, so Gira reports the manual Board/Schedule view setup step instead of hiding it behind raw Project numbers.
 
 ## Install, Upgrade, and Remove
 
@@ -428,4 +428,4 @@ The GitHub-native Product OS schema for future Projects v2 planning, roadmap dat
 
 This repository dogfoods Gira for its own work. The active operating loop, sprint commands, and maintainer handoff are documented in [docs/dogfood.md](docs/dogfood.md).
 
-Explicit non-goals for v1: GitHub Projects v2 automation, LLM PRD-to-issue decomposition, Web UI/TUI, chat-bot integration, and Jira import/export. Gira may keep compatibility or migration inspection commands behind `gira ops`, but the v1 source of truth is the GitHub execution loop.
+Explicit non-goals for v1: full GitHub Projects v2 view automation, LLM PRD-to-issue decomposition, Web UI/TUI, chat-bot integration, and Jira import/export. Gira may keep compatibility or migration inspection commands behind `gira ops`, but the v1 source of truth is the GitHub execution loop.

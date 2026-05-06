@@ -2,17 +2,19 @@
 
 Gira operates this repository through the same GitHub-native workflow it gives users. GitHub remains the source of truth: issues are tickets, milestones are sprint or phase boundaries, branches are work-start evidence, and pull requests are change units.
 
-## Current Sprint
+## Current Milestone
 
 The active dogfood milestone is `v1.1 Dogfood`.
 
-Committed tickets:
+Current dogfood tickets should be read from GitHub before choosing work:
 
-- #180 Improve one-line installer UX
-- #181 Add GitHub Pages documentation site
-- #182 Document Gira dogfood operating loop
+```bash
+gira status --repo StatPan/gira
+gira workspace status --config .gira/config.yaml
+gira projects sync --config .gira/config.yaml --dry-run
+```
 
-The local sprint state is recorded in `.gira/sprints/statpan-gira/state.json` so maintainers and agents can reproduce the sprint commands from the repository checkout.
+Treat `status:ready` issues in the active milestone as candidates. Treat `type:epic` issues as planning parents unless the issue body explicitly asks for implementation. The local sprint state is recorded in `.gira/sprints/statpan-gira/state.json` so maintainers and agents can reproduce sprint commands from the repository checkout.
 
 ## Daily Commands
 
@@ -33,21 +35,21 @@ gira projects sync --config .gira/config.yaml --dry-run
 Pick a ready ticket, then start work:
 
 ```bash
-gira ticket start --repo StatPan/gira --ticket 182 --dry-run
-gira ticket start --repo StatPan/gira --ticket 182 --apply
+gira ticket start --repo StatPan/gira --ticket TICKET --dry-run
+gira ticket start --repo StatPan/gira --ticket TICKET --apply
 ```
 
 Open or validate the linked pull request:
 
 ```bash
-gira ticket pr --repo StatPan/gira --ticket 182 --dry-run
-gira ticket pr --repo StatPan/gira --ticket 182 --apply --draft
+gira ticket pr --repo StatPan/gira --ticket TICKET --dry-run
+gira ticket pr --repo StatPan/gira --ticket TICKET --apply --draft
 ```
 
 Check the ticket at any point:
 
 ```bash
-gira ticket status --repo StatPan/gira --ticket 182
+gira ticket status --repo StatPan/gira --ticket TICKET
 ```
 
 ## Sprint Commands
@@ -55,8 +57,8 @@ gira ticket status --repo StatPan/gira --ticket 182
 Plan the active sprint before starting it:
 
 ```bash
-gira sprint plan --repo StatPan/gira --iteration "v1.1 Dogfood" --capacity 3 --issues 180,181,182 --dry-run
-gira sprint plan --repo StatPan/gira --iteration "v1.1 Dogfood" --capacity 3 --issues 180,181,182 --apply
+gira sprint plan --repo StatPan/gira --iteration "v1.1 Dogfood" --capacity 3 --issues 180,181,189 --dry-run
+gira sprint plan --repo StatPan/gira --iteration "v1.1 Dogfood" --capacity 3 --issues 180,181,189 --apply
 ```
 
 Start the sprint after the commitment is reviewed:

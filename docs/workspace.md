@@ -78,6 +78,10 @@ gira ticket status --repo OWNER/app --ticket 34
 
 ## Boundary
 
-This is not a separate Jira import/export database. Workspace commands operate on issues, labels, milestones, and links that remain visible in GitHub. `gira projects sync` is a visibility bridge for an existing GitHub Project; issues, labels, and milestones remain the source of truth. It mirrors `priority:*` labels to `Priority`, `area:*` labels to `Layer / workstream`, `agent:*` labels to `Owner / agent`, status labels to `Status`, and milestone due dates to `Target date`. Closed issues stay in the Project as `Done` by default; use `--archive-closed` only when the active Project item set should drop completed work. GitHub Project views still need to be created in the GitHub UI because supported CLI/GraphQL APIs do not currently create or edit views.
+This is not a separate Jira import/export database. Workspace commands operate on issues, labels, milestones, and links that remain visible in GitHub. `gira projects sync` is a visibility bridge for an existing GitHub Project; issues, labels, and milestones remain the source of truth. It mirrors `priority:*` labels to `Priority`, `area:*` labels to `Layer / workstream`, `agent:*` labels to `Owner / agent`, status labels to `Status`, and milestone due dates to `Target date`.
+
+GitHub assignees remain the accountable human owners. The `agent:*` label is only the execution actor or workflow hint, for example `agent:human`, `agent:codex`, `agent:reviewer`, or `agent:gira`. Do not use `Owner / agent` as a replacement for assignee or reporter metadata.
+
+Closed issues stay in the Project as `Done` by default; use `--archive-closed` only when the active Project item set should drop completed work. GitHub Project views still need to be created in the GitHub UI because supported CLI/GraphQL APIs do not currently create or edit views.
 
 Use `workspace` for personal or cross-repo intake. Use `ticket`, `sprint`, `release`, and `status` once the work belongs to one execution repo.

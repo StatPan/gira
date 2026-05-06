@@ -17,7 +17,7 @@ The current MVP CLI must not mutate GitHub Projects v2 data. This schema is a de
 | Status | `status` | Projects v2 | Yes | Planning workflow state across issues, PRs, and roadmap items. |
 | Priority | `priority` | Label plus optional Projects v2 mirror | Yes | Triage and sorting. Labels remain the execution-readable source. |
 | Layer / workstream | `layer` | Label plus optional Projects v2 mirror | Yes | Product area or workstream grouping. |
-| Owner / agent | `owner_agent` | Label plus optional Projects v2 mirror | Yes | Human or worker ownership signal. |
+| Owner / agent | `owner_agent` | Label plus optional Projects v2 mirror | Yes | Execution actor signal. GitHub assignee remains the accountable human owner. |
 | Milestone / phase | `milestone_phase` | GitHub milestone | Yes for phase-bound work | Phase, sprint, or release boundary. |
 | Start date | `start_date` | Projects v2 date field | Yes for roadmap-able items | First planned active date for timeline rendering. |
 | Target date | `target_date` | Projects v2 date field | Yes for roadmap-able items | Planned completion date for timeline rendering. |
@@ -35,7 +35,7 @@ Labels own:
 - Type: `type:epic`, `type:story`, `type:task`, `type:spike`, `type:bug`.
 - Priority: `priority:p0`, `priority:p1`, `priority:p2`, or the current repo's managed priority set.
 - Layer or area: `area:docs`, `area:backend`, `area:ai`, `area:infra`, or future `layer:*` labels when the product schema needs a cleaner split from implementation area.
-- Owner or agent class: `agent:human`, `agent:worker`, or similar managed labels.
+- Agent class: `agent:human`, `agent:codex`, `agent:reviewer`, `agent:gira`, or similar managed labels. This is the execution actor, not a replacement for GitHub assignee or issue author.
 - Cross-cutting state that must be visible without opening a Project view, such as `blocked`, if Gira later manages it.
 
 Milestones own:

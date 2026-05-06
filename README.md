@@ -267,6 +267,7 @@ Verification:
 command -v gira
 gira --help
 gira version
+gira upgrade
 gira doctor --repo OWNER/REPO
 ```
 
@@ -360,6 +361,17 @@ Unsupported distribution channels are source snapshots, unversioned binaries cop
 
 ### Upgrade
 
+Check the latest release and print the right next step for your install channel:
+
+```bash
+gira upgrade
+gira update
+gira upgrade --channel pipx
+gira upgrade --json
+```
+
+`gira upgrade` and `gira update` are aliases. They are advisory by default: the installed Go-built binary checks the latest GitHub release and prints the channel-specific command, but it does not run package managers or mutate repositories. If Gira cannot confidently infer how it was installed, pass `--channel install.sh|pipx|pip|homebrew|npm|bun|go`.
+
 Use the same channel that installed Gira:
 
 ```bash
@@ -370,6 +382,8 @@ GOBIN="${HOME}/.local/bin" go install ./cmd/gira
 python -m pip install --user --upgrade gira-cli
 pipx upgrade gira-cli
 brew update && brew upgrade gira
+npm update -g @statpan/gira
+bun update -g @statpan/gira
 ```
 
 Upgrade with the same package manager used for installation.
@@ -380,6 +394,7 @@ An upgrade replaces only the local `gira` binary or package wrapper. It must not
 command -v gira
 gira --help
 gira version
+gira upgrade
 gira doctor --repo OWNER/REPO
 ```
 

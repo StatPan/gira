@@ -27,6 +27,7 @@ Daily commands:
   sprint      Sprint iteration planning/start/close workflow
   release     Release readiness gate report
   status      Show a compact read-only GitHub status summary
+  upgrade     Check latest release and print upgrade instructions
   version     Show Gira build version
   start       Shortcut for ticket start
 
@@ -252,6 +253,18 @@ Usage:
 Flags:
   --json      Emit stable JSON version info
   -h, --help  Show help
+`
+
+const upgradeHelp = `Check latest release and print safe upgrade instructions.
+
+Usage:
+  gira upgrade [--channel auto|install.sh|pipx|pip|homebrew|npm|bun|go|unknown] [--json]
+  gira update [--channel auto|install.sh|pipx|pip|homebrew|npm|bun|go|unknown] [--json]
+
+Flags:
+  --channel string  Installed channel to use for the next-step command (default "auto")
+  --json            Emit stable JSON upgrade info
+  -h, --help        Show help
 `
 
 const onboardHelp = `Verify onboarding readiness from init to daily operation.
@@ -889,6 +902,11 @@ var newTicketChecksReport = func(repo gira.RepoRef, issue int, wait time.Duratio
 	return gira.BuildTicketChecksReport(repo, issue, wait, pollInterval, devCommandRunner)
 }
 
+var newUpgradeReport = func(channel string) (gira.UpgradeReport, error) {
+	executable, _ := os.Executable()
+	return gira.BuildUpgradeReport(channel, executable, nil)
+}
+
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(stdout, rootHelp)
@@ -929,6 +947,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runDetach(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
+	case "upgrade", "update":
+		return runUpgrade(args[1:], stdout, stderr)
 	case "version":
 		return runVersion(args[1:], stdout, stderr)
 	case "jira":
@@ -1031,6 +1051,46 @@ func runVersion(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatVersionInfo(info))
+	return 0
+}
+
+func runUpgrade(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	channel := fs.String("channel", "auto", "Installed channel to use for the next-step command")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON upgrade info")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, upgradeHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, upgradeHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, upgradeHelp)
+		return 2
+	}
+
+	report, err := newUpgradeReport(*channel)
+	if err != nil {
+		fmt.Fprintf(stderr, "upgrade check failed: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode upgrade JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatUpgradeReport(report))
 	return 0
 }
 

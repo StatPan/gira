@@ -216,6 +216,7 @@ Usage:
   gira workspace sync --dry-run|--apply [--config .gira/config.yaml] [--bootstrap-issues] [--json]
   gira workspace ticket new --title TEXT [--body TEXT] [--config .gira/config.yaml] [--json]
   gira workspace ticket route --ticket N --repo OWNER/REPO --dry-run|--apply [--config .gira/config.yaml] [--json]
+  gira workspace capability [--config .gira/config.yaml] [--json]
   gira workspace project plan [--config .gira/config.yaml] [--json]
 
 Commands:
@@ -224,6 +225,7 @@ Commands:
   backlog  List inbox tickets and repo issues together
   sync     Sync Gira metadata across inbox and execution repos
   ticket   Create or route repo-agnostic inbox tickets
+  capability  Check inbox and execution repo read/write permissions
   project  Read-only GitHub Projects v2 visibility planning
 
 Flags:
@@ -772,6 +774,14 @@ var newWorkspaceStatusReport = func(configPath string) (gira.WorkspaceReport, er
 
 var newWorkspaceInitReport = func(input gira.WorkspaceInitInput) (gira.WorkspaceInitReport, error) {
 	return gira.BuildWorkspaceInitReport(input)
+}
+
+var newWorkspaceCapabilityReport = func(configPath string) (gira.WorkspaceCapabilityReport, error) {
+	resolved, err := gira.ResolveWorkspaceConfig(configPath)
+	if err != nil {
+		return gira.WorkspaceCapabilityReport{}, err
+	}
+	return gira.BuildWorkspaceCapabilityReport(resolved, gira.ExecCommandRunner{}, time.Now())
 }
 
 var newWorkspaceSyncReport = func(configPath string, dryRun bool, bootstrapIssues bool) (gira.WorkspaceSyncReport, error) {
@@ -2705,6 +2715,8 @@ func runWorkspace(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runWorkspaceSync(args[1:], stdout, stderr)
 	case "ticket":
 		return runWorkspaceTicket(args[1:], stdout, stderr)
+	case "capability":
+		return runWorkspaceCapability(args[1:], stdout, stderr)
 	case "project":
 		return runWorkspaceProject(args[1:], stdout, stderr)
 	default:
@@ -2767,6 +2779,45 @@ func runWorkspaceInit(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatWorkspaceInitReport(report))
+	return 0
+}
+
+func runWorkspaceCapability(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("workspace capability", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	report, err := newWorkspaceCapabilityReport(*configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode workspace capability JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatWorkspaceCapabilityReport(report))
 	return 0
 }
 

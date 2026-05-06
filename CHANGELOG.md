@@ -6,6 +6,8 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.2.0 - 2026-05-06
+
 - Added built-in `gira guide` and `gira docs` help topics for quickstart, ticket flow, agent usage, and Jira concept mapping.
 - Added advisory `gira upgrade` and `gira update` aliases to check the latest release and print channel-specific upgrade instructions.
 - Improved `gira projects sync` performance by reducing duplicate Project field reads and parallelizing independent Project/repo reads.

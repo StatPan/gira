@@ -119,6 +119,8 @@ gira ticket start --repo OWNER/REPO --ticket N --dry-run
 gira ticket start --repo OWNER/REPO --ticket N --apply
 gira ticket pr --repo OWNER/REPO --ticket N --dry-run
 gira ticket pr --repo OWNER/REPO --ticket N --apply --draft
+gira ticket finish --repo OWNER/REPO --ticket N --dry-run
+gira ticket finish --repo OWNER/REPO --ticket N --apply
 gira ticket status --repo OWNER/REPO --ticket N --json
 ```
 
@@ -126,6 +128,7 @@ Expected behavior:
 
 - `ticket start --apply` verifies the ticket is ready, creates or checks out the branch, and applies `status:in-progress`.
 - `ticket pr --apply` opens a linked PR with `Closes #N`; draft PRs keep `status:in-progress`, non-draft PRs move to `status:in-review`.
+- `ticket finish --apply` marks a linked draft PR ready when needed, refuses failing checks or missing review, merges when safe, and reports final convergence.
 - `ticket status` shows linked PR state, checks, review blockers, current issue status, and the next suggested command.
 
 This keeps advanced adoption commands such as `gira ops sync --policy-mode adopt|merge|enforce` available for migrations while making daily Jira-style work feel like one coherent ticket lifecycle.

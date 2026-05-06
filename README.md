@@ -60,11 +60,13 @@ go test ./...
 
 gira ticket pr --repo OWNER/REPO --ticket TICKET --dry-run
 gira ticket pr --repo OWNER/REPO --ticket TICKET --apply --draft
+gira ticket finish --repo OWNER/REPO --ticket TICKET --dry-run
+gira ticket finish --repo OWNER/REPO --ticket TICKET --apply
 gira ticket status --repo OWNER/REPO --ticket TICKET
 gira projects sync --config .gira/config.yaml --dry-run
 ```
 
-You can open a pull request with `gh pr create`, but `gira ticket pr` keeps the ticket lifecycle consistent: it creates or reuses the linked PR, uses a closing body such as `Closes #TICKET`, computes the next ticket status, and gives the next Gira command to run.
+You can open and merge a pull request with `gh pr create` and `gh pr merge`, but `gira ticket pr` and `gira ticket finish` keep the ticket lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
 
 Use `--json` for automation:
 
@@ -93,7 +95,11 @@ go test ./...
 gira ticket pr --repo OWNER/REPO --ticket TICKET --dry-run
 gira ticket pr --repo OWNER/REPO --ticket TICKET --apply --draft
 
-# 5. Re-check the ticket and Project bridge.
+# 5. Finish through Gira after review and checks are ready.
+gira ticket finish --repo OWNER/REPO --ticket TICKET --dry-run
+gira ticket finish --repo OWNER/REPO --ticket TICKET --apply
+
+# 6. Re-check the ticket and Project bridge.
 gira ticket status --repo OWNER/REPO --ticket TICKET
 gira projects sync --config .gira/config.yaml --dry-run
 ```

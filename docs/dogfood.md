@@ -46,6 +46,13 @@ gira ticket pr --repo StatPan/gira --ticket TICKET --dry-run
 gira ticket pr --repo StatPan/gira --ticket TICKET --apply --draft
 ```
 
+Finish the ticket through Gira after review and checks are ready:
+
+```bash
+gira ticket finish --repo StatPan/gira --ticket TICKET --dry-run
+gira ticket finish --repo StatPan/gira --ticket TICKET --apply
+```
+
 Check the ticket at any point:
 
 ```bash

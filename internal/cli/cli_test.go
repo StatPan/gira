@@ -704,6 +704,70 @@ func TestTicketStartDryRunJSON(t *testing.T) {
 	}
 }
 
+func TestTicketNewDryRunJSON(t *testing.T) {
+	restore := newTicketNewReport
+	restoreRepo := repoContextRunner
+	t.Cleanup(func() {
+		newTicketNewReport = restore
+		repoContextRunner = restoreRepo
+	})
+	repoContextRunner = devCLIRunner{outputs: map[string][]byte{
+		"git remote get-url origin": []byte("https://github.com/StatPan/gira.git\n"),
+	}}
+	newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Title != "Add retry" || !input.DryRun || input.Start {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		if input.Type != "bug" || input.Priority != "p1" || len(input.Acceptance) != 2 || len(input.Labels) != 1 {
+			t.Fatalf("unexpected structured input: %+v", input)
+		}
+		return gira.TicketNewReport{Repo: input.Repo.FullName(), Title: input.Title, DryRun: true, Labels: []string{"type:bug", "status:ready", "priority:p1"}, Body: "## Goal\nRetry\n", NextStep: "gira ticket new --apply"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "new", "Add retry", "--goal", "Retry", "--acceptance", "works;has tests", "--type", "bug", "--priority", "p1", "--label", "area:backend", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"title": "Add retry"`) || !strings.Contains(stdout.String(), `"type:bug"`) {
+		t.Fatalf("ticket new JSON missing expected fields:\n%s", stdout.String())
+	}
+}
+
+func TestTicketNewApplyStart(t *testing.T) {
+	restore := newTicketNewReport
+	t.Cleanup(func() { newTicketNewReport = restore })
+	newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Title != "Add retry" || input.DryRun || !input.Start {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		return gira.TicketNewReport{Repo: input.Repo.FullName(), Title: input.Title, Start: true, Created: gira.TicketCreatedIssue{Repo: input.Repo.FullName(), Number: 224}, NextStep: "gira ticket pr --dry-run"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "new", "--repo", "StatPan/gira", "--title", "Add retry", "--apply", "--start"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "ticket #224") || !strings.Contains(stdout.String(), "gira ticket pr --dry-run") {
+		t.Fatalf("ticket new output missing created ticket:\n%s", stdout.String())
+	}
+}
+
+func TestTicketNewRequiresModeAndTitle(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "new", "Add retry", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 2 || !strings.Contains(stderr.String(), "exactly one of --dry-run/--apply") {
+		t.Fatalf("expected mode error, code=%d stderr=%s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"ticket", "new", "--repo", "StatPan/gira", "--dry-run"}, &stdout, &stderr)
+	if code != 2 || !strings.Contains(stderr.String(), "ticket title is required") {
+		t.Fatalf("expected title error, code=%d stderr=%s", code, stderr.String())
+	}
+}
+
 func TestTicketStartIssueAlias(t *testing.T) {
 	restore := newWorkStartResult
 	t.Cleanup(func() { newWorkStartResult = restore })

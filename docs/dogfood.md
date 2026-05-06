@@ -32,12 +32,14 @@ gira workspace backlog --config .gira/config.yaml
 gira projects sync --config .gira/config.yaml --dry-run
 ```
 
-Pick a ready ticket, then start work:
+Create a repo-bound ticket, then start work:
 
 ```bash
-gira ticket start TICKET --dry-run
-gira ticket start TICKET --apply
+gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --dry-run
+gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --apply --start
 ```
+
+For an existing issue, use `gira ticket start TICKET --apply`.
 
 Open or validate the linked pull request:
 

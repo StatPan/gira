@@ -337,12 +337,14 @@ Usage:
 const ticketHelp = `Jira-style ticket lifecycle commands.
 
 Usage:
+  gira ticket new "Title" --dry-run|--apply [--start] [--json]
   gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
   gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--wait 0s] [--json]
   gira ticket status [TICKET] [--repo OWNER/REPO] [--json]
 
 Commands:
+  new     Create a repo-bound executable ticket with a structured Gira body
   start   Verify a ready ticket, create/reuse its branch, and move to in-progress on apply. Alias: gira start
   pr      Validate or create a linked PR with Closes #N and update review status on apply
   finish  Mark the linked PR ready when needed, merge safely, and report convergence
@@ -356,6 +358,7 @@ Flags:
   --apply          Apply branch, PR, and status label changes
   --draft          Create/keep PR as draft for ticket pr
   --wait duration  Optional pending-check wait for ticket finish. Default: 0s
+  --start          Start a newly created ticket after ticket new --apply
   --json           Emit stable JSON output
   -h, --help       Show help
 `
@@ -751,6 +754,10 @@ var newWorkStatusResult = func(repo gira.RepoRef, issue int) (gira.WorkStatusRes
 
 var newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration) (gira.WorkFinishResult, error) {
 	return gira.FinishWork(repo, issue, dryRun, wait, devCommandRunner)
+}
+
+var newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
+	return gira.BuildTicketNewReport(input, devCommandRunner)
 }
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -1377,6 +1384,8 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	switch args[0] {
+	case "new":
+		return runTicketNew(args[1:], stdout, stderr)
 	case "start":
 		return runTicketStart(args[1:], stdout, stderr)
 	case "pr":
@@ -1390,6 +1399,88 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
 	}
+}
+
+func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalTitle, titleOK := extractTitlePositional(args, stderr)
+	if !titleOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("ticket new", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	title := fs.String("title", "", "Ticket title")
+	goal := fs.String("goal", "", "Ticket goal")
+	scope := fs.String("scope", "", "Ticket scope")
+	acceptance := fs.String("acceptance", "", "Semicolon-separated acceptance criteria")
+	notes := fs.String("notes", "", "Ticket notes")
+	ticketType := fs.String("type", "task", "Ticket type: task|bug|story|chore")
+	priority := fs.String("priority", "", "Priority: p0|p1|p2|p3")
+	milestone := fs.String("milestone", "", "Milestone title")
+	bodyFile := fs.String("body-file", "", "Read issue body from file")
+	start := fs.Bool("start", false, "Start the created ticket")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply changes")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	var labels repeatedStringFlag
+	fs.Var(&labels, "label", "Additional GitHub label")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	resolvedTitle, ok := resolveTicketNewTitle(positionalTitle, *title, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run/--apply is required\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newTicketNewReport(gira.TicketNewInput{
+		Repo:       repo,
+		Title:      resolvedTitle,
+		Goal:       *goal,
+		Scope:      *scope,
+		Acceptance: splitList(*acceptance),
+		Notes:      *notes,
+		Type:       *ticketType,
+		Priority:   *priority,
+		Milestone:  *milestone,
+		Labels:     labels,
+		BodyFile:   *bodyFile,
+		Start:      *start,
+		DryRun:     *dryRun,
+	})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatTicketNew(report))
+	return 0
 }
 
 func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -1771,6 +1862,50 @@ func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bo
 		cleaned = cleaned[:len(cleaned)-1]
 	}
 	return cleaned, positional, true
+}
+
+func extractTitlePositional(args []string, stderr io.Writer) ([]string, string, bool) {
+	cleaned := make([]string, 0, len(args))
+	title := ""
+	valueFlags := map[string]struct{}{"--repo": {}, "--title": {}, "--goal": {}, "--scope": {}, "--acceptance": {}, "--notes": {}, "--type": {}, "--priority": {}, "--milestone": {}, "--label": {}, "--body-file": {}}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		cleaned = append(cleaned, arg)
+		if _, ok := valueFlags[arg]; ok {
+			if i+1 < len(args) {
+				i++
+				cleaned = append(cleaned, args[i])
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		if title != "" {
+			fmt.Fprint(stderr, "only one positional title can be provided; use --title for explicit title\n\n")
+			return nil, "", false
+		}
+		title = arg
+		cleaned = cleaned[:len(cleaned)-1]
+	}
+	return cleaned, title, true
+}
+
+func resolveTicketNewTitle(positional string, title string, stderr io.Writer) (string, bool) {
+	positional = strings.TrimSpace(positional)
+	title = strings.TrimSpace(title)
+	if positional != "" && title != "" && positional != title {
+		fmt.Fprint(stderr, "positional title and --title must match when both are provided\n\n")
+		return "", false
+	}
+	if title != "" {
+		return title, true
+	}
+	if positional != "" {
+		return positional, true
+	}
+	fmt.Fprint(stderr, "ticket title is required\n\n")
+	return "", false
 }
 
 func resolveExplicitTicket(ticket int, issue int, positional int, stderr io.Writer) (int, bool) {
@@ -3652,6 +3787,20 @@ func splitList(value string) []string {
 		}
 	}
 	return out
+}
+
+type repeatedStringFlag []string
+
+func (f *repeatedStringFlag) String() string {
+	if f == nil {
+		return ""
+	}
+	return strings.Join(*f, ",")
+}
+
+func (f *repeatedStringFlag) Set(value string) error {
+	*f = append(*f, strings.TrimSpace(value))
+	return nil
 }
 
 func appendAuditRecord(repo gira.RepoRef, record gira.AuditRecord) error {

@@ -115,6 +115,8 @@ Live session orchestration is justified only for narrow exceptions:
 The current CLI exposes the Jira-style daily loop through `gira ticket`. Advanced setup and policy controls stay under `gira ops` so new users do not need to learn GitHub-native internals before starting work.
 
 ```bash
+gira ticket new "Title" --goal "Goal" --acceptance "item 1;item 2" --dry-run
+gira ticket new "Title" --goal "Goal" --acceptance "item 1;item 2" --apply --start
 gira ticket start N --dry-run
 gira ticket start N --apply
 gira ticket pr --dry-run
@@ -126,6 +128,7 @@ gira ticket status --json
 
 Expected behavior:
 
+- `ticket new --apply` creates a repo-bound executable ticket with a structured body, `type:*`, and `status:ready`; `--start` immediately continues into branch start.
 - `ticket start --apply` verifies the ticket is ready, creates or checks out the branch, and applies `status:in-progress`.
 - `ticket pr --apply` opens a linked PR with `Closes #N`; draft PRs keep `status:in-progress`, non-draft PRs move to `status:in-review`.
 - `ticket finish --apply` marks a linked draft PR ready when needed, refuses failing checks or missing review, merges when safe, and reports final convergence.

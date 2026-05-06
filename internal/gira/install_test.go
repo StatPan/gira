@@ -134,6 +134,25 @@ func TestFormatInstallSummaryUsesStableShape(t *testing.T) {
 	}
 }
 
+func TestFormatBootstrapInstallSummaryGuidesConflictContinuation(t *testing.T) {
+	got := FormatBootstrapInstallSummary(InstallResult{
+		Created:   []string{".gira/config.yaml"},
+		Conflicts: []string{"AGENTS.md", ".github/PULL_REQUEST_TEMPLATE.md"},
+		Branch:    DefaultBranch,
+	}, mustRepoRefForPortfolio("StatPan/example"))
+	for _, want := range []string{
+		"conflicts:   2",
+		"generated non-conflicting files are still in the worktree",
+		`gira ticket new --repo StatPan/example --title "Adopt Gira bootstrap files" --type task`,
+		`--apply --start`,
+		"resolve the listed conflicts, then run: gira ticket pr --apply --draft",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("summary missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func newGitRepo(t *testing.T) string {
 	t.Helper()
 	repo := filepath.Join(t.TempDir(), "target")

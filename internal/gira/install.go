@@ -105,6 +105,36 @@ func FormatInstallSummary(result InstallResult) string {
 	return b.String()
 }
 
+func FormatBootstrapInstallSummary(result InstallResult, repo RepoRef) string {
+	summary := FormatInstallSummary(result)
+	if len(result.Conflicts) == 0 {
+		return summary
+	}
+	var b strings.Builder
+	b.WriteString(summary)
+	b.WriteString("next:\n")
+	b.WriteString("- generated non-conflicting files are still in the worktree\n")
+	fmt.Fprintf(&b, "- bind this bootstrap work to a ticket: %s\n", bootstrapContinuationTicketCommand(repo, result))
+	b.WriteString("- resolve the listed conflicts, then run: gira ticket pr --apply --draft\n")
+	return b.String()
+}
+
+func bootstrapContinuationTicketCommand(repo RepoRef, result InstallResult) string {
+	notes := "Continue bootstrap"
+	if strings.TrimSpace(result.Branch) != "" {
+		notes += " from " + result.Branch
+	}
+	if len(result.Conflicts) > 0 {
+		notes += "; resolve conflicts: " + strings.Join(result.Conflicts, ", ")
+	}
+	return fmt.Sprintf(
+		"gira ticket new --repo %s --title %q --type task --notes %q --apply --start",
+		repo.FullName(),
+		"Adopt Gira bootstrap files",
+		notes,
+	)
+}
+
 func ensureBranch(path string, branch string) error {
 	if _, err := runGit(path, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
 		_, err = runGit(path, "checkout", branch)

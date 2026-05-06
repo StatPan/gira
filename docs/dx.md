@@ -174,6 +174,7 @@ Bootstrap recovery:
 
 - If a target path is not a git repo, fail before writing files.
 - If a file already exists with different content, preserve it by default, report a conflict, and exit non-zero.
+- Conflict output should keep generated non-conflicting files in the worktree and print the continuation flow: create a ticket with `gira ticket new --apply --start`, resolve the listed conflicts on that ticket branch, then open the PR with `gira ticket pr --apply --draft`.
 - If `--overwrite` is used, replace only conflicting template-owned files.
 - If branch creation is unwanted, `--no-branch` keeps the current branch.
 - Rerunning after a successful install should report zero created files and leave content unchanged.

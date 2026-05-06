@@ -1639,7 +1639,7 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 	scope := fs.String("scope", "", "Ticket scope")
 	acceptance := fs.String("acceptance", "", "Semicolon-separated acceptance criteria")
 	notes := fs.String("notes", "", "Ticket notes")
-	ticketType := fs.String("type", "task", "Ticket type: task|bug|story|chore")
+	ticketType := fs.String("type", "task", "Ticket type: epic|story|task|bug|spike|chore")
 	priority := fs.String("priority", "", "Priority: p0|p1|p2|p3")
 	milestone := fs.String("milestone", "", "Milestone title")
 	bodyFile := fs.String("body-file", "", "Read issue body from file")
@@ -2527,7 +2527,7 @@ func runBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	fmt.Fprint(stdout, gira.FormatInstallSummary(result))
+	fmt.Fprint(stdout, gira.FormatBootstrapInstallSummary(result, repo))
 	if len(result.Conflicts) > 0 {
 		return 1
 	}

@@ -2,6 +2,7 @@ package gira
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -43,6 +44,52 @@ func TestBuildProjectsSyncReportPlansMissingItemsAndStatusUpdates(t *testing.T) 
 	}
 	if len(client.linkedApplied) != 0 || len(client.added) != 0 || len(client.updated) != 0 {
 		t.Fatalf("dry-run mutated fake client: %+v", client)
+	}
+	if client.callCount("StatusField") != 0 {
+		t.Fatalf("StatusField should be derived from ProjectFields, calls=%d", client.callCount("StatusField"))
+	}
+}
+
+func TestBuildProjectsSyncReportFetchesIndependentReadsConcurrently(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "In Progress": "progress", "Done": "done"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues: map[string][]ProjectsSyncIssue{
+			"StatPan/gira": {{Repo: "StatPan/gira", Number: 180, Title: "Ready", URL: "https://github.com/StatPan/gira/issues/180", Labels: []string{"status:ready"}}},
+		},
+		items: []ProjectsSyncItem{{ID: "item-180", Repo: "StatPan/gira", Number: 180, Status: "Todo"}},
+		delays: map[string]time.Duration{
+			"ProjectFields":       80 * time.Millisecond,
+			"ProjectItemsGraphQL": 80 * time.Millisecond,
+			"RepoLinked":          80 * time.Millisecond,
+			"OpenIssues":          80 * time.Millisecond,
+		},
+	}
+
+	start := time.Now()
+	report, err := BuildProjectsSyncReport(config, client, true, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if report.Counts.Issues != 1 || report.Counts.ProjectItemsSkip != 1 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+	if elapsed > 260*time.Millisecond {
+		t.Fatalf("BuildProjectsSyncReport took %s, want independent reads under 260ms", elapsed)
+	}
+	if client.callCount("ProjectFields") != 1 || client.callCount("ProjectItemsGraphQL") != 1 || client.callCount("RepoLinked") != 1 || client.callCount("OpenIssues") != 1 {
+		t.Fatalf("unexpected read call counts: %+v", client.calls)
 	}
 }
 
@@ -445,6 +492,9 @@ func TestGHProjectsSyncClientProjectItemsGraphQLUsesSupportedPageSize(t *testing
 }
 
 type fakeProjectsSyncClient struct {
+	mu             sync.Mutex
+	calls          map[string]int
+	delays         map[string]time.Duration
 	project        ProjectsSyncProject
 	projects       []ProjectsSyncProject
 	fields         []ProjectsSyncField
@@ -474,52 +524,112 @@ func (r *recordingProjectsSyncRunner) Run(name string, args ...string) ([]byte, 
 }
 
 func (c *fakeProjectsSyncClient) Project(owner string, number int) (ProjectsSyncProject, error) {
+	if delay := c.recordCall("Project"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.project, nil
 }
 
 func (c *fakeProjectsSyncClient) Projects(owner string) ([]ProjectsSyncProject, error) {
+	if delay := c.recordCall("Projects"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.projects, nil
 }
 
 func (c *fakeProjectsSyncClient) LinkedProjects(repo RepoRef) ([]ProjectsSyncProject, error) {
+	if delay := c.recordCall("LinkedProjects"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.linkedProjects[repo.FullName()], nil
 }
 
 func (c *fakeProjectsSyncClient) StatusField(owner string, number int) (ProjectsSyncStatusField, error) {
+	if delay := c.recordCall("StatusField"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.statusField, nil
 }
 
 func (c *fakeProjectsSyncClient) ProjectFields(projectID string) ([]ProjectsSyncField, error) {
+	if delay := c.recordCall("ProjectFields"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.fields, nil
 }
 
 func (c *fakeProjectsSyncClient) RepoLinked(owner string, number int, repo RepoRef) (bool, error) {
+	if delay := c.recordCall("RepoLinked"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.linked[repo.FullName()], nil
 }
 
 func (c *fakeProjectsSyncClient) OpenIssues(repo RepoRef) ([]ProjectsSyncIssue, error) {
+	if delay := c.recordCall("OpenIssues"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.issues[repo.FullName()], nil
 }
 
 func (c *fakeProjectsSyncClient) ProjectItems(owner string, number int) ([]ProjectsSyncItem, error) {
+	if delay := c.recordCall("ProjectItems"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.items, nil
 }
 
 func (c *fakeProjectsSyncClient) ProjectItemsGraphQL(projectID string) ([]ProjectsSyncItem, error) {
+	if delay := c.recordCall("ProjectItemsGraphQL"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.items, nil
 }
 
 func (c *fakeProjectsSyncClient) LinkRepo(owner string, number int, repo RepoRef) error {
+	if delay := c.recordCall("LinkRepo"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.linkedApplied = append(c.linkedApplied, repo.FullName())
 	return nil
 }
 
 func (c *fakeProjectsSyncClient) AddItem(owner string, number int, issue ProjectsSyncIssue) (string, error) {
+	if delay := c.recordCall("AddItem"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.added = append(c.added, issue)
 	return "item-added", nil
 }
 
 func (c *fakeProjectsSyncClient) CreateProjectField(owner string, number int, field ProjectsSyncFieldDef) (string, error) {
+	if delay := c.recordCall("CreateProjectField"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.createdFields = append(c.createdFields, field)
 	id := "field-" + strings.ToLower(strings.ReplaceAll(field.Name, " ", "-"))
 	c.fields = append(c.fields, ProjectsSyncField{ID: id, Name: field.Name, Type: field.Type})
@@ -527,28 +637,69 @@ func (c *fakeProjectsSyncClient) CreateProjectField(owner string, number int, fi
 }
 
 func (c *fakeProjectsSyncClient) ArchiveItem(owner string, number int, itemID string) error {
+	if delay := c.recordCall("ArchiveItem"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.archived = append(c.archived, itemID)
 	return nil
 }
 
 func (c *fakeProjectsSyncClient) UpdateItemStatus(projectID string, itemID string, fieldID string, optionID string) error {
+	if delay := c.recordCall("UpdateItemStatus"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.updated = append(c.updated, itemID+":"+optionID)
 	return nil
 }
 
 func (c *fakeProjectsSyncClient) UpdateItemSingleSelect(projectID string, itemID string, fieldID string, optionID string) error {
+	if delay := c.recordCall("UpdateItemSingleSelect"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.updatedFields = append(c.updatedFields, itemID+":"+fieldID+":"+optionID)
 	return nil
 }
 
 func (c *fakeProjectsSyncClient) UpdateItemText(projectID string, itemID string, fieldID string, text string) error {
+	if delay := c.recordCall("UpdateItemText"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.updatedTexts = append(c.updatedTexts, itemID+":"+fieldID+":"+text)
 	return nil
 }
 
 func (c *fakeProjectsSyncClient) UpdateItemDate(projectID string, itemID string, fieldID string, date string) error {
+	if delay := c.recordCall("UpdateItemDate"); delay > 0 {
+		time.Sleep(delay)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.updatedDates = append(c.updatedDates, itemID+":"+fieldID+":"+date)
 	return nil
+}
+
+func (c *fakeProjectsSyncClient) recordCall(name string) time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.calls == nil {
+		c.calls = map[string]int{}
+	}
+	c.calls[name]++
+	return c.delays[name]
+}
+
+func (c *fakeProjectsSyncClient) callCount(name string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls[name]
 }
 
 func allProjectsSyncCanonicalFields() []ProjectsSyncField {

@@ -1,12 +1,19 @@
 # Gira
 
-Gira is a GitHub-native project OS bootstrapper: it turns a repository into an AI-ready workspace for PRD, issues, milestones, PR workflow, and worker handoff.
+Gira is a Terraform-like project operating system for GitHub: it plans and applies repository workflow state so issues, labels, milestones, Projects, branches, and PRs converge into a Jira-style execution loop.
 
 Name shorthand: **Gira: Jira-style project flow on GitHub.**
 
+With Gira, GitHub remains the source of truth. Gira gives humans and agents a safer control plane over it:
+
+- `gira ... --dry-run` shows the plan before changing GitHub or repository files.
+- `gira ... --apply` applies only the reviewed action.
+- Issues are tickets, milestones are sprint or release boundaries, branches are work-start evidence, and PRs are change units.
+- Optional workspace and Project sync commands make backlog and roadmap state visible without replacing GitHub.
+
 ## Quick Start
 
-Install Gira from the official release installer:
+Install Gira:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
@@ -21,23 +28,22 @@ brew tap StatPan/tap
 brew install gira
 ```
 
-Verify the binary before touching a repository:
+Read before writing:
 
 ```bash
-gira --help
 gira version
 gh auth status
+gira status --repo OWNER/REPO
 ```
 
-Prepare one repository without changing it:
+Plan repository setup without changing it:
 
 ```bash
-gira doctor --repo OWNER/REPO
 gira ops bootstrap --repo OWNER/REPO --template default --dry-run
 gira ops sync --repo OWNER/REPO --dry-run
 ```
 
-Apply the repository setup after reviewing the dry-run output:
+Apply the reviewed setup:
 
 ```bash
 gira ops bootstrap --repo OWNER/REPO --path /path/to/repo
@@ -45,7 +51,7 @@ gira ops sync --repo OWNER/REPO
 gira ops onboard verify --repo OWNER/REPO --stage steady-state
 ```
 
-Run the daily Jira-style ticket loop after an issue exists:
+Run the Jira-style ticket loop:
 
 ```bash
 gira status --repo OWNER/REPO

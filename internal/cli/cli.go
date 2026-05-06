@@ -210,6 +210,7 @@ Flags:
 const workspaceHelp = `Personal workspace inbox and backlog commands.
 
 Usage:
+  gira workspace init --inbox-repo OWNER/REPO [--repo OWNER/REPO] --dry-run|--apply [--path .]
   gira workspace status [--config .gira/config.yaml] [--json]
   gira workspace backlog [--config .gira/config.yaml] [--json]
   gira workspace sync --dry-run|--apply [--config .gira/config.yaml] [--bootstrap-issues] [--json]
@@ -218,6 +219,7 @@ Usage:
   gira workspace project plan [--config .gira/config.yaml] [--json]
 
 Commands:
+  init     Create a workspace config for personal or repo-bound backlog use
   status   Show inbox and repo execution state in one Jira-like overview
   backlog  List inbox tickets and repo issues together
   sync     Sync Gira metadata across inbox and execution repos
@@ -766,6 +768,10 @@ var newWorkspaceStatusReport = func(configPath string) (gira.WorkspaceReport, er
 		return gira.WorkspaceReport{}, err
 	}
 	return gira.BuildWorkspaceStatusReport(resolved, gira.NewGHWorkspaceClient(gira.ExecCommandRunner{}), time.Now(), 14)
+}
+
+var newWorkspaceInitReport = func(input gira.WorkspaceInitInput) (gira.WorkspaceInitReport, error) {
+	return gira.BuildWorkspaceInitReport(input)
 }
 
 var newWorkspaceSyncReport = func(configPath string, dryRun bool, bootstrapIssues bool) (gira.WorkspaceSyncReport, error) {
@@ -2691,6 +2697,8 @@ func runWorkspace(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	switch args[0] {
+	case "init":
+		return runWorkspaceInit(args[1:], stdout, stderr)
 	case "status", "backlog":
 		return runWorkspaceStatus(args[0], args[1:], stdout, stderr)
 	case "sync":
@@ -2704,6 +2712,62 @@ func runWorkspace(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, workspaceHelp)
 		return 2
 	}
+}
+
+func runWorkspaceInit(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("workspace init", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	name := fs.String("name", "", "Workspace name")
+	owner := fs.String("owner", "", "Workspace owner")
+	inboxRepo := fs.String("inbox-repo", "", "Inbox repo in OWNER/REPO format")
+	pathValue := fs.String("path", ".", "Directory where .gira/config.yaml is written")
+	overwrite := fs.Bool("overwrite", false, "Overwrite existing config")
+	dryRun := fs.Bool("dry-run", false, "Preview without writing config")
+	apply := fs.Bool("apply", false, "Write config")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	var repos repeatedStringFlag
+	fs.Var(&repos, "repo", "Execution repo in OWNER/REPO format")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if strings.TrimSpace(*inboxRepo) == "" {
+		fmt.Fprint(stderr, "--inbox-repo is required\n\n")
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	report, err := newWorkspaceInitReport(gira.WorkspaceInitInput{Name: *name, Owner: *owner, InboxRepo: *inboxRepo, Repos: repos, Path: *pathValue, Overwrite: *overwrite, DryRun: *dryRun, Apply: *apply})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode workspace init JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatWorkspaceInitReport(report))
+	return 0
 }
 
 func runWorkspaceStatus(command string, args []string, stdout io.Writer, stderr io.Writer) int {

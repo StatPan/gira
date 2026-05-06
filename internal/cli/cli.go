@@ -214,7 +214,7 @@ Usage:
   gira workspace status [--config .gira/config.yaml] [--json]
   gira workspace backlog [--config .gira/config.yaml] [--json]
   gira workspace sync --dry-run|--apply [--config .gira/config.yaml] [--bootstrap-issues] [--json]
-  gira workspace ticket new --title TEXT [--body TEXT] [--config .gira/config.yaml] [--json]
+  gira workspace ticket new "Title" [--body TEXT] [--config .gira/config.yaml] [--json]
   gira workspace ticket route --ticket N --repo OWNER/REPO --dry-run|--apply [--config .gira/config.yaml] [--json]
   gira workspace capability [--config .gira/config.yaml] [--json]
   gira workspace project plan [--config .gira/config.yaml] [--json]
@@ -2945,12 +2945,16 @@ func runWorkspaceTicketNew(args []string, stdout io.Writer, stderr io.Writer) in
 		fmt.Fprint(stdout, workspaceHelp)
 		return 0
 	}
+	resolvedTitle := strings.TrimSpace(*title)
 	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
-		fmt.Fprint(stderr, workspaceHelp)
-		return 2
+		if resolvedTitle != "" {
+			fmt.Fprintf(stderr, "use either positional title or --title, not both\n\n")
+			fmt.Fprint(stderr, workspaceHelp)
+			return 2
+		}
+		resolvedTitle = strings.TrimSpace(strings.Join(fs.Args(), " "))
 	}
-	report, err := newWorkspaceTicketNewReport(*configPath, *title, *body)
+	report, err := newWorkspaceTicketNewReport(*configPath, resolvedTitle, *body)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2

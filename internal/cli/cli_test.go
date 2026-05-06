@@ -35,8 +35,87 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "version") {
 		t.Fatalf("help output missing version command:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "upgrade") {
+		t.Fatalf("help output missing upgrade command:\n%s", stdout.String())
+	}
 	if strings.Contains(stdout.String(), "portfolio   ") || strings.Contains(stdout.String(), "jira        ") {
 		t.Fatalf("help output should not frontload advanced commands:\n%s", stdout.String())
+	}
+}
+
+func TestUpgradeCommandHumanOutput(t *testing.T) {
+	original := newUpgradeReport
+	t.Cleanup(func() { newUpgradeReport = original })
+	newUpgradeReport = func(channel string) (gira.UpgradeReport, error) {
+		if channel != "pipx" {
+			t.Fatalf("channel = %q, want pipx", channel)
+		}
+		return gira.UpgradeReport{
+			Current:  "v1.1.1",
+			Latest:   "v1.2.0",
+			Status:   "update_available",
+			Channel:  "pipx",
+			NextStep: "pipx upgrade gira-cli",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"upgrade", "--channel", "pipx"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"upgrade: gira", "current: v1.1.1", "latest:  v1.2.0", "pipx upgrade gira-cli"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("upgrade output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestUpdateAliasJSON(t *testing.T) {
+	original := newUpgradeReport
+	t.Cleanup(func() { newUpgradeReport = original })
+	newUpgradeReport = func(channel string) (gira.UpgradeReport, error) {
+		return gira.UpgradeReport{
+			Current:  "v1.2.0",
+			Latest:   "v1.2.0",
+			Status:   "up_to_date",
+			Channel:  "homebrew",
+			NextStep: "brew update && brew upgrade gira",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"update", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.UpgradeReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode upgrade JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Status != "up_to_date" || report.Channel != "homebrew" {
+		t.Fatalf("unexpected report: %#v", report)
+	}
+}
+
+func TestUpgradeCommandHelpAndError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"upgrade", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("help exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "gira update") {
+		t.Fatalf("help output missing update alias:\n%s", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"upgrade", "extra"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("unexpected argument exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unexpected argument: extra") {
+		t.Fatalf("stderr missing unexpected argument:\n%s", stderr.String())
 	}
 }
 

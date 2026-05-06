@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -148,20 +149,38 @@ type statusPullRequest struct {
 }
 
 func BuildStatusSummary(client StatusClient, fetchedAt time.Time, staleDays int) (StatusSummary, error) {
-	milestones, err := FetchMilestones(client)
-	if err != nil {
-		return StatusSummary{}, err
+	var milestones []normalizedMilestone
+	var issues []normalizedIssue
+	var prs []statusPullRequest
+	var milestonesErr error
+	var issuesErr error
+	var prsErr error
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		milestones, milestonesErr = FetchMilestones(client)
+	}()
+	go func() {
+		defer wg.Done()
+		issues, issuesErr = FetchIssues(client)
+	}()
+	go func() {
+		defer wg.Done()
+		prs, prsErr = FetchOpenPullRequests(client)
+	}()
+	wg.Wait()
+	if milestonesErr != nil {
+		return StatusSummary{}, milestonesErr
 	}
-	issues, err := FetchIssues(client)
-	if err != nil {
-		return StatusSummary{}, err
+	if issuesErr != nil {
+		return StatusSummary{}, issuesErr
 	}
 	summary, err := SummarizeStatus(client.Repo().FullName(), milestones, issues, fetchedAt, staleDays)
 	if err != nil {
 		return StatusSummary{}, err
 	}
-	prs, err := FetchOpenPullRequests(client)
-	if err == nil {
+	if prsErr == nil {
 		summary.Counts.Issues.PRsMissingClosureLink, summary.Counts.Issues.ClosureLinkMissingOpenIssues = closureLinkGapMetrics(prs)
 	}
 	return summary, nil
@@ -221,6 +240,26 @@ func FetchMilestones(client StatusClient) ([]normalizedMilestone, error) {
 }
 
 func FetchIssues(client StatusClient) ([]normalizedIssue, error) {
+	var rows []json.RawMessage
+	err := client.JSON([]string{
+		"issue",
+		"list",
+		"--repo",
+		client.Repo().FullName(),
+		"--state",
+		"all",
+		"--limit",
+		"1000",
+		"--json",
+		"number,title,state,labels,milestone,updatedAt,url",
+	}, &rows)
+	if err != nil {
+		return fetchIssuesREST(client)
+	}
+	return normalizeIssueRows(rows)
+}
+
+func fetchIssuesREST(client StatusClient) ([]normalizedIssue, error) {
 	var pages json.RawMessage
 	err := client.JSON([]string{
 		"api",
@@ -237,11 +276,14 @@ func FetchIssues(client StatusClient) ([]normalizedIssue, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	rows, err := flattenPages(pages)
 	if err != nil {
 		return nil, err
 	}
+	return normalizeIssueRows(rows)
+}
+
+func normalizeIssueRows(rows []json.RawMessage) ([]normalizedIssue, error) {
 	issues := make([]normalizedIssue, 0, len(rows))
 	for _, row := range rows {
 		var raw struct {
@@ -254,15 +296,16 @@ func FetchIssues(client StatusClient) ([]normalizedIssue, error) {
 			Milestone *struct {
 				Title string `json:"title"`
 			} `json:"milestone"`
-			UpdatedAt   string           `json:"updated_at"`
-			HTMLURL     string           `json:"html_url"`
-			URL         string           `json:"url"`
-			PullRequest *json.RawMessage `json:"pull_request"`
+			UpdatedAt       string           `json:"updatedAt"`
+			UpdatedAtREST   string           `json:"updated_at"`
+			HTMLURL         string           `json:"html_url"`
+			URL             string           `json:"url"`
+			PullRequestREST *json.RawMessage `json:"pull_request"`
 		}
 		if err := json.Unmarshal(row, &raw); err != nil {
 			return nil, fmt.Errorf("parse issue: %w", err)
 		}
-		if raw.PullRequest != nil {
+		if raw.PullRequestREST != nil {
 			continue
 		}
 		labels := make([]string, 0, len(raw.Labels))
@@ -279,13 +322,17 @@ func FetchIssues(client StatusClient) ([]normalizedIssue, error) {
 		if url == "" {
 			url = raw.URL
 		}
+		updatedAt := raw.UpdatedAt
+		if updatedAt == "" {
+			updatedAt = raw.UpdatedAtREST
+		}
 		issues = append(issues, normalizedIssue{
 			Number:    raw.Number,
 			Title:     raw.Title,
-			State:     raw.State,
+			State:     strings.ToLower(raw.State),
 			Labels:    labels,
 			Milestone: milestone,
-			UpdatedAt: raw.UpdatedAt,
+			UpdatedAt: updatedAt,
 			URL:       url,
 		})
 	}

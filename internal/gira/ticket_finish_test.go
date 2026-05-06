@@ -3,17 +3,21 @@ package gira
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 )
 
 type finishRunner struct {
 	outputs map[string][][]byte
 	errs    map[string]error
+	mu      sync.Mutex
 	calls   []string
 }
 
 func (r *finishRunner) Run(name string, args ...string) ([]byte, error) {
 	key := name + " " + strings.Join(args, " ")
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.calls = append(r.calls, key)
 	if err, ok := r.errs[key]; ok {
 		return nil, err
@@ -83,6 +87,9 @@ func TestFinishWorkDryRunPendingChecksReportsBlockerWithoutWaiting(t *testing.T)
 	}
 	if containsCall(runner.calls, "gh pr merge 220 --repo StatPan/gira --squash --delete-branch") {
 		t.Fatalf("dry-run pending checks should not merge: %v", runner.calls)
+	}
+	if got := countFinishCall(runner.calls, "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20"); got != 1 {
+		t.Fatalf("dry-run pending checks should reuse PR status, got %d pr list calls: %v", got, runner.calls)
 	}
 }
 
@@ -188,4 +195,14 @@ func TestFinishWorkAlreadyMergedIsIdempotent(t *testing.T) {
 	if !result.AlreadyDone || !result.Merged || len(result.Blockers) != 0 {
 		t.Fatalf("unexpected already merged result: %+v", result)
 	}
+}
+
+func countFinishCall(calls []string, target string) int {
+	count := 0
+	for _, call := range calls {
+		if call == target {
+			count++
+		}
+	}
+	return count
 }

@@ -3,6 +3,7 @@ package gira
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
 type WorkStartResult struct {
@@ -160,14 +161,42 @@ func GetWorkStatus(repo RepoRef, issueNumber int, runner CommandRunner) (WorkSta
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
+	var issue devStartIssue
+	var prStatus DevPRStatusResult
+	var issueErr error
+	var prErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		issue, issueErr = fetchDevIssue(repo, issueNumber, runner)
+	}()
+	go func() {
+		defer wg.Done()
+		prStatus, prErr = DevPRStatus(repo, issueNumber, runner)
+	}()
+	wg.Wait()
+	if issueErr != nil {
+		return WorkStatusResult{}, issueErr
+	}
+	if prErr != nil {
+		return WorkStatusResult{}, prErr
+	}
+	return workStatusFromIssueAndPR(repo, issueNumber, issue, prStatus), nil
+}
+
+func GetWorkStatusWithPRStatus(repo RepoRef, issueNumber int, prStatus DevPRStatusResult, runner CommandRunner) (WorkStatusResult, error) {
+	if runner == nil {
+		runner = ExecCommandRunner{}
+	}
 	issue, err := fetchDevIssue(repo, issueNumber, runner)
 	if err != nil {
 		return WorkStatusResult{}, err
 	}
-	prStatus, err := DevPRStatus(repo, issueNumber, runner)
-	if err != nil {
-		return WorkStatusResult{}, err
-	}
+	return workStatusFromIssueAndPR(repo, issueNumber, issue, prStatus), nil
+}
+
+func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult) WorkStatusResult {
 	status := displayStatus(managedStatusFromLabels(issue.Labels))
 	nextAction := nextWorkAction(issue.State, status, prStatus)
 	if nextAction == "done" {
@@ -189,7 +218,7 @@ func GetWorkStatus(repo RepoRef, issueNumber int, runner CommandRunner) (WorkSta
 		NextAction: nextAction,
 	}
 	result.NextStep = workStatusNextStep(result)
-	return result, nil
+	return result
 }
 
 func setIssueStatus(repo RepoRef, issueNumber int, labels []string, targetLabel string, runner CommandRunner) error {

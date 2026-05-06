@@ -64,13 +64,13 @@ func FinishWork(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, 
 	if status.PRNumber == 0 {
 		result.Blockers = append(result.Blockers, "missing_linked_pr")
 		result.NextStep = fmt.Sprintf("gira ticket pr --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
-		return finishWithStatus(repo, issueNumber, runner, result, nil)
+		return finishWithStatus(repo, issueNumber, runner, result, &status, nil)
 	}
 	if strings.EqualFold(status.State, "MERGED") {
 		result.AlreadyDone = true
 		result.Merged = true
 		result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "skipped", Detail: "PR is already merged"})
-		return finishWithLocalSync(repo, issueNumber, runner, result, true)
+		return finishWithLocalSync(repo, issueNumber, runner, result, true, &status)
 	}
 
 	if containsString(status.Blockers, "draft") {
@@ -78,7 +78,7 @@ func FinishWork(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, 
 		if dryRun {
 			result.Blockers = append(result.Blockers, "draft")
 			result.NextStep = fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
-			return finishWithStatus(repo, issueNumber, runner, result, nil)
+			return finishWithStatus(repo, issueNumber, runner, result, &status, nil)
 		}
 		if _, err := runner.Run("gh", "pr", "ready", fmt.Sprintf("%d", status.PRNumber), "--repo", repo.FullName()); err != nil {
 			return result, fmt.Errorf("mark PR ready: %w", err)
@@ -106,7 +106,7 @@ func FinishWork(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, 
 	if len(result.Blockers) > 0 {
 		result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: strings.Join(result.Blockers, ",")})
 		result.NextStep = finishBlockedNextStep(repo, issueNumber, result.Blockers)
-		report, reportErr := finishWithStatus(repo, issueNumber, runner, result, nil)
+		report, reportErr := finishWithStatus(repo, issueNumber, runner, result, &status, nil)
 		if dryRun {
 			return report, reportErr
 		}
@@ -118,16 +118,16 @@ func FinishWork(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, 
 
 	result.Actions = append(result.Actions, plannedOrAppliedAction("pr:merge", dryRun, fmt.Sprintf("squash merge PR #%d and delete remote branch", status.PRNumber)))
 	if dryRun {
-		return finishWithLocalSync(repo, issueNumber, runner, result, true)
+		return finishWithLocalSync(repo, issueNumber, runner, result, true, &status)
 	}
 	if _, err := runner.Run("gh", "pr", "merge", fmt.Sprintf("%d", status.PRNumber), "--repo", repo.FullName(), "--squash", "--delete-branch"); err != nil {
 		return result, fmt.Errorf("merge PR: %w", err)
 	}
 	result.Merged = true
-	return finishWithLocalSync(repo, issueNumber, runner, result, true)
+	return finishWithLocalSync(repo, issueNumber, runner, result, true, nil)
 }
 
-func finishWithLocalSync(repo RepoRef, issueNumber int, runner CommandRunner, result WorkFinishResult, mergePlanned bool) (WorkFinishResult, error) {
+func finishWithLocalSync(repo RepoRef, issueNumber int, runner CommandRunner, result WorkFinishResult, mergePlanned bool, knownPRStatus *DevPRStatusResult) (WorkFinishResult, error) {
 	local, actions := planLocalMainSync(repo, runner, result.DryRun)
 	result.LocalSync = local
 	result.Actions = append(result.Actions, actions...)
@@ -139,15 +139,21 @@ func finishWithLocalSync(repo RepoRef, issueNumber int, runner CommandRunner, re
 			return result, fmt.Errorf("pull main: %w", err)
 		}
 	}
-	report, err := finishWithStatus(repo, issueNumber, runner, result, nil)
+	report, err := finishWithStatus(repo, issueNumber, runner, result, knownPRStatus, nil)
 	if report.DryRun && mergePlanned && !report.AlreadyDone && len(report.Blockers) == 0 {
 		report.NextStep = fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
 	}
 	return report, err
 }
 
-func finishWithStatus(repo RepoRef, issueNumber int, runner CommandRunner, result WorkFinishResult, err error) (WorkFinishResult, error) {
-	status, statusErr := GetWorkStatus(repo, issueNumber, runner)
+func finishWithStatus(repo RepoRef, issueNumber int, runner CommandRunner, result WorkFinishResult, knownPRStatus *DevPRStatusResult, err error) (WorkFinishResult, error) {
+	var status WorkStatusResult
+	var statusErr error
+	if knownPRStatus != nil {
+		status, statusErr = GetWorkStatusWithPRStatus(repo, issueNumber, *knownPRStatus, runner)
+	} else {
+		status, statusErr = GetWorkStatus(repo, issueNumber, runner)
+	}
 	if statusErr == nil {
 		result.FinalStatus = status
 		if len(result.Blockers) == 0 {

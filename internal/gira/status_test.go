@@ -73,9 +73,9 @@ func TestBuildStatusSummaryFetchesWithGhShape(t *testing.T) {
 	client := fakeStatusClient{
 		repo: mustRepo(t, "StatPan/gira"),
 		responses: map[string]string{
-			"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100": `[[{"number":1,"title":"MVP","state":"open","description":null,"due_on":null,"open_issues":2,"closed_issues":3}]]`,
-			"api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100":     `[[{"number":1,"title":"Issue 1","state":"open","labels":[{"name":"status:blocked"}],"milestone":{"title":"MVP"},"updated_at":"2026-04-25T12:00:00Z","html_url":"https://github.com/StatPan/gira/issues/1"},{"number":2,"title":"PR 2","state":"open","pull_request":{},"labels":[],"updated_at":"2026-04-25T12:00:00Z","html_url":"https://github.com/StatPan/gira/pull/2"}]]`,
-			"api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=open -f per_page=100":     `[[{"body":"Implements changes","draft":false},{"body":"Fixes #1","draft":false}]]`,
+			"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                         `[[{"number":1,"title":"MVP","state":"open","description":null,"due_on":null,"open_issues":2,"closed_issues":3}]]`,
+			"issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url": `[{"number":1,"title":"Issue 1","state":"OPEN","labels":[{"name":"status:blocked"}],"milestone":{"title":"MVP"},"updatedAt":"2026-04-25T12:00:00Z","url":"https://github.com/StatPan/gira/issues/1"}]`,
+			"api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=open -f per_page=100":                             `[[{"body":"Implements changes","draft":false},{"body":"Fixes #1","draft":false}]]`,
 		},
 	}
 
@@ -124,6 +124,8 @@ func TestStatusJSONShapeMatchesAutomationContract(t *testing.T) {
 type fakeStatusClient struct {
 	repo      RepoRef
 	responses map[string]string
+	errs      map[string]error
+	delays    map[string]time.Duration
 }
 
 func (c fakeStatusClient) Repo() RepoRef {
@@ -132,8 +134,43 @@ func (c fakeStatusClient) Repo() RepoRef {
 
 func (c fakeStatusClient) JSON(args []string, target any) error {
 	key := strings.Join(args, " ")
+	if delay := c.delays[key]; delay > 0 {
+		time.Sleep(delay)
+	}
+	if err := c.errs[key]; err != nil {
+		return err
+	}
 	response := c.responses[key]
 	return json.Unmarshal([]byte(response), target)
+}
+
+func TestBuildStatusSummaryFetchesIndependentReadsConcurrently(t *testing.T) {
+	client := fakeStatusClient{
+		repo: mustRepo(t, "StatPan/gira"),
+		responses: map[string]string{
+			"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                         `[[{"number":1,"title":"MVP","state":"open","description":null,"due_on":null,"open_issues":1,"closed_issues":0}]]`,
+			"issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url": `[{"number":1,"title":"Issue 1","state":"OPEN","labels":[],"updatedAt":"2026-04-25T12:00:00Z","url":"https://github.com/StatPan/gira/issues/1"}]`,
+			"api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=open -f per_page=100":                             `[[{"body":"Closes #1","draft":false}]]`,
+		},
+		delays: map[string]time.Duration{
+			"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                         80 * time.Millisecond,
+			"issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url": 80 * time.Millisecond,
+			"api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=open -f per_page=100":                             80 * time.Millisecond,
+		},
+	}
+
+	start := time.Now()
+	summary, err := BuildStatusSummary(client, statusNowFixture, 14)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("BuildStatusSummary returned error: %v", err)
+	}
+	if summary.Counts.Issues.Open != 1 {
+		t.Fatalf("unexpected summary: %+v", summary)
+	}
+	if elapsed > 180*time.Millisecond {
+		t.Fatalf("BuildStatusSummary took %s, want concurrent fetch under 180ms", elapsed)
+	}
 }
 
 func issueFixture(number int, state string, updatedAt string, labels []string, milestone *string) normalizedIssue {

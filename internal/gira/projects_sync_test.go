@@ -221,6 +221,122 @@ func TestBuildProjectsSyncReportApplyCreatesFieldsAndUpdatesTargetDate(t *testin
 	}
 }
 
+func TestBuildProjectsSyncReportPlansPlanningFieldUpdates(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues: map[string][]ProjectsSyncIssue{
+			"StatPan/gira": {{Repo: "StatPan/gira", Number: 208, Title: "Planning", URL: "https://github.com/StatPan/gira/issues/208", Labels: []string{"status:ready", "priority:p1", "area:infra", "agent:worker"}}},
+		},
+		items: []ProjectsSyncItem{{ID: "item-208", Repo: "StatPan/gira", Number: 208, Status: "Todo"}},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, true, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if report.Counts.FieldUpdates != 3 || report.Counts.FieldUpdateSkips != 0 {
+		t.Fatalf("planning field counts = %+v", report.Counts)
+	}
+	text := FormatProjectsSyncReport(report)
+	for _, want := range []string{"project_field:update", "Priority -> P1", "Layer / workstream -> Infra", "Owner / agent -> worker"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("formatted report missing %q:\n%s", want, text)
+		}
+	}
+	if len(client.updatedFields) != 0 || len(client.updatedTexts) != 0 {
+		t.Fatalf("dry-run mutated planning fields: fields=%v texts=%v", client.updatedFields, client.updatedTexts)
+	}
+}
+
+func TestBuildProjectsSyncReportApplyUpdatesPlanningFieldsIdempotently(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues: map[string][]ProjectsSyncIssue{
+			"StatPan/gira": {{Repo: "StatPan/gira", Number: 208, Title: "Planning", URL: "https://github.com/StatPan/gira/issues/208", Labels: []string{"status:ready", "priority:p1", "area:infra", "agent:worker"}}},
+		},
+		items: []ProjectsSyncItem{{ID: "item-208", Repo: "StatPan/gira", Number: 208, Status: "Todo", Priority: "P2", Layer: "Docs", OwnerAgent: "human"}},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, false, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if report.Counts.FieldUpdates != 3 || len(client.updatedFields) != 2 || len(client.updatedTexts) != 1 {
+		t.Fatalf("apply planning updates wrong: counts=%+v fields=%v texts=%v", report.Counts, client.updatedFields, client.updatedTexts)
+	}
+
+	client.items = []ProjectsSyncItem{{ID: "item-208", Repo: "StatPan/gira", Number: 208, Status: "Todo", Priority: "P1", Layer: "Infra", OwnerAgent: "worker"}}
+	client.updatedFields = nil
+	client.updatedTexts = nil
+	report, err = BuildProjectsSyncReport(config, client, false, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if report.Counts.FieldUpdates != 0 || len(client.updatedFields) != 0 || len(client.updatedTexts) != 0 {
+		t.Fatalf("planning fields should be idempotent: counts=%+v fields=%v texts=%v", report.Counts, client.updatedFields, client.updatedTexts)
+	}
+}
+
+func TestBuildProjectsSyncReportSkipsPlanningFieldWhenOptionMissing(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	fields := allProjectsSyncCanonicalFields()
+	for i := range fields {
+		if fields[i].Name == "Priority" {
+			fields[i].Options = map[string]string{"P0": "P0"}
+		}
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      fields,
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues: map[string][]ProjectsSyncIssue{
+			"StatPan/gira": {{Repo: "StatPan/gira", Number: 208, Title: "Planning", URL: "https://github.com/StatPan/gira/issues/208", Labels: []string{"status:ready", "priority:p1"}}},
+		},
+		items: []ProjectsSyncItem{{ID: "item-208", Repo: "StatPan/gira", Number: 208, Status: "Todo"}},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, false, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if report.Counts.FieldUpdates != 0 || report.Counts.FieldUpdateSkips != 1 || len(client.updatedFields) != 0 {
+		t.Fatalf("missing option should skip planning update: counts=%+v fields=%v", report.Counts, client.updatedFields)
+	}
+	if len(report.Actions) != 1 || !strings.Contains(report.Actions[0].Reason, "single-select option") {
+		t.Fatalf("skip action = %+v", report.Actions)
+	}
+}
+
 func TestBuildProjectsSyncReportSkipsMatchingTargetDate(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",
@@ -342,6 +458,8 @@ type fakeProjectsSyncClient struct {
 	added          []ProjectsSyncIssue
 	archived       []string
 	updated        []string
+	updatedFields  []string
+	updatedTexts   []string
 	updatedDates   []string
 }
 
@@ -418,6 +536,16 @@ func (c *fakeProjectsSyncClient) UpdateItemStatus(projectID string, itemID strin
 	return nil
 }
 
+func (c *fakeProjectsSyncClient) UpdateItemSingleSelect(projectID string, itemID string, fieldID string, optionID string) error {
+	c.updatedFields = append(c.updatedFields, itemID+":"+fieldID+":"+optionID)
+	return nil
+}
+
+func (c *fakeProjectsSyncClient) UpdateItemText(projectID string, itemID string, fieldID string, text string) error {
+	c.updatedTexts = append(c.updatedTexts, itemID+":"+fieldID+":"+text)
+	return nil
+}
+
 func (c *fakeProjectsSyncClient) UpdateItemDate(projectID string, itemID string, fieldID string, date string) error {
 	c.updatedDates = append(c.updatedDates, itemID+":"+fieldID+":"+date)
 	return nil
@@ -430,7 +558,7 @@ func allProjectsSyncCanonicalFields() []ProjectsSyncField {
 		if field.Name == "Status" {
 			id = "status-field"
 		}
-		fields = append(fields, ProjectsSyncField{ID: id, Name: field.Name, Type: field.Type})
+		fields = append(fields, ProjectsSyncField{ID: id, Name: field.Name, Type: field.Type, Options: projectsSyncOptionsByName(field.Options)})
 	}
 	return fields
 }

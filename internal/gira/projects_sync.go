@@ -24,6 +24,8 @@ type ProjectsSyncClient interface {
 	AddItem(owner string, number int, issue ProjectsSyncIssue) (string, error)
 	ArchiveItem(owner string, number int, itemID string) error
 	UpdateItemStatus(projectID string, itemID string, fieldID string, optionID string) error
+	UpdateItemSingleSelect(projectID string, itemID string, fieldID string, optionID string) error
+	UpdateItemText(projectID string, itemID string, fieldID string, text string) error
 	UpdateItemDate(projectID string, itemID string, fieldID string, date string) error
 }
 
@@ -80,6 +82,9 @@ type ProjectsSyncItem struct {
 	Number     int    `json:"number"`
 	IssueState string `json:"issue_state,omitempty"`
 	Status     string `json:"status,omitempty"`
+	Priority   string `json:"priority,omitempty"`
+	Layer      string `json:"layer,omitempty"`
+	OwnerAgent string `json:"owner_agent,omitempty"`
 	TargetDate string `json:"target_date,omitempty"`
 }
 
@@ -106,6 +111,8 @@ type ProjectsSyncCounts struct {
 	ProjectItemsArchive int  `json:"project_items_archive"`
 	StatusUpdates       int  `json:"status_updates"`
 	StatusUpdateSkips   int  `json:"status_update_skips"`
+	FieldUpdates        int  `json:"field_updates"`
+	FieldUpdateSkips    int  `json:"field_update_skips"`
 	DateUpdates         int  `json:"date_updates"`
 	DateUpdateSkips     int  `json:"date_update_skips"`
 	ViewSetupRequired   bool `json:"view_setup_required"`
@@ -121,6 +128,8 @@ type ProjectsSyncAction struct {
 	FieldType     string `json:"field_type,omitempty"`
 	FromStatus    string `json:"from_status,omitempty"`
 	ToStatus      string `json:"to_status,omitempty"`
+	FromValue     string `json:"from_value,omitempty"`
+	ToValue       string `json:"to_value,omitempty"`
 	FromDate      string `json:"from_date,omitempty"`
 	ToDate        string `json:"to_date,omitempty"`
 	Status        string `json:"status"`
@@ -363,7 +372,7 @@ func (c GHProjectsSyncClient) ProjectItems(owner string, number int) ([]Projects
 }
 
 func (c GHProjectsSyncClient) ProjectItemsGraphQL(projectID string) ([]ProjectsSyncItem, error) {
-	query := `query($id:ID!){node(id:$id){... on ProjectV2{items(first:100){nodes{id content{... on Issue{number state repository{nameWithOwner}}} fieldValues(first:50){nodes{... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2FieldCommon{name}}} ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2FieldCommon{name}}}}}}}}}}`
+	query := `query($id:ID!){node(id:$id){... on ProjectV2{items(first:100){nodes{id content{... on Issue{number state repository{nameWithOwner}}} fieldValues(first:50){nodes{... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2FieldCommon{name}}} ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2FieldCommon{name}}} ... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2FieldCommon{name}}}}}}}}}}`
 	output, err := c.runner.Run("gh", "api", "graphql", "-f", "query="+query, "-f", "id="+projectID)
 	if err != nil {
 		return nil, err
@@ -385,6 +394,7 @@ func (c GHProjectsSyncClient) ProjectItemsGraphQL(projectID string) ([]ProjectsS
 							Nodes []struct {
 								Date  *string `json:"date"`
 								Name  string  `json:"name"`
+								Text  string  `json:"text"`
 								Field *struct {
 									Name string `json:"name"`
 								} `json:"field"`
@@ -411,6 +421,12 @@ func (c GHProjectsSyncClient) ProjectItemsGraphQL(projectID string) ([]ProjectsS
 			switch value.Field.Name {
 			case "Status":
 				item.Status = value.Name
+			case "Priority":
+				item.Priority = value.Name
+			case "Layer / workstream":
+				item.Layer = value.Name
+			case "Owner / agent":
+				item.OwnerAgent = value.Text
 			case "Target date":
 				if value.Date != nil {
 					if date, ok := normalizeDate(*value.Date); ok {
@@ -471,7 +487,16 @@ func (c GHProjectsSyncClient) ArchiveItem(owner string, number int, itemID strin
 }
 
 func (c GHProjectsSyncClient) UpdateItemStatus(projectID string, itemID string, fieldID string, optionID string) error {
+	return c.UpdateItemSingleSelect(projectID, itemID, fieldID, optionID)
+}
+
+func (c GHProjectsSyncClient) UpdateItemSingleSelect(projectID string, itemID string, fieldID string, optionID string) error {
 	_, err := c.runner.Run("gh", "project", "item-edit", "--id", itemID, "--project-id", projectID, "--field-id", fieldID, "--single-select-option-id", optionID)
+	return err
+}
+
+func (c GHProjectsSyncClient) UpdateItemText(projectID string, itemID string, fieldID string, text string) error {
+	_, err := c.runner.Run("gh", "project", "item-edit", "--id", itemID, "--project-id", projectID, "--field-id", fieldID, "--text", text)
 	return err
 }
 
@@ -538,12 +563,17 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 			}
 			action.Status = "applied"
 			action.FieldID = fieldID
-			fieldsByName[desired.Name] = ProjectsSyncField{ID: fieldID, Name: desired.Name, Type: desired.Type}
+			fieldsByName[desired.Name] = ProjectsSyncField{ID: fieldID, Name: desired.Name, Type: desired.Type, Options: projectsSyncOptionsByName(desired.Options)}
 		}
 		report.Actions = append(report.Actions, action)
 		report.Counts.FieldsCreate++
 	}
 	targetDateField := fieldsByName["Target date"]
+	planningFields := map[string]ProjectsSyncField{
+		"Priority":           fieldsByName["Priority"],
+		"Layer / workstream": fieldsByName["Layer / workstream"],
+		"Owner / agent":      fieldsByName["Owner / agent"],
+	}
 
 	statusField, err := client.StatusField(project.Owner, project.Number)
 	if err != nil {
@@ -647,6 +677,7 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 					itemByIssue[key] = item
 				}
 			}
+			syncProjectPlanningFields(&report, client, project, planningFields, issue, item, dryRun)
 			syncProjectTargetDate(&report, client, project, targetDateField, issue, item, dryRun)
 		}
 	}
@@ -749,6 +780,134 @@ func syncProjectDoneStatus(report *ProjectsSyncReport, client ProjectsSyncClient
 	report.Counts.StatusUpdates++
 }
 
+func syncProjectPlanningFields(report *ProjectsSyncReport, client ProjectsSyncClient, project ProjectsSyncProject, fields map[string]ProjectsSyncField, issue ProjectsSyncIssue, item ProjectsSyncItem, dryRun bool) {
+	for _, desired := range desiredProjectPlanningFields(issue.Labels) {
+		field := fields[desired.FieldName]
+		current := projectPlanningFieldCurrentValue(item, desired.FieldName)
+		if current == desired.Value {
+			report.Counts.FieldUpdateSkips++
+			continue
+		}
+		if field.ID == "" || (!dryRun && item.ID == "") {
+			report.Actions = append(report.Actions, ProjectsSyncAction{Action: "project_field:update", Repo: issue.Repo, Issue: issue.Number, ItemID: item.ID, FieldName: desired.FieldName, FromValue: current, ToValue: desired.Value, Status: "skipped", Reason: "project field or item id is unavailable"})
+			report.Counts.FieldUpdateSkips++
+			continue
+		}
+		action := ProjectsSyncAction{Action: "project_field:update", Repo: issue.Repo, Issue: issue.Number, ItemID: item.ID, FieldID: field.ID, FieldName: desired.FieldName, FromValue: current, ToValue: desired.Value, Status: actionStatus(dryRun), Reason: "project planning field differs from issue label"}
+		if !dryRun {
+			if field.Type == "SINGLE_SELECT" {
+				optionID := field.Options[desired.Value]
+				if optionID == "" {
+					action.Status = "skipped"
+					action.Reason = "project single-select option is unavailable"
+					report.Counts.FieldUpdateSkips++
+					report.Actions = append(report.Actions, action)
+					continue
+				}
+				if err := client.UpdateItemSingleSelect(project.ID, item.ID, field.ID, optionID); err != nil {
+					action.Status = "skipped"
+					action.Reason = err.Error()
+					report.Counts.FieldUpdateSkips++
+					report.Actions = append(report.Actions, action)
+					continue
+				}
+			} else if field.Type == "TEXT" {
+				if err := client.UpdateItemText(project.ID, item.ID, field.ID, desired.Value); err != nil {
+					action.Status = "skipped"
+					action.Reason = err.Error()
+					report.Counts.FieldUpdateSkips++
+					report.Actions = append(report.Actions, action)
+					continue
+				}
+			} else {
+				action.Status = "skipped"
+				action.Reason = fmt.Sprintf("project field type %s is unsupported for planning sync", field.Type)
+				report.Counts.FieldUpdateSkips++
+				report.Actions = append(report.Actions, action)
+				continue
+			}
+			action.Status = "applied"
+		}
+		report.Actions = append(report.Actions, action)
+		report.Counts.FieldUpdates++
+	}
+}
+
+type projectPlanningFieldValue struct {
+	FieldName string
+	Value     string
+}
+
+func desiredProjectPlanningFields(labels []string) []projectPlanningFieldValue {
+	values := []projectPlanningFieldValue{}
+	if priority := desiredProjectPriority(labels); priority != "" {
+		values = append(values, projectPlanningFieldValue{FieldName: "Priority", Value: priority})
+	}
+	if layer := desiredProjectLayer(labels); layer != "" {
+		values = append(values, projectPlanningFieldValue{FieldName: "Layer / workstream", Value: layer})
+	}
+	if owner := desiredProjectOwnerAgent(labels); owner != "" {
+		values = append(values, projectPlanningFieldValue{FieldName: "Owner / agent", Value: owner})
+	}
+	return values
+}
+
+func projectPlanningFieldCurrentValue(item ProjectsSyncItem, fieldName string) string {
+	switch fieldName {
+	case "Priority":
+		return item.Priority
+	case "Layer / workstream":
+		return item.Layer
+	case "Owner / agent":
+		return item.OwnerAgent
+	default:
+		return ""
+	}
+}
+
+func desiredProjectPriority(labels []string) string {
+	for _, label := range labels {
+		switch strings.ToLower(strings.TrimSpace(label)) {
+		case "priority:p0":
+			return "P0"
+		case "priority:p1":
+			return "P1"
+		case "priority:p2":
+			return "P2"
+		case "priority:p3":
+			return "P3"
+		}
+	}
+	return ""
+}
+
+func desiredProjectLayer(labels []string) string {
+	for _, label := range labels {
+		switch strings.ToLower(strings.TrimSpace(label)) {
+		case "area:product":
+			return "Product"
+		case "area:backend":
+			return "Backend"
+		case "area:infra":
+			return "Infra"
+		case "area:docs":
+			return "Docs"
+		}
+	}
+	return ""
+}
+
+func desiredProjectOwnerAgent(labels []string) string {
+	for _, label := range labels {
+		label = strings.TrimSpace(label)
+		lower := strings.ToLower(label)
+		if strings.HasPrefix(lower, "agent:") {
+			return strings.TrimSpace(label[len("agent:"):])
+		}
+	}
+	return ""
+}
+
 func syncProjectTargetDate(report *ProjectsSyncReport, client ProjectsSyncClient, project ProjectsSyncProject, targetDateField ProjectsSyncField, issue ProjectsSyncIssue, item ProjectsSyncItem, dryRun bool) {
 	if issue.Milestone == "" {
 		return
@@ -790,7 +949,7 @@ func FormatProjectsSyncReport(report ProjectsSyncReport) string {
 	}
 	fmt.Fprintf(&b, "projects sync: %s\n", mode)
 	fmt.Fprintf(&b, "project: %s #%d\n", report.Project.Title, report.Project.Number)
-	fmt.Fprintf(&b, "repos: %d issues: %d fields-create: %d add-items: %d archive-items: %d status-updates: %d date-updates: %d\n", report.Counts.Repos, report.Counts.Issues, report.Counts.FieldsCreate, report.Counts.ProjectItemsAdd, report.Counts.ProjectItemsArchive, report.Counts.StatusUpdates, report.Counts.DateUpdates)
+	fmt.Fprintf(&b, "repos: %d issues: %d fields-create: %d add-items: %d archive-items: %d status-updates: %d field-updates: %d date-updates: %d\n", report.Counts.Repos, report.Counts.Issues, report.Counts.FieldsCreate, report.Counts.ProjectItemsAdd, report.Counts.ProjectItemsArchive, report.Counts.StatusUpdates, report.Counts.FieldUpdates, report.Counts.DateUpdates)
 	for _, action := range report.Actions {
 		target := action.Repo
 		if action.Issue > 0 {
@@ -805,6 +964,9 @@ func FormatProjectsSyncReport(report ProjectsSyncReport) string {
 		}
 		if action.ToDate != "" {
 			fmt.Fprintf(&b, " -> %s", action.ToDate)
+		}
+		if action.ToValue != "" {
+			fmt.Fprintf(&b, " %s -> %s", action.FieldName, action.ToValue)
 		}
 		if action.Reason != "" {
 			fmt.Fprintf(&b, " (%s)", action.Reason)
@@ -836,6 +998,17 @@ func uniqueProjectRepos(config WorkspaceConfigResolved) []RepoRef {
 
 func projectIssueKey(repo string, issue int) string {
 	return strings.ToLower(repo) + "#" + strconv.Itoa(issue)
+}
+
+func projectsSyncOptionsByName(options []string) map[string]string {
+	if len(options) == 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for _, option := range options {
+		out[option] = option
+	}
+	return out
 }
 
 func desiredProjectStatus(labels []string) string {

@@ -2344,12 +2344,23 @@ func formatTicketPR(result gira.WorkPRResult) string {
 	url := strings.TrimSpace(result.PRURL)
 	if url == "" {
 		url = "(planned)"
+		created = "planned"
 	}
 	next := "gira ticket status"
-	if result.Draft {
+	if result.DryRun {
+		next = "gira ticket pr --apply"
+		if result.Draft {
+			next += " --draft"
+		}
+	}
+	if result.Draft && !result.DryRun {
 		next = "mark the PR ready, then " + next
 	}
-	return fmt.Sprintf("ticket pr: ticket #%d pr=%s status=%s %s\nnext step: %s\n", result.Issue, url, result.NextStatus, created, next)
+	branchPush := ""
+	if result.BranchPush != "" && result.BranchPush != "skipped" {
+		branchPush = fmt.Sprintf(" branch_push=%s", result.BranchPush)
+	}
+	return fmt.Sprintf("ticket pr: ticket #%d pr=%s status=%s %s%s\nnext step: %s\n", result.Issue, url, result.NextStatus, created, branchPush, next)
 }
 
 func formatTicketStatus(result gira.WorkStatusResult) string {

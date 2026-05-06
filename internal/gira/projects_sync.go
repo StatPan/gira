@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -310,13 +311,27 @@ func (c GHProjectsSyncClient) RepoLinked(owner string, number int, repo RepoRef)
 }
 
 func (c GHProjectsSyncClient) OpenIssues(repo RepoRef) ([]ProjectsSyncIssue, error) {
-	issues, err := FetchIssues(NewGHStatusClient(repo, c.runner))
-	if err != nil {
-		return nil, err
+	client := NewGHStatusClient(repo, c.runner)
+	var issues []normalizedIssue
+	var milestones []normalizedMilestone
+	var issuesErr error
+	var milestonesErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		issues, issuesErr = FetchIssues(client)
+	}()
+	go func() {
+		defer wg.Done()
+		milestones, milestonesErr = FetchMilestones(client)
+	}()
+	wg.Wait()
+	if issuesErr != nil {
+		return nil, issuesErr
 	}
-	milestones, err := FetchMilestones(NewGHStatusClient(repo, c.runner))
-	if err != nil {
-		return nil, err
+	if milestonesErr != nil {
+		return nil, milestonesErr
 	}
 	dueByMilestone := map[string]string{}
 	for _, milestone := range milestones {
@@ -538,9 +553,29 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 		FetchedAt: fetchedAt.UTC().Format(time.RFC3339),
 	}
 
-	fields, err := client.ProjectFields(project.ID)
-	if err != nil {
-		return ProjectsSyncReport{}, err
+	var fields []ProjectsSyncField
+	var items []ProjectsSyncItem
+	var fieldsErr error
+	var itemsErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		fields, fieldsErr = client.ProjectFields(project.ID)
+	}()
+	go func() {
+		defer wg.Done()
+		items, itemsErr = client.ProjectItemsGraphQL(project.ID)
+		if itemsErr != nil {
+			items, itemsErr = client.ProjectItems(project.Owner, project.Number)
+		}
+	}()
+	wg.Wait()
+	if fieldsErr != nil {
+		return ProjectsSyncReport{}, fieldsErr
+	}
+	if itemsErr != nil {
+		return ProjectsSyncReport{}, itemsErr
 	}
 	fieldsByName := map[string]ProjectsSyncField{}
 	for _, field := range fields {
@@ -575,13 +610,10 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 		"Owner / agent":      fieldsByName["Owner / agent"],
 	}
 
-	statusField, err := client.StatusField(project.Owner, project.Number)
-	if err != nil {
-		return ProjectsSyncReport{}, err
-	}
-	items, err := client.ProjectItemsGraphQL(project.ID)
-	if err != nil {
-		items, err = client.ProjectItems(project.Owner, project.Number)
+	statusField := projectsSyncStatusFieldFromFields(fieldsByName)
+	if statusField.ID == "" || len(statusField.Options) == 0 {
+		var err error
+		statusField, err = client.StatusField(project.Owner, project.Number)
 		if err != nil {
 			return ProjectsSyncReport{}, err
 		}
@@ -612,7 +644,7 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 	repos := uniqueProjectRepos(config)
 	for _, repo := range repos {
 		report.Repos = append(report.Repos, repo.FullName())
-		linked, err := client.RepoLinked(project.Owner, project.Number, repo)
+		linked, issues, err := fetchProjectsSyncRepoInputs(client, project, repo)
 		if err != nil {
 			return ProjectsSyncReport{}, err
 		}
@@ -626,10 +658,6 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 			}
 			report.Actions = append(report.Actions, action)
 			report.Counts.ProjectLinksAdd++
-		}
-		issues, err := client.OpenIssues(repo)
-		if err != nil {
-			return ProjectsSyncReport{}, err
 		}
 		sort.Slice(issues, func(i, j int) bool { return issues[i].Number < issues[j].Number })
 		for _, issue := range issues {
@@ -751,6 +779,43 @@ func inferLinkedProjectsSyncProject(config WorkspaceConfigResolved, client Proje
 		return ProjectsSyncProject{}, fmt.Errorf("workspace.project.title is required because no linked GitHub Project was found")
 	}
 	return ProjectsSyncProject{}, fmt.Errorf("workspace.project.title is required because multiple linked GitHub Projects were found")
+}
+
+func projectsSyncStatusFieldFromFields(fields map[string]ProjectsSyncField) ProjectsSyncStatusField {
+	field := fields["Status"]
+	if field.ID == "" {
+		return ProjectsSyncStatusField{}
+	}
+	options := map[string]string{}
+	for name, id := range field.Options {
+		options[name] = id
+	}
+	return ProjectsSyncStatusField{ID: field.ID, Options: options}
+}
+
+func fetchProjectsSyncRepoInputs(client ProjectsSyncClient, project ProjectsSyncProject, repo RepoRef) (bool, []ProjectsSyncIssue, error) {
+	var linked bool
+	var issues []ProjectsSyncIssue
+	var linkedErr error
+	var issuesErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		linked, linkedErr = client.RepoLinked(project.Owner, project.Number, repo)
+	}()
+	go func() {
+		defer wg.Done()
+		issues, issuesErr = client.OpenIssues(repo)
+	}()
+	wg.Wait()
+	if linkedErr != nil {
+		return false, nil, linkedErr
+	}
+	if issuesErr != nil {
+		return false, nil, issuesErr
+	}
+	return linked, issues, nil
 }
 
 func syncProjectDoneStatus(report *ProjectsSyncReport, client ProjectsSyncClient, project ProjectsSyncProject, statusField ProjectsSyncStatusField, item ProjectsSyncItem, dryRun bool) {

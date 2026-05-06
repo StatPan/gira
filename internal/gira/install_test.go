@@ -60,6 +60,28 @@ func TestInstallTemplatesCreatesSkipsConflictsAndOverwrites(t *testing.T) {
 	}
 }
 
+func TestDefaultBootstrapInstallsUsableWorkspaceConfig(t *testing.T) {
+	repo := newGitRepo(t)
+	rendered, err := RenderTemplateTree("default", mustRepoRefForPortfolio("StatPan/example"), "2026-05-06")
+	if err != nil {
+		t.Fatalf("RenderTemplateTree returned error: %v", err)
+	}
+	result, err := InstallTemplates(repo, rendered, false, DefaultBranch)
+	if err != nil {
+		t.Fatalf("InstallTemplates returned error: %v", err)
+	}
+	if !containsString(result.Created, ".gira/config.yaml") {
+		t.Fatalf("bootstrap did not create .gira/config.yaml: %+v", result.Created)
+	}
+	resolved, err := ResolveWorkspaceConfig(filepath.Join(repo, ".gira", "config.yaml"))
+	if err != nil {
+		t.Fatalf("ResolveWorkspaceConfig returned error: %v", err)
+	}
+	if resolved.InboxRepo.FullName() != "StatPan/example" || len(resolved.Repos) != 1 || resolved.Repos[0].FullName() != "StatPan/example" {
+		t.Fatalf("resolved workspace = %+v, want same repo inbox and execution repo", resolved)
+	}
+}
+
 func TestInstallTemplatesNoBranchKeepsCurrentBranch(t *testing.T) {
 	repo := newGitRepo(t)
 	result, err := InstallTemplates(repo, []RenderedTemplate{{Path: "AGENTS.md", Content: "agents\n"}}, false, "")

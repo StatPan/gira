@@ -34,3 +34,33 @@ func TestRenderTemplateTreeIncludesPortfolioIssueTemplate(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderTemplateTreeIncludesWorkspaceConfig(t *testing.T) {
+	rendered, err := RenderTemplateTree("default", mustRepoRefForPortfolio("StatPan/example"), "2026-04-26")
+	if err != nil {
+		t.Fatalf("RenderTemplateTree error: %v", err)
+	}
+
+	var content string
+	for _, item := range rendered {
+		if item.Path == ".gira/config.yaml" {
+			content = item.Content
+			break
+		}
+	}
+	if content == "" {
+		t.Fatalf("workspace config was not rendered")
+	}
+	for _, want := range []string{
+		"repo: StatPan/example",
+		"workspace:",
+		"inbox_repo: StatPan/example",
+		"- StatPan/example",
+		"profiles:",
+		"review_policy:",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("workspace config missing %q:\n%s", want, content)
+		}
+	}
+}

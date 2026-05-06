@@ -165,6 +165,42 @@ func TestBuildWorkspaceStatusReportSkipsInboxParsingWhenInboxIsExecutionRepo(t *
 	}
 }
 
+func TestBuildWorkspaceStatusReportNormalizesRoutedAndClosedInboxTickets(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/backlog"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	client := fakeWorkspaceClient{
+		inbox: []PortfolioRawTicket{
+			{Number: 1, Title: "Routed", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "StatPan/gira#10")},
+			{Number: 2, Title: "Closed", State: "closed", Body: portfolioBody("unrouted", "", "")},
+		},
+		status: map[string]StatusSummary{
+			"StatPan/gira": {Repo: "StatPan/gira"},
+		},
+	}
+
+	report, err := BuildWorkspaceStatusReport(config, client, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC), 14)
+	if err != nil {
+		t.Fatalf("BuildWorkspaceStatusReport error: %v", err)
+	}
+	if report.Inbox.Open != 1 || report.Inbox.NeedsRouting != 0 || report.Inbox.ExecutionReady != 0 {
+		t.Fatalf("unexpected inbox counts: %+v", report.Inbox)
+	}
+	byNumber := map[int]WorkspaceBacklogItem{}
+	for _, item := range report.Backlog {
+		byNumber[item.Number] = item
+	}
+	if byNumber[1].Status != "routed" || len(byNumber[1].ChildIssues) != 1 || byNumber[1].NeedsRouting {
+		t.Fatalf("routed item = %+v", byNumber[1])
+	}
+	if byNumber[2].Status != "done" || byNumber[2].NeedsRouting {
+		t.Fatalf("closed item = %+v", byNumber[2])
+	}
+}
+
 type fakeWorkspaceClient struct {
 	inbox  []PortfolioRawTicket
 	status map[string]StatusSummary

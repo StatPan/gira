@@ -84,16 +84,17 @@ type WorkspaceCounts struct {
 }
 
 type WorkspaceBacklogItem struct {
-	Source       string `json:"source"`
-	Repo         string `json:"repo"`
-	Number       int    `json:"number"`
-	Title        string `json:"title"`
-	State        string `json:"state"`
-	Status       string `json:"status,omitempty"`
-	Priority     string `json:"priority,omitempty"`
-	Milestone    string `json:"milestone,omitempty"`
-	URL          string `json:"url,omitempty"`
-	NeedsRouting bool   `json:"needs_routing,omitempty"`
+	Source       string   `json:"source"`
+	Repo         string   `json:"repo"`
+	Number       int      `json:"number"`
+	Title        string   `json:"title"`
+	State        string   `json:"state"`
+	Status       string   `json:"status,omitempty"`
+	Priority     string   `json:"priority,omitempty"`
+	Milestone    string   `json:"milestone,omitempty"`
+	URL          string   `json:"url,omitempty"`
+	NeedsRouting bool     `json:"needs_routing,omitempty"`
+	ChildIssues  []string `json:"child_issues,omitempty"`
 }
 
 type WorkspaceSyncReport struct {
@@ -270,13 +271,13 @@ func BuildWorkspaceStatusReport(config WorkspaceConfigResolved, client Workspace
 		parsed, diagnostics := ParsePortfolioTickets(tickets, config.Repos)
 		invalid := portfolioInvalidTickets(diagnostics)
 		for _, ticket := range parsed {
+			status := workspaceInboxStatus(ticket, invalid)
+			item := WorkspaceBacklogItem{Source: "inbox", Repo: config.InboxRepo.FullName(), Number: ticket.Number, Title: ticket.Title, State: ticket.State, Status: status, Priority: ticket.Priority, URL: ticket.URL, NeedsRouting: status == "needs-routing", ChildIssues: append([]string(nil), ticket.ChildIssues...)}
+			report.Backlog = append(report.Backlog, item)
 			if !strings.EqualFold(ticket.State, "open") {
 				continue
 			}
 			report.Inbox.Open++
-			status := workspaceInboxStatus(ticket, invalid)
-			item := WorkspaceBacklogItem{Source: "inbox", Repo: config.InboxRepo.FullName(), Number: ticket.Number, Title: ticket.Title, State: ticket.State, Status: status, Priority: ticket.Priority, URL: ticket.URL, NeedsRouting: status == "needs-routing"}
-			report.Backlog = append(report.Backlog, item)
 			if item.NeedsRouting {
 				report.Inbox.NeedsRouting++
 			}
@@ -497,8 +498,14 @@ func FormatWorkspaceTicketRouteReport(report WorkspaceTicketRouteReport) string 
 }
 
 func workspaceInboxStatus(ticket PortfolioTicket, invalid map[int]struct{}) string {
+	if strings.EqualFold(ticket.State, "closed") {
+		return "done"
+	}
 	if _, ok := invalid[ticket.Number]; ok {
 		return "blocked"
+	}
+	if len(ticket.ChildIssues) > 0 {
+		return "routed"
 	}
 	if ticket.Routing == "single_repo" || ticket.Routing == "multi_repo" {
 		return "ready-to-route"

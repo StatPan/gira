@@ -6,6 +6,16 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.3.0 - 2026-05-06
+
+- Added bootstrap/workspace adoption flow polish: default `.gira/config.yaml`, conflict continuation guidance, and first branch push handling for `gira ticket pr`.
+- Added `gira workspace init`, `workspace capability`, and `workspace validate` for personal or repo-bound backlog setup, permission checks, and routing readiness.
+- Hardened workspace ticket routing with positional inbox ticket creation, child issue reuse, routed/done inbox status, and child issue evidence in workspace backlog JSON.
+- Added `gira adopt issues` to inspect existing repository issues and explicitly apply milestone/label mappings during Gira adoption.
+- Added epic support to `gira ticket new --type epic`.
+- Added a Jira backend parity acceptance matrix covering backlog, epic, story, task, sprint, release, workflow, priority, owner, and blocker concepts.
+- Connected sprint rollover output to ticket lifecycle evidence and prevented `status:done` tickets from being moved during rollover.
+
 ## v1.2.0 - 2026-05-06
 
 - Added built-in `gira guide` and `gira docs` help topics for quickstart, ticket flow, agent usage, and Jira concept mapping.

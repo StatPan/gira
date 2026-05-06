@@ -121,6 +121,8 @@ gira ticket start N --dry-run
 gira ticket start N --apply
 gira ticket pr --dry-run
 gira ticket pr --apply --draft
+gira ticket checks
+gira ticket wait --timeout 5m
 gira ticket finish --dry-run
 gira ticket finish --apply
 gira ticket status --json
@@ -131,6 +133,8 @@ Expected behavior:
 - `ticket new --apply` creates a repo-bound executable ticket with a structured body, `type:*`, and `status:ready`; `--start` immediately continues into branch start.
 - `ticket start --apply` verifies the ticket is ready, creates or checks out the branch, and applies `status:in-progress`.
 - `ticket pr --apply` opens a linked PR with `Closes #N`; draft PRs keep `status:in-progress`, non-draft PRs move to `status:in-review`.
+- `ticket checks` shows linked PR checks, review blockers, and the next Gira command without requiring raw `gh`.
+- `ticket wait` waits for pending linked PR checks and reports the remaining blockers or finish command.
 - `ticket finish --apply` marks a linked draft PR ready when needed, refuses failing checks or missing review, merges when safe, and reports final convergence.
 - `ticket status` shows linked PR state, checks, review blockers, current issue status, and the next suggested command.
 

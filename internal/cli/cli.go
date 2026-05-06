@@ -340,6 +340,8 @@ Usage:
   gira ticket new "Title" --dry-run|--apply [--start] [--json]
   gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
+  gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]
+  gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--json]
   gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--wait 0s] [--json]
   gira ticket status [TICKET] [--repo OWNER/REPO] [--json]
 
@@ -347,6 +349,8 @@ Commands:
   new     Create a repo-bound executable ticket with a structured Gira body
   start   Verify a ready ticket, create/reuse its branch, and move to in-progress on apply. Alias: gira start
   pr      Validate or create a linked PR with Closes #N and update review status on apply
+  checks  Show linked PR checks, review blockers, and next action
+  wait    Wait for pending linked PR checks without merging
   finish  Mark the linked PR ready when needed, merge safely, and report convergence
   status  Report ticket status, linked PR blockers, and next action
 
@@ -358,6 +362,8 @@ Flags:
   --apply          Apply branch, PR, and status label changes
   --draft          Create/keep PR as draft for ticket pr
   --wait duration  Optional pending-check wait for ticket finish. Default: 0s
+  --timeout duration  Pending-check wait timeout for ticket wait. Default: 5m
+  --interval duration  Poll interval for ticket wait. Default: 5s
   --start          Start a newly created ticket after ticket new --apply
   --json           Emit stable JSON output
   -h, --help       Show help
@@ -758,6 +764,10 @@ var newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait t
 
 var newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
 	return gira.BuildTicketNewReport(input, devCommandRunner)
+}
+
+var newTicketChecksReport = func(repo gira.RepoRef, issue int, wait time.Duration, pollInterval time.Duration) (gira.TicketChecksReport, error) {
+	return gira.BuildTicketChecksReport(repo, issue, wait, pollInterval, devCommandRunner)
 }
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -1390,6 +1400,10 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTicketStart(args[1:], stdout, stderr)
 	case "pr":
 		return runTicketPR(args[1:], stdout, stderr)
+	case "checks":
+		return runTicketChecks(args[1:], stdout, stderr)
+	case "wait":
+		return runTicketWait(args[1:], stdout, stderr)
 	case "finish":
 		return runTicketFinish(args[1:], stdout, stderr)
 	case "status":
@@ -1587,6 +1601,78 @@ func runTicketPR(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, formatTicketPR(result))
+	return 0
+}
+
+func runTicketChecks(args []string, stdout io.Writer, stderr io.Writer) int {
+	return runTicketChecksLike(args, stdout, stderr, false)
+}
+
+func runTicketWait(args []string, stdout io.Writer, stderr io.Writer) int {
+	return runTicketChecksLike(args, stdout, stderr, true)
+}
+
+func runTicketChecksLike(args []string, stdout io.Writer, stderr io.Writer, waitMode bool) int {
+	args, positionalTicket, positionalOK := extractTicketPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	name := "ticket checks"
+	if waitMode {
+		name = "ticket wait"
+	}
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	timeout := fs.Duration("timeout", 5*time.Minute, "Pending-check wait timeout")
+	interval := fs.Duration("interval", 5*time.Second, "Pending-check poll interval")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	ticketNumber, ok := resolveTicketContext(repo, *ticket, *issue, positionalTicket, true, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	wait := time.Duration(0)
+	poll := time.Duration(0)
+	if waitMode {
+		wait = *timeout
+		poll = *interval
+	}
+	result, err := newTicketChecksReport(repo, ticketNumber, wait, poll)
+	result.NextStep = shortenTicketNextStep(result.NextStep, result.Repo, result.Issue)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatTicketChecks(result))
 	return 0
 }
 
@@ -1835,7 +1921,7 @@ func parseWorkRequiredFlags(repoValue string, issue int, dryRun bool, apply bool
 func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bool) {
 	cleaned := make([]string, 0, len(args))
 	positional := 0
-	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}, "--timeout": {}, "--interval": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)

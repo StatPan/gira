@@ -57,6 +57,8 @@ gira ticket pr --apply --draft
 Finish the ticket through Gira after review and checks are ready:
 
 ```bash
+gira ticket checks
+gira ticket wait --timeout 5m
 gira ticket finish --dry-run
 gira ticket finish --apply
 ```

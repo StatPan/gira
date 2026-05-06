@@ -991,6 +991,58 @@ func TestTicketPRInfersTicketFromBranch(t *testing.T) {
 	}
 }
 
+func TestTicketChecksJSON(t *testing.T) {
+	restoreChecks := newTicketChecksReport
+	restoreRepo := repoContextRunner
+	restoreDev := devCommandRunner
+	t.Cleanup(func() {
+		newTicketChecksReport = restoreChecks
+		repoContextRunner = restoreRepo
+		devCommandRunner = restoreDev
+	})
+	repoContextRunner = devCLIRunner{outputs: map[string][]byte{
+		"git remote get-url origin": []byte("https://github.com/StatPan/gira.git\n"),
+	}}
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"git branch --show-current": []byte("issue-227-checks\n"),
+	}}
+	newTicketChecksReport = func(repo gira.RepoRef, issue int, wait time.Duration, pollInterval time.Duration) (gira.TicketChecksReport, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 227 || wait != 0 || pollInterval != 0 {
+			t.Fatalf("unexpected args repo=%s issue=%d wait=%s poll=%s", repo.FullName(), issue, wait, pollInterval)
+		}
+		return gira.TicketChecksReport{Repo: repo.FullName(), Issue: issue, PRNumber: 228, Blockers: []string{"checks_pending"}, Checks: []gira.DevPRCheck{{Name: "Build", State: "pending"}}, NextStep: "gira ticket wait --repo StatPan/gira --ticket 227"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "checks", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"checks_pending"`) || strings.Contains(stdout.String(), "--repo StatPan/gira") {
+		t.Fatalf("ticket checks JSON did not normalize output:\n%s", stdout.String())
+	}
+}
+
+func TestTicketWaitUsesTimeoutAndInterval(t *testing.T) {
+	restoreChecks := newTicketChecksReport
+	t.Cleanup(func() { newTicketChecksReport = restoreChecks })
+	newTicketChecksReport = func(repo gira.RepoRef, issue int, wait time.Duration, pollInterval time.Duration) (gira.TicketChecksReport, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 227 || wait != 2*time.Minute || pollInterval != time.Second {
+			t.Fatalf("unexpected args repo=%s issue=%d wait=%s poll=%s", repo.FullName(), issue, wait, pollInterval)
+		}
+		return gira.TicketChecksReport{Repo: repo.FullName(), Issue: issue, PRNumber: 228, Ready: true, Checks: []gira.DevPRCheck{{Name: "Build", State: "passing"}}, NextStep: "gira ticket finish --repo StatPan/gira --ticket 227 --apply"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "wait", "227", "--repo", "StatPan/gira", "--timeout", "2m", "--interval", "1s"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "ready=true") || !strings.Contains(stdout.String(), "next step: gira ticket finish --apply") {
+		t.Fatalf("ticket wait output missing ready state:\n%s", stdout.String())
+	}
+}
+
 func TestTicketFinishDryRunJSON(t *testing.T) {
 	restore := newWorkFinishResult
 	t.Cleanup(func() { newWorkFinishResult = restore })

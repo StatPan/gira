@@ -3,22 +3,34 @@ package gira
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 type workRunner struct {
 	outputs map[string][]byte
 	errs    map[string]error
+	delays  map[string]time.Duration
+	mu      sync.Mutex
 	calls   []string
 }
 
 func (r *workRunner) Run(name string, args ...string) ([]byte, error) {
 	key := name + " " + strings.Join(args, " ")
+	r.mu.Lock()
 	r.calls = append(r.calls, key)
-	if err, ok := r.errs[key]; ok {
+	delay := r.delays[key]
+	err, hasErr := r.errs[key]
+	out, hasOut := r.outputs[key]
+	r.mu.Unlock()
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+	if hasErr {
 		return nil, err
 	}
-	if out, ok := r.outputs[key]; ok {
+	if hasOut {
 		return out, nil
 	}
 	return nil, fmt.Errorf("unexpected call: %s", key)
@@ -249,6 +261,35 @@ func TestGetWorkStatusReportsNextAction(t *testing.T) {
 	}
 	if result.NextAction != "mark_pr_ready" {
 		t.Fatalf("next action = %q", result.NextAction)
+	}
+}
+
+func TestGetWorkStatusFetchesIssueAndPRConcurrently(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	issueCall := "gh api repos/StatPan/gira/issues/126"
+	prCall := "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20"
+	runner := &workRunner{
+		outputs: map[string][]byte{
+			issueCall: []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
+			prCall:    []byte(`[{"number":203,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/203","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
+		},
+		delays: map[string]time.Duration{
+			issueCall: 80 * time.Millisecond,
+			prCall:    80 * time.Millisecond,
+		},
+	}
+
+	start := time.Now()
+	result, err := GetWorkStatus(repo, 126, runner)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("GetWorkStatus error: %v", err)
+	}
+	if result.PRNumber != 203 || result.NextAction != "merge_when_policy_allows" {
+		t.Fatalf("unexpected status: %+v", result)
+	}
+	if elapsed > 140*time.Millisecond {
+		t.Fatalf("GetWorkStatus took %s, want concurrent fetch under 140ms", elapsed)
 	}
 }
 

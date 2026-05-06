@@ -28,6 +28,8 @@ curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 Or install through a currently published package manager channel:
 
 ```bash
+npm install -g @statpan/gira
+bun install -g @statpan/gira
 pipx install gira-cli
 python -m pip install --user gira-cli
 brew tap StatPan/tap
@@ -343,22 +345,15 @@ gira status --repo OWNER/REPO --json
 Official install channels:
 
 ```bash
+npm install -g @statpan/gira
+bun install -g @statpan/gira
 python -m pip install --user gira-cli
 pipx install gira-cli
 brew tap StatPan/tap
 brew install gira
 ```
 
-The pip and pipx channel installs the `gira-cli` wrapper from PyPI. The Homebrew channel is published through `StatPan/homebrew-tap`.
-
-Pending wrapper channels:
-
-```bash
-npm install -g @statpan/gira
-bun install -g @statpan/gira
-```
-
-The npm and bun channel will install the same Go-built release binary through the npm registry after npm publishing is enabled for `@statpan/gira`.
+The npm and bun channels install the `@statpan/gira` wrapper from the npm registry. The pip and pipx channels install the `gira-cli` wrapper from PyPI. The Homebrew channel is published through `StatPan/homebrew-tap`. All wrapper channels install the same Go-built release binary and keep the `gira` command surface unchanged.
 
 apt/deb packaging is a future target, not an initial official channel. It should wait until usage justifies signing keys, repository hosting, architecture matrix maintenance, and upgrade policy support.
 

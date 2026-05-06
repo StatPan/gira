@@ -28,7 +28,7 @@ workspace:
 
 `workspace.inbox_repo` is required. It may be a private personal repo if the backlog should not appear inside any execution repo. `workspace.repos` is the explicit allowlist of repositories that can receive routed execution issues.
 
-`workspace.project` points to an existing GitHub Projects v2 board by user-facing title. Gira does not create the Project in this slice; it syncs configured repo issues into that Project so the GitHub Projects tab stays visible without manual `gh project` commands. `number` is supported only as an advanced fallback when titles are ambiguous.
+`workspace.project` points to an existing GitHub Projects v2 board by user-facing title. Gira does not create the Project in this slice; it syncs configured repo issues, supported planning fields, status, and milestone target dates into that Project so the GitHub Projects tab stays visible without manual `gh project` commands. `number` is supported only as an advanced fallback when titles are ambiguous.
 
 The older `portfolio` config remains a compatibility alias, but new docs should use `workspace` because it matches the intended Jira-like user model.
 
@@ -78,6 +78,6 @@ gira ticket status --repo OWNER/app --ticket 34
 
 ## Boundary
 
-This is not a separate Jira import/export database. Workspace commands operate on issues, labels, milestones, and links that remain visible in GitHub. `gira projects sync` is a visibility bridge for an existing GitHub Project; issues remain the source of truth.
+This is not a separate Jira import/export database. Workspace commands operate on issues, labels, milestones, and links that remain visible in GitHub. `gira projects sync` is a visibility bridge for an existing GitHub Project; issues and milestones remain the source of truth. GitHub Project views still need to be created in the GitHub UI because supported CLI/GraphQL APIs do not currently create or edit views.
 
 Use `workspace` for personal or cross-repo intake. Use `ticket`, `sprint`, `release`, and `status` once the work belongs to one execution repo.

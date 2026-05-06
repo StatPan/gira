@@ -530,7 +530,7 @@ func statusNextStep(summary StatusSummary) string {
 	if len(summary.Issues.Open) > 0 {
 		return fmt.Sprintf("gira work start --repo %s --issue %d --dry-run", summary.Repo, summary.Issues.Open[0].Number)
 	}
-	return "gira sync --repo " + summary.Repo + " --dry-run"
+	return "gira ops sync --repo " + summary.Repo + " --dry-run"
 }
 
 func flattenPages(value json.RawMessage) ([]json.RawMessage, error) {

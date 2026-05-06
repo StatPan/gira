@@ -245,7 +245,7 @@ func metadataDriftDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
 			ID:          "metadata_drift",
 			Status:      DoctorCheckFail,
 			Detail:      err.Error(),
-			Remediation: fmt.Sprintf("run `gira sync --repo %s --bootstrap-issues --dry-run`; fix access errors, then apply with `gira sync --repo %s --bootstrap-issues`", repo.FullName(), repo.FullName()),
+			Remediation: fmt.Sprintf("run `gira ops sync --repo %s --dry-run`; fix access errors, then apply with `gira ops sync --repo %s`", repo.FullName(), repo.FullName()),
 		}
 	}
 	labelCreates := countLabelActions(plan.Labels, PlanCreate)
@@ -253,19 +253,27 @@ func metadataDriftDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
 	milestoneCreates := countMilestoneActions(plan.Milestones, PlanCreate)
 	milestoneUpdates := countMilestoneActions(plan.Milestones, PlanUpdate)
 	bootstrapIssueCreates := countBootstrapIssueActions(plan.BootstrapIssues, PlanCreate)
-	drift := labelCreates + labelUpdates + milestoneCreates + milestoneUpdates + bootstrapIssueCreates
+	drift := labelCreates + labelUpdates + milestoneCreates + milestoneUpdates
 	if drift > 0 {
 		return DoctorCheck{
 			ID:          "metadata_drift",
 			Status:      DoctorCheckFail,
 			Detail:      fmt.Sprintf("labels create=%d update=%d; milestones create=%d update=%d; bootstrap issues create=%d", labelCreates, labelUpdates, milestoneCreates, milestoneUpdates, bootstrapIssueCreates),
-			Remediation: fmt.Sprintf("run `gira sync --repo %s --bootstrap-issues --dry-run`, then apply with `gira sync --repo %s --bootstrap-issues`", repo.FullName(), repo.FullName()),
+			Remediation: fmt.Sprintf("run `gira ops sync --repo %s --dry-run`, then apply with `gira ops sync --repo %s`; add `--bootstrap-issues` only for demo/self-dogfood seed issues", repo.FullName(), repo.FullName()),
+		}
+	}
+	if bootstrapIssueCreates > 0 {
+		return DoctorCheck{
+			ID:          "metadata_drift",
+			Status:      DoctorCheckWarn,
+			Detail:      fmt.Sprintf("labels create=0 update=0; milestones create=0 update=0; optional bootstrap issues create=%d", bootstrapIssueCreates),
+			Remediation: fmt.Sprintf("run `gira ops sync --repo %s --bootstrap-issues --dry-run` only when you want Gira sample bootstrap issues", repo.FullName()),
 		}
 	}
 	return DoctorCheck{
 		ID:          "metadata_drift",
 		Status:      DoctorCheckPass,
-		Detail:      "labels, milestones, and bootstrap issues match the default Gira contract",
+		Detail:      "labels and milestones match the default Gira contract; bootstrap sample issues are optional",
 		Remediation: "",
 	}
 }
@@ -293,7 +301,7 @@ func onboardReadinessDoctorCheck(repo RepoRef, runner CommandRunner, checkedAt t
 			ID:          "onboard_readiness",
 			Status:      DoctorCheckFail,
 			Detail:      "milestones total=0",
-			Remediation: fmt.Sprintf("run `gira sync --repo %s --dry-run`, then `gira sync --repo %s` so milestone planning exists", repo.FullName(), repo.FullName()),
+			Remediation: fmt.Sprintf("run `gira ops sync --repo %s --dry-run`, then `gira ops sync --repo %s` so milestone planning exists", repo.FullName(), repo.FullName()),
 		}
 	}
 	return DoctorCheck{

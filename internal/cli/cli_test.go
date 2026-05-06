@@ -1057,8 +1057,8 @@ func TestStartAliasHelpMentionsAlias(t *testing.T) {
 
 func TestSyncNextStepKeepsPolicyAndBootstrapFlags(t *testing.T) {
 	repo := gira.RepoRef{Owner: "StatPan", Name: "gira"}
-	got := syncNextStep("gira sync", repo, true, true, gira.SyncPolicyAdopt, false)
-	want := "next step: gira sync --repo StatPan/gira --policy-mode adopt --bootstrap-issues"
+	got := syncNextStep("gira ops sync", repo, true, true, gira.SyncPolicyAdopt, false)
+	want := "next step: gira ops sync --repo StatPan/gira --policy-mode adopt --bootstrap-issues"
 	if got != want {
 		t.Fatalf("syncNextStep = %q, want %q", got, want)
 	}
@@ -1444,9 +1444,9 @@ func TestContractCRUDMatrix(t *testing.T) {
 	for _, want := range []string{
 		"CRUD capability matrix (MVP contract)",
 		"surface               create                                           read                                                                                     update                                                            delete",
-		"labels                gira sync --repo OWNER/REPO                      gira sync --repo OWNER/REPO --dry-run                                                    gira sync --repo OWNER/REPO                                       unsupported (intentional in MVP)",
-		"milestones            gira sync --repo OWNER/REPO                      gira sync --repo OWNER/REPO --dry-run                                                    gira sync --repo OWNER/REPO                                       unsupported (intentional in MVP)",
-		"issues                gira sync --repo OWNER/REPO --bootstrap-issues   gira status --repo OWNER/REPO                                                            gira triage apply --apply / gira worker claim|handoff|release     unsupported direct delete in MVP",
+		"labels                gira ops sync --repo OWNER/REPO                  gira ops sync --repo OWNER/REPO --dry-run                                                gira ops sync --repo OWNER/REPO                                   unsupported (intentional in MVP)",
+		"milestones            gira ops sync --repo OWNER/REPO                  gira ops sync --repo OWNER/REPO --dry-run                                                gira ops sync --repo OWNER/REPO                                   unsupported (intentional in MVP)",
+		"issues                gira ops sync --repo OWNER/REPO --bootstrap-issues gira status --repo OWNER/REPO                                                          gira triage apply --apply / gira worker claim|handoff|release     unsupported direct delete in MVP",
 		"pr_loop               gira dev pr open --repo OWNER/REPO --issue N     gira dev pr status --repo OWNER/REPO --issue N / gira review queue                        gira merge queue --apply (opt-in destructive)                     unsupported direct delete; close via GitHub UI/API",
 		"project_fields_views  unsupported (MVP non-goal)                       gira project capability / gira project sync --dry-run / gira project transitions --dry-run unsupported in MVP (dry-run inspection only)                      unsupported (MVP non-goal)",
 	} {
@@ -1665,7 +1665,7 @@ func TestDoctorJSONUsesInjectedReportAndExitCode(t *testing.T) {
 				ID:          "metadata_drift",
 				Status:      gira.DoctorCheckFail,
 				Detail:      "labels create=1 update=0; milestones create=0 update=0; bootstrap issues create=0",
-				Remediation: "run `gira sync --repo StatPan/gira --bootstrap-issues --dry-run`, then apply with `gira sync --repo StatPan/gira --bootstrap-issues`",
+				Remediation: "run `gira ops sync --repo StatPan/gira --dry-run`, then apply with `gira ops sync --repo StatPan/gira`",
 			}},
 		}
 	}
@@ -1678,7 +1678,7 @@ func TestDoctorJSONUsesInjectedReportAndExitCode(t *testing.T) {
 	if !strings.Contains(stdout.String(), "\"id\": \"metadata_drift\"") {
 		t.Fatalf("doctor JSON missing check id:\n%s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "\"remediation\": \"run `gira sync --repo StatPan/gira --bootstrap-issues --dry-run`") {
+	if !strings.Contains(stdout.String(), "\"remediation\": \"run `gira ops sync --repo StatPan/gira --dry-run`") {
 		t.Fatalf("doctor JSON missing remediation:\n%s", stdout.String())
 	}
 }
@@ -1803,10 +1803,10 @@ func TestSyncDryRunNextStepPinsExplicitMergeWhenEnvEnforce(t *testing.T) {
 	if !strings.Contains(stdout.String(), "policy mode:      merge") {
 		t.Fatalf("sync output missing reviewed merge policy mode:\n%s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "next step: gira sync --repo StatPan/gira --policy-mode merge") {
+	if !strings.Contains(stdout.String(), "next step: gira ops sync --repo StatPan/gira --policy-mode merge") {
 		t.Fatalf("next step must pin explicit merge policy mode:\n%s", stdout.String())
 	}
-	if strings.Contains(stdout.String(), "next step: gira sync --repo StatPan/gira --policy-mode enforce") {
+	if strings.Contains(stdout.String(), "next step: gira ops sync --repo StatPan/gira --policy-mode enforce") {
 		t.Fatalf("next step would apply env enforce policy:\n%s", stdout.String())
 	}
 	if len(client.calls) != 0 {

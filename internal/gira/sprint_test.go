@@ -66,6 +66,29 @@ func TestSprintRolloverDryRunDetectsCandidatesAndTarget(t *testing.T) {
 	if len(report.Items) != 1 || report.Items[0].Action != "would-apply" {
 		t.Fatalf("unexpected items: %#v", report.Items)
 	}
+	if report.Items[0].LifecycleStatus != "open" || report.Items[0].NextStep != "gira ticket status --repo StatPan/gira --ticket 10" {
+		t.Fatalf("missing lifecycle evidence: %#v", report.Items[0])
+	}
+}
+
+func TestSprintRolloverSkipsDoneLifecycleTickets(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	now := time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC)
+	client := sprintFakeStatusClient{repo: repo, pages: map[string]string{
+		"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100": `[[{"number":1,"title":"W17","state":"closed","due_on":"2026-04-25T00:00:00Z","open_issues":1,"closed_issues":1},{"number":2,"title":"W18","state":"open","due_on":"2026-05-10T00:00:00Z","open_issues":2,"closed_issues":0}]]`,
+		"api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100":     `[[{"number":10,"title":"already done","state":"open","labels":[{"name":"status:done"}],"milestone":{"title":"W17"},"updated_at":"2026-05-01T00:00:00Z","html_url":"u"}]]`,
+	}}
+
+	report, err := SprintRolloverForClient(client, &sprintFakeRunner{}, "", false, now)
+	if err != nil {
+		t.Fatalf("SprintRolloverForClient error: %v", err)
+	}
+	if report.Summary.Candidates != 1 || report.Summary.Applied != 0 || report.Summary.Skipped != 1 {
+		t.Fatalf("unexpected summary: %#v", report.Summary)
+	}
+	if report.Items[0].Action != "skipped" || report.Items[0].SkipReason != "ticket already has status:done" {
+		t.Fatalf("unexpected item: %#v", report.Items[0])
+	}
 }
 
 func TestSprintRolloverApplyCallsMilestonePatch(t *testing.T) {

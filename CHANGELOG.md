@@ -6,6 +6,15 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.1.0 - 2026-05-06
+
+- Added `gira workspace ...` for Jira-like personal backlog, inbox tickets, and repo routing before work belongs to one execution repository.
+- Added `gira projects sync` as a GitHub Projects v2 visibility bridge for configured workspace issues.
+- Added Project field mirroring from Gira labels: `status:*` to `Status`, `priority:*` to `Priority`, `area:*` to `Layer / workstream`, `agent:*` to `Owner / agent`, and milestone due dates to `Target date`.
+- Changed closed Project item handling so closed issues stay visible as `Done` by default, with `--archive-closed` as an opt-in cleanup mode.
+- Added public-release documentation and an LLM/agent runbook with the safe dry-run -> apply -> PR workflow order.
+- Clarified install channels: `install.sh`, PyPI `gira-cli`, and Homebrew are published channels; npm/bun use the `@statpan/gira` wrapper when that channel is published.
+
 ## v1.0.0 - 2026-05-05
 
 - Added Jira-style `gira ticket start|pr|status` as the default daily work facade.

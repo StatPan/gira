@@ -17,6 +17,9 @@ Gira ships as one Go-built binary. Package-manager channels are wrappers around 
 3. Update `CHANGELOG.md`.
 4. Tag `main`, for example `git tag -a v1.0.0 -m "gira v1.0.0" && git push origin v1.0.0`.
 5. The GitHub Actions release workflow builds archives, verifies checksums, publishes the GitHub Release, and then publishes configured package-manager channels.
+6. Smoke-test the tagged installer and any published package-manager channels before advertising the new version.
+
+The README on `main` should describe the next public release surface only after that release is tagged. If `main` documents commands that are not in the latest stable tag, cut a new minor or patch release before directing users to the installer.
 
 ## Channels
 

@@ -115,13 +115,13 @@ Live session orchestration is justified only for narrow exceptions:
 The current CLI exposes the Jira-style daily loop through `gira ticket`. Advanced setup and policy controls stay under `gira ops` so new users do not need to learn GitHub-native internals before starting work.
 
 ```bash
-gira ticket start --repo OWNER/REPO --ticket N --dry-run
-gira ticket start --repo OWNER/REPO --ticket N --apply
-gira ticket pr --repo OWNER/REPO --ticket N --dry-run
-gira ticket pr --repo OWNER/REPO --ticket N --apply --draft
-gira ticket finish --repo OWNER/REPO --ticket N --dry-run
-gira ticket finish --repo OWNER/REPO --ticket N --apply
-gira ticket status --repo OWNER/REPO --ticket N --json
+gira ticket start N --dry-run
+gira ticket start N --apply
+gira ticket pr --dry-run
+gira ticket pr --apply --draft
+gira ticket finish --dry-run
+gira ticket finish --apply
+gira ticket status --json
 ```
 
 Expected behavior:

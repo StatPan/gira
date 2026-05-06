@@ -1064,6 +1064,17 @@ func TestSyncNextStepKeepsPolicyAndBootstrapFlags(t *testing.T) {
 	}
 }
 
+func TestParseRepeatedIssueNumbersSupportsListsAndRanges(t *testing.T) {
+	got, err := parseRepeatedIssueNumbers([]string{"1,3-5", "2", "4"})
+	if err != nil {
+		t.Fatalf("parseRepeatedIssueNumbers error: %v", err)
+	}
+	want := []int{1, 3, 4, 5, 2}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("parseRepeatedIssueNumbers = %v, want %v", got, want)
+	}
+}
+
 func TestOpsSyncNextStepUsesOpsCommand(t *testing.T) {
 	repo := gira.RepoRef{Owner: "StatPan", Name: "gira"}
 	got := syncNextStep("gira ops sync", repo, true, true, gira.SyncPolicyMerge, false)

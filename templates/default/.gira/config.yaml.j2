@@ -1,0 +1,41 @@
+repo: {{ repo_full_name }}
+
+workspace:
+  name: {{ repo_name }}
+  owner: {{ repo_owner }}
+  inbox_repo: {{ repo_full_name }}
+  repos:
+    - {{ repo_full_name }}
+
+portfolio:
+  repo: {{ repo_full_name }}
+  repos:
+    - {{ repo_full_name }}
+
+profiles:
+  default:
+    labels:
+      - type:epic
+      - type:story
+      - type:task
+      - type:spike
+      - type:bug
+      - status:ready
+      - status:in-progress
+      - status:in-review
+      - status:blocked
+      - status:done
+    milestones:
+      - MVP
+      - Beta
+      - v1
+    issue_templates:
+      - epic
+      - story
+      - task
+      - spike
+      - bug
+      - portfolio
+    review_policy:
+      required_approvals: 0
+      require_code_owners: false

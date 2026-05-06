@@ -1,0 +1,145 @@
+package gira
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+type WorkspaceInitInput struct {
+	Name      string   `json:"name,omitempty"`
+	Owner     string   `json:"owner,omitempty"`
+	InboxRepo string   `json:"inbox_repo"`
+	Repos     []string `json:"repos"`
+	Path      string   `json:"path"`
+	Overwrite bool     `json:"overwrite"`
+	DryRun    bool     `json:"dry_run"`
+	Apply     bool     `json:"apply"`
+}
+
+type WorkspaceInitReport struct {
+	Command     string           `json:"command"`
+	ConfigPath  string           `json:"config_path"`
+	DryRun      bool             `json:"dry_run"`
+	Applied     bool             `json:"applied"`
+	Created     bool             `json:"created"`
+	Overwritten bool             `json:"overwritten"`
+	Workspace   WorkspaceSummary `json:"workspace"`
+	InboxRepo   string           `json:"inbox_repo"`
+	Repos       []string         `json:"repos"`
+	Content     string           `json:"content"`
+	NextStep    string           `json:"next_step"`
+}
+
+func BuildWorkspaceInitReport(input WorkspaceInitInput) (WorkspaceInitReport, error) {
+	if input.DryRun == input.Apply {
+		return WorkspaceInitReport{}, fmt.Errorf("exactly one of --dry-run or --apply is required")
+	}
+	if strings.TrimSpace(input.Path) == "" {
+		input.Path = "."
+	}
+	configPath := DefaultInitConfigPath(input.Path)
+	inbox, err := ParseRepoRef(input.InboxRepo)
+	if err != nil {
+		return WorkspaceInitReport{}, fmt.Errorf("--inbox-repo must be in OWNER/REPO format")
+	}
+	repos := append([]string{}, input.Repos...)
+	if len(repos) == 0 {
+		repos = []string{inbox.FullName()}
+	}
+	seen := map[string]struct{}{}
+	normalizedRepos := make([]string, 0, len(repos))
+	for i, value := range repos {
+		repo, err := ParseRepoRef(value)
+		if err != nil {
+			return WorkspaceInitReport{}, fmt.Errorf("--repo[%d] must be in OWNER/REPO format", i)
+		}
+		key := strings.ToLower(repo.FullName())
+		if _, ok := seen[key]; ok {
+			return WorkspaceInitReport{}, fmt.Errorf("--repo contains duplicate repo %s", repo.FullName())
+		}
+		seen[key] = struct{}{}
+		normalizedRepos = append(normalizedRepos, repo.FullName())
+	}
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		name = inbox.Name
+	}
+	owner := strings.TrimSpace(input.Owner)
+	if owner == "" {
+		owner = inbox.Owner
+	}
+	content := renderWorkspaceInitConfig(name, owner, inbox.FullName(), normalizedRepos)
+	report := WorkspaceInitReport{
+		Command:    "workspace init",
+		ConfigPath: configPath,
+		DryRun:     input.DryRun,
+		Workspace:  WorkspaceSummary{Name: name, Owner: owner},
+		InboxRepo:  inbox.FullName(),
+		Repos:      normalizedRepos,
+		Content:    content,
+		NextStep:   "gira workspace status --config " + configPath,
+	}
+	if input.DryRun {
+		return report, nil
+	}
+	if _, err := os.Stat(configPath); err == nil && !input.Overwrite {
+		return report, fmt.Errorf("%s already exists; pass --overwrite to replace it", configPath)
+	} else if err == nil {
+		report.Overwritten = true
+	} else if os.IsNotExist(err) {
+		report.Created = true
+	} else {
+		return report, err
+	}
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		return report, err
+	}
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		return report, err
+	}
+	report.Applied = true
+	return report, nil
+}
+
+func renderWorkspaceInitConfig(name string, owner string, inboxRepo string, repos []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "repo: %s\n\n", inboxRepo)
+	b.WriteString("workspace:\n")
+	fmt.Fprintf(&b, "  name: %s\n", name)
+	fmt.Fprintf(&b, "  owner: %s\n", owner)
+	fmt.Fprintf(&b, "  inbox_repo: %s\n", inboxRepo)
+	b.WriteString("  repos:\n")
+	for _, repo := range repos {
+		fmt.Fprintf(&b, "    - %s\n", repo)
+	}
+	b.WriteString("\nprofiles:\n")
+	b.WriteString("  default:\n")
+	b.WriteString("    labels: [\"type:epic\", \"type:story\", \"type:task\", \"type:bug\", \"status:ready\", \"status:in-progress\", \"status:done\"]\n")
+	b.WriteString("    milestones: [\"MVP\", \"Beta\", \"v1\"]\n")
+	b.WriteString("    issue_templates: [\"epic\", \"story\", \"task\", \"bug\"]\n")
+	b.WriteString("    review_policy:\n")
+	b.WriteString("      required_approvals: 0\n")
+	b.WriteString("      require_code_owners: false\n")
+	return b.String()
+}
+
+func FormatWorkspaceInitReport(report WorkspaceInitReport) string {
+	mode := "dry-run"
+	if report.Applied {
+		mode = "applied"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "workspace init: %s %s\n", mode, report.ConfigPath)
+	fmt.Fprintf(&b, "workspace: %s (%s)\n", report.Workspace.Name, report.Workspace.Owner)
+	fmt.Fprintf(&b, "inbox: %s\n", report.InboxRepo)
+	fmt.Fprintf(&b, "repos: %s\n", strings.Join(report.Repos, ","))
+	if report.DryRun {
+		b.WriteString("config:\n")
+		b.WriteString(strings.TrimRight(report.Content, "\n"))
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
+	return b.String()
+}

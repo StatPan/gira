@@ -85,13 +85,36 @@ func TestBuildDoctorReportDriftFailureHasSyncRemediation(t *testing.T) {
 		t.Fatalf("metadata_drift status = %s, want fail", check.Status)
 	}
 	for _, want := range []string{
-		"`gira sync --repo StatPan/gira --bootstrap-issues --dry-run`",
-		"`gira sync --repo StatPan/gira --bootstrap-issues`",
+		"`gira ops sync --repo StatPan/gira --dry-run`",
+		"`gira ops sync --repo StatPan/gira`",
 		"labels create=",
 	} {
 		if !strings.Contains(check.Remediation+check.Detail, want) {
 			t.Fatalf("metadata_drift missing %q: %+v", want, *check)
 		}
+	}
+}
+
+func TestBuildDoctorReportBootstrapIssueDriftWarnsOnly(t *testing.T) {
+	runner := readyDoctorRunner()
+	runner.responses["gh issue list --repo StatPan/gira --state all --label gira:bootstrap --json number,title,labels --limit 1000"] = `[]`
+	report := BuildDoctorReport("StatPan/gira", runner, time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC))
+
+	if !report.Ready {
+		t.Fatalf("ready = false, want true for optional bootstrap issue drift: %+v", report.Checks)
+	}
+	check := doctorCheckByID(report, "metadata_drift")
+	if check == nil {
+		t.Fatal("metadata_drift check missing")
+	}
+	if check.Status != DoctorCheckWarn {
+		t.Fatalf("metadata_drift status = %s, want warn: %+v", check.Status, *check)
+	}
+	if !strings.Contains(check.Detail, "optional bootstrap issues create=5") {
+		t.Fatalf("metadata_drift detail = %q, want optional bootstrap count", check.Detail)
+	}
+	if !strings.Contains(check.Remediation, "only when you want Gira sample bootstrap issues") {
+		t.Fatalf("metadata_drift remediation = %q, want opt-in guidance", check.Remediation)
 	}
 }
 

@@ -324,7 +324,8 @@ Flags:
 const syncHelp = `Sync Gira labels, milestones, and optionally bootstrap issues through gh.
 
 Usage:
-  gira sync --repo OWNER/REPO [--dry-run] [--bootstrap-issues] [--policy-mode adopt|merge|enforce]
+  gira ops sync --repo OWNER/REPO [--dry-run] [--bootstrap-issues] [--policy-mode adopt|merge|enforce]
+  gira sync --repo OWNER/REPO [--dry-run] [--bootstrap-issues] [--policy-mode adopt|merge|enforce]  (alias)
 
 Flags:
   --repo string              Target GitHub repo in OWNER/REPO format
@@ -3491,7 +3492,7 @@ func runExportDashboard(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runSync(args []string, stdout io.Writer, stderr io.Writer) int {
-	return runSyncWithCommand(args, stdout, stderr, "gira sync")
+	return runSyncWithCommand(args, stdout, stderr, "gira ops sync")
 }
 
 func runSyncWithCommand(args []string, stdout io.Writer, stderr io.Writer, commandName string) int {
@@ -4686,9 +4687,9 @@ func runContract(args []string, stdout io.Writer, stderr io.Writer) int {
 	fmt.Fprint(stdout, `CRUD capability matrix (MVP contract)
 
 surface               create                                           read                                                                                     update                                                            delete
-labels                gira sync --repo OWNER/REPO                      gira sync --repo OWNER/REPO --dry-run                                                    gira sync --repo OWNER/REPO                                       unsupported (intentional in MVP)
-milestones            gira sync --repo OWNER/REPO                      gira sync --repo OWNER/REPO --dry-run                                                    gira sync --repo OWNER/REPO                                       unsupported (intentional in MVP)
-issues                gira sync --repo OWNER/REPO --bootstrap-issues   gira status --repo OWNER/REPO                                                            gira triage apply --apply / gira worker claim|handoff|release     unsupported direct delete in MVP
+labels                gira ops sync --repo OWNER/REPO                  gira ops sync --repo OWNER/REPO --dry-run                                                gira ops sync --repo OWNER/REPO                                   unsupported (intentional in MVP)
+milestones            gira ops sync --repo OWNER/REPO                  gira ops sync --repo OWNER/REPO --dry-run                                                gira ops sync --repo OWNER/REPO                                   unsupported (intentional in MVP)
+issues                gira ops sync --repo OWNER/REPO --bootstrap-issues gira status --repo OWNER/REPO                                                          gira triage apply --apply / gira worker claim|handoff|release     unsupported direct delete in MVP
 pr_loop               gira dev pr open --repo OWNER/REPO --issue N     gira dev pr status --repo OWNER/REPO --issue N / gira review queue                        gira merge queue --apply (opt-in destructive)                     unsupported direct delete; close via GitHub UI/API
 project_fields_views  unsupported (MVP non-goal)                       gira project capability / gira project sync --dry-run / gira project transitions --dry-run unsupported in MVP (dry-run inspection only)                      unsupported (MVP non-goal)
 `)

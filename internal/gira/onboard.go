@@ -159,7 +159,7 @@ func onboardNextStep(report OnboardVerifyReport) string {
 	case OnboardStageInit:
 		return "gira bootstrap --repo " + report.Repo + " --path ."
 	case OnboardStageBootstrap:
-		return "gira sync --repo " + report.Repo + " --dry-run"
+		return "gira ops sync --repo " + report.Repo + " --dry-run"
 	case OnboardStageFirstSprint, OnboardStageSteadyState:
 		return "gira status --repo " + report.Repo
 	default:
@@ -259,7 +259,7 @@ func bootstrapObjectsReadinessCheck(repo RepoRef, runner CommandRunner) OnboardC
 			Description: "bootstrap operating objects are converged (labels, milestones, bootstrap issues)",
 			Status:      OnboardCheckFail,
 			Detail:      err.Error(),
-			Remediation: fmt.Sprintf("run `gira sync --repo %s --bootstrap-issues --dry-run`, then apply the required metadata/object sync", repo.FullName()),
+			Remediation: fmt.Sprintf("run `gira ops sync --repo %s --dry-run`, then apply the required metadata sync; add `--bootstrap-issues` only for sample bootstrap issues", repo.FullName()),
 		}
 	}
 	labelCreates := countLabelActions(plan.Labels, PlanCreate)
@@ -273,14 +273,14 @@ func bootstrapObjectsReadinessCheck(repo RepoRef, runner CommandRunner) OnboardC
 			Description: "bootstrap operating objects are converged (labels, milestones, bootstrap issues)",
 			Status:      OnboardCheckFail,
 			Detail:      fmt.Sprintf("labels create=%d update=%d; milestones create=%d update=%d; bootstrap issues create=%d", labelCreates, labelUpdates, milestoneCreates, milestoneUpdates, bootstrapIssueCreates),
-			Remediation: fmt.Sprintf("run `gira sync --repo %s --bootstrap-issues --dry-run` and then `gira sync --repo %s --bootstrap-issues` until drift is zero", repo.FullName(), repo.FullName()),
+			Remediation: fmt.Sprintf("run `gira ops sync --repo %s --dry-run` and then `gira ops sync --repo %s` until label and milestone drift is zero; add `--bootstrap-issues` only for sample bootstrap issues", repo.FullName(), repo.FullName()),
 		}
 	}
 	return OnboardCheck{
 		ID:          "bootstrap_operating_objects_ready",
 		Description: "bootstrap operating objects are converged (labels, milestones, bootstrap issues)",
 		Status:      OnboardCheckPass,
-		Detail:      "labels, milestones, and bootstrap issues already match the default Gira contract",
+		Detail:      "labels, milestones, and optional bootstrap issues already match the default Gira contract",
 	}
 }
 
@@ -348,7 +348,7 @@ func milestoneCoverageCheck(repo RepoRef, runner CommandRunner, checkedAt time.T
 			Description: "daily operation has milestone coverage",
 			Status:      OnboardCheckFail,
 			Detail:      "milestones total=0",
-			Remediation: fmt.Sprintf("run `gira sync --repo %s` so milestone planning exists before daily operation", repo.FullName()),
+			Remediation: fmt.Sprintf("run `gira ops sync --repo %s` so milestone planning exists before daily operation", repo.FullName()),
 		}
 	}
 	return OnboardCheck{

@@ -20,6 +20,7 @@ Usage:
   gira <command> [flags]
 
 Daily commands:
+  workspace   Personal workspace inbox and backlog overview
   ticket      Jira-style ticket lifecycle commands
   sprint      Sprint iteration planning/start/close workflow
   release     Release readiness gate report
@@ -82,6 +83,29 @@ Flags:
   --json              Emit stable JSON for automation
   --stale-days int    Days since update before open issues count as stale (default 14)
   -h, --help          Show help
+`
+
+const workspaceHelp = `Personal workspace inbox and backlog commands.
+
+Usage:
+  gira workspace status [--config .gira/config.yaml] [--json]
+  gira workspace backlog [--config .gira/config.yaml] [--json]
+  gira workspace sync --dry-run|--apply [--config .gira/config.yaml] [--bootstrap-issues] [--json]
+  gira workspace ticket new --title TEXT [--body TEXT] [--config .gira/config.yaml] [--json]
+  gira workspace ticket route --ticket N --repo OWNER/REPO --dry-run|--apply [--config .gira/config.yaml] [--json]
+  gira workspace project plan [--config .gira/config.yaml] [--json]
+
+Commands:
+  status   Show inbox and repo execution state in one Jira-like overview
+  backlog  List inbox tickets and repo issues together
+  sync     Sync Gira metadata across inbox and execution repos
+  ticket   Create or route repo-agnostic inbox tickets
+  project  Read-only GitHub Projects v2 visibility planning
+
+Flags:
+  --config string  Workspace config path (default ".gira/config.yaml")
+  --json           Emit stable JSON output
+  -h, --help       Show help
 `
 
 const versionHelp = `Show Gira build version.
@@ -554,6 +578,66 @@ var newPortfolioLowerReport = func(configPath string, apply bool) (gira.Portfoli
 	)
 }
 
+var newWorkspaceStatusReport = func(configPath string) (gira.WorkspaceReport, error) {
+	resolved, err := gira.ResolveWorkspaceConfig(configPath)
+	if err != nil {
+		return gira.WorkspaceReport{}, err
+	}
+	return gira.BuildWorkspaceStatusReport(resolved, gira.NewGHWorkspaceClient(gira.ExecCommandRunner{}), time.Now(), 14)
+}
+
+var newWorkspaceSyncReport = func(configPath string, dryRun bool, bootstrapIssues bool) (gira.WorkspaceSyncReport, error) {
+	resolved, err := gira.ResolveWorkspaceConfig(configPath)
+	if err != nil {
+		return gira.WorkspaceSyncReport{}, err
+	}
+	syncer := func(repo gira.RepoRef, dryRun bool, bootstrapIssues bool) (gira.SyncPlan, error) {
+		client := gira.NewGHSyncClient(repo, gira.ExecCommandRunner{})
+		plan, err := gira.BuildSyncPlan(client, gira.SyncPlanOptions{EnableBootstrapIssues: bootstrapIssues, PolicyMode: gira.SyncPolicyMerge})
+		if err != nil {
+			return gira.SyncPlan{}, err
+		}
+		if !dryRun {
+			if err := gira.ApplySyncPlan(client, plan); err != nil {
+				return gira.SyncPlan{}, err
+			}
+		}
+		return plan, nil
+	}
+	return gira.BuildWorkspaceSyncReport(resolved, syncer, dryRun, bootstrapIssues)
+}
+
+var newWorkspaceTicketNewReport = func(configPath string, title string, body string) (gira.WorkspaceTicketNewReport, error) {
+	resolved, err := gira.ResolveWorkspaceConfig(configPath)
+	if err != nil {
+		return gira.WorkspaceTicketNewReport{}, err
+	}
+	return gira.BuildWorkspaceTicketNewReport(resolved, gira.NewGHWorkspaceClient(gira.ExecCommandRunner{}), title, body)
+}
+
+var newWorkspaceTicketRouteReport = func(configPath string, ticketValue string, repo gira.RepoRef, dryRun bool) (gira.WorkspaceTicketRouteReport, error) {
+	resolved, err := gira.ResolveWorkspaceConfig(configPath)
+	if err != nil {
+		return gira.WorkspaceTicketRouteReport{}, err
+	}
+	ticket, err := gira.WorkspaceTicketNumber(ticketValue)
+	if err != nil {
+		return gira.WorkspaceTicketRouteReport{}, err
+	}
+	return gira.BuildWorkspaceTicketRouteReport(resolved, gira.NewGHWorkspaceClient(gira.ExecCommandRunner{}), ticket, repo, dryRun)
+}
+
+var newWorkspaceProjectPlanReport = func(configPath string) (gira.WorkspaceProjectPlanReport, error) {
+	resolved, err := gira.ResolveWorkspaceConfig(configPath)
+	if err != nil {
+		return gira.WorkspaceProjectPlanReport{}, err
+	}
+	builder := func(repo gira.RepoRef) (gira.ProjectSyncReport, error) {
+		return gira.BuildProjectSyncReportForClient(gira.NewGHProjectSyncClient(repo, gira.ExecCommandRunner{}), time.Now())
+	}
+	return gira.BuildWorkspaceProjectPlanReport(resolved, builder)
+}
+
 var newGraphClient = func(repo gira.RepoRef) gira.GraphClient {
 	return gira.NewGHGraphClient(repo, gira.ExecCommandRunner{})
 }
@@ -650,6 +734,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "init":
 		return runInit(args[1:], stdout, stderr)
+	case "workspace":
+		return runWorkspace(args[1:], stdout, stderr)
 	case "start":
 		return runTicketStart(args[1:], stdout, stderr)
 	case "ticket":
@@ -1821,6 +1907,275 @@ func runPortfolio(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, portfolioHelp)
 		return 2
 	}
+}
+
+func runWorkspace(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	switch args[0] {
+	case "status", "backlog":
+		return runWorkspaceStatus(args[0], args[1:], stdout, stderr)
+	case "sync":
+		return runWorkspaceSync(args[1:], stdout, stderr)
+	case "ticket":
+		return runWorkspaceTicket(args[1:], stdout, stderr)
+	case "project":
+		return runWorkspaceProject(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown workspace command: %s\n\n", args[0])
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+}
+
+func runWorkspaceStatus(command string, args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("workspace "+command, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	report, err := newWorkspaceStatusReport(*configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if command == "backlog" {
+		report.NextSteps = []string{"gira workspace status --config .gira/config.yaml"}
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode workspace JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatWorkspaceReport(report))
+	return 0
+}
+
+func runWorkspaceSync(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("workspace sync", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	dryRun := fs.Bool("dry-run", false, "Plan sync without mutation")
+	apply := fs.Bool("apply", false, "Apply workspace sync")
+	bootstrapIssues := fs.Bool("bootstrap-issues", false, "Enable bootstrap issue sync")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *dryRun == *apply {
+		fmt.Fprintf(stderr, "exactly one of --dry-run or --apply is required for workspace sync\n\n")
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	report, err := newWorkspaceSyncReport(*configPath, *dryRun, *bootstrapIssues)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode workspace sync JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatWorkspaceSyncReport(report))
+	return 0
+}
+
+func runWorkspaceTicket(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	switch args[0] {
+	case "new":
+		return runWorkspaceTicketNew(args[1:], stdout, stderr)
+	case "route":
+		return runWorkspaceTicketRoute(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown workspace ticket command: %s\n\n", args[0])
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+}
+
+func runWorkspaceTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("workspace ticket new", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	title := fs.String("title", "", "Ticket title")
+	body := fs.String("body", "", "Ticket body")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	report, err := newWorkspaceTicketNewReport(*configPath, *title, *body)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode workspace ticket JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatWorkspaceTicketNewReport(report))
+	return 0
+}
+
+func runWorkspaceTicketRoute(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("workspace ticket route", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	ticket := fs.String("ticket", "", "Inbox ticket number")
+	repoValue := fs.String("repo", "", "Target execution repo")
+	dryRun := fs.Bool("dry-run", false, "Plan route without mutation")
+	apply := fs.Bool("apply", false, "Apply route")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if strings.TrimSpace(*ticket) == "" || strings.TrimSpace(*repoValue) == "" || *dryRun == *apply {
+		fmt.Fprintf(stderr, "--ticket, --repo, and exactly one of --dry-run or --apply are required for workspace ticket route\n\n")
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newWorkspaceTicketRouteReport(*configPath, *ticket, repo, *dryRun)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode workspace route JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatWorkspaceTicketRouteReport(report))
+	return 0
+}
+
+func runWorkspaceProject(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	if args[0] != "plan" {
+		fmt.Fprintf(stderr, "unknown workspace project command: %s\n\n", args[0])
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("workspace project plan", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	report, err := newWorkspaceProjectPlanReport(*configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode workspace project JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprintf(stdout, "workspace project plan: %d repos inspected\nnext step: keep Projects v2 read-only until workspace overview is stable\n", len(report.Repos))
+	return 0
 }
 
 func runPortfolioCommand(command string, args []string, stdout io.Writer, stderr io.Writer) int {

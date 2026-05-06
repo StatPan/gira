@@ -12,8 +12,16 @@ import (
 
 type InitConfig struct {
 	Repo      string                 `yaml:"repo" toml:"repo" json:"repo"`
+	Workspace WorkspaceConfig        `yaml:"workspace" toml:"workspace" json:"workspace"`
 	Portfolio PortfolioConfig        `yaml:"portfolio" toml:"portfolio" json:"portfolio"`
 	Profiles  map[string]InitProfile `yaml:"profiles" toml:"profiles" json:"profiles"`
+}
+
+type WorkspaceConfig struct {
+	Name      string   `yaml:"name" toml:"name" json:"name"`
+	Owner     string   `yaml:"owner" toml:"owner" json:"owner"`
+	InboxRepo string   `yaml:"inbox_repo" toml:"inbox_repo" json:"inbox_repo"`
+	Repos     []string `yaml:"repos" toml:"repos" json:"repos"`
 }
 
 type PortfolioConfig struct {
@@ -61,6 +69,25 @@ func LoadInitConfig(path string) (InitConfig, error) {
 		if _, err := ParseRepoRef(cfg.Repo); err != nil {
 			return InitConfig{}, fmt.Errorf("invalid init config %q: repo must be in OWNER/REPO format", path)
 		}
+	}
+	if strings.TrimSpace(cfg.Workspace.InboxRepo) != "" {
+		if _, err := ParseRepoRef(cfg.Workspace.InboxRepo); err != nil {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: workspace.inbox_repo must be in OWNER/REPO format", path)
+		}
+	}
+	seenWorkspaceRepos := map[string]struct{}{}
+	for i, repoValue := range cfg.Workspace.Repos {
+		repoValue = strings.TrimSpace(repoValue)
+		if repoValue == "" {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: workspace.repos[%d] cannot be empty", path, i)
+		}
+		if _, err := ParseRepoRef(repoValue); err != nil {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: workspace.repos[%d] must be in OWNER/REPO format", path, i)
+		}
+		if _, ok := seenWorkspaceRepos[repoValue]; ok {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: workspace.repos contains duplicate repo %q", path, repoValue)
+		}
+		seenWorkspaceRepos[repoValue] = struct{}{}
 	}
 	if strings.TrimSpace(cfg.Portfolio.Repo) != "" {
 		if _, err := ParseRepoRef(cfg.Portfolio.Repo); err != nil {

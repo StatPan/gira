@@ -24,6 +24,12 @@ portfolio:
   repos:
     - StatPan/gira
     - StatPan/docs
+workspace:
+  name: personal
+  owner: StatPan
+  inbox_repo: StatPan/backlog
+  repos:
+    - StatPan/gira
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -40,6 +46,9 @@ portfolio:
 	}
 	if cfg.Portfolio.Repo != "StatPan/portfolio" || len(cfg.Portfolio.Repos) != 2 {
 		t.Fatalf("portfolio config = %+v, want repo and two execution repos", cfg.Portfolio)
+	}
+	if cfg.Workspace.InboxRepo != "StatPan/backlog" || len(cfg.Workspace.Repos) != 1 {
+		t.Fatalf("workspace config = %+v, want inbox repo and one execution repo", cfg.Workspace)
 	}
 }
 
@@ -103,6 +112,53 @@ portfolio:
 	}
 	if !strings.Contains(err.Error(), "portfolio.repo must be in OWNER/REPO format") {
 		t.Fatalf("expected actionable portfolio repo error, got: %v", err)
+	}
+}
+
+func TestLoadInitConfigInvalidWorkspaceRepo(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `profiles:
+  default:
+    labels: ["type:task"]
+workspace:
+  inbox_repo: bad-format
+  repos:
+    - StatPan/gira
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, err := LoadInitConfig(path)
+	if err == nil {
+		t.Fatal("expected error for invalid workspace inbox repo")
+	}
+	if !strings.Contains(err.Error(), "workspace.inbox_repo must be in OWNER/REPO format") {
+		t.Fatalf("expected actionable workspace repo error, got: %v", err)
+	}
+}
+
+func TestLoadInitConfigInvalidWorkspaceRepos(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `profiles:
+  default:
+    labels: ["type:task"]
+workspace:
+  inbox_repo: StatPan/backlog
+  repos:
+    - StatPan/gira
+    - bad-format
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, err := LoadInitConfig(path)
+	if err == nil {
+		t.Fatal("expected error for invalid workspace execution repo")
+	}
+	if !strings.Contains(err.Error(), "workspace.repos[1] must be in OWNER/REPO format") {
+		t.Fatalf("expected actionable workspace repos error, got: %v", err)
 	}
 }
 

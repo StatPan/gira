@@ -40,6 +40,9 @@ gira ops onboard verify --repo OWNER/REPO --stage steady-state
 Run the daily Jira-style ticket loop:
 
 ```bash
+gira workspace status --config .gira/config.yaml
+gira workspace ticket new --title "Capture product idea"
+gira workspace ticket route --ticket 12 --repo OWNER/REPO --dry-run
 gira status --repo OWNER/REPO
 gira ticket start --repo OWNER/REPO --ticket 12 --dry-run
 gira ticket start --repo OWNER/REPO --ticket 12 --apply
@@ -60,6 +63,7 @@ gira ticket status --repo OWNER/REPO --ticket 12 --json
 The Go-built `gira` binary is the sole product implementation. The default user experience is Jira-style ticket work backed by GitHub issues, PRs, labels, and milestones.
 
 - `gira ticket ...` is the daily issue -> branch -> PR workflow.
+- `gira workspace ...` is the Jira-like personal workspace and inbox layer for repo-agnostic backlog before work is routed to an execution repo.
 - `gira sprint ...`, `gira release`, and `gira status` are daily planning and reporting commands.
 - `gira ops ...` contains advanced setup, migration, policy, audit, and raw GitHub controls.
 - `gira start` and `gira work ...` remain compatibility aliases.
@@ -70,7 +74,9 @@ Gira keeps the user-facing workflow close to Jira while storing canonical state 
 
 | Jira concept | GitHub object | Gira behavior |
 | --- | --- | --- |
+| Workspace | GitHub account plus configured inbox and execution repos | A workspace groups repo-agnostic intake with one or more execution repos so personal backlog is visible before it is assigned to a repo. |
 | Project | Repository | A repo is the default execution space. Multi-repo work starts as a top-level ticket and is lowered into repo issues when ownership is clear. |
+| Backlog | Inbox repo issues plus repo issues | `gira workspace status` and `gira workspace backlog` show unrouted inbox tickets together with routed repo work. |
 | Epic | Parent or top-level issue | A milestone-sized outcome. Cross-repo epics coordinate child repo issues instead of becoming a separate database record. |
 | Story / Task / Bug | Issue | The main work packet. Type, priority, blocked, and status are represented with managed labels and issue metadata. |
 | Sprint | Milestone | `gira sprint` plans, starts, closes, and rolls over milestone-scoped work. |
@@ -82,6 +88,33 @@ Gira keeps the user-facing workflow close to Jira while storing canonical state 
 | Release | GitHub Release plus readiness report | `gira release readiness` checks whether issue, PR, review, and milestone evidence are ready for delivery. |
 
 GitHub Projects v2 boards, Web UI/TUI, chat bots, LLM decomposition, and Jira import/export are not v1 product workflows. They can be future integration layers, but v1 stays CLI-first on Issues, Labels, Milestones, PRs, and Releases.
+
+## Workspace Backlog
+
+For a single repo, `gira status --repo OWNER/REPO` is enough. For Jira-style intake that is not yet tied to a repository, configure a personal workspace:
+
+```yaml
+workspace:
+  name: personal
+  owner: OWNER
+  inbox_repo: OWNER/backlog
+  repos:
+    - OWNER/app
+    - OWNER/cli
+```
+
+The inbox repo is where repo-agnostic tickets live. Execution repos are where branch, PR, milestone, and release work happens.
+
+```bash
+gira workspace status --config .gira/config.yaml
+gira workspace backlog --config .gira/config.yaml
+gira workspace sync --dry-run --config .gira/config.yaml
+gira workspace ticket new --title "Define billing model" --config .gira/config.yaml
+gira workspace ticket route --ticket 12 --repo OWNER/app --dry-run --config .gira/config.yaml
+gira workspace ticket route --ticket 12 --repo OWNER/app --apply --config .gira/config.yaml
+```
+
+`workspace ticket new` creates an inbox ticket. `workspace ticket route` creates a repo execution issue and links it back to the inbox ticket. After routing, the normal loop continues with `gira ticket start`, `gira ticket pr`, and `gira ticket status` on the target repo.
 
 ## Install, Upgrade, and Remove
 
@@ -385,7 +418,7 @@ GIRA_INSTALL_DIR="${tmpdir}" GIRA_VERSION=v1.0.0 sh install.sh
 
 The release policy and package-manager channel details are documented in [docs/release-distribution.md](docs/release-distribution.md). Developer experience conventions for first-run onboarding, dry-run/apply output, JSON, recovery, and the issue-to-PR loop are documented in [docs/dx.md](docs/dx.md).
 
-The GitHub-native Product OS schema for future Projects v2 planning, roadmap date semantics, permission/secret model, and dry-run-first automation is documented in [docs/product-os-schema.md](docs/product-os-schema.md). The execution roadmap for that phase is tracked in [docs/product-os-roadmap.md](docs/product-os-roadmap.md). The Jira-vs-Gira operating boundary, work decomposition contract, and assistant/dev-agent split are documented in [docs/jira-gira-operating-boundary.md](docs/jira-gira-operating-boundary.md). The portfolio intake layer for top-level tickets and multi-repo lowering plans is documented in [docs/portfolio-intake.md](docs/portfolio-intake.md). The vendor-neutral dashboard/export boundary for Notion and other consumers is documented in [docs/dashboard-consumer-contract.md](docs/dashboard-consumer-contract.md), and the first concrete export bundle layout is documented in [docs/dashboard-export-artifacts.md](docs/dashboard-export-artifacts.md). The MVP CRUD support contract is documented in [docs/crud-capability-matrix.md](docs/crud-capability-matrix.md). Adoption on pre-configured repositories is documented in [docs/adoption-migration-playbook.md](docs/adoption-migration-playbook.md).
+The GitHub-native Product OS schema for future Projects v2 planning, roadmap date semantics, permission/secret model, and dry-run-first automation is documented in [docs/product-os-schema.md](docs/product-os-schema.md). The execution roadmap for that phase is tracked in [docs/product-os-roadmap.md](docs/product-os-roadmap.md). The Jira-vs-Gira operating boundary, work decomposition contract, and assistant/dev-agent split are documented in [docs/jira-gira-operating-boundary.md](docs/jira-gira-operating-boundary.md). The workspace backlog layer is documented in [docs/workspace.md](docs/workspace.md), and the older portfolio intake compatibility layer is documented in [docs/portfolio-intake.md](docs/portfolio-intake.md). The vendor-neutral dashboard/export boundary for Notion and other consumers is documented in [docs/dashboard-consumer-contract.md](docs/dashboard-consumer-contract.md), and the first concrete export bundle layout is documented in [docs/dashboard-export-artifacts.md](docs/dashboard-export-artifacts.md). The MVP CRUD support contract is documented in [docs/crud-capability-matrix.md](docs/crud-capability-matrix.md). Adoption on pre-configured repositories is documented in [docs/adoption-migration-playbook.md](docs/adoption-migration-playbook.md).
 
 This repository dogfoods Gira for its own work. The active operating loop, sprint commands, and maintainer handoff are documented in [docs/dogfood.md](docs/dogfood.md).
 

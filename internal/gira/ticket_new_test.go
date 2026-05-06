@@ -69,6 +69,18 @@ func TestTicketNewApplyCreatesIssue(t *testing.T) {
 	}
 }
 
+func TestTicketNewAllowsEpicType(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+
+	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Native adoption flow", Type: "epic", DryRun: true}, &ticketNewRunner{})
+	if err != nil {
+		t.Fatalf("BuildTicketNewReport error: %v", err)
+	}
+	if !containsString(report.Labels, "type:epic") {
+		t.Fatalf("labels missing type:epic: %+v", report.Labels)
+	}
+}
+
 func TestTicketNewApplyStartRunsStartWork(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &ticketNewRunner{outputs: map[string][]byte{
@@ -96,7 +108,7 @@ func TestTicketNewApplyStartRunsStartWork(t *testing.T) {
 
 func TestTicketNewRejectsInvalidTypeAndPriority(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	if _, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "x", Type: "epic", DryRun: true}, &ticketNewRunner{}); err == nil || !strings.Contains(err.Error(), "--type") {
+	if _, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "x", Type: "initiative", DryRun: true}, &ticketNewRunner{}); err == nil || !strings.Contains(err.Error(), "--type") {
 		t.Fatalf("expected type error, got %v", err)
 	}
 	if _, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "x", Type: "task", Priority: "high", DryRun: true}, &ticketNewRunner{}); err == nil || !strings.Contains(err.Error(), "--priority") {

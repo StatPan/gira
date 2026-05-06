@@ -6,5 +6,4 @@ workspace:
     - StatPan/gira
   project:
     owner: StatPan
-    number: 7
     title: Gira

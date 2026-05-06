@@ -4,6 +4,8 @@ Gira brings a Jira-style project workflow to GitHub, with Terraform-like plan/ap
 
 Name shorthand: **Gira: Jira-style project flow on GitHub.**
 
+Documentation: <https://gira.statpan.com>
+
 With Gira, GitHub remains the source of truth. Gira gives humans and agents a safer control plane over it:
 
 - `gira ... --dry-run` shows the plan before changing GitHub or repository files.
@@ -14,7 +16,7 @@ With Gira, GitHub remains the source of truth. Gira gives humans and agents a sa
 The core flow is:
 
 ```text
-init/readiness -> plan setup -> apply setup -> start ticket -> open PR -> verify status
+install -> auth -> init/readiness -> ticket -> PR -> checks -> finish
 ```
 
 ## Quick Start
@@ -76,10 +78,6 @@ gira ticket wait --timeout 5m
 gira ticket finish --dry-run
 gira ticket finish --apply
 gira ticket status
-gira epic status
-gira epic finish --dry-run
-gira epic finish --apply
-gira projects sync --config .gira/config.yaml --dry-run
 ```
 
 `gira ticket new` creates a repo-bound executable ticket. It writes a structured issue body from `--goal`, `--scope`, `--acceptance`, and `--notes`, applies `type:*` and `status:ready`, and can immediately start the branch with `--start`. `gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket pr`, `ticket checks`, `ticket wait`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
@@ -124,8 +122,9 @@ When an LLM or coding agent operates a Gira-managed repository, follow this orde
 
 ```bash
 # 1. Read current state.
+gh auth status
+gira init --repo OWNER/REPO --path . --dry-run
 gira status --repo OWNER/REPO
-gira projects sync --config .gira/config.yaml --dry-run
 
 # 2. Create and start a repo-bound ticket.
 gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --dry-run
@@ -146,10 +145,11 @@ gira ticket finish --apply
 
 # 6. Re-check the ticket and Project bridge.
 gira ticket status
-gira projects sync --config .gira/config.yaml --dry-run
 ```
 
 Use GitHub assignees for accountable humans. Use `agent:*` labels for the execution actor, for example `agent:human`, `agent:codex`, `agent:reviewer`, or `agent:gira`. `gira projects sync` mirrors that label into the Project planning field; it does not replace GitHub assignees.
+
+Advanced visibility commands such as `gira projects sync --config .gira/config.yaml --dry-run`, `gira epic status`, and `gira epic finish --dry-run` are useful after the first ticket loop is working.
 
 ## Command Model
 

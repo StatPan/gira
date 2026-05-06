@@ -68,8 +68,8 @@ const guideQuickstart = `Gira quickstart: first ticket to merged PR
    gh auth status
 
 2. Confirm repo state.
+   gira init --repo OWNER/REPO --path . --dry-run
    gira status
-   gira projects sync --config .gira/config.yaml --dry-run
 
 3. Create and start a ticket.
    gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --apply --start
@@ -88,10 +88,9 @@ const guideQuickstart = `Gira quickstart: first ticket to merged PR
    gira ticket finish --apply
    gira ticket status
 
-8. Finish an epic when its child issues are closed.
+8. Optional planning checks after the first loop works.
    gira epic status
    gira epic finish --dry-run
-   gira epic finish --apply
 `
 
 const guideTicket = `Gira ticket guide
@@ -127,6 +126,8 @@ Rules:
   Run tests before PR and before finish.
 
 Flow:
+  gh auth status
+  gira init --repo OWNER/REPO --path . --dry-run
   gira status
   gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply --start
   go test ./...
@@ -134,7 +135,6 @@ Flow:
   gira ticket checks
   gira ticket wait --timeout 5m
   gira ticket finish --apply
-  gira projects sync --config .gira/config.yaml --dry-run
 
 Do not:
   Do not call raw gh pr checks when gira ticket checks/wait exists.

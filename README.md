@@ -6,13 +6,13 @@ Name shorthand: **Gira: Jira-style project flow on GitHub.**
 
 ## Quick Start
 
-Install Gira:
+Install Gira from the official release installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 ```
 
-Or install through a package manager:
+Or install through a currently published package manager channel:
 
 ```bash
 pipx install gira-cli
@@ -21,7 +21,15 @@ brew tap StatPan/tap
 brew install gira
 ```
 
-Prepare a repository without changing it:
+Verify the binary before touching a repository:
+
+```bash
+gira --help
+gira version
+gh auth status
+```
+
+Prepare one repository without changing it:
 
 ```bash
 gira doctor --repo OWNER/REPO
@@ -37,19 +45,15 @@ gira ops sync --repo OWNER/REPO
 gira ops onboard verify --repo OWNER/REPO --stage steady-state
 ```
 
-Run the daily Jira-style ticket loop:
+Run the daily Jira-style ticket loop after an issue exists:
 
 ```bash
-gira workspace status --config .gira/config.yaml
-gira workspace ticket new --title "Capture product idea"
-gira workspace ticket route --ticket 12 --repo OWNER/REPO --dry-run
-gira projects sync --config .gira/config.yaml --dry-run
 gira status --repo OWNER/REPO
-gira ticket start --repo OWNER/REPO --ticket 12 --dry-run
-gira ticket start --repo OWNER/REPO --ticket 12 --apply
-gira ticket pr --repo OWNER/REPO --ticket 12 --dry-run
-gira ticket pr --repo OWNER/REPO --ticket 12 --apply --draft
-gira ticket status --repo OWNER/REPO --ticket 12
+gira ticket start --repo OWNER/REPO --ticket TICKET --dry-run
+gira ticket start --repo OWNER/REPO --ticket TICKET --apply
+gira ticket pr --repo OWNER/REPO --ticket TICKET --dry-run
+gira ticket pr --repo OWNER/REPO --ticket TICKET --apply --draft
+gira ticket status --repo OWNER/REPO --ticket TICKET
 ```
 
 Use `--json` for automation:
@@ -58,6 +62,33 @@ Use `--json` for automation:
 gira status --repo OWNER/REPO --json
 gira ticket status --repo OWNER/REPO --ticket 12 --json
 ```
+
+## LLM And Agent Runbook
+
+When an LLM or coding agent operates a Gira-managed repository, follow this order exactly. Do not skip dry-runs, do not use raw `gh` for product workflow steps when a `gira` command exists, and keep the PR body linked to the source issue with `Closes #TICKET`.
+
+```bash
+# 1. Read current state.
+gira status --repo OWNER/REPO
+gira projects sync --config .gira/config.yaml --dry-run
+
+# 2. Start from an existing GitHub issue.
+gira ticket start --repo OWNER/REPO --ticket TICKET --dry-run
+gira ticket start --repo OWNER/REPO --ticket TICKET --apply
+
+# 3. Implement the bounded issue scope, then verify locally.
+go test ./...
+
+# 4. Open or validate the PR through Gira.
+gira ticket pr --repo OWNER/REPO --ticket TICKET --dry-run
+gira ticket pr --repo OWNER/REPO --ticket TICKET --apply --draft
+
+# 5. Re-check the ticket and Project bridge.
+gira ticket status --repo OWNER/REPO --ticket TICKET
+gira projects sync --config .gira/config.yaml --dry-run
+```
+
+Use GitHub assignees for accountable humans. Use `agent:*` labels for the execution actor, for example `agent:human`, `agent:codex`, `agent:reviewer`, or `agent:gira`. `gira projects sync` mirrors that label into the Project planning field; it does not replace GitHub assignees.
 
 ## Command Model
 

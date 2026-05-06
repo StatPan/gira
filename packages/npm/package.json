@@ -2,6 +2,30 @@
   "name": "@statpan/gira",
   "version": "0.0.0-dev",
   "description": "Jira-style project flow on GitHub, distributed as the official Go-built gira binary.",
+  "keywords": [
+    "github",
+    "jira",
+    "cli",
+    "project-management",
+    "issues",
+    "pull-requests",
+    "workflow"
+  ],
+  "homepage": "https://github.com/StatPan/gira#readme",
+  "bugs": {
+    "url": "https://github.com/StatPan/gira/issues",
+    "email": "statpan@outlook.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/StatPan/gira.git",
+    "directory": "packages/npm"
+  },
+  "author": {
+    "name": "StatPan",
+    "email": "statpan@outlook.com",
+    "url": "https://github.com/StatPan"
+  },
   "license": "MIT",
   "bin": {
     "gira": "bin/gira.js"

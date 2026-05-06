@@ -10,14 +10,34 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 authors = [
-  { name = "StatPan" }
+  { name = "StatPan", email = "statpan@outlook.com" }
+]
+keywords = [
+  "github",
+  "jira",
+  "cli",
+  "project-management",
+  "issues",
+  "pull-requests",
+  "workflow",
 ]
 classifiers = [
   "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: Microsoft :: Windows",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
   "Topic :: Software Development :: Version Control :: Git",
+  "Topic :: Utilities",
 ]
+
+[project.urls]
+Homepage = "https://github.com/StatPan/gira#readme"
+Repository = "https://github.com/StatPan/gira"
+Issues = "https://github.com/StatPan/gira/issues"
+Changelog = "https://github.com/StatPan/gira/blob/main/CHANGELOG.md"
 
 [project.scripts]
 gira = "gira_cli:main"

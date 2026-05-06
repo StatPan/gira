@@ -250,6 +250,68 @@ func TestBuildProjectsSyncReportSkipsMatchingTargetDate(t *testing.T) {
 	}
 }
 
+func TestBuildProjectsSyncReportArchivesClosedProjectItems(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues: map[string][]ProjectsSyncIssue{
+			"StatPan/gira": {{Repo: "StatPan/gira", Number: 180, Title: "Open", URL: "https://github.com/StatPan/gira/issues/180", Labels: []string{"status:ready"}}},
+		},
+		items: []ProjectsSyncItem{
+			{ID: "item-180", Repo: "StatPan/gira", Number: 180, IssueState: "open", Status: "Todo"},
+			{ID: "item-199", Repo: "StatPan/gira", Number: 199, IssueState: "closed", Status: "Done"},
+		},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, true, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if report.Counts.ProjectItemsArchive != 1 || len(client.archived) != 0 {
+		t.Fatalf("dry-run archive counts/actions wrong: counts=%+v archived=%v", report.Counts, client.archived)
+	}
+	if !strings.Contains(FormatProjectsSyncReport(report), "project_item:archive") {
+		t.Fatalf("formatted report missing archive action:\n%s", FormatProjectsSyncReport(report))
+	}
+}
+
+func TestBuildProjectsSyncReportApplyArchivesClosedProjectItems(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues:      map[string][]ProjectsSyncIssue{"StatPan/gira": {}},
+		items:       []ProjectsSyncItem{{ID: "item-199", Repo: "StatPan/gira", Number: 199, IssueState: "closed", Status: "Done"}},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, false, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if report.Counts.ProjectItemsArchive != 1 || len(client.archived) != 1 || client.archived[0] != "item-199" {
+		t.Fatalf("apply archive wrong: counts=%+v archived=%v", report.Counts, client.archived)
+	}
+}
+
 func TestGHProjectsSyncClientProjectItemsGraphQLUsesSupportedPageSize(t *testing.T) {
 	runner := &recordingProjectsSyncRunner{output: []byte(`{"data":{"node":{"items":{"nodes":[]}}}}`)}
 	client := NewGHProjectsSyncClient(runner)
@@ -277,6 +339,7 @@ type fakeProjectsSyncClient struct {
 	linkedApplied  []string
 	createdFields  []ProjectsSyncFieldDef
 	added          []ProjectsSyncIssue
+	archived       []string
 	updated        []string
 	updatedDates   []string
 }
@@ -342,6 +405,11 @@ func (c *fakeProjectsSyncClient) CreateProjectField(owner string, number int, fi
 	id := "field-" + strings.ToLower(strings.ReplaceAll(field.Name, " ", "-"))
 	c.fields = append(c.fields, ProjectsSyncField{ID: id, Name: field.Name, Type: field.Type})
 	return id, nil
+}
+
+func (c *fakeProjectsSyncClient) ArchiveItem(owner string, number int, itemID string) error {
+	c.archived = append(c.archived, itemID)
+	return nil
 }
 
 func (c *fakeProjectsSyncClient) UpdateItemStatus(projectID string, itemID string, fieldID string, optionID string) error {

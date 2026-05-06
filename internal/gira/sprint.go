@@ -77,10 +77,12 @@ type SprintRolloverItem struct {
 	IssueNumber     int    `json:"issue_number"`
 	IssueTitle      string `json:"issue_title"`
 	FromMilestone   string `json:"from_milestone"`
+	LifecycleStatus string `json:"lifecycle_status,omitempty"`
 	CandidateReason string `json:"candidate_reason"`
 	Action          string `json:"action"`
 	SkipReason      string `json:"skip_reason,omitempty"`
 	TargetMilestone string `json:"target_milestone,omitempty"`
+	NextStep        string `json:"next_step,omitempty"`
 }
 
 func SprintStatePath(repo RepoRef) string {
@@ -223,8 +225,16 @@ func SprintRolloverForClient(client StatusClient, runner CommandRunner, toMilest
 		if reason == "" {
 			continue
 		}
-		item := SprintRolloverItem{IssueNumber: issue.Number, IssueTitle: issue.Title, FromMilestone: source.Title, CandidateReason: reason}
+		lifecycleStatus := statusFromLabels(issue.Labels)
+		item := SprintRolloverItem{IssueNumber: issue.Number, IssueTitle: issue.Title, FromMilestone: source.Title, LifecycleStatus: lifecycleStatus, CandidateReason: reason, NextStep: fmt.Sprintf("gira ticket status --repo %s --ticket %d", client.Repo().FullName(), issue.Number)}
 		report.Summary.Candidates++
+		if lifecycleStatus == "done" {
+			item.Action = "skipped"
+			item.SkipReason = "ticket already has status:done"
+			report.Summary.Skipped++
+			report.Items = append(report.Items, item)
+			continue
+		}
 		if target == nil {
 			item.Action = "skipped"
 			item.SkipReason = "no target open milestone"

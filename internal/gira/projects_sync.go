@@ -11,6 +11,8 @@ import (
 
 type ProjectsSyncClient interface {
 	Project(owner string, number int) (ProjectsSyncProject, error)
+	Projects(owner string) ([]ProjectsSyncProject, error)
+	LinkedProjects(repo RepoRef) ([]ProjectsSyncProject, error)
 	StatusField(owner string, number int) (ProjectsSyncStatusField, error)
 	RepoLinked(owner string, number int, repo RepoRef) (bool, error)
 	OpenIssues(repo RepoRef) ([]ProjectsSyncIssue, error)
@@ -114,6 +116,65 @@ func (c GHProjectsSyncClient) Project(owner string, number int) (ProjectsSyncPro
 	return ProjectsSyncProject{ID: raw.ID, Owner: raw.Owner.Login, Number: raw.Number, Title: raw.Title, URL: raw.URL}, nil
 }
 
+func (c GHProjectsSyncClient) Projects(owner string) ([]ProjectsSyncProject, error) {
+	output, err := c.runner.Run("gh", "project", "list", "--owner", owner, "--format", "json", "--limit", "100")
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Projects []struct {
+			ID     string `json:"id"`
+			Number int    `json:"number"`
+			Title  string `json:"title"`
+			URL    string `json:"url"`
+			Owner  struct {
+				Login string `json:"login"`
+			} `json:"owner"`
+		} `json:"projects"`
+	}
+	if err := json.Unmarshal(output, &payload); err != nil {
+		return nil, fmt.Errorf("parse project list JSON: %w", err)
+	}
+	projects := make([]ProjectsSyncProject, 0, len(payload.Projects))
+	for _, raw := range payload.Projects {
+		projects = append(projects, ProjectsSyncProject{ID: raw.ID, Owner: raw.Owner.Login, Number: raw.Number, Title: raw.Title, URL: raw.URL})
+	}
+	return projects, nil
+}
+
+func (c GHProjectsSyncClient) LinkedProjects(repo RepoRef) ([]ProjectsSyncProject, error) {
+	query := `query($o:String!,$n:String!){repository(owner:$o,name:$n){projectsV2(first:50){nodes{id number title url owner{... on User{login} ... on Organization{login}}}}}}`
+	output, err := c.runner.Run("gh", "api", "graphql", "-f", "query="+query, "-f", "o="+repo.Owner, "-f", "n="+repo.Name)
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Data struct {
+			Repository struct {
+				ProjectsV2 struct {
+					Nodes []struct {
+						ID     string `json:"id"`
+						Number int    `json:"number"`
+						Title  string `json:"title"`
+						URL    string `json:"url"`
+						Owner  struct {
+							Login string `json:"login"`
+						} `json:"owner"`
+					} `json:"nodes"`
+				} `json:"projectsV2"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(output, &payload); err != nil {
+		return nil, fmt.Errorf("parse linked projects JSON: %w", err)
+	}
+	projects := make([]ProjectsSyncProject, 0, len(payload.Data.Repository.ProjectsV2.Nodes))
+	for _, raw := range payload.Data.Repository.ProjectsV2.Nodes {
+		projects = append(projects, ProjectsSyncProject{ID: raw.ID, Owner: raw.Owner.Login, Number: raw.Number, Title: raw.Title, URL: raw.URL})
+	}
+	return projects, nil
+}
+
 func (c GHProjectsSyncClient) StatusField(owner string, number int) (ProjectsSyncStatusField, error) {
 	output, err := c.runner.Run("gh", "project", "field-list", strconv.Itoa(number), "--owner", owner, "--format", "json")
 	if err != nil {
@@ -146,30 +207,12 @@ func (c GHProjectsSyncClient) StatusField(owner string, number int) (ProjectsSyn
 }
 
 func (c GHProjectsSyncClient) RepoLinked(owner string, number int, repo RepoRef) (bool, error) {
-	query := `query($o:String!,$n:String!){repository(owner:$o,name:$n){projectsV2(first:50){nodes{number owner{... on User{login} ... on Organization{login}}}}}}`
-	output, err := c.runner.Run("gh", "api", "graphql", "-f", "query="+query, "-f", "o="+repo.Owner, "-f", "n="+repo.Name)
+	projects, err := c.LinkedProjects(repo)
 	if err != nil {
 		return false, err
 	}
-	var payload struct {
-		Data struct {
-			Repository struct {
-				ProjectsV2 struct {
-					Nodes []struct {
-						Number int `json:"number"`
-						Owner  struct {
-							Login string `json:"login"`
-						} `json:"owner"`
-					} `json:"nodes"`
-				} `json:"projectsV2"`
-			} `json:"repository"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(output, &payload); err != nil {
-		return false, fmt.Errorf("parse repository projects JSON: %w", err)
-	}
-	for _, project := range payload.Data.Repository.ProjectsV2.Nodes {
-		if project.Number == number && strings.EqualFold(project.Owner.Login, owner) {
+	for _, project := range projects {
+		if project.Number == number && strings.EqualFold(project.Owner, owner) {
 			return true, nil
 		}
 	}
@@ -252,21 +295,19 @@ func (c GHProjectsSyncClient) UpdateItemStatus(projectID string, itemID string, 
 }
 
 func BuildProjectsSyncReport(config WorkspaceConfigResolved, client ProjectsSyncClient, dryRun bool, fetchedAt time.Time) (ProjectsSyncReport, error) {
-	if strings.TrimSpace(config.Project.Owner) == "" || config.Project.Number <= 0 {
-		return ProjectsSyncReport{}, fmt.Errorf("workspace.project.owner and workspace.project.number are required")
+	projectOwner := strings.TrimSpace(config.Project.Owner)
+	if projectOwner == "" {
+		projectOwner = config.Owner
 	}
-	project, err := client.Project(config.Project.Owner, config.Project.Number)
+	project, err := resolveProjectsSyncProject(config, client, projectOwner)
 	if err != nil {
 		return ProjectsSyncReport{}, err
 	}
-	if strings.TrimSpace(config.Project.Title) != "" && project.Title != "" && !strings.EqualFold(config.Project.Title, project.Title) {
-		return ProjectsSyncReport{}, fmt.Errorf("workspace.project.title %q does not match GitHub project %q", config.Project.Title, project.Title)
-	}
-	statusField, err := client.StatusField(config.Project.Owner, config.Project.Number)
+	statusField, err := client.StatusField(project.Owner, project.Number)
 	if err != nil {
 		return ProjectsSyncReport{}, err
 	}
-	items, err := client.ProjectItems(config.Project.Owner, config.Project.Number)
+	items, err := client.ProjectItems(project.Owner, project.Number)
 	if err != nil {
 		return ProjectsSyncReport{}, err
 	}
@@ -286,14 +327,14 @@ func BuildProjectsSyncReport(config WorkspaceConfigResolved, client ProjectsSync
 	repos := uniqueProjectRepos(config)
 	for _, repo := range repos {
 		report.Repos = append(report.Repos, repo.FullName())
-		linked, err := client.RepoLinked(config.Project.Owner, config.Project.Number, repo)
+		linked, err := client.RepoLinked(project.Owner, project.Number, repo)
 		if err != nil {
 			return ProjectsSyncReport{}, err
 		}
 		if !linked {
 			action := ProjectsSyncAction{Action: "project_repo:link", Repo: repo.FullName(), Status: actionStatus(dryRun), Reason: "project is not linked to repository"}
 			if !dryRun {
-				if err := client.LinkRepo(config.Project.Owner, config.Project.Number, repo); err != nil {
+				if err := client.LinkRepo(project.Owner, project.Number, repo); err != nil {
 					return ProjectsSyncReport{}, err
 				}
 				action.Status = "applied"
@@ -313,7 +354,7 @@ func BuildProjectsSyncReport(config WorkspaceConfigResolved, client ProjectsSync
 			if !exists {
 				action := ProjectsSyncAction{Action: "project_item:add", Repo: issue.Repo, Issue: issue.Number, ToStatus: desiredProjectStatus(issue.Labels), Status: actionStatus(dryRun), Reason: "issue is not in project"}
 				if !dryRun {
-					itemID, err := client.AddItem(config.Project.Owner, config.Project.Number, issue)
+					itemID, err := client.AddItem(project.Owner, project.Number, issue)
 					if err != nil {
 						return ProjectsSyncReport{}, err
 					}
@@ -359,6 +400,68 @@ func BuildProjectsSyncReport(config WorkspaceConfigResolved, client ProjectsSync
 		report.NextSteps = []string{"gira projects sync --config .gira/config.yaml --dry-run"}
 	}
 	return report, nil
+}
+
+func resolveProjectsSyncProject(config WorkspaceConfigResolved, client ProjectsSyncClient, owner string) (ProjectsSyncProject, error) {
+	if strings.TrimSpace(owner) == "" {
+		return ProjectsSyncProject{}, fmt.Errorf("workspace.project.owner is required when workspace owner cannot be inferred")
+	}
+	if config.Project.Number > 0 {
+		project, err := client.Project(owner, config.Project.Number)
+		if err != nil {
+			return ProjectsSyncProject{}, err
+		}
+		if strings.TrimSpace(config.Project.Title) != "" && project.Title != "" && !strings.EqualFold(config.Project.Title, project.Title) {
+			return ProjectsSyncProject{}, fmt.Errorf("workspace.project.title %q does not match GitHub project %q", config.Project.Title, project.Title)
+		}
+		return project, nil
+	}
+	if strings.TrimSpace(config.Project.Title) != "" {
+		projects, err := client.Projects(owner)
+		if err != nil {
+			return ProjectsSyncProject{}, err
+		}
+		var matches []ProjectsSyncProject
+		for _, project := range projects {
+			if strings.EqualFold(project.Title, config.Project.Title) {
+				matches = append(matches, project)
+			}
+		}
+		if len(matches) == 1 {
+			return matches[0], nil
+		}
+		if len(matches) > 1 {
+			return ProjectsSyncProject{}, fmt.Errorf("workspace.project.title %q is ambiguous for owner %s", config.Project.Title, owner)
+		}
+		return ProjectsSyncProject{}, fmt.Errorf("workspace.project.title %q was not found for owner %s", config.Project.Title, owner)
+	}
+	return inferLinkedProjectsSyncProject(config, client, owner)
+}
+
+func inferLinkedProjectsSyncProject(config WorkspaceConfigResolved, client ProjectsSyncClient, owner string) (ProjectsSyncProject, error) {
+	projectsByKey := map[string]ProjectsSyncProject{}
+	for _, repo := range uniqueProjectRepos(config) {
+		projects, err := client.LinkedProjects(repo)
+		if err != nil {
+			return ProjectsSyncProject{}, err
+		}
+		for _, project := range projects {
+			if !strings.EqualFold(project.Owner, owner) {
+				continue
+			}
+			key := strings.ToLower(project.Owner) + "#" + strconv.Itoa(project.Number)
+			projectsByKey[key] = project
+		}
+	}
+	if len(projectsByKey) == 1 {
+		for _, project := range projectsByKey {
+			return project, nil
+		}
+	}
+	if len(projectsByKey) == 0 {
+		return ProjectsSyncProject{}, fmt.Errorf("workspace.project.title is required because no linked GitHub Project was found")
+	}
+	return ProjectsSyncProject{}, fmt.Errorf("workspace.project.title is required because multiple linked GitHub Projects were found")
 }
 
 func FormatProjectsSyncReport(report ProjectsSyncReport) string {

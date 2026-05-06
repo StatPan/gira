@@ -23,13 +23,12 @@ workspace:
     - OWNER/cli
   project:
     owner: OWNER
-    number: 7
     title: Gira
 ```
 
 `workspace.inbox_repo` is required. It may be a private personal repo if the backlog should not appear inside any execution repo. `workspace.repos` is the explicit allowlist of repositories that can receive routed execution issues.
 
-`workspace.project` points to an existing GitHub Projects v2 board. Gira does not create the Project in this slice; it syncs configured repo issues into that Project so the GitHub Projects tab stays visible without manual `gh project` commands.
+`workspace.project` points to an existing GitHub Projects v2 board by user-facing title. Gira does not create the Project in this slice; it syncs configured repo issues into that Project so the GitHub Projects tab stays visible without manual `gh project` commands. `number` is supported only as an advanced fallback when titles are ambiguous.
 
 The older `portfolio` config remains a compatibility alias, but new docs should use `workspace` because it matches the intended Jira-like user model.
 

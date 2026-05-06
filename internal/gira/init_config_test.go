@@ -32,7 +32,6 @@ workspace:
     - StatPan/gira
   project:
     owner: StatPan
-    number: 7
     title: Gira
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -54,7 +53,7 @@ workspace:
 	if cfg.Workspace.InboxRepo != "StatPan/backlog" || len(cfg.Workspace.Repos) != 1 {
 		t.Fatalf("workspace config = %+v, want inbox repo and one execution repo", cfg.Workspace)
 	}
-	if cfg.Workspace.Project.Owner != "StatPan" || cfg.Workspace.Project.Number != 7 {
+	if cfg.Workspace.Project.Owner != "StatPan" || cfg.Workspace.Project.Title != "Gira" {
 		t.Fatalf("workspace project config = %+v", cfg.Workspace.Project)
 	}
 }
@@ -181,7 +180,7 @@ workspace:
     - StatPan/gira
   project:
     owner: StatPan
-    number: 0
+    number: -1
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -190,7 +189,7 @@ workspace:
 	if err == nil {
 		t.Fatal("expected error for invalid workspace project")
 	}
-	if !strings.Contains(err.Error(), "workspace.project.number must be > 0") {
+	if !strings.Contains(err.Error(), "workspace.project.number must be >= 0") {
 		t.Fatalf("expected actionable workspace project error, got: %v", err)
 	}
 }

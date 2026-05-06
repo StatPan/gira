@@ -126,6 +126,9 @@ gira ticket wait --timeout 5m
 gira ticket finish --dry-run
 gira ticket finish --apply
 gira ticket status --json
+gira epic status
+gira epic finish --dry-run
+gira epic finish --apply
 ```
 
 Expected behavior:
@@ -137,5 +140,7 @@ Expected behavior:
 - `ticket wait` waits for pending linked PR checks and reports the remaining blockers or finish command.
 - `ticket finish --apply` marks a linked draft PR ready when needed, refuses failing checks or missing review, merges when safe, and reports final convergence.
 - `ticket status` shows linked PR state, checks, review blockers, current issue status, and the next suggested command.
+- `epic status` resolves an epic by context, title, slug, milestone, or sole open epic and reports child readiness.
+- `epic finish --apply` refuses open child issues, normalizes status labels, and closes the epic without requiring raw `gh issue close`.
 
 This keeps advanced adoption commands such as `gira ops sync --policy-mode adopt|merge|enforce` available for migrations while making daily Jira-style work feel like one coherent ticket lifecycle.

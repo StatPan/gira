@@ -74,12 +74,17 @@ gira ticket wait --timeout 5m
 gira ticket finish --dry-run
 gira ticket finish --apply
 gira ticket status
+gira epic status
+gira epic finish --dry-run
+gira epic finish --apply
 gira projects sync --config .gira/config.yaml --dry-run
 ```
 
 `gira ticket new` creates a repo-bound executable ticket. It writes a structured issue body from `--goal`, `--scope`, `--acceptance`, and `--notes`, applies `type:*` and `status:ready`, and can immediately start the branch with `--start`. `gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket pr`, `ticket checks`, `ticket wait`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
 
 You can open and merge a pull request with `gh pr create` and `gh pr merge`, but `gira ticket pr`, `gira ticket checks`, `gira ticket wait`, and `gira ticket finish` keep the ticket lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, wait for pending checks, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
+
+`gira epic status` and `gira epic finish` close the larger planning loop without requiring raw `gh issue close`. Gira can resolve an epic from the current `issue-N-*` branch, `--title`, `--slug`, `--milestone`, or a sole open `type:epic`; `--ticket N` remains the explicit fallback. `epic finish --apply` refuses to close while child issues are still open, then normalizes active status labels and closes the epic through GitHub.
 
 ## Ticket Flow Cases
 
@@ -183,7 +188,7 @@ Gira keeps the user-facing workflow close to Jira while storing canonical state 
 | Workspace | GitHub account plus configured inbox and execution repos | A workspace groups repo-agnostic intake with one or more execution repos so personal backlog is visible before it is assigned to a repo. |
 | Project | Repository | A repo is the default execution space. Multi-repo work starts as a top-level ticket and is lowered into repo issues when ownership is clear. |
 | Backlog | Inbox repo issues plus repo issues | `gira workspace status` and `gira workspace backlog` show unrouted inbox tickets together with routed repo work. |
-| Epic | Parent or top-level issue | A milestone-sized outcome. Cross-repo epics coordinate child repo issues instead of becoming a separate database record. |
+| Epic | Parent or top-level issue | A milestone-sized outcome. `gira epic status` and `gira epic finish` inspect and close epics without requiring the issue number when branch, title, slug, milestone, or repo context is enough. |
 | Story / Task / Bug | Issue | The main work packet. Type, priority, blocked, and status are represented with managed labels and issue metadata. |
 | Sprint | Milestone | `gira sprint` plans, starts, closes, and rolls over milestone-scoped work. |
 | Status | Labels plus PR evidence | Gira reads and updates status labels, then cross-checks branch, PR, review, and check state. |

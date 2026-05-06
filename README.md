@@ -66,15 +66,17 @@ go test ./...
 
 gira ticket pr --dry-run
 gira ticket pr --apply --draft
+gira ticket checks
+gira ticket wait --timeout 5m
 gira ticket finish --dry-run
 gira ticket finish --apply
 gira ticket status
 gira projects sync --config .gira/config.yaml --dry-run
 ```
 
-`gira ticket new` creates a repo-bound executable ticket. It writes a structured issue body from `--goal`, `--scope`, `--acceptance`, and `--notes`, applies `type:*` and `status:ready`, and can immediately start the branch with `--start`. `gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket pr`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
+`gira ticket new` creates a repo-bound executable ticket. It writes a structured issue body from `--goal`, `--scope`, `--acceptance`, and `--notes`, applies `type:*` and `status:ready`, and can immediately start the branch with `--start`. `gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket pr`, `ticket checks`, `ticket wait`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
 
-You can open and merge a pull request with `gh pr create` and `gh pr merge`, but `gira ticket pr` and `gira ticket finish` keep the ticket lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
+You can open and merge a pull request with `gh pr create` and `gh pr merge`, but `gira ticket pr`, `gira ticket checks`, `gira ticket wait`, and `gira ticket finish` keep the ticket lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, wait for pending checks, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
 
 ## Ticket Flow Cases
 
@@ -92,6 +94,8 @@ If the GitHub issue already exists, start from that ticket number once. After Gi
 ```bash
 gira ticket start 42 --apply
 gira ticket pr --apply --draft
+gira ticket checks
+gira ticket wait --timeout 5m
 gira ticket finish --apply
 ```
 
@@ -125,6 +129,8 @@ gira ticket pr --dry-run
 gira ticket pr --apply --draft
 
 # 5. Finish through Gira after review and checks are ready.
+gira ticket checks
+gira ticket wait --timeout 5m
 gira ticket finish --dry-run
 gira ticket finish --apply
 

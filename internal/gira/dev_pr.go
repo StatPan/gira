@@ -18,14 +18,24 @@ type DevPROpenResult struct {
 }
 
 type DevPRStatusResult struct {
-	Repo      string   `json:"repo"`
-	Issue     int      `json:"issue"`
-	PRNumber  int      `json:"pr_number,omitempty"`
-	PRURL     string   `json:"pr_url,omitempty"`
-	State     string   `json:"state,omitempty"`
-	Mergeable string   `json:"mergeable,omitempty"`
-	Blockers  []string `json:"blockers"`
-	Ready     bool     `json:"ready"`
+	Repo      string       `json:"repo"`
+	Issue     int          `json:"issue"`
+	PRNumber  int          `json:"pr_number,omitempty"`
+	PRURL     string       `json:"pr_url,omitempty"`
+	State     string       `json:"state,omitempty"`
+	Mergeable string       `json:"mergeable,omitempty"`
+	Blockers  []string     `json:"blockers"`
+	Checks    []DevPRCheck `json:"checks,omitempty"`
+	Ready     bool         `json:"ready"`
+}
+
+type DevPRCheck struct {
+	Name       string `json:"name,omitempty"`
+	Workflow   string `json:"workflow,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Conclusion string `json:"conclusion,omitempty"`
+	URL        string `json:"url,omitempty"`
+	State      string `json:"state"`
 }
 
 type prSummary struct {
@@ -38,8 +48,11 @@ type prSummary struct {
 	IsDraft        bool   `json:"isDraft"`
 	MergeState     string `json:"mergeStateStatus"`
 	StatusRollup   []struct {
+		Name       string `json:"name"`
+		Workflow   string `json:"workflowName"`
 		Conclusion string `json:"conclusion"`
 		Status     string `json:"status"`
+		URL        string `json:"detailsUrl"`
 	} `json:"statusCheckRollup"`
 }
 
@@ -97,6 +110,7 @@ func DevPRStatus(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStat
 				result.Blockers = append(result.Blockers, "review")
 			}
 			for _, check := range pr.StatusRollup {
+				result.Checks = append(result.Checks, DevPRCheck{Name: check.Name, Workflow: check.Workflow, Status: check.Status, Conclusion: check.Conclusion, URL: check.URL, State: classifyDevPRCheck(check.Status, check.Conclusion)})
 				if strings.EqualFold(check.Conclusion, "failure") || strings.EqualFold(check.Conclusion, "cancelled") || strings.EqualFold(check.Conclusion, "timed_out") {
 					result.Blockers = append(result.Blockers, "checks")
 					break
@@ -114,6 +128,22 @@ func DevPRStatus(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStat
 	}
 	result.Ready = len(result.Blockers) == 0
 	return result, nil
+}
+
+func classifyDevPRCheck(status string, conclusion string) string {
+	if strings.EqualFold(conclusion, "failure") || strings.EqualFold(conclusion, "cancelled") || strings.EqualFold(conclusion, "timed_out") {
+		return "failing"
+	}
+	if strings.EqualFold(status, "in_progress") || strings.EqualFold(status, "queued") || strings.EqualFold(status, "pending") {
+		return "pending"
+	}
+	if strings.EqualFold(conclusion, "success") || strings.EqualFold(conclusion, "neutral") || strings.EqualFold(conclusion, "skipped") {
+		return "passing"
+	}
+	if strings.EqualFold(status, "completed") && strings.TrimSpace(conclusion) == "" {
+		return "passing"
+	}
+	return "unknown"
 }
 
 func hasClosingKeyword(body string, issueNumber int) bool {

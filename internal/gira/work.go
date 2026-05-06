@@ -169,7 +169,13 @@ func GetWorkStatus(repo RepoRef, issueNumber int, runner CommandRunner) (WorkSta
 		return WorkStatusResult{}, err
 	}
 	status := displayStatus(managedStatusFromLabels(issue.Labels))
-	nextAction := nextWorkAction(status, prStatus)
+	nextAction := nextWorkAction(issue.State, status, prStatus)
+	if nextAction == "done" {
+		status = "Done"
+	} else if nextAction == "closed" && (status == "" || status == "null") {
+		status = "Closed"
+		prStatus.Blockers = nil
+	}
 	result := WorkStatusResult{
 		Repo:       repo.FullName(),
 		Issue:      issueNumber,
@@ -201,7 +207,13 @@ func statusLabelForDraft(draft bool) string {
 	return "status:in-review"
 }
 
-func nextWorkAction(status string, pr DevPRStatusResult) string {
+func nextWorkAction(issueState string, status string, pr DevPRStatusResult) string {
+	if strings.EqualFold(pr.State, "MERGED") {
+		return "done"
+	}
+	if strings.EqualFold(issueState, "closed") {
+		return "closed"
+	}
 	if pr.PRNumber == 0 {
 		if status == "Ready" {
 			return "start_work"
@@ -290,6 +302,10 @@ func workStatusNextStep(result WorkStatusResult) string {
 		return "wait for required checks to finish or fix failing checks"
 	case "merge_when_policy_allows":
 		return "merge when policy checks pass"
+	case "done":
+		return "ticket is done"
+	case "closed":
+		return "ticket is closed; inspect GitHub history if more evidence is needed"
 	default:
 		return fmt.Sprintf("gira status --repo %s", result.Repo)
 	}

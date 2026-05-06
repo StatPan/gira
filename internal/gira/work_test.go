@@ -117,8 +117,8 @@ func TestOpenWorkPRApplyDraftKeepsInProgress(t *testing.T) {
 	issueJSON := []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`)
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": issueJSON,
-		"gh pr list --repo StatPan/gira --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
-		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126 --draft":                                                                                      []byte("https://github.com/StatPan/gira/pull/200\n"),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
+		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126 --draft":                                                                                                  []byte("https://github.com/StatPan/gira/pull/200\n"),
 	}}
 
 	result, err := OpenWorkPR(repo, 126, false, true, runner)
@@ -135,10 +135,10 @@ func TestOpenWorkPRApplyNonDraftMovesInReview(t *testing.T) {
 	issueJSON := []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`)
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": issueJSON,
-		"gh pr list --repo StatPan/gira --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
-		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126":                                                                                              []byte("https://github.com/StatPan/gira/pull/201\n"),
-		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                                                                                                    nil,
-		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":                                                                                            nil,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
+		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126":                                                                                                          []byte("https://github.com/StatPan/gira/pull/201\n"),
+		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                                                                                                                nil,
+		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":                                                                                                        nil,
 	}}
 
 	result, err := OpenWorkPR(repo, 126, false, false, runner)
@@ -154,7 +154,7 @@ func TestOpenWorkPRDryRunReportsMissingLinkedPR(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
-		"gh pr list --repo StatPan/gira --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
 	}}
 
 	result, err := OpenWorkPR(repo, 126, true, false, runner)
@@ -173,9 +173,9 @@ func TestOpenWorkPRApplyReusesExistingLinkedPR(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
-		"gh pr list --repo StatPan/gira --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[{"number":202,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/202","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
-		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                                                                                                    nil,
-		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":                                                                                            nil,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[{"number":202,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/202","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
+		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                                                                                                                nil,
+		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":                                                                                                        nil,
 	}}
 
 	result, err := OpenWorkPR(repo, 126, false, false, runner)
@@ -196,9 +196,9 @@ func TestOpenWorkPRApplyDraftFlagReusesExistingNonDraftPR(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
-		"gh pr list --repo StatPan/gira --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[{"number":202,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/202","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
-		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                                                                                                    nil,
-		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":                                                                                            nil,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[{"number":202,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/202","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
+		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                                                                                                                nil,
+		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":                                                                                                        nil,
 	}}
 
 	result, err := OpenWorkPR(repo, 126, false, true, runner)
@@ -219,7 +219,7 @@ func TestOpenWorkPRExistingDraftStaysInProgress(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`),
-		"gh pr list --repo StatPan/gira --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[{"number":202,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/202","reviewDecision":"","isDraft":true,"mergeStateStatus":"UNKNOWN","statusCheckRollup":[]}]`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[{"number":202,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/202","reviewDecision":"","isDraft":true,"mergeStateStatus":"UNKNOWN","statusCheckRollup":[]}]`),
 		"gh api repos/StatPan/gira/issues/126/labels/status:ready -X DELETE":                 nil,
 		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-progress": nil,
 	}}
@@ -240,7 +240,7 @@ func TestGetWorkStatusReportsNextAction(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
-		"gh pr list --repo StatPan/gira --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[{"number":203,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/203","reviewDecision":"","isDraft":true,"mergeStateStatus":"UNKNOWN","statusCheckRollup":[]}]`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[{"number":203,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/203","reviewDecision":"","isDraft":true,"mergeStateStatus":"UNKNOWN","statusCheckRollup":[]}]`),
 	}}
 
 	result, err := GetWorkStatus(repo, 126, runner)
@@ -256,7 +256,7 @@ func TestGetWorkStatusReadyWithoutPRSuggestsStartWork(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`),
-		"gh pr list --repo StatPan/gira --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
 	}}
 
 	result, err := GetWorkStatus(repo, 126, runner)
@@ -265,6 +265,44 @@ func TestGetWorkStatusReadyWithoutPRSuggestsStartWork(t *testing.T) {
 	}
 	if result.NextAction != "start_work" {
 		t.Fatalf("next action = %q", result.NextAction)
+	}
+}
+
+func TestGetWorkStatusClosedIssueWithMergedPRReportsDone(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/184": []byte(`{"number":184,"title":"Workspace backlog","state":"closed","labels":[{"name":"type:story"}]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 184 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[{"number":185,"title":"x","body":"Closes #184","state":"MERGED","url":"https://github.com/StatPan/gira/pull/185","reviewDecision":"","isDraft":false,"mergeStateStatus":"UNKNOWN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+	}}
+
+	result, err := GetWorkStatus(repo, 184, runner)
+	if err != nil {
+		t.Fatalf("GetWorkStatus error: %v", err)
+	}
+	if result.NextAction != "done" || result.Status != "Done" || result.PRNumber != 185 {
+		t.Fatalf("expected done merged PR status, got %+v", result)
+	}
+	if got := workStatusNextStep(result); got != "ticket is done" {
+		t.Fatalf("next step = %q", got)
+	}
+}
+
+func TestGetWorkStatusClosedIssueWithoutPRDoesNotSuggestStart(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/188": []byte(`{"number":188,"title":"Closed manually","state":"closed","labels":[]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 188 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
+	}}
+
+	result, err := GetWorkStatus(repo, 188, runner)
+	if err != nil {
+		t.Fatalf("GetWorkStatus error: %v", err)
+	}
+	if result.NextAction != "closed" || result.Status != "Closed" {
+		t.Fatalf("expected closed next action, got %+v", result)
+	}
+	if strings.Contains(workStatusNextStep(result), "work start") {
+		t.Fatalf("closed ticket should not suggest work start: %+v", result)
 	}
 }
 

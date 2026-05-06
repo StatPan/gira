@@ -1,0 +1,297 @@
+package gira
+
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+type AdoptIssueInput struct {
+	Repo      RepoRef  `json:"repo"`
+	Issues    []int    `json:"issues,omitempty"`
+	Milestone string   `json:"milestone,omitempty"`
+	Labels    []string `json:"labels,omitempty"`
+	State     string   `json:"state,omitempty"`
+	DryRun    bool     `json:"dry_run"`
+	Apply     bool     `json:"apply"`
+}
+
+type AdoptIssuesReport struct {
+	Repo     string              `json:"repo"`
+	DryRun   bool                `json:"dry_run"`
+	Apply    bool                `json:"apply"`
+	State    string              `json:"state"`
+	Counts   AdoptIssuesCounts   `json:"counts"`
+	Unmapped []AdoptIssueItem    `json:"unmapped,omitempty"`
+	Actions  []AdoptIssuesAction `json:"actions,omitempty"`
+	NextStep string              `json:"next_step"`
+}
+
+type AdoptIssuesCounts struct {
+	Scanned       int `json:"scanned"`
+	Unmapped      int `json:"unmapped"`
+	Selected      int `json:"selected"`
+	WouldUpdate   int `json:"would_update"`
+	AppliedUpdate int `json:"applied_update"`
+}
+
+type AdoptIssueItem struct {
+	Number    int      `json:"number"`
+	Title     string   `json:"title"`
+	State     string   `json:"state"`
+	Labels    []string `json:"labels,omitempty"`
+	Milestone string   `json:"milestone,omitempty"`
+	URL       string   `json:"url,omitempty"`
+	Reasons   []string `json:"reasons"`
+}
+
+type AdoptIssuesAction struct {
+	Issue     int      `json:"issue"`
+	Title     string   `json:"title"`
+	Action    string   `json:"action"`
+	Status    string   `json:"status"`
+	Milestone string   `json:"milestone,omitempty"`
+	Labels    []string `json:"labels,omitempty"`
+	Reason    string   `json:"reason"`
+}
+
+type adoptRawIssue struct {
+	Number      int       `json:"number"`
+	Title       string    `json:"title"`
+	State       string    `json:"state"`
+	HTMLURL     string    `json:"html_url"`
+	PullRequest *struct{} `json:"pull_request"`
+	Labels      []struct {
+		Name string `json:"name"`
+	} `json:"labels"`
+	Milestone *struct {
+		Title string `json:"title"`
+	} `json:"milestone"`
+}
+
+func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptIssuesReport, error) {
+	if runner == nil {
+		runner = ExecCommandRunner{}
+	}
+	if input.DryRun == input.Apply {
+		return AdoptIssuesReport{}, fmt.Errorf("exactly one of --dry-run or --apply is required")
+	}
+	state := strings.ToLower(strings.TrimSpace(input.State))
+	if state == "" {
+		state = "open"
+	}
+	if state != "open" && state != "all" {
+		return AdoptIssuesReport{}, fmt.Errorf("--state must be one of open, all")
+	}
+	issues, err := fetchAdoptIssues(input.Repo, state, runner)
+	if err != nil {
+		return AdoptIssuesReport{}, err
+	}
+	report := AdoptIssuesReport{Repo: input.Repo.FullName(), DryRun: input.DryRun, Apply: input.Apply, State: state}
+	report.Counts.Scanned = len(issues)
+	for _, issue := range issues {
+		item, unmapped := adoptIssueItem(issue)
+		if unmapped {
+			report.Unmapped = append(report.Unmapped, item)
+		}
+	}
+	report.Counts.Unmapped = len(report.Unmapped)
+
+	selected := map[int]struct{}{}
+	for _, issueNumber := range input.Issues {
+		if issueNumber <= 0 {
+			return report, fmt.Errorf("--issue values must be > 0")
+		}
+		selected[issueNumber] = struct{}{}
+	}
+	if len(selected) == 0 {
+		report.NextStep = fmt.Sprintf("gira adopt issues --repo %s --issue N --milestone TITLE --label type:task --dry-run", input.Repo.FullName())
+		return report, nil
+	}
+	if strings.TrimSpace(input.Milestone) == "" && len(normalizeAdoptLabels(input.Labels)) == 0 {
+		return report, fmt.Errorf("--milestone or --label is required when --issue is provided")
+	}
+	byNumber := map[int]AdoptIssueItem{}
+	for _, issue := range issues {
+		item, _ := adoptIssueItem(issue)
+		byNumber[item.Number] = item
+	}
+	labels := normalizeAdoptLabels(input.Labels)
+	for issueNumber := range selected {
+		item, ok := byNumber[issueNumber]
+		if !ok {
+			return report, fmt.Errorf("issue #%d was not found in %s issues", issueNumber, state)
+		}
+		action := AdoptIssuesAction{Issue: item.Number, Title: item.Title, Action: "issue:update", Status: "planned", Milestone: strings.TrimSpace(input.Milestone), Labels: labels, Reason: "explicit issue adoption mapping"}
+		if input.Apply {
+			if err := applyAdoptIssue(input.Repo, action, runner); err != nil {
+				return report, err
+			}
+			action.Status = "applied"
+			report.Counts.AppliedUpdate++
+		} else {
+			report.Counts.WouldUpdate++
+		}
+		report.Actions = append(report.Actions, action)
+	}
+	sort.Slice(report.Actions, func(i, j int) bool { return report.Actions[i].Issue < report.Actions[j].Issue })
+	report.Counts.Selected = len(report.Actions)
+	if input.DryRun {
+		report.NextStep = fmt.Sprintf("gira adopt issues --repo %s --issue %s", input.Repo.FullName(), joinIssueNumbers(input.Issues))
+		if strings.TrimSpace(input.Milestone) != "" {
+			report.NextStep += " --milestone " + shellQuote(input.Milestone)
+		}
+		for _, label := range labels {
+			report.NextStep += " --label " + shellQuote(label)
+		}
+		report.NextStep += " --apply"
+	} else {
+		report.NextStep = fmt.Sprintf("gira status --repo %s", input.Repo.FullName())
+	}
+	return report, nil
+}
+
+func fetchAdoptIssues(repo RepoRef, state string, runner CommandRunner) ([]adoptRawIssue, error) {
+	output, err := runner.Run("gh", "api", "repos/"+repo.FullName()+"/issues", "--paginate", "--slurp", "-X", "GET", "-f", "state="+state, "-f", "per_page=100")
+	if err != nil {
+		return nil, err
+	}
+	var pages json.RawMessage
+	if err := json.Unmarshal(output, &pages); err != nil {
+		return nil, fmt.Errorf("parse issue pages: %w", err)
+	}
+	rows, err := flattenPages(pages)
+	if err != nil {
+		return nil, err
+	}
+	issues := make([]adoptRawIssue, 0, len(rows))
+	for _, row := range rows {
+		var raw adoptRawIssue
+		if err := json.Unmarshal(row, &raw); err != nil {
+			return nil, fmt.Errorf("parse issue row: %w", err)
+		}
+		if raw.PullRequest != nil {
+			continue
+		}
+		issues = append(issues, raw)
+	}
+	sort.Slice(issues, func(i, j int) bool { return issues[i].Number < issues[j].Number })
+	return issues, nil
+}
+
+func adoptIssueItem(issue adoptRawIssue) (AdoptIssueItem, bool) {
+	labels := make([]string, 0, len(issue.Labels))
+	for _, label := range issue.Labels {
+		labels = append(labels, label.Name)
+	}
+	sort.Strings(labels)
+	milestone := ""
+	if issue.Milestone != nil {
+		milestone = issue.Milestone.Title
+	}
+	reasons := []string{}
+	if milestone == "" {
+		reasons = append(reasons, "missing_milestone")
+	}
+	if !hasAnyLabelPrefix(labels, "type:") {
+		reasons = append(reasons, "missing_type")
+	}
+	if !hasAnyLabelPrefix(labels, "status:") {
+		reasons = append(reasons, "missing_status")
+	}
+	return AdoptIssueItem{Number: issue.Number, Title: issue.Title, State: issue.State, Labels: labels, Milestone: milestone, URL: issue.HTMLURL, Reasons: reasons}, len(reasons) > 0
+}
+
+func applyAdoptIssue(repo RepoRef, action AdoptIssuesAction, runner CommandRunner) error {
+	args := []string{"issue", "edit", strconv.Itoa(action.Issue), "--repo", repo.FullName()}
+	if strings.TrimSpace(action.Milestone) != "" {
+		args = append(args, "--milestone", action.Milestone)
+	}
+	for _, label := range action.Labels {
+		args = append(args, "--add-label", label)
+	}
+	_, err := runner.Run("gh", args...)
+	return err
+}
+
+func normalizeAdoptLabels(values []string) []string {
+	seen := map[string]struct{}{}
+	labels := []string{}
+	for _, value := range values {
+		for _, label := range strings.Split(value, ",") {
+			trimmed := strings.TrimSpace(label)
+			if trimmed == "" {
+				continue
+			}
+			if _, ok := seen[trimmed]; ok {
+				continue
+			}
+			seen[trimmed] = struct{}{}
+			labels = append(labels, trimmed)
+		}
+	}
+	sort.Strings(labels)
+	return labels
+}
+
+func hasAnyLabelPrefix(labels []string, prefix string) bool {
+	for _, label := range labels {
+		if strings.HasPrefix(strings.ToLower(label), prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func joinIssueNumbers(values []int) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, strconv.Itoa(value))
+	}
+	return strings.Join(parts, ",")
+}
+
+func shellQuote(value string) string {
+	if strings.ContainsAny(value, " \t\n\"'") {
+		return strconv.Quote(value)
+	}
+	return value
+}
+
+func FormatAdoptIssuesReport(report AdoptIssuesReport) string {
+	var b strings.Builder
+	mode := "dry-run"
+	if report.Apply {
+		mode = "applied"
+	}
+	fmt.Fprintf(&b, "adopt issues: %s scanned=%d unmapped=%d selected=%d\n", mode, report.Counts.Scanned, report.Counts.Unmapped, report.Counts.Selected)
+	if len(report.Unmapped) > 0 {
+		b.WriteString("unmapped:\n")
+		for _, item := range report.Unmapped {
+			fmt.Fprintf(&b, "  #%d %s reasons=%s", item.Number, item.Title, strings.Join(item.Reasons, ","))
+			if item.Milestone != "" {
+				fmt.Fprintf(&b, " milestone=%s", item.Milestone)
+			}
+			b.WriteString("\n")
+		}
+	}
+	if len(report.Actions) > 0 {
+		b.WriteString("actions:\n")
+		for _, action := range report.Actions {
+			fmt.Fprintf(&b, "  %s issue #%d", action.Status, action.Issue)
+			if action.Milestone != "" {
+				fmt.Fprintf(&b, " milestone=%s", action.Milestone)
+			}
+			if len(action.Labels) > 0 {
+				fmt.Fprintf(&b, " labels=%s", strings.Join(action.Labels, ","))
+			}
+			b.WriteString("\n")
+		}
+	}
+	if report.NextStep != "" {
+		fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
+	}
+	return b.String()
+}

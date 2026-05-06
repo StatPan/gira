@@ -1,6 +1,6 @@
 # Gira
 
-Gira is a Terraform-like project operating system for GitHub: it plans and applies repository workflow state so issues, labels, milestones, Projects, branches, and PRs converge into a Jira-style execution loop.
+Gira brings a Jira-style project workflow to GitHub, with Terraform-like plan/apply safety.
 
 Name shorthand: **Gira: Jira-style project flow on GitHub.**
 
@@ -10,6 +10,12 @@ With Gira, GitHub remains the source of truth. Gira gives humans and agents a sa
 - `gira ... --apply` applies only the reviewed action.
 - Issues are tickets, milestones are sprint or release boundaries, branches are work-start evidence, and PRs are change units.
 - Optional workspace and Project sync commands make backlog and roadmap state visible without replacing GitHub.
+
+The core flow is:
+
+```text
+init/readiness -> plan setup -> apply setup -> start ticket -> open PR -> verify status
+```
 
 ## Quick Start
 
@@ -28,15 +34,16 @@ brew tap StatPan/tap
 brew install gira
 ```
 
-Read before writing:
+Read before writing. For repository setup, run init from a clean checkout so Gira can fail closed before apply steps:
 
 ```bash
 gira version
 gh auth status
+gira init --repo OWNER/REPO --path . --dry-run
 gira status --repo OWNER/REPO
 ```
 
-Plan repository setup without changing it:
+Plan setup without changing GitHub or repository files:
 
 ```bash
 gira ops bootstrap --repo OWNER/REPO --template default --dry-run
@@ -51,15 +58,20 @@ gira ops sync --repo OWNER/REPO
 gira ops onboard verify --repo OWNER/REPO --stage steady-state
 ```
 
-Run the Jira-style ticket loop:
+Start and finish development from a ticket:
 
 ```bash
 gira status --repo OWNER/REPO
 gira ticket start --repo OWNER/REPO --ticket TICKET --dry-run
 gira ticket start --repo OWNER/REPO --ticket TICKET --apply
+
+# implement the bounded issue scope, then verify locally
+go test ./...
+
 gira ticket pr --repo OWNER/REPO --ticket TICKET --dry-run
 gira ticket pr --repo OWNER/REPO --ticket TICKET --apply --draft
 gira ticket status --repo OWNER/REPO --ticket TICKET
+gira projects sync --config .gira/config.yaml --dry-run
 ```
 
 Use `--json` for automation:

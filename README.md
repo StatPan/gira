@@ -120,7 +120,7 @@ gira projects sync --apply --config .gira/config.yaml
 
 `workspace ticket new` creates an inbox ticket. `workspace ticket route` creates a repo execution issue and links it back to the inbox ticket. After routing, the normal loop continues with `gira ticket start`, `gira ticket pr`, and `gira ticket status` on the target repo.
 
-`projects sync` keeps an existing GitHub Projects v2 board visible by linking configured repos, adding missing open issues as project items, mirroring basic Gira status labels to the board's standard Status field, creating supported planning fields, and copying milestone due dates into `Target date`. GitHub does not expose supported Project view creation APIs, so Gira reports the manual Board/Schedule view setup step instead of hiding it behind raw Project numbers.
+`projects sync` keeps an existing GitHub Projects v2 board visible by linking configured repos, adding missing open issues as project items, mirroring Gira status labels to the board's standard Status field, keeping closed issues as `Done`, creating supported planning fields, and copying milestone due dates into `Target date`. Add `--archive-closed` only when closed issue items should leave the active Project item set. GitHub does not expose supported Project view creation APIs, so Gira reports the manual Board/Schedule view setup step instead of hiding it behind raw Project numbers.
 
 ## Install, Upgrade, and Remove
 

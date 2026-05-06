@@ -78,6 +78,6 @@ gira ticket status --repo OWNER/app --ticket 34
 
 ## Boundary
 
-This is not a separate Jira import/export database. Workspace commands operate on issues, labels, milestones, and links that remain visible in GitHub. `gira projects sync` is a visibility bridge for an existing GitHub Project; issues and milestones remain the source of truth. GitHub Project views still need to be created in the GitHub UI because supported CLI/GraphQL APIs do not currently create or edit views.
+This is not a separate Jira import/export database. Workspace commands operate on issues, labels, milestones, and links that remain visible in GitHub. `gira projects sync` is a visibility bridge for an existing GitHub Project; issues and milestones remain the source of truth. Closed issues stay in the Project as `Done` by default; use `--archive-closed` only when the active Project item set should drop completed work. GitHub Project views still need to be created in the GitHub UI because supported CLI/GraphQL APIs do not currently create or edit views.
 
 Use `workspace` for personal or cross-repo intake. Use `ticket`, `sprint`, `release`, and `status` once the work belongs to one execution repo.

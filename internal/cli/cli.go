@@ -112,14 +112,15 @@ Flags:
 const projectsHelp = `Sync visible GitHub Projects board items.
 
 Usage:
-  gira projects sync --dry-run|--apply [--config .gira/config.yaml] [--json]
+  gira projects sync --dry-run|--apply [--config .gira/config.yaml] [--archive-closed] [--json]
 
 Commands:
   sync  Add missing workspace issues to the configured GitHub Project
 
 Flags:
-  --config string  Workspace config path (default ".gira/config.yaml")
-  --json           Emit stable JSON output
+  --config string    Workspace config path (default ".gira/config.yaml")
+  --archive-closed   Archive Project items whose backing issues are closed
+  --json             Emit stable JSON output
   -h, --help       Show help
 `
 
@@ -653,12 +654,12 @@ var newWorkspaceProjectPlanReport = func(configPath string) (gira.WorkspaceProje
 	return gira.BuildWorkspaceProjectPlanReport(resolved, builder)
 }
 
-var newProjectsSyncReport = func(configPath string, dryRun bool) (gira.ProjectsSyncReport, error) {
+var newProjectsSyncReport = func(configPath string, dryRun bool, archiveClosed bool) (gira.ProjectsSyncReport, error) {
 	resolved, err := gira.ResolveWorkspaceConfig(configPath)
 	if err != nil {
 		return gira.ProjectsSyncReport{}, err
 	}
-	return gira.BuildProjectsSyncReport(resolved, gira.NewGHProjectsSyncClient(gira.ExecCommandRunner{}), dryRun, time.Now())
+	return gira.BuildProjectsSyncReportWithOptions(resolved, gira.NewGHProjectsSyncClient(gira.ExecCommandRunner{}), gira.ProjectsSyncOptions{DryRun: dryRun, ArchiveClosed: archiveClosed, FetchedAt: time.Now()})
 }
 
 var newGraphClient = func(repo gira.RepoRef) gira.GraphClient {
@@ -2222,6 +2223,7 @@ func runProjects(args []string, stdout io.Writer, stderr io.Writer) int {
 	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
 	dryRun := fs.Bool("dry-run", false, "Plan sync without mutation")
 	apply := fs.Bool("apply", false, "Apply projects sync")
+	archiveClosed := fs.Bool("archive-closed", false, "Archive Project items whose backing issues are closed")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -2244,7 +2246,7 @@ func runProjects(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, projectsHelp)
 		return 2
 	}
-	report, err := newProjectsSyncReport(*configPath, *dryRun)
+	report, err := newProjectsSyncReport(*configPath, *dryRun, *archiveClosed)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2

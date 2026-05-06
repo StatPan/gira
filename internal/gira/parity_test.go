@@ -108,6 +108,41 @@ func TestBuildJiraParityReportScores100WithV1Evidence(t *testing.T) {
 	}
 }
 
+func TestJiraParityReportIncludesAcceptanceMatrix(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	out := BuildJiraParityReportWithEvidence(repo, v1AllowedCapabilityReport(), allV1JiraParityEvidence(), time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
+
+	required := map[string]bool{
+		"backlog":  false,
+		"epic":     false,
+		"story":    false,
+		"task":     false,
+		"sprint":   false,
+		"release":  false,
+		"workflow": false,
+		"priority": false,
+		"owner":    false,
+		"blocker":  false,
+	}
+	for _, item := range out.Acceptance {
+		if _, ok := required[item.Concept]; ok {
+			required[item.Concept] = true
+		}
+		if item.GitHubSource == "" || item.GiraSurface == "" || item.Status == "" {
+			t.Fatalf("incomplete acceptance item: %+v", item)
+		}
+	}
+	for concept, found := range required {
+		if !found {
+			t.Fatalf("acceptance matrix missing %s: %+v", concept, out.Acceptance)
+		}
+	}
+	text := FormatJiraParityReport(out)
+	if !strings.Contains(text, "acceptance matrix:") || !strings.Contains(text, "backlog: issues") {
+		t.Fatalf("formatted report missing acceptance matrix:\n%s", text)
+	}
+}
+
 func v1AllowedCapabilityReport() ProjectCapabilityReport {
 	return ProjectCapabilityReport{Capabilities: map[string]ProjectCapabilityStatus{
 		"issues:read":          ProjectCapabilityAllowed,

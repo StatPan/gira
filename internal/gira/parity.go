@@ -7,16 +7,17 @@ import (
 )
 
 type JiraParityReport struct {
-	Repo      string             `json:"repo"`
-	Command   string             `json:"command"`
-	Generated string             `json:"generated_at"`
-	Weights   JiraParityWeights  `json:"weights"`
-	Scores    JiraParityScores   `json:"scores"`
-	Domains   []JiraParityDomain `json:"domains"`
-	Blockers  []JiraParityGap    `json:"blockers"`
-	NextSteps []string           `json:"next_steps"`
-	Missing   []JiraParityGap    `json:"missing_surfaces"`
-	Ready     bool               `json:"ready"`
+	Repo       string                 `json:"repo"`
+	Command    string                 `json:"command"`
+	Generated  string                 `json:"generated_at"`
+	Weights    JiraParityWeights      `json:"weights"`
+	Scores     JiraParityScores       `json:"scores"`
+	Acceptance []JiraParityAcceptance `json:"acceptance_matrix"`
+	Domains    []JiraParityDomain     `json:"domains"`
+	Blockers   []JiraParityGap        `json:"blockers"`
+	NextSteps  []string               `json:"next_steps"`
+	Missing    []JiraParityGap        `json:"missing_surfaces"`
+	Ready      bool                   `json:"ready"`
 }
 
 type JiraParityWeights struct {
@@ -45,6 +46,14 @@ type JiraParityGap struct {
 	Capability string `json:"capability"`
 	Command    string `json:"command"`
 	Reason     string `json:"reason"`
+}
+
+type JiraParityAcceptance struct {
+	Concept      string `json:"concept"`
+	GitHubSource string `json:"github_source"`
+	GiraSurface  string `json:"gira_surface"`
+	Status       string `json:"status"`
+	Acceptance   string `json:"acceptance"`
 }
 
 type JiraParityEvidence struct {
@@ -126,11 +135,27 @@ func BuildJiraParityReportWithEvidence(repo RepoRef, capability ProjectCapabilit
 			Total:  total,
 			Pct:    pct,
 		},
-		Domains:   domains,
-		Blockers:  allBlockers,
-		NextSteps: jiraParityNextSteps(allBlockers),
-		Missing:   missingSurfaces,
-		Ready:     len(allBlockers) == 0,
+		Acceptance: DefaultJiraParityAcceptanceMatrix(),
+		Domains:    domains,
+		Blockers:   allBlockers,
+		NextSteps:  jiraParityNextSteps(allBlockers),
+		Missing:    missingSurfaces,
+		Ready:      len(allBlockers) == 0,
+	}
+}
+
+func DefaultJiraParityAcceptanceMatrix() []JiraParityAcceptance {
+	return []JiraParityAcceptance{
+		{Concept: "backlog", GitHubSource: "issues", GiraSurface: "gira workspace status/backlog; gira adopt issues", Status: "supported", Acceptance: "unrouted, routed, ready, in-progress, blocked, and done work is visible without a separate Jira database"},
+		{Concept: "epic", GitHubSource: "issue with type:epic or parent/top-level issue", GiraSurface: "gira ticket new --type epic", Status: "supported", Acceptance: "large outcomes can be created and tracked as GitHub issues"},
+		{Concept: "story", GitHubSource: "issue with type:story", GiraSurface: "gira ticket new --type story", Status: "supported", Acceptance: "user-facing work can be captured as executable GitHub issues"},
+		{Concept: "task", GitHubSource: "issue with type:task", GiraSurface: "gira ticket new --type task", Status: "supported", Acceptance: "implementation work can flow through ticket start, PR, checks, and finish"},
+		{Concept: "sprint", GitHubSource: "milestone", GiraSurface: "gira sprint plan|start|close|rollover", Status: "supported", Acceptance: "bounded phase work maps to GitHub milestones and rollover plans"},
+		{Concept: "release", GitHubSource: "release, milestone, pull request checks", GiraSurface: "gira release readiness", Status: "supported", Acceptance: "release readiness is computed from GitHub state"},
+		{Concept: "workflow", GitHubSource: "status:* labels and pull request state", GiraSurface: "gira ticket status; gira projects sync", Status: "supported", Acceptance: "ticket state advances from issue, branch, PR, checks, merge, and closed evidence"},
+		{Concept: "priority", GitHubSource: "priority:* labels", GiraSurface: "gira ticket new --priority", Status: "supported", Acceptance: "priority is represented by deterministic labels"},
+		{Concept: "owner", GitHubSource: "assignees or owner/agent labels", GiraSurface: "gira ops worker claim|handoff|release", Status: "partial", Acceptance: "worker state is available, while full human ownership policy remains lightweight"},
+		{Concept: "blocker", GitHubSource: "status:blocked labels, PR checks, review state", GiraSurface: "gira ticket checks|wait|finish", Status: "supported", Acceptance: "blocked work is surfaced before merge or route apply"},
 	}
 }
 
@@ -234,6 +259,10 @@ func FormatJiraParityReport(report JiraParityReport) string {
 		for _, missing := range report.Missing {
 			fmt.Fprintf(&b, "  - %s\n", missing.Command)
 		}
+	}
+	b.WriteString("acceptance matrix:\n")
+	for _, item := range report.Acceptance {
+		fmt.Fprintf(&b, "  - %s: %s via %s [%s]\n", item.Concept, item.GitHubSource, item.GiraSurface, item.Status)
 	}
 	b.WriteString("domains:\n")
 	for _, domain := range report.Domains {

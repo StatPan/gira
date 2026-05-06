@@ -603,9 +603,9 @@ func TestProjectsSyncRequiresMode(t *testing.T) {
 func TestProjectsSyncJSON(t *testing.T) {
 	restore := newProjectsSyncReport
 	t.Cleanup(func() { newProjectsSyncReport = restore })
-	newProjectsSyncReport = func(configPath string, dryRun bool) (gira.ProjectsSyncReport, error) {
-		if configPath != "testdata/workspace.yaml" || !dryRun {
-			t.Fatalf("unexpected projects sync args config=%s dryRun=%t", configPath, dryRun)
+	newProjectsSyncReport = func(configPath string, dryRun bool, archiveClosed bool) (gira.ProjectsSyncReport, error) {
+		if configPath != "testdata/workspace.yaml" || !dryRun || archiveClosed {
+			t.Fatalf("unexpected projects sync args config=%s dryRun=%t archiveClosed=%t", configPath, dryRun, archiveClosed)
 		}
 		return gira.ProjectsSyncReport{
 			Command: "projects sync",
@@ -622,6 +622,34 @@ func TestProjectsSyncJSON(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
 	for _, want := range []string{`"command": "projects sync"`, `"project_items_add": 1`, `"action": "project_item:add"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("projects sync JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestProjectsSyncArchiveClosedFlag(t *testing.T) {
+	restore := newProjectsSyncReport
+	t.Cleanup(func() { newProjectsSyncReport = restore })
+	newProjectsSyncReport = func(configPath string, dryRun bool, archiveClosed bool) (gira.ProjectsSyncReport, error) {
+		if configPath != "testdata/workspace.yaml" || !dryRun || !archiveClosed {
+			t.Fatalf("unexpected projects sync args config=%s dryRun=%t archiveClosed=%t", configPath, dryRun, archiveClosed)
+		}
+		return gira.ProjectsSyncReport{
+			Command: "projects sync",
+			DryRun:  true,
+			Project: gira.ProjectsSyncProject{Owner: "StatPan", Number: 7, Title: "Gira"},
+			Counts:  gira.ProjectsSyncCounts{ProjectItemsArchive: 1},
+			Actions: []gira.ProjectsSyncAction{{Action: "project_item:archive", Repo: "StatPan/gira", Issue: 199, Status: "planned"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"projects", "sync", "--config", "testdata/workspace.yaml", "--dry-run", "--archive-closed", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"project_items_archive": 1`, `"action": "project_item:archive"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("projects sync JSON missing %q:\n%s", want, stdout.String())
 		}

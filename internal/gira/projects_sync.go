@@ -481,6 +481,21 @@ func (c GHProjectsSyncClient) UpdateItemDate(projectID string, itemID string, fi
 }
 
 func BuildProjectsSyncReport(config WorkspaceConfigResolved, client ProjectsSyncClient, dryRun bool, fetchedAt time.Time) (ProjectsSyncReport, error) {
+	return BuildProjectsSyncReportWithOptions(config, client, ProjectsSyncOptions{DryRun: dryRun, FetchedAt: fetchedAt})
+}
+
+type ProjectsSyncOptions struct {
+	DryRun        bool
+	ArchiveClosed bool
+	FetchedAt     time.Time
+}
+
+func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client ProjectsSyncClient, opts ProjectsSyncOptions) (ProjectsSyncReport, error) {
+	dryRun := opts.DryRun
+	fetchedAt := opts.FetchedAt
+	if fetchedAt.IsZero() {
+		fetchedAt = time.Now()
+	}
 	projectOwner := strings.TrimSpace(config.Project.Owner)
 	if projectOwner == "" {
 		projectOwner = config.Owner
@@ -549,16 +564,20 @@ func BuildProjectsSyncReport(config WorkspaceConfigResolved, client ProjectsSync
 		if item.ID == "" || item.IssueState != "closed" {
 			continue
 		}
-		action := ProjectsSyncAction{Action: "project_item:archive", Repo: item.Repo, Issue: item.Number, ItemID: item.ID, Status: actionStatus(dryRun), Reason: "backing issue is closed"}
-		if !dryRun {
-			if err := client.ArchiveItem(project.Owner, project.Number, item.ID); err != nil {
-				return ProjectsSyncReport{}, err
+		if opts.ArchiveClosed {
+			action := ProjectsSyncAction{Action: "project_item:archive", Repo: item.Repo, Issue: item.Number, ItemID: item.ID, Status: actionStatus(dryRun), Reason: "backing issue is closed and --archive-closed was set"}
+			if !dryRun {
+				if err := client.ArchiveItem(project.Owner, project.Number, item.ID); err != nil {
+					return ProjectsSyncReport{}, err
+				}
+				action.Status = "applied"
 			}
-			action.Status = "applied"
+			report.Actions = append(report.Actions, action)
+			report.Counts.ProjectItemsArchive++
+			delete(itemByIssue, projectIssueKey(item.Repo, item.Number))
+			continue
 		}
-		report.Actions = append(report.Actions, action)
-		report.Counts.ProjectItemsArchive++
-		delete(itemByIssue, projectIssueKey(item.Repo, item.Number))
+		syncProjectDoneStatus(&report, client, project, statusField, item, dryRun)
 	}
 	repos := uniqueProjectRepos(config)
 	for _, repo := range repos {
@@ -701,6 +720,33 @@ func inferLinkedProjectsSyncProject(config WorkspaceConfigResolved, client Proje
 		return ProjectsSyncProject{}, fmt.Errorf("workspace.project.title is required because no linked GitHub Project was found")
 	}
 	return ProjectsSyncProject{}, fmt.Errorf("workspace.project.title is required because multiple linked GitHub Projects were found")
+}
+
+func syncProjectDoneStatus(report *ProjectsSyncReport, client ProjectsSyncClient, project ProjectsSyncProject, statusField ProjectsSyncStatusField, item ProjectsSyncItem, dryRun bool) {
+	current := item.Status
+	if current == "Done" {
+		report.Counts.ProjectItemsSkip++
+		return
+	}
+	optionID := statusField.Options["Done"]
+	if statusField.ID == "" || optionID == "" || (!dryRun && item.ID == "") {
+		report.Actions = append(report.Actions, ProjectsSyncAction{Action: "project_status:update", Repo: item.Repo, Issue: item.Number, ItemID: item.ID, FromStatus: current, ToStatus: "Done", Status: "skipped", Reason: "project Status field or Done option is unavailable"})
+		report.Counts.StatusUpdateSkips++
+		return
+	}
+	action := ProjectsSyncAction{Action: "project_status:update", Repo: item.Repo, Issue: item.Number, ItemID: item.ID, FromStatus: current, ToStatus: "Done", Status: actionStatus(dryRun), Reason: "backing issue is closed"}
+	if !dryRun {
+		if err := client.UpdateItemStatus(project.ID, item.ID, statusField.ID, optionID); err != nil {
+			action.Status = "skipped"
+			action.Reason = err.Error()
+			report.Counts.StatusUpdateSkips++
+			report.Actions = append(report.Actions, action)
+			return
+		}
+		action.Status = "applied"
+	}
+	report.Actions = append(report.Actions, action)
+	report.Counts.StatusUpdates++
 }
 
 func syncProjectTargetDate(report *ProjectsSyncReport, client ProjectsSyncClient, project ProjectsSyncProject, targetDateField ProjectsSyncField, issue ProjectsSyncIssue, item ProjectsSyncItem, dryRun bool) {

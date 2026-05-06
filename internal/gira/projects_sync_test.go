@@ -166,7 +166,7 @@ func TestBuildProjectsSyncReportPlansMissingFieldsAndDateUpdates(t *testing.T) {
 		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
 		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
 		fields:      []ProjectsSyncField{{ID: "status-field", Name: "Status", Type: "SINGLE_SELECT", Options: map[string]string{"Todo": "todo"}}},
-		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo"}},
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "Done": "done"}},
 		linked:      map[string]bool{"StatPan/gira": true},
 		issues: map[string][]ProjectsSyncIssue{
 			"StatPan/gira": {{Repo: "StatPan/gira", Number: 199, Title: "Schedule", URL: "https://github.com/StatPan/gira/issues/199", Labels: []string{"status:ready"}, Milestone: "v1.2", MilestoneDueDate: "2026-06-01"}},
@@ -201,7 +201,7 @@ func TestBuildProjectsSyncReportApplyCreatesFieldsAndUpdatesTargetDate(t *testin
 		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
 		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
 		fields:      []ProjectsSyncField{{ID: "status-field", Name: "Status", Type: "SINGLE_SELECT", Options: map[string]string{"Todo": "todo"}}},
-		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo"}},
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "Done": "done"}},
 		linked:      map[string]bool{"StatPan/gira": true},
 		issues: map[string][]ProjectsSyncIssue{
 			"StatPan/gira": {{Repo: "StatPan/gira", Number: 199, Title: "Schedule", URL: "https://github.com/StatPan/gira/issues/199", Labels: []string{"status:ready"}, Milestone: "v1.2", MilestoneDueDate: "2026-06-01"}},
@@ -250,7 +250,7 @@ func TestBuildProjectsSyncReportSkipsMatchingTargetDate(t *testing.T) {
 	}
 }
 
-func TestBuildProjectsSyncReportArchivesClosedProjectItems(t *testing.T) {
+func TestBuildProjectsSyncReportKeepsClosedProjectItemsAsDoneByDefault(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",
 		Owner:     "StatPan",
@@ -262,14 +262,14 @@ func TestBuildProjectsSyncReportArchivesClosedProjectItems(t *testing.T) {
 		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
 		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
 		fields:      allProjectsSyncCanonicalFields(),
-		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo"}},
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "Done": "done"}},
 		linked:      map[string]bool{"StatPan/gira": true},
 		issues: map[string][]ProjectsSyncIssue{
 			"StatPan/gira": {{Repo: "StatPan/gira", Number: 180, Title: "Open", URL: "https://github.com/StatPan/gira/issues/180", Labels: []string{"status:ready"}}},
 		},
 		items: []ProjectsSyncItem{
 			{ID: "item-180", Repo: "StatPan/gira", Number: 180, IssueState: "open", Status: "Todo"},
-			{ID: "item-199", Repo: "StatPan/gira", Number: 199, IssueState: "closed", Status: "Done"},
+			{ID: "item-199", Repo: "StatPan/gira", Number: 199, IssueState: "closed", Status: "In Progress"},
 		},
 	}
 
@@ -277,15 +277,16 @@ func TestBuildProjectsSyncReportArchivesClosedProjectItems(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildProjectsSyncReport error: %v", err)
 	}
-	if report.Counts.ProjectItemsArchive != 1 || len(client.archived) != 0 {
-		t.Fatalf("dry-run archive counts/actions wrong: counts=%+v archived=%v", report.Counts, client.archived)
+	if report.Counts.ProjectItemsArchive != 0 || report.Counts.StatusUpdates != 1 || len(client.archived) != 0 {
+		t.Fatalf("default closed item handling wrong: counts=%+v archived=%v", report.Counts, client.archived)
 	}
-	if !strings.Contains(FormatProjectsSyncReport(report), "project_item:archive") {
-		t.Fatalf("formatted report missing archive action:\n%s", FormatProjectsSyncReport(report))
+	text := FormatProjectsSyncReport(report)
+	if strings.Contains(text, "project_item:archive") || !strings.Contains(text, "project_status:update") || !strings.Contains(text, "-> Done") {
+		t.Fatalf("formatted report should sync Done without archive:\n%s", text)
 	}
 }
 
-func TestBuildProjectsSyncReportApplyArchivesClosedProjectItems(t *testing.T) {
+func TestBuildProjectsSyncReportArchiveClosedOptIn(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",
 		Owner:     "StatPan",
@@ -303,7 +304,7 @@ func TestBuildProjectsSyncReportApplyArchivesClosedProjectItems(t *testing.T) {
 		items:       []ProjectsSyncItem{{ID: "item-199", Repo: "StatPan/gira", Number: 199, IssueState: "closed", Status: "Done"}},
 	}
 
-	report, err := BuildProjectsSyncReport(config, client, false, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	report, err := BuildProjectsSyncReportWithOptions(config, client, ProjectsSyncOptions{DryRun: false, ArchiveClosed: true, FetchedAt: time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC)})
 	if err != nil {
 		t.Fatalf("BuildProjectsSyncReport error: %v", err)
 	}

@@ -17,6 +17,32 @@ Shipped before this roadmap:
 - Lifecycle transition matrix design for issue/PR/milestone/project state changes
 - Permission model documented for future `project` commands
 
+## Near-term Milestones
+
+### v1.2 Jira Backend Parity
+
+Due: 2026-05-13
+
+Goal:
+- make Gira's GitHub backend model sufficiently Jira-like for backlog, ticket, sprint, workflow, ownership, priority, blocker, and release evidence without introducing a separate Jira database
+
+Exit criteria:
+- workspace backlog can route into repo execution issues with parent context intact
+- ticket lifecycle, sprint rollover, Projects visibility, and release readiness read the same GitHub source-of-truth objects
+- Jira terminology maps cleanly to Gira commands and GitHub backend objects
+
+### v1.3 Gira UI/UX Readiness
+
+Due: 2026-05-20
+
+Goal:
+- make the public CLI, install path, docs, and agent runbook understandable enough for first-time users before larger UI/TUI work
+
+Exit criteria:
+- first-run flow is documented from auth and init through ticket finish
+- installed release channels can run the dogfood smoke path without `go run`
+- GitHub Pages documentation and v2 UI/TUI direction are separated from the v1 backend source of truth
+
 ## Phase 1 — Capability-first foundation
 
 ### 1.1 Capability probe

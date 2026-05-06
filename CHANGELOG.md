@@ -6,6 +6,7 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Added built-in `gira guide` and `gira docs` help topics for quickstart, ticket flow, agent usage, and Jira concept mapping.
 - Improved `gira projects sync` performance by reducing duplicate Project field reads and parallelizing independent Project/repo reads.
 - Improved daily CLI performance by parallelizing independent GitHub reads and using the faster issue-list path for status summaries.
 - Added `gira ticket finish` to complete the ticket loop with linked PR validation, draft-ready handling, merge blockers, safe merge, local main sync, and convergence reporting.

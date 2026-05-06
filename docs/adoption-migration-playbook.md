@@ -45,6 +45,16 @@ Why this order:
 
 The plan output is deterministic for a fixed repository state (same plan counts and sorted item actions).
 
+Keep metadata sync separate from existing issue adoption:
+
+```bash
+gira adopt issues --repo OWNER/REPO --dry-run
+gira adopt issues --repo OWNER/REPO --issue 1 --issue 2 --milestone MVP --label type:task --label status:ready --dry-run
+gira adopt issues --repo OWNER/REPO --issue 1 --issue 2 --milestone MVP --label type:task --label status:ready --apply
+```
+
+The first command lists unmapped existing issues: missing milestone, missing `type:*`, or missing `status:*`. The apply command only updates explicitly selected issues.
+
 ## Conflict Categories and Recommended Mode
 
 Use this matrix for decisioning:

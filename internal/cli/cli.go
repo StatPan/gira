@@ -23,6 +23,7 @@ Daily commands:
   guide       Built-in quickstart and workflow guides
   workspace   Personal workspace inbox and backlog overview
   projects    Sync visible GitHub Projects board items
+  adopt       Plan or apply explicit adoption mappings for existing issues
   ticket      Jira-style ticket lifecycle commands
   sprint      Sprint iteration planning/start/close workflow
   release     Release readiness gate report
@@ -242,6 +243,27 @@ Flags:
   --archive-closed   Archive Project items whose backing issues are closed
   --json             Emit stable JSON output
   -h, --help       Show help
+`
+
+const adoptHelp = `Adopt existing GitHub issues into Gira planning.
+
+Usage:
+  gira adopt issues --repo OWNER/REPO --dry-run [--state open|all] [--json]
+  gira adopt issues --repo OWNER/REPO --issue N [--issue N] --milestone TITLE [--label LABEL] --dry-run|--apply [--json]
+
+Commands:
+  issues  List unmapped issues and apply explicit milestone/label mappings
+
+Flags:
+  --repo string       Target GitHub repo in OWNER/REPO format
+  --issue int         Issue number to map; repeatable
+  --milestone string  Milestone title to assign to selected issues
+  --label string      Label to add to selected issues; repeatable or comma-separated
+  --state string      Issues to inspect: open or all (default "open")
+  --dry-run           Preview without mutation
+  --apply             Apply selected explicit mappings
+  --json              Emit stable JSON output
+  -h, --help          Show help
 `
 
 const versionHelp = `Show Gira build version.
@@ -907,6 +929,10 @@ var newUpgradeReport = func(channel string) (gira.UpgradeReport, error) {
 	return gira.BuildUpgradeReport(channel, executable, nil)
 }
 
+var newAdoptIssuesReport = func(input gira.AdoptIssueInput) (gira.AdoptIssuesReport, error) {
+	return gira.BuildAdoptIssuesReport(input, gira.ExecCommandRunner{})
+}
+
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(stdout, rootHelp)
@@ -925,6 +951,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runWorkspace(args[1:], stdout, stderr)
 	case "projects":
 		return runProjects(args[1:], stdout, stderr)
+	case "adopt":
+		return runAdopt(args[1:], stdout, stderr)
 	case "start":
 		return runTicketStart(args[1:], stdout, stderr)
 	case "ticket":
@@ -2449,6 +2477,24 @@ func shortenTicketNextStep(next string, repo string, issue int) string {
 	return strings.Join(strings.Fields(next), " ")
 }
 
+func parseRepeatedIssueNumbers(values []string) ([]int, error) {
+	var numbers []int
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			trimmed := strings.TrimSpace(part)
+			if trimmed == "" {
+				continue
+			}
+			n, err := strconv.Atoi(trimmed)
+			if err != nil || n <= 0 {
+				return nil, fmt.Errorf("--issue values must be positive integers")
+			}
+			numbers = append(numbers, n)
+		}
+	}
+	return numbers, nil
+}
+
 func normalizeTicketFinishResult(result gira.WorkFinishResult) gira.WorkFinishResult {
 	result.NextStep = ticketFinishNextStep(result)
 	if result.FinalStatus.Repo != "" && result.FinalStatus.Issue > 0 {
@@ -2961,6 +3007,81 @@ func runProjects(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatProjectsSyncReport(report))
+	return 0
+}
+
+func runAdopt(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, adoptHelp)
+		return 0
+	}
+	if args[0] != "issues" {
+		fmt.Fprintf(stderr, "unknown adopt command: %s\n\n", args[0])
+		fmt.Fprint(stderr, adoptHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("adopt issues", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	milestone := fs.String("milestone", "", "Milestone title")
+	state := fs.String("state", "open", "Issues to inspect: open or all")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply selected mappings")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	var issues repeatedStringFlag
+	var labels repeatedStringFlag
+	fs.Var(&issues, "issue", "Issue number to map")
+	fs.Var(&labels, "label", "Label to add")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, adoptHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, adoptHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, adoptHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, adoptHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	issueNumbers, err := parseRepeatedIssueNumbers(issues)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newAdoptIssuesReport(gira.AdoptIssueInput{Repo: repo, Issues: issueNumbers, Milestone: *milestone, Labels: labels, State: *state, DryRun: *dryRun, Apply: *apply})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode adopt JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatAdoptIssuesReport(report))
 	return 0
 }
 

@@ -337,10 +337,10 @@ Usage:
 const ticketHelp = `Jira-style ticket lifecycle commands.
 
 Usage:
-  gira ticket start --repo OWNER/REPO --ticket N --dry-run|--apply [--json]
-  gira ticket pr --repo OWNER/REPO --ticket N --dry-run|--apply [--draft] [--json]
-  gira ticket finish --repo OWNER/REPO --ticket N --dry-run|--apply [--wait 0s] [--json]
-  gira ticket status --repo OWNER/REPO --ticket N [--json]
+  gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--json]
+  gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
+  gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--wait 0s] [--json]
+  gira ticket status [TICKET] [--repo OWNER/REPO] [--json]
 
 Commands:
   start   Verify a ready ticket, create/reuse its branch, and move to in-progress on apply. Alias: gira start
@@ -349,8 +349,8 @@ Commands:
   status  Report ticket status, linked PR blockers, and next action
 
 Flags:
-  --repo string    Target GitHub repo in OWNER/REPO format
-  --ticket int     Ticket number. GitHub issue number in v1
+  --repo string    Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
+  --ticket int     Ticket number. GitHub issue number in v1. Can also be positional
   --issue int      Compatibility alias for --ticket
   --dry-run        Preview without mutation
   --apply          Apply branch, PR, and status label changes
@@ -1393,6 +1393,11 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalTicket, positionalOK := extractTicketPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
 	fs := flag.NewFlagSet("ticket start", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
@@ -1412,12 +1417,12 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stdout, ticketHelp)
 		return 0
 	}
-	ticketNumber, ok := resolveTicketFlag(*ticket, *issue, stderr)
+	ticketNumber, ok := resolveExplicitTicket(*ticket, *issue, positionalTicket, stderr)
 	if !ok {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
 	}
-	repo, ok := parseTicketRequiredFlags(*repoValue, ticketNumber, *dryRun, *apply, stderr)
+	repo, ok := parseTicketRequiredFlags(*repoValue, ticketNumber, *dryRun, *apply, false, stderr)
 	if !ok {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
@@ -1441,6 +1446,11 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runTicketPR(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalTicket, positionalOK := extractTicketPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
 	fs := flag.NewFlagSet("ticket pr", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
@@ -1461,12 +1471,12 @@ func runTicketPR(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stdout, ticketHelp)
 		return 0
 	}
-	ticketNumber, ok := resolveTicketFlag(*ticket, *issue, stderr)
+	repo, ok := parseTicketRequiredFlags(*repoValue, 1, *dryRun, *apply, true, stderr)
 	if !ok {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
 	}
-	repo, ok := parseTicketRequiredFlags(*repoValue, ticketNumber, *dryRun, *apply, stderr)
+	ticketNumber, ok := resolveTicketContext(repo, *ticket, *issue, positionalTicket, true, stderr)
 	if !ok {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
@@ -1490,6 +1500,11 @@ func runTicketPR(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runTicketFinish(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalTicket, positionalOK := extractTicketPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
 	fs := flag.NewFlagSet("ticket finish", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
@@ -1510,12 +1525,12 @@ func runTicketFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stdout, ticketHelp)
 		return 0
 	}
-	ticketNumber, ok := resolveTicketFlag(*ticket, *issue, stderr)
+	repo, ok := parseTicketRequiredFlags(*repoValue, 1, *dryRun, *apply, true, stderr)
 	if !ok {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
 	}
-	repo, ok := parseTicketRequiredFlags(*repoValue, ticketNumber, *dryRun, *apply, stderr)
+	ticketNumber, ok := resolveTicketContext(repo, *ticket, *issue, positionalTicket, true, stderr)
 	if !ok {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
@@ -1540,6 +1555,11 @@ func runTicketFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runTicketStatus(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalTicket, positionalOK := extractTicketPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
 	fs := flag.NewFlagSet("ticket status", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
@@ -1557,19 +1577,14 @@ func runTicketStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stdout, ticketHelp)
 		return 0
 	}
-	ticketNumber, ok := resolveTicketFlag(*ticket, *issue, stderr)
-	if !ok {
-		_, _ = io.WriteString(stderr, ticketHelp)
-		return 2
-	}
-	if *repoValue == "" || ticketNumber <= 0 {
-		fmt.Fprint(stderr, "--repo and --ticket are required\n\n")
-		_, _ = io.WriteString(stderr, ticketHelp)
-		return 2
-	}
-	repo, err := gira.ParseRepoRef(*repoValue)
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	ticketNumber, ok := resolveTicketContext(repo, *ticket, *issue, positionalTicket, true, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
 	}
 	result, err := newWorkStatusResult(repo, ticketNumber)
@@ -1726,23 +1741,87 @@ func parseWorkRequiredFlags(repoValue string, issue int, dryRun bool, apply bool
 	return repo, true
 }
 
-func resolveTicketFlag(ticket int, issue int, stderr io.Writer) (int, bool) {
-	if ticket > 0 && issue > 0 && ticket != issue {
-		fmt.Fprint(stderr, "--ticket and --issue must refer to the same number when both are provided\n\n")
-		return 0, false
+func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bool) {
+	cleaned := make([]string, 0, len(args))
+	positional := 0
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		cleaned = append(cleaned, arg)
+		if _, ok := valueFlags[arg]; ok {
+			if i+1 < len(args) {
+				i++
+				cleaned = append(cleaned, args[i])
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		n, err := strconv.Atoi(arg)
+		if err != nil || n <= 0 {
+			fmt.Fprintf(stderr, "unexpected positional argument %q; use a numeric ticket or --ticket N\n\n", arg)
+			return nil, 0, false
+		}
+		if positional > 0 && positional != n {
+			fmt.Fprint(stderr, "only one positional ticket can be provided\n\n")
+			return nil, 0, false
+		}
+		positional = n
+		cleaned = cleaned[:len(cleaned)-1]
 	}
-	if ticket > 0 {
-		return ticket, true
-	}
-	return issue, true
+	return cleaned, positional, true
 }
 
-func parseTicketRequiredFlags(repoValue string, ticket int, dryRun bool, apply bool, stderr io.Writer) (gira.RepoRef, bool) {
-	if repoValue == "" || ticket <= 0 || dryRun == apply {
-		fmt.Fprint(stderr, "--repo, --ticket, and exactly one of --dry-run/--apply are required\n\n")
+func resolveExplicitTicket(ticket int, issue int, positional int, stderr io.Writer) (int, bool) {
+	candidates := make([]int, 0, 3)
+	for _, n := range []int{ticket, issue, positional} {
+		if n > 0 {
+			candidates = append(candidates, n)
+		}
+	}
+	for _, n := range candidates {
+		if n != candidates[0] {
+			fmt.Fprint(stderr, "--ticket, --issue, and positional ticket must refer to the same number when more than one is provided\n\n")
+			return 0, false
+		}
+	}
+	if len(candidates) == 0 {
+		return 0, true
+	}
+	return candidates[0], true
+}
+
+func resolveTicketContext(repo gira.RepoRef, ticket int, issue int, positional int, allowInference bool, stderr io.Writer) (int, bool) {
+	explicit, ok := resolveExplicitTicket(ticket, issue, positional, stderr)
+	if !ok {
+		return 0, false
+	}
+	if explicit > 0 {
+		return explicit, true
+	}
+	if !allowInference {
+		fmt.Fprint(stderr, "--ticket or positional ticket is required for ticket start\n\n")
+		return 0, false
+	}
+	inferred, err := inferTicketFromCurrentContext(repo, devCommandRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		return 0, false
+	}
+	return inferred, true
+}
+
+func parseTicketRequiredFlags(repoValue string, ticket int, dryRun bool, apply bool, allowTicketInference bool, stderr io.Writer) (gira.RepoRef, bool) {
+	if dryRun == apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run/--apply is required\n\n")
 		return gira.RepoRef{}, false
 	}
-	repo, err := gira.ParseRepoRef(repoValue)
+	if ticket <= 0 && !allowTicketInference {
+		fmt.Fprint(stderr, "--ticket or positional ticket is required\n\n")
+		return gira.RepoRef{}, false
+	}
+	repo, err := gira.ResolveRepoContext(repoValue, repoContextRunner)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return gira.RepoRef{}, false
@@ -1750,14 +1829,79 @@ func parseTicketRequiredFlags(repoValue string, ticket int, dryRun bool, apply b
 	return repo, true
 }
 
+func inferTicketFromCurrentContext(repo gira.RepoRef, runner gira.CommandRunner) (int, error) {
+	if runner == nil {
+		runner = gira.ExecCommandRunner{}
+	}
+	if out, err := runner.Run("git", "branch", "--show-current"); err == nil {
+		if n := issueNumberFromRef(strings.TrimSpace(string(out))); n > 0 {
+			return n, nil
+		}
+	}
+	out, err := runner.Run("gh", "pr", "view", "--repo", repo.FullName(), "--json", "body,headRefName,title")
+	if err != nil {
+		return 0, fmt.Errorf("ticket context unavailable: pass --ticket N or run from an issue branch")
+	}
+	var raw struct {
+		Body        string `json:"body"`
+		HeadRefName string `json:"headRefName"`
+		Title       string `json:"title"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return 0, fmt.Errorf("parse PR context JSON: %w", err)
+	}
+	issues := gira.ExtractClosureIssueNumbers(raw.Body)
+	if len(issues) == 1 {
+		return issues[0], nil
+	}
+	if len(issues) > 1 {
+		return 0, fmt.Errorf("ticket context ambiguous: PR body references multiple closing issues; pass --ticket N")
+	}
+	for _, ref := range []string{raw.HeadRefName, raw.Title} {
+		if n := issueNumberFromRef(ref); n > 0 {
+			return n, nil
+		}
+	}
+	return 0, fmt.Errorf("ticket context unavailable: pass --ticket N or run from an issue branch")
+}
+
+func issueNumberFromRef(ref string) int {
+	for _, segment := range strings.Split(ref, "/") {
+		if !strings.HasPrefix(segment, "issue-") {
+			continue
+		}
+		rest := strings.TrimPrefix(segment, "issue-")
+		digits := strings.Builder{}
+		for _, r := range rest {
+			if r < '0' || r > '9' {
+				break
+			}
+			digits.WriteRune(r)
+		}
+		if digits.Len() == 0 {
+			continue
+		}
+		n, _ := strconv.Atoi(digits.String())
+		if n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
 func formatTicketStart(result gira.WorkStartResult) string {
+	next := fmt.Sprintf("gira ticket pr --repo %s --ticket %d --dry-run", result.Repo, result.Issue)
+	if result.DryRun {
+		next = fmt.Sprintf("gira ticket start %d --apply", result.Issue)
+	} else {
+		next = "gira ticket pr --dry-run"
+	}
 	return fmt.Sprintf(
-		"ticket start: ticket #%d branch=%s status=%s\nnext step: gira ticket pr --repo %s --ticket %d --dry-run\n",
+		"ticket start: ticket #%d branch=%s status=%s\nnext step: %s\n",
 		result.Issue,
 		result.Branch,
 		result.NextStatus,
-		result.Repo,
-		result.Issue,
+		next,
 	)
 }
 
@@ -1770,7 +1914,7 @@ func formatTicketPR(result gira.WorkPRResult) string {
 	if url == "" {
 		url = "(planned)"
 	}
-	next := fmt.Sprintf("gira ticket status --repo %s --ticket %d", result.Repo, result.Issue)
+	next := "gira ticket status"
 	if result.Draft {
 		next = "mark the PR ready, then " + next
 	}
@@ -1819,9 +1963,9 @@ func formatTicketFinish(result gira.WorkFinishResult) string {
 func ticketStatusNextStep(result gira.WorkStatusResult) string {
 	switch result.NextAction {
 	case "start_work":
-		return fmt.Sprintf("gira ticket start --repo %s --ticket %d --apply", result.Repo, result.Issue)
+		return fmt.Sprintf("gira ticket start %d --apply", result.Issue)
 	case "open_pr":
-		return fmt.Sprintf("gira ticket pr --repo %s --ticket %d --apply", result.Repo, result.Issue)
+		return "gira ticket pr --apply"
 	case "mark_pr_ready":
 		return "mark the PR ready for review"
 	case "address_review":
@@ -1829,7 +1973,7 @@ func ticketStatusNextStep(result gira.WorkStatusResult) string {
 	case "wait_for_checks":
 		return "wait for required checks to finish or fix failing checks"
 	case "merge_when_policy_allows":
-		return "merge when policy checks pass"
+		return "gira ticket finish --dry-run"
 	case "done":
 		return "ticket is done"
 	case "closed":
@@ -1842,13 +1986,25 @@ func ticketStatusNextStep(result gira.WorkStatusResult) string {
 func ticketFinishNextStep(result gira.WorkFinishResult) string {
 	next := strings.TrimSpace(result.NextStep)
 	if next == "" {
-		return fmt.Sprintf("gira ticket status --repo %s --ticket %d", result.Repo, result.Issue)
+		return "gira ticket status"
 	}
 	next = strings.ReplaceAll(next, "gira work status", "gira ticket status")
 	next = strings.ReplaceAll(next, "gira work pr", "gira ticket pr")
 	next = strings.ReplaceAll(next, "gira work start", "gira ticket start")
 	next = strings.ReplaceAll(next, "--issue", "--ticket")
+	next = shortenTicketNextStep(next, result.Repo, result.Issue)
 	return next
+}
+
+func shortenTicketNextStep(next string, repo string, issue int) string {
+	if repo != "" {
+		next = strings.ReplaceAll(next, " --repo "+repo, "")
+	}
+	if issue > 0 {
+		next = strings.ReplaceAll(next, fmt.Sprintf(" --ticket %d", issue), "")
+		next = strings.ReplaceAll(next, fmt.Sprintf("gira ticket start --ticket %d", issue), fmt.Sprintf("gira ticket start %d", issue))
+	}
+	return strings.Join(strings.Fields(next), " ")
 }
 
 func normalizeTicketFinishResult(result gira.WorkFinishResult) gira.WorkFinishResult {

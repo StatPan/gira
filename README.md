@@ -51,20 +51,22 @@ gira status --repo OWNER/REPO
 Start and finish development from a ticket:
 
 ```bash
-gira status --repo OWNER/REPO
-gira ticket start --repo OWNER/REPO --ticket TICKET --dry-run
-gira ticket start --repo OWNER/REPO --ticket TICKET --apply
+gira status
+gira ticket start TICKET --dry-run
+gira ticket start TICKET --apply
 
 # implement the bounded issue scope, then verify locally
 go test ./...
 
-gira ticket pr --repo OWNER/REPO --ticket TICKET --dry-run
-gira ticket pr --repo OWNER/REPO --ticket TICKET --apply --draft
-gira ticket finish --repo OWNER/REPO --ticket TICKET --dry-run
-gira ticket finish --repo OWNER/REPO --ticket TICKET --apply
-gira ticket status --repo OWNER/REPO --ticket TICKET
+gira ticket pr --dry-run
+gira ticket pr --apply --draft
+gira ticket finish --dry-run
+gira ticket finish --apply
+gira ticket status
 gira projects sync --config .gira/config.yaml --dry-run
 ```
+
+`gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket pr`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
 
 You can open and merge a pull request with `gh pr create` and `gh pr merge`, but `gira ticket pr` and `gira ticket finish` keep the ticket lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
 
@@ -85,22 +87,22 @@ gira status --repo OWNER/REPO
 gira projects sync --config .gira/config.yaml --dry-run
 
 # 2. Start from an existing GitHub issue.
-gira ticket start --repo OWNER/REPO --ticket TICKET --dry-run
-gira ticket start --repo OWNER/REPO --ticket TICKET --apply
+gira ticket start TICKET --dry-run
+gira ticket start TICKET --apply
 
 # 3. Implement the bounded issue scope, then verify locally.
 go test ./...
 
 # 4. Open or validate the PR through Gira.
-gira ticket pr --repo OWNER/REPO --ticket TICKET --dry-run
-gira ticket pr --repo OWNER/REPO --ticket TICKET --apply --draft
+gira ticket pr --dry-run
+gira ticket pr --apply --draft
 
 # 5. Finish through Gira after review and checks are ready.
-gira ticket finish --repo OWNER/REPO --ticket TICKET --dry-run
-gira ticket finish --repo OWNER/REPO --ticket TICKET --apply
+gira ticket finish --dry-run
+gira ticket finish --apply
 
 # 6. Re-check the ticket and Project bridge.
-gira ticket status --repo OWNER/REPO --ticket TICKET
+gira ticket status
 gira projects sync --config .gira/config.yaml --dry-run
 ```
 

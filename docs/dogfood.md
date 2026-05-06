@@ -35,28 +35,28 @@ gira projects sync --config .gira/config.yaml --dry-run
 Pick a ready ticket, then start work:
 
 ```bash
-gira ticket start --repo StatPan/gira --ticket TICKET --dry-run
-gira ticket start --repo StatPan/gira --ticket TICKET --apply
+gira ticket start TICKET --dry-run
+gira ticket start TICKET --apply
 ```
 
 Open or validate the linked pull request:
 
 ```bash
-gira ticket pr --repo StatPan/gira --ticket TICKET --dry-run
-gira ticket pr --repo StatPan/gira --ticket TICKET --apply --draft
+gira ticket pr --dry-run
+gira ticket pr --apply --draft
 ```
 
 Finish the ticket through Gira after review and checks are ready:
 
 ```bash
-gira ticket finish --repo StatPan/gira --ticket TICKET --dry-run
-gira ticket finish --repo StatPan/gira --ticket TICKET --apply
+gira ticket finish --dry-run
+gira ticket finish --apply
 ```
 
 Check the ticket at any point:
 
 ```bash
-gira ticket status --repo StatPan/gira --ticket TICKET
+gira ticket status
 ```
 
 ## Sprint Commands

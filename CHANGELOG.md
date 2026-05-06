@@ -8,6 +8,7 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 - Added `gira ticket finish` to complete the ticket loop with linked PR validation, draft-ready handling, merge blockers, safe merge, local main sync, and convergence reporting.
 - Added shorter `gira ticket` daily commands with repo inference, positional ticket numbers, and branch/PR ticket context.
+- Added `gira ticket new` for repo-bound structured ticket creation with optional immediate start.
 
 ## v1.1.1 - 2026-05-06
 

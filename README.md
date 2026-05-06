@@ -52,8 +52,14 @@ Start and finish development from a ticket:
 
 ```bash
 gira status
-gira ticket start TICKET --dry-run
-gira ticket start TICKET --apply
+gira ticket new "Add login retry" \
+  --goal "Retry transient auth failures" \
+  --acceptance "retries 3 times;does not retry 401;has tests" \
+  --dry-run
+gira ticket new "Add login retry" \
+  --goal "Retry transient auth failures" \
+  --acceptance "retries 3 times;does not retry 401;has tests" \
+  --apply --start
 
 # implement the bounded issue scope, then verify locally
 go test ./...
@@ -66,7 +72,7 @@ gira ticket status
 gira projects sync --config .gira/config.yaml --dry-run
 ```
 
-`gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket pr`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
+`gira ticket new` creates a repo-bound executable ticket. It writes a structured issue body from `--goal`, `--scope`, `--acceptance`, and `--notes`, applies `type:*` and `status:ready`, and can immediately start the branch with `--start`. `gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket pr`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
 
 You can open and merge a pull request with `gh pr create` and `gh pr merge`, but `gira ticket pr` and `gira ticket finish` keep the ticket lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
 
@@ -86,9 +92,9 @@ When an LLM or coding agent operates a Gira-managed repository, follow this orde
 gira status --repo OWNER/REPO
 gira projects sync --config .gira/config.yaml --dry-run
 
-# 2. Start from an existing GitHub issue.
-gira ticket start TICKET --dry-run
-gira ticket start TICKET --apply
+# 2. Create and start a repo-bound ticket.
+gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --dry-run
+gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --apply --start
 
 # 3. Implement the bounded issue scope, then verify locally.
 go test ./...

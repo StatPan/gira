@@ -1,0 +1,28 @@
+#!/usr/bin/env sh
+set -eu
+
+src="${1:-docs-site}"
+out="${2:-site}"
+
+if [ ! -d "${src}" ]; then
+  echo "docs source directory not found: ${src}" >&2
+  exit 1
+fi
+
+rm -rf "${out}"
+mkdir -p "${out}"
+cp -R "${src}/." "${out}/"
+
+if [ ! -f "${out}/index.html" ]; then
+  echo "docs build failed: ${out}/index.html missing" >&2
+  exit 1
+fi
+
+for page in install quickstart jira-mapping ticket-workflow sprint-release distribution troubleshooting; do
+  if [ ! -f "${out}/${page}.html" ]; then
+    echo "docs build failed: ${out}/${page}.html missing" >&2
+    exit 1
+  fi
+done
+
+echo "docs site built: ${out}"

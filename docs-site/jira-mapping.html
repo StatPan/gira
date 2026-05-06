@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jira To Gira Mapping</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header><div class="wrap topbar"><a class="brand" href="index.html">Gira</a><nav><a href="quickstart.html">Quick Start</a><a href="ticket-workflow.html">Ticket Workflow</a></nav></div></header>
+  <main class="wrap">
+    <h1>Jira To GitHub Mapping</h1>
+    <p class="lead">Gira keeps Jira-style language while storing canonical state in GitHub.</p>
+    <table>
+      <thead><tr><th>Jira</th><th>GitHub</th><th>Gira behavior</th></tr></thead>
+      <tbody>
+        <tr><td>Workspace</td><td>Account plus configured repos</td><td>Optional inbox and repo backlog visibility.</td></tr>
+        <tr><td>Project</td><td>Repository</td><td>The default execution space.</td></tr>
+        <tr><td>Epic</td><td>Top-level issue with <code>type:epic</code></td><td><code>gira epic status</code> and <code>gira epic finish</code>.</td></tr>
+        <tr><td>Story, task, bug</td><td>Issue</td><td>Main executable work packet.</td></tr>
+        <tr><td>Sprint or release phase</td><td>Milestone</td><td>Planning and rollover boundary.</td></tr>
+        <tr><td>Status</td><td>Labels plus PR evidence</td><td>Cross-checked against branch, PR, review, and checks.</td></tr>
+        <tr><td>Done</td><td>Merged PR plus closed issue</td><td>Completion is proven by GitHub evidence.</td></tr>
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>

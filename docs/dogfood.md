@@ -22,6 +22,13 @@ Start by reading the repo status:
 gira status --repo StatPan/gira
 ```
 
+If a workspace inbox is configured, read repo-agnostic backlog before choosing work:
+
+```bash
+gira workspace status --config .gira/config.yaml
+gira workspace backlog --config .gira/config.yaml
+```
+
 Pick a ready ticket, then start work:
 
 ```bash

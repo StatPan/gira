@@ -1,0 +1,6 @@
+workspace:
+  name: personal
+  owner: StatPan
+  inbox_repo: StatPan/backlog
+  repos:
+    - StatPan/gira

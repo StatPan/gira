@@ -479,6 +479,116 @@ func TestPortfolioValidateJSONDiagnosticsExitOne(t *testing.T) {
 	}
 }
 
+func TestWorkspaceStatusJSON(t *testing.T) {
+	restore := newWorkspaceStatusReport
+	t.Cleanup(func() { newWorkspaceStatusReport = restore })
+	newWorkspaceStatusReport = func(configPath string) (gira.WorkspaceReport, error) {
+		if configPath != "testdata/workspace.yaml" {
+			t.Fatalf("unexpected config path: %s", configPath)
+		}
+		return gira.WorkspaceReport{
+			Workspace: gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			Inbox:     gira.WorkspaceInbox{Repo: "StatPan/backlog", Open: 1, NeedsRouting: 1},
+			Repos:     []gira.WorkspaceRepo{{Repo: "StatPan/gira", Open: 2, Ready: 1}},
+			Counts:    gira.WorkspaceCounts{Backlog: 3, InboxOpen: 1, RepoOpen: 2, Ready: 1},
+			Backlog:   []gira.WorkspaceBacklogItem{{Source: "inbox", Repo: "StatPan/backlog", Number: 7, Title: "Route later", State: "open", NeedsRouting: true}},
+			NextSteps: []string{"gira workspace ticket route --ticket 7 --repo OWNER/REPO --dry-run"},
+			FetchedAt: "2026-05-06T00:00:00Z",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "status", "--config", "testdata/workspace.yaml", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"workspace"`, `"repo": "StatPan/backlog"`, `"needs_routing": true`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace status JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestWorkspaceSyncRequiresMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "sync"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required for workspace sync") {
+		t.Fatalf("stderr missing mode guidance:\n%s", stderr.String())
+	}
+}
+
+func TestWorkspaceTicketNewJSON(t *testing.T) {
+	restore := newWorkspaceTicketNewReport
+	t.Cleanup(func() { newWorkspaceTicketNewReport = restore })
+	newWorkspaceTicketNewReport = func(configPath string, title string, body string) (gira.WorkspaceTicketNewReport, error) {
+		if configPath != "testdata/workspace.yaml" || title != "Capture product idea" || body != "Needs routing" {
+			t.Fatalf("unexpected ticket new args config=%s title=%s body=%s", configPath, title, body)
+		}
+		return gira.WorkspaceTicketNewReport{
+			Command:   "workspace ticket new",
+			Workspace: gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			InboxRepo: "StatPan/backlog",
+			Title:     title,
+			Created:   gira.WorkspaceTicketRef{Repo: "StatPan/backlog", Number: 8, URL: "https://github.com/StatPan/backlog/issues/8"},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "ticket", "new", "--config", "testdata/workspace.yaml", "--title", "Capture product idea", "--body", "Needs routing", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "workspace ticket new"`, `"number": 8`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace ticket new JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestWorkspaceTicketRouteRequiresModeRepoAndTicket(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "ticket", "route", "--ticket", "8", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--ticket, --repo, and exactly one of --dry-run or --apply are required") {
+		t.Fatalf("stderr missing route guidance:\n%s", stderr.String())
+	}
+}
+
+func TestWorkspaceTicketRouteJSON(t *testing.T) {
+	restore := newWorkspaceTicketRouteReport
+	t.Cleanup(func() { newWorkspaceTicketRouteReport = restore })
+	newWorkspaceTicketRouteReport = func(configPath string, ticketValue string, repo gira.RepoRef, dryRun bool) (gira.WorkspaceTicketRouteReport, error) {
+		if configPath != "testdata/workspace.yaml" || ticketValue != "8" || repo.FullName() != "StatPan/gira" || !dryRun {
+			t.Fatalf("unexpected route args config=%s ticket=%s repo=%s dryRun=%t", configPath, ticketValue, repo.FullName(), dryRun)
+		}
+		return gira.WorkspaceTicketRouteReport{
+			Command:    "workspace ticket route",
+			Workspace:  gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			InboxRepo:  "StatPan/backlog",
+			Ticket:     8,
+			TargetRepo: "StatPan/gira",
+			DryRun:     true,
+			Actions:    []gira.WorkspaceRouteAction{{Action: "execution_issue:create", Repo: "StatPan/gira", Reason: "ticket needs repository routing"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "ticket", "route", "--config", "testdata/workspace.yaml", "--ticket", "8", "--repo", "StatPan/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "workspace ticket route"`, `"dry_run": true`, `"action": "execution_issue:create"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace ticket route JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestTriageHelpFlagPrintsHelpAndExitsZero(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"triage", "-h"}, &stdout, &stderr)

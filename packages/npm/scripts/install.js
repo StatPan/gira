@@ -136,6 +136,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  install,
   checksumFor,
   verifyChecksum,
   releaseVersion,

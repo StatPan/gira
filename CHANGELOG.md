@@ -6,6 +6,10 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.1.1 - 2026-05-06
+
+- Fixed the npm/bun wrapper so the `gira` command can lazily download the native release binary when a package manager skips the install lifecycle script.
+
 ## v1.1.0 - 2026-05-06
 
 - Added `gira workspace ...` for Jira-like personal backlog, inbox tickets, and repo routing before work belongs to one execution repository.

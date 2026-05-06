@@ -19,15 +19,18 @@ type WorkStartResult struct {
 }
 
 type WorkPRResult struct {
-	Repo        string   `json:"repo"`
-	Issue       int      `json:"issue"`
-	DryRun      bool     `json:"dry_run"`
-	Draft       bool     `json:"draft"`
-	PRNumber    int      `json:"pr_number,omitempty"`
-	PRURL       string   `json:"pr_url,omitempty"`
-	Created     bool     `json:"created"`
-	Status      string   `json:"status"`
-	NextStatus  string   `json:"next_status"`
+	Repo       string `json:"repo"`
+	Issue      int    `json:"issue"`
+	DryRun     bool   `json:"dry_run"`
+	Draft      bool   `json:"draft"`
+	PRNumber   int    `json:"pr_number,omitempty"`
+	PRURL      string `json:"pr_url,omitempty"`
+	Created    bool   `json:"created"`
+	Status     string `json:"status"`
+	NextStatus string `json:"next_status"`
+	Branch     string `json:"branch,omitempty"`
+	BranchPush string `json:"branch_push,omitempty"`
+
 	Blockers    []string `json:"blockers"`
 	ClosingBody string   `json:"closing_body"`
 }
@@ -136,8 +139,24 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 
 	result.Blockers = prStatus.Blockers
 	if dryRun {
+		push, err := prepareWorkPRBranchPush(issue, issueNumber, dryRun, runner)
+		if err != nil {
+			return result, err
+		}
+		result.Branch = push.Branch
+		result.BranchPush = push.Status
+		if push.Status == "planned" {
+			result.Blockers = appendMissingWorkBlocker(result.Blockers, "branch_push_required")
+		}
 		return result, nil
 	}
+
+	push, err := prepareWorkPRBranchPush(issue, issueNumber, dryRun, runner)
+	if err != nil {
+		return result, err
+	}
+	result.Branch = push.Branch
+	result.BranchPush = push.Status
 
 	opened, err := OpenDevPRWithOptions(repo, issueNumber, draft, runner)
 	if err != nil {
@@ -274,6 +293,53 @@ func hasWorkBlocker(blockers []string, target string) bool {
 	return false
 }
 
+type workPRBranchPush struct {
+	Branch string
+	Status string
+}
+
+func prepareWorkPRBranchPush(issue devStartIssue, issueNumber int, dryRun bool, runner CommandRunner) (workPRBranchPush, error) {
+	expectedBranch := formatDevBranch(DefaultDevBranchPattern, issue.Number, issue.Title)
+	currentOut, err := runner.Run("git", "branch", "--show-current")
+	if err != nil {
+		return workPRBranchPush{}, fmt.Errorf("read current branch before PR create: %w", err)
+	}
+	currentBranch := strings.TrimSpace(string(currentOut))
+	if currentBranch == "" {
+		return workPRBranchPush{}, fmt.Errorf("cannot create PR from detached HEAD; checkout the ticket branch, then run `gira ticket pr --apply`")
+	}
+	if currentBranch == "main" || currentBranch == "master" {
+		return workPRBranchPush{}, fmt.Errorf("refusing to create ticket PR from %s; run `gira ticket start %d --apply` first", currentBranch, issueNumber)
+	}
+	if !isTicketBranchForIssue(currentBranch, issueNumber, expectedBranch) {
+		return workPRBranchPush{}, fmt.Errorf("current branch %q is not the ticket branch for #%d; run `gira ticket start %d --apply` first", currentBranch, issueNumber, issueNumber)
+	}
+	if _, err := runner.Run("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err == nil {
+		return workPRBranchPush{Branch: currentBranch, Status: "skipped"}, nil
+	}
+	if dryRun {
+		return workPRBranchPush{Branch: currentBranch, Status: "planned"}, nil
+	}
+	if _, err := runner.Run("git", "push", "-u", "origin", currentBranch); err != nil {
+		return workPRBranchPush{Branch: currentBranch, Status: "failed"}, fmt.Errorf("push ticket branch before PR create: %w", err)
+	}
+	return workPRBranchPush{Branch: currentBranch, Status: "applied"}, nil
+}
+
+func isTicketBranchForIssue(branch string, issueNumber int, expectedBranch string) bool {
+	if branch == expectedBranch {
+		return true
+	}
+	return strings.HasPrefix(branch, fmt.Sprintf("issue-%d-", issueNumber))
+}
+
+func appendMissingWorkBlocker(blockers []string, blocker string) []string {
+	if hasWorkBlocker(blockers, blocker) {
+		return blockers
+	}
+	return append(blockers, blocker)
+}
+
 func FormatWorkStart(result WorkStartResult) string {
 	return fmt.Sprintf(
 		"work start: issue #%d branch=%s status=%s\nnext step: gira work pr --repo %s --issue %d --dry-run\n",
@@ -293,12 +359,23 @@ func FormatWorkPR(result WorkPRResult) string {
 	url := strings.TrimSpace(result.PRURL)
 	if url == "" {
 		url = "(planned)"
+		created = "planned"
 	}
 	next := fmt.Sprintf("gira work status --repo %s --issue %d", result.Repo, result.Issue)
-	if result.Draft {
+	if result.DryRun {
+		next = fmt.Sprintf("gira work pr --repo %s --issue %d --apply", result.Repo, result.Issue)
+		if result.Draft {
+			next += " --draft"
+		}
+	}
+	if result.Draft && !result.DryRun {
 		next = "mark the PR ready, then " + next
 	}
-	return fmt.Sprintf("work pr: issue #%d pr=%s status=%s %s\nnext step: %s\n", result.Issue, url, result.NextStatus, created, next)
+	branchPush := ""
+	if result.BranchPush != "" && result.BranchPush != "skipped" {
+		branchPush = fmt.Sprintf(" branch_push=%s", result.BranchPush)
+	}
+	return fmt.Sprintf("work pr: issue #%d pr=%s status=%s %s%s\nnext step: %s\n", result.Issue, url, result.NextStatus, created, branchPush, next)
 }
 
 func FormatWorkStatus(result WorkStatusResult) string {

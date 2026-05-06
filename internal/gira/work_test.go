@@ -130,7 +130,9 @@ func TestOpenWorkPRApplyDraftKeepsInProgress(t *testing.T) {
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": issueJSON,
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
-		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126 --draft":                                                                                                  []byte("https://github.com/StatPan/gira/pull/200\n"),
+		"git branch --show-current":                                                              []byte("issue-126-work-command\n"),
+		"git rev-parse --abbrev-ref --symbolic-full-name @{u}":                                   []byte("origin/issue-126-work-command\n"),
+		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126 --draft": []byte("https://github.com/StatPan/gira/pull/200\n"),
 	}}
 
 	result, err := OpenWorkPR(repo, 126, false, true, runner)
@@ -148,9 +150,11 @@ func TestOpenWorkPRApplyNonDraftMovesInReview(t *testing.T) {
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": issueJSON,
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
-		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126":                                                                                                          []byte("https://github.com/StatPan/gira/pull/201\n"),
-		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                                                                                                                nil,
-		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":                                                                                                        nil,
+		"git branch --show-current":                                                        []byte("issue-126-work-command\n"),
+		"git rev-parse --abbrev-ref --symbolic-full-name @{u}":                             []byte("origin/issue-126-work-command\n"),
+		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126":   []byte("https://github.com/StatPan/gira/pull/201\n"),
+		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":         nil,
+		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review": nil,
 	}}
 
 	result, err := OpenWorkPR(repo, 126, false, false, runner)
@@ -167,6 +171,9 @@ func TestOpenWorkPRDryRunReportsMissingLinkedPR(t *testing.T) {
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
+		"git branch --show-current": []byte("issue-126-work-command\n"),
+	}, errs: map[string]error{
+		"git rev-parse --abbrev-ref --symbolic-full-name @{u}": fmt.Errorf("fatal: no upstream configured: exit status 128"),
 	}}
 
 	result, err := OpenWorkPR(repo, 126, true, false, runner)
@@ -176,9 +183,67 @@ func TestOpenWorkPRDryRunReportsMissingLinkedPR(t *testing.T) {
 	if !containsCall(result.Blockers, "missing_linked_pr") {
 		t.Fatalf("expected missing linked PR blocker, got %+v", result.Blockers)
 	}
+	if !containsCall(result.Blockers, "branch_push_required") || result.BranchPush != "planned" {
+		t.Fatalf("expected planned branch push blocker, got %+v", result)
+	}
 	if containsCall(runner.calls, "gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126") {
 		t.Fatalf("dry-run should not create PR, calls=%v", runner.calls)
 	}
+	if containsCall(runner.calls, "git push -u origin issue-126-work-command") {
+		t.Fatalf("dry-run should not push branch, calls=%v", runner.calls)
+	}
+}
+
+func TestOpenWorkPRApplyPushesUnpushedTicketBranch(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
+		"git branch --show-current":                 []byte("issue-126-work-command\n"),
+		"git push -u origin issue-126-work-command": nil,
+		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126 --draft": []byte("https://github.com/StatPan/gira/pull/204\n"),
+	}, errs: map[string]error{
+		"git rev-parse --abbrev-ref --symbolic-full-name @{u}": fmt.Errorf("fatal: no upstream configured: exit status 128"),
+	}}
+
+	result, err := OpenWorkPR(repo, 126, false, true, runner)
+	if err != nil {
+		t.Fatalf("OpenWorkPR error: %v", err)
+	}
+	if result.Branch != "issue-126-work-command" || result.BranchPush != "applied" || result.PRNumber != 204 {
+		t.Fatalf("expected pushed branch and created PR, got %+v", result)
+	}
+	pushIndex := callIndex(runner.calls, "git push -u origin issue-126-work-command")
+	createIndex := callIndex(runner.calls, "gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126 --draft")
+	if pushIndex < 0 || createIndex < 0 || pushIndex > createIndex {
+		t.Fatalf("expected push before PR create, calls=%v", runner.calls)
+	}
+}
+
+func TestOpenWorkPRApplyRejectsWrongBranch(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": []byte(`[]`),
+		"git branch --show-current": []byte("feature/other\n"),
+	}}
+
+	_, err := OpenWorkPR(repo, 126, false, false, runner)
+	if err == nil || !strings.Contains(err.Error(), "not the ticket branch") {
+		t.Fatalf("expected wrong branch error, got %v", err)
+	}
+	if containsCall(runner.calls, "git push -u origin feature/other") {
+		t.Fatalf("wrong branch should not be pushed, calls=%v", runner.calls)
+	}
+}
+
+func callIndex(calls []string, target string) int {
+	for i, call := range calls {
+		if call == target {
+			return i
+		}
+	}
+	return -1
 }
 
 func TestOpenWorkPRApplyReusesExistingLinkedPR(t *testing.T) {

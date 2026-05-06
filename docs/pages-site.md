@@ -14,6 +14,8 @@ The build copies static site files into `site/` and verifies the required public
 
 Pull requests run the docs build. Pushes to `main` upload the generated `site/` artifact and deploy it with GitHub Pages.
 
+If repository Pages settings are not enabled yet, the deployment step reports a warning instead of failing the workflow. Enable GitHub Pages in repository settings, then rerun the workflow to publish the uploaded site artifact.
+
 ## Custom Domain
 
 The Pages artifact includes `CNAME` with:

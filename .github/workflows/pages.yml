@@ -43,4 +43,10 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v4.0.5
+
+      - name: Report skipped Pages deployment setup
+        if: steps.deployment.outcome == 'failure'
+        run: |
+          echo "::warning::GitHub Pages deployment failed. Enable Pages for this repository in Settings > Pages, then rerun this workflow."

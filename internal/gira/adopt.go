@@ -9,13 +9,14 @@ import (
 )
 
 type AdoptIssueInput struct {
-	Repo      RepoRef  `json:"repo"`
-	Issues    []int    `json:"issues,omitempty"`
-	Milestone string   `json:"milestone,omitempty"`
-	Labels    []string `json:"labels,omitempty"`
-	State     string   `json:"state,omitempty"`
-	DryRun    bool     `json:"dry_run"`
-	Apply     bool     `json:"apply"`
+	Repo            RepoRef  `json:"repo"`
+	Issues          []int    `json:"issues,omitempty"`
+	Milestone       string   `json:"milestone,omitempty"`
+	Labels          []string `json:"labels,omitempty"`
+	State           string   `json:"state,omitempty"`
+	NormalizeStatus bool     `json:"normalize_status,omitempty"`
+	DryRun          bool     `json:"dry_run"`
+	Apply           bool     `json:"apply"`
 }
 
 type AdoptIssuesReport struct {
@@ -48,13 +49,14 @@ type AdoptIssueItem struct {
 }
 
 type AdoptIssuesAction struct {
-	Issue     int      `json:"issue"`
-	Title     string   `json:"title"`
-	Action    string   `json:"action"`
-	Status    string   `json:"status"`
-	Milestone string   `json:"milestone,omitempty"`
-	Labels    []string `json:"labels,omitempty"`
-	Reason    string   `json:"reason"`
+	Issue        int      `json:"issue"`
+	Title        string   `json:"title"`
+	Action       string   `json:"action"`
+	Status       string   `json:"status"`
+	Milestone    string   `json:"milestone,omitempty"`
+	Labels       []string `json:"labels,omitempty"`
+	RemoveLabels []string `json:"remove_labels,omitempty"`
+	Reason       string   `json:"reason"`
 }
 
 type adoptRawIssue struct {
@@ -107,11 +109,16 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 		selected[issueNumber] = struct{}{}
 	}
 	if len(selected) == 0 {
-		report.NextStep = fmt.Sprintf("gira adopt issues --repo %s --issue N --milestone TITLE --label type:task --dry-run", input.Repo.FullName())
-		return report, nil
+		if !input.NormalizeStatus {
+			report.NextStep = fmt.Sprintf("gira adopt issues --repo %s --issues 1-3 --milestone TITLE --label type:task --dry-run", input.Repo.FullName())
+			return report, nil
+		}
+		for _, issue := range issues {
+			selected[issue.Number] = struct{}{}
+		}
 	}
-	if strings.TrimSpace(input.Milestone) == "" && len(normalizeAdoptLabels(input.Labels)) == 0 {
-		return report, fmt.Errorf("--milestone or --label is required when --issue is provided")
+	if strings.TrimSpace(input.Milestone) == "" && len(normalizeAdoptLabels(input.Labels)) == 0 && !input.NormalizeStatus {
+		return report, fmt.Errorf("--milestone, --label, or --normalize-status is required when issues are selected")
 	}
 	byNumber := map[int]AdoptIssueItem{}
 	for _, issue := range issues {
@@ -119,12 +126,37 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 		byNumber[item.Number] = item
 	}
 	labels := normalizeAdoptLabels(input.Labels)
+	statusDoneExists := false
+	if input.NormalizeStatus {
+		statusDoneExists, err = repoHasLabel(input.Repo, "status:done", runner)
+		if err != nil {
+			return report, err
+		}
+	}
 	for issueNumber := range selected {
 		item, ok := byNumber[issueNumber]
 		if !ok {
 			return report, fmt.Errorf("issue #%d was not found in %s issues", issueNumber, state)
 		}
-		action := AdoptIssuesAction{Issue: item.Number, Title: item.Title, Action: "issue:update", Status: "planned", Milestone: strings.TrimSpace(input.Milestone), Labels: labels, Reason: "explicit issue adoption mapping"}
+		removeLabels := []string{}
+		addLabels := append([]string{}, labels...)
+		actionName := "issue:update"
+		reason := "explicit issue adoption mapping"
+		if input.NormalizeStatus && strings.EqualFold(item.State, "closed") {
+			removeLabels = activeStatusLabels(item.Labels)
+			if statusDoneExists && !hasLabel(item.Labels, "status:done") {
+				addLabels = append(addLabels, "status:done")
+			}
+			addLabels = normalizeAdoptLabels(addLabels)
+			if strings.TrimSpace(input.Milestone) == "" && len(labels) == 0 {
+				actionName = "issue:normalize-status"
+				reason = "closed issue status normalization"
+			}
+		}
+		if strings.TrimSpace(input.Milestone) == "" && len(addLabels) == 0 && len(removeLabels) == 0 {
+			continue
+		}
+		action := AdoptIssuesAction{Issue: item.Number, Title: item.Title, Action: actionName, Status: "planned", Milestone: strings.TrimSpace(input.Milestone), Labels: addLabels, RemoveLabels: removeLabels, Reason: reason}
 		if input.Apply {
 			if err := applyAdoptIssue(input.Repo, action, runner); err != nil {
 				return report, err
@@ -139,12 +171,21 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 	sort.Slice(report.Actions, func(i, j int) bool { return report.Actions[i].Issue < report.Actions[j].Issue })
 	report.Counts.Selected = len(report.Actions)
 	if input.DryRun {
-		report.NextStep = fmt.Sprintf("gira adopt issues --repo %s --issue %s", input.Repo.FullName(), joinIssueNumbers(input.Issues))
+		report.NextStep = fmt.Sprintf("gira adopt issues --repo %s", input.Repo.FullName())
+		if len(input.Issues) > 0 {
+			report.NextStep += " --issues " + joinIssueNumbers(input.Issues)
+		}
+		if input.NormalizeStatus && len(input.Issues) == 0 {
+			report.NextStep += " --state " + state
+		}
 		if strings.TrimSpace(input.Milestone) != "" {
 			report.NextStep += " --milestone " + shellQuote(input.Milestone)
 		}
 		for _, label := range labels {
 			report.NextStep += " --label " + shellQuote(label)
+		}
+		if input.NormalizeStatus {
+			report.NextStep += " --normalize-status"
 		}
 		report.NextStep += " --apply"
 	} else {
@@ -212,8 +253,30 @@ func applyAdoptIssue(repo RepoRef, action AdoptIssuesAction, runner CommandRunne
 	for _, label := range action.Labels {
 		args = append(args, "--add-label", label)
 	}
+	for _, label := range action.RemoveLabels {
+		args = append(args, "--remove-label", label)
+	}
 	_, err := runner.Run("gh", args...)
 	return err
+}
+
+func repoHasLabel(repo RepoRef, label string, runner CommandRunner) (bool, error) {
+	output, err := runner.Run("gh", "label", "list", "--repo", repo.FullName(), "--json", "name", "--limit", "1000")
+	if err != nil {
+		return false, err
+	}
+	var rows []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(output, &rows); err != nil {
+		return false, fmt.Errorf("parse label list: %w", err)
+	}
+	for _, row := range rows {
+		if strings.EqualFold(strings.TrimSpace(row.Name), label) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func normalizeAdoptLabels(values []string) []string {
@@ -243,6 +306,27 @@ func hasAnyLabelPrefix(labels []string, prefix string) bool {
 		}
 	}
 	return false
+}
+
+func activeStatusLabels(labels []string) []string {
+	active := map[string]struct{}{
+		"status:ready":          {},
+		"status:in-progress":    {},
+		"status:in-review":      {},
+		"status:blocked":        {},
+		"status:needs-review":   {},
+		"status:needs-design":   {},
+		"status:needs-decision": {},
+	}
+	out := []string{}
+	for _, label := range labels {
+		normalized := strings.ToLower(strings.TrimSpace(label))
+		if _, ok := active[normalized]; ok {
+			out = append(out, label)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func joinIssueNumbers(values []int) string {
@@ -286,6 +370,9 @@ func FormatAdoptIssuesReport(report AdoptIssuesReport) string {
 			}
 			if len(action.Labels) > 0 {
 				fmt.Fprintf(&b, " labels=%s", strings.Join(action.Labels, ","))
+			}
+			if len(action.RemoveLabels) > 0 {
+				fmt.Fprintf(&b, " remove_labels=%s", strings.Join(action.RemoveLabels, ","))
 			}
 			b.WriteString("\n")
 		}

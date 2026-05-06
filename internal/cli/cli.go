@@ -256,6 +256,8 @@ const adoptHelp = `Adopt existing GitHub issues into Gira planning.
 Usage:
   gira adopt issues --repo OWNER/REPO --dry-run [--state open|all] [--json]
   gira adopt issues --repo OWNER/REPO --issue N [--issue N] --milestone TITLE [--label LABEL] --dry-run|--apply [--json]
+  gira adopt issues --repo OWNER/REPO --issues 1,2,3|1-12 --milestone TITLE [--label LABEL] --dry-run|--apply [--json]
+  gira adopt issues --repo OWNER/REPO --state all --normalize-status --dry-run|--apply [--json]
 
 Commands:
   issues  List unmapped issues and apply explicit milestone/label mappings
@@ -263,9 +265,11 @@ Commands:
 Flags:
   --repo string       Target GitHub repo in OWNER/REPO format
   --issue int         Issue number to map; repeatable
+  --issues string     Issue numbers or ranges to map, for example 1,2,3 or 1-12; repeatable
   --milestone string  Milestone title to assign to selected issues
   --label string      Label to add to selected issues; repeatable or comma-separated
   --state string      Issues to inspect: open or all (default "open")
+  --normalize-status  Remove active status labels from closed selected issues
   --dry-run           Preview without mutation
   --apply             Apply selected explicit mappings
   --json              Emit stable JSON output
@@ -2505,6 +2509,7 @@ func shortenTicketNextStep(next string, repo string, issue int) string {
 }
 
 func parseRepeatedIssueNumbers(values []string) ([]int, error) {
+	seen := map[int]struct{}{}
 	var numbers []int
 	for _, value := range values {
 		for _, part := range strings.Split(value, ",") {
@@ -2512,10 +2517,33 @@ func parseRepeatedIssueNumbers(values []string) ([]int, error) {
 			if trimmed == "" {
 				continue
 			}
+			if strings.Contains(trimmed, "-") {
+				bounds := strings.Split(trimmed, "-")
+				if len(bounds) != 2 {
+					return nil, fmt.Errorf("--issue/--issues values must be positive integers or ranges")
+				}
+				start, startErr := strconv.Atoi(strings.TrimSpace(bounds[0]))
+				end, endErr := strconv.Atoi(strings.TrimSpace(bounds[1]))
+				if startErr != nil || endErr != nil || start <= 0 || end <= 0 || start > end {
+					return nil, fmt.Errorf("--issue/--issues ranges must be positive ascending integers")
+				}
+				for n := start; n <= end; n++ {
+					if _, ok := seen[n]; ok {
+						continue
+					}
+					seen[n] = struct{}{}
+					numbers = append(numbers, n)
+				}
+				continue
+			}
 			n, err := strconv.Atoi(trimmed)
 			if err != nil || n <= 0 {
-				return nil, fmt.Errorf("--issue values must be positive integers")
+				return nil, fmt.Errorf("--issue/--issues values must be positive integers")
 			}
+			if _, ok := seen[n]; ok {
+				continue
+			}
+			seen[n] = struct{}{}
 			numbers = append(numbers, n)
 		}
 	}
@@ -3196,14 +3224,17 @@ func runAdopt(args []string, stdout io.Writer, stderr io.Writer) int {
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	milestone := fs.String("milestone", "", "Milestone title")
 	state := fs.String("state", "open", "Issues to inspect: open or all")
+	normalizeStatus := fs.Bool("normalize-status", false, "Remove active status labels from closed selected issues")
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
 	apply := fs.Bool("apply", false, "Apply selected mappings")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
 	var issues repeatedStringFlag
+	var issueSpecs repeatedStringFlag
 	var labels repeatedStringFlag
 	fs.Var(&issues, "issue", "Issue number to map")
+	fs.Var(&issueSpecs, "issues", "Issue numbers or ranges to map")
 	fs.Var(&labels, "label", "Label to add")
 	if err := fs.Parse(args[1:]); err != nil {
 		fmt.Fprintf(stderr, "%v\n\n", err)
@@ -3229,12 +3260,14 @@ func runAdopt(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	issueNumbers, err := parseRepeatedIssueNumbers(issues)
+	allIssueSpecs := append([]string{}, issues...)
+	allIssueSpecs = append(allIssueSpecs, issueSpecs...)
+	issueNumbers, err := parseRepeatedIssueNumbers(allIssueSpecs)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	report, err := newAdoptIssuesReport(gira.AdoptIssueInput{Repo: repo, Issues: issueNumbers, Milestone: *milestone, Labels: labels, State: *state, DryRun: *dryRun, Apply: *apply})
+	report, err := newAdoptIssuesReport(gira.AdoptIssueInput{Repo: repo, Issues: issueNumbers, Milestone: *milestone, Labels: labels, State: *state, NormalizeStatus: *normalizeStatus, DryRun: *dryRun, Apply: *apply})
 	if err != nil {
 		if *jsonOutput {
 			out, _ := json.MarshalIndent(report, "", "  ")

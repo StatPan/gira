@@ -6,6 +6,14 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.3.1 - 2026-05-06
+
+- Made `gira doctor` adoption-aware so optional Gira sample bootstrap issues no longer make existing repositories look unhealthy.
+- Clarified `gira ops sync` as the canonical metadata sync command while keeping `gira sync` as an alias.
+- Extended `gira adopt issues` with `--issues` list/range selection for bulk milestone and label adoption.
+- Added `gira adopt issues --normalize-status` to remove active status labels from closed issues during existing-repo cleanup.
+- Changed doctor local git readiness so Gira-owned audit ledger changes do not fail readiness when no user worktree changes are present.
+
 ## v1.3.0 - 2026-05-06
 
 - Added bootstrap/workspace adoption flow polish: default `.gira/config.yaml`, conflict continuation guidance, and first branch push handling for `gira ticket pr`.

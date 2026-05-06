@@ -27,6 +27,7 @@ If a workspace inbox is configured, read repo-agnostic backlog before choosing w
 ```bash
 gira workspace status --config .gira/config.yaml
 gira workspace backlog --config .gira/config.yaml
+gira projects sync --config .gira/config.yaml --dry-run
 ```
 
 Pick a ready ticket, then start work:

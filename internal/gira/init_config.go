@@ -18,10 +18,17 @@ type InitConfig struct {
 }
 
 type WorkspaceConfig struct {
-	Name      string   `yaml:"name" toml:"name" json:"name"`
-	Owner     string   `yaml:"owner" toml:"owner" json:"owner"`
-	InboxRepo string   `yaml:"inbox_repo" toml:"inbox_repo" json:"inbox_repo"`
-	Repos     []string `yaml:"repos" toml:"repos" json:"repos"`
+	Name      string        `yaml:"name" toml:"name" json:"name"`
+	Owner     string        `yaml:"owner" toml:"owner" json:"owner"`
+	InboxRepo string        `yaml:"inbox_repo" toml:"inbox_repo" json:"inbox_repo"`
+	Repos     []string      `yaml:"repos" toml:"repos" json:"repos"`
+	Project   ProjectConfig `yaml:"project" toml:"project" json:"project"`
+}
+
+type ProjectConfig struct {
+	Owner  string `yaml:"owner" toml:"owner" json:"owner"`
+	Number int    `yaml:"number" toml:"number" json:"number"`
+	Title  string `yaml:"title" toml:"title" json:"title"`
 }
 
 type PortfolioConfig struct {
@@ -88,6 +95,14 @@ func LoadInitConfig(path string) (InitConfig, error) {
 			return InitConfig{}, fmt.Errorf("invalid init config %q: workspace.repos contains duplicate repo %q", path, repoValue)
 		}
 		seenWorkspaceRepos[repoValue] = struct{}{}
+	}
+	if strings.TrimSpace(cfg.Workspace.Project.Owner) != "" || cfg.Workspace.Project.Number != 0 || strings.TrimSpace(cfg.Workspace.Project.Title) != "" {
+		if strings.TrimSpace(cfg.Workspace.Project.Owner) == "" {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: workspace.project.owner is required when workspace.project is set", path)
+		}
+		if cfg.Workspace.Project.Number <= 0 {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: workspace.project.number must be > 0 when workspace.project is set", path)
+		}
 	}
 	if strings.TrimSpace(cfg.Portfolio.Repo) != "" {
 		if _, err := ParseRepoRef(cfg.Portfolio.Repo); err != nil {

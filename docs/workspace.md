@@ -21,9 +21,15 @@ workspace:
   repos:
     - OWNER/app
     - OWNER/cli
+  project:
+    owner: OWNER
+    number: 7
+    title: Gira
 ```
 
 `workspace.inbox_repo` is required. It may be a private personal repo if the backlog should not appear inside any execution repo. `workspace.repos` is the explicit allowlist of repositories that can receive routed execution issues.
+
+`workspace.project` points to an existing GitHub Projects v2 board. Gira does not create the Project in this slice; it syncs configured repo issues into that Project so the GitHub Projects tab stays visible without manual `gh project` commands.
 
 The older `portfolio` config remains a compatibility alias, but new docs should use `workspace` because it matches the intended Jira-like user model.
 
@@ -41,6 +47,13 @@ Normalize labels and milestones across the inbox and execution repos:
 ```bash
 gira workspace sync --dry-run --config .gira/config.yaml
 gira workspace sync --apply --config .gira/config.yaml
+```
+
+Sync visible GitHub Projects board items:
+
+```bash
+gira projects sync --dry-run --config .gira/config.yaml
+gira projects sync --apply --config .gira/config.yaml
 ```
 
 Capture a repo-agnostic ticket:
@@ -66,6 +79,6 @@ gira ticket status --repo OWNER/app --ticket 34
 
 ## Boundary
 
-This is not GitHub Projects v2 automation and not a separate Jira import/export database. Workspace commands only operate on issues, labels, milestones, and links that remain visible in GitHub.
+This is not a separate Jira import/export database. Workspace commands operate on issues, labels, milestones, and links that remain visible in GitHub. `gira projects sync` is a visibility bridge for an existing GitHub Project; issues remain the source of truth.
 
 Use `workspace` for personal or cross-repo intake. Use `ticket`, `sprint`, `release`, and `status` once the work belongs to one execution repo.

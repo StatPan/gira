@@ -21,6 +21,7 @@ Usage:
 
 Daily commands:
   workspace   Personal workspace inbox and backlog overview
+  projects    Sync visible GitHub Projects board items
   ticket      Jira-style ticket lifecycle commands
   sprint      Sprint iteration planning/start/close workflow
   release     Release readiness gate report
@@ -101,6 +102,20 @@ Commands:
   sync     Sync Gira metadata across inbox and execution repos
   ticket   Create or route repo-agnostic inbox tickets
   project  Read-only GitHub Projects v2 visibility planning
+
+Flags:
+  --config string  Workspace config path (default ".gira/config.yaml")
+  --json           Emit stable JSON output
+  -h, --help       Show help
+`
+
+const projectsHelp = `Sync visible GitHub Projects board items.
+
+Usage:
+  gira projects sync --dry-run|--apply [--config .gira/config.yaml] [--json]
+
+Commands:
+  sync  Add missing workspace issues to the configured GitHub Project
 
 Flags:
   --config string  Workspace config path (default ".gira/config.yaml")
@@ -638,6 +653,14 @@ var newWorkspaceProjectPlanReport = func(configPath string) (gira.WorkspaceProje
 	return gira.BuildWorkspaceProjectPlanReport(resolved, builder)
 }
 
+var newProjectsSyncReport = func(configPath string, dryRun bool) (gira.ProjectsSyncReport, error) {
+	resolved, err := gira.ResolveWorkspaceConfig(configPath)
+	if err != nil {
+		return gira.ProjectsSyncReport{}, err
+	}
+	return gira.BuildProjectsSyncReport(resolved, gira.NewGHProjectsSyncClient(gira.ExecCommandRunner{}), dryRun, time.Now())
+}
+
 var newGraphClient = func(repo gira.RepoRef) gira.GraphClient {
 	return gira.NewGHGraphClient(repo, gira.ExecCommandRunner{})
 }
@@ -736,6 +759,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runInit(args[1:], stdout, stderr)
 	case "workspace":
 		return runWorkspace(args[1:], stdout, stderr)
+	case "projects":
+		return runProjects(args[1:], stdout, stderr)
 	case "start":
 		return runTicketStart(args[1:], stdout, stderr)
 	case "ticket":
@@ -2179,6 +2204,61 @@ func runWorkspaceProject(args []string, stdout io.Writer, stderr io.Writer) int 
 		return 0
 	}
 	fmt.Fprintf(stdout, "workspace project plan: %d repos inspected\nnext step: keep Projects v2 read-only until workspace overview is stable\n", len(report.Repos))
+	return 0
+}
+
+func runProjects(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, projectsHelp)
+		return 0
+	}
+	if args[0] != "sync" {
+		fmt.Fprintf(stderr, "unknown projects command: %s\n\n", args[0])
+		fmt.Fprint(stderr, projectsHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("projects sync", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	dryRun := fs.Bool("dry-run", false, "Plan sync without mutation")
+	apply := fs.Bool("apply", false, "Apply projects sync")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args[1:]); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, projectsHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, projectsHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, projectsHelp)
+		return 2
+	}
+	if *dryRun == *apply {
+		fmt.Fprintf(stderr, "exactly one of --dry-run or --apply is required for projects sync\n\n")
+		fmt.Fprint(stderr, projectsHelp)
+		return 2
+	}
+	report, err := newProjectsSyncReport(*configPath, *dryRun)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode projects sync JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatProjectsSyncReport(report))
 	return 0
 }
 

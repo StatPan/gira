@@ -43,6 +43,7 @@ Run the daily Jira-style ticket loop:
 gira workspace status --config .gira/config.yaml
 gira workspace ticket new --title "Capture product idea"
 gira workspace ticket route --ticket 12 --repo OWNER/REPO --dry-run
+gira projects sync --config .gira/config.yaml --dry-run
 gira status --repo OWNER/REPO
 gira ticket start --repo OWNER/REPO --ticket 12 --dry-run
 gira ticket start --repo OWNER/REPO --ticket 12 --apply
@@ -64,6 +65,7 @@ The Go-built `gira` binary is the sole product implementation. The default user 
 
 - `gira ticket ...` is the daily issue -> branch -> PR workflow.
 - `gira workspace ...` is the Jira-like personal workspace and inbox layer for repo-agnostic backlog before work is routed to an execution repo.
+- `gira projects ...` syncs visible GitHub Projects board items from the workspace issue source of truth.
 - `gira sprint ...`, `gira release`, and `gira status` are daily planning and reporting commands.
 - `gira ops ...` contains advanced setup, migration, policy, audit, and raw GitHub controls.
 - `gira start` and `gira work ...` remain compatibility aliases.
@@ -112,9 +114,13 @@ gira workspace sync --dry-run --config .gira/config.yaml
 gira workspace ticket new --title "Define billing model" --config .gira/config.yaml
 gira workspace ticket route --ticket 12 --repo OWNER/app --dry-run --config .gira/config.yaml
 gira workspace ticket route --ticket 12 --repo OWNER/app --apply --config .gira/config.yaml
+gira projects sync --dry-run --config .gira/config.yaml
+gira projects sync --apply --config .gira/config.yaml
 ```
 
 `workspace ticket new` creates an inbox ticket. `workspace ticket route` creates a repo execution issue and links it back to the inbox ticket. After routing, the normal loop continues with `gira ticket start`, `gira ticket pr`, and `gira ticket status` on the target repo.
+
+`projects sync` keeps an existing GitHub Projects v2 board visible by linking configured repos, adding missing open issues as project items, and mirroring basic Gira status labels to the board's standard Status field. It does not create Projects or custom fields in this slice.
 
 ## Install, Upgrade, and Remove
 

@@ -25,6 +25,7 @@ Daily commands:
   projects    Sync visible GitHub Projects board items
   adopt       Plan or apply explicit adoption mappings for existing issues
   ticket      Jira-style ticket lifecycle commands
+  epic        Numberless epic status and finish commands
   sprint      Sprint iteration planning/start/close workflow
   release     Release readiness gate report
   status      Show a compact read-only GitHub status summary
@@ -86,6 +87,11 @@ const guideQuickstart = `Gira quickstart: first ticket to merged PR
 7. Finish the ticket.
    gira ticket finish --apply
    gira ticket status
+
+8. Finish an epic when its child issues are closed.
+   gira epic status
+   gira epic finish --dry-run
+   gira epic finish --apply
 `
 
 const guideTicket = `Gira ticket guide
@@ -534,6 +540,34 @@ Flags:
   -h, --help       Show help
 `
 
+const epicHelp = `Jira-style epic lifecycle commands.
+
+Usage:
+  gira epic status [--repo OWNER/REPO] [--ticket N] [--title TEXT] [--slug SLUG] [--milestone TITLE] [--json]
+  gira epic finish --dry-run|--apply [--repo OWNER/REPO] [--ticket N] [--title TEXT] [--slug SLUG] [--milestone TITLE] [--json]
+
+Commands:
+  status  Resolve an epic without requiring its number and show child readiness
+  finish  Close an epic through Gira when all child issues are closed
+
+Selection:
+  Gira first uses --ticket when provided, then the current issue-N-* branch or linked PR context.
+  Without a ticket context, --title, --slug, and --milestone narrow open type:epic issues.
+  If exactly one open epic remains in the repo, Gira selects it automatically.
+
+Flags:
+  --repo string       Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
+  --ticket int        Epic issue number. Advanced fallback when context is ambiguous
+  --issue int         Compatibility alias for --ticket
+  --title string      Match an open epic title by substring
+  --slug string       Match an open epic title slug
+  --milestone string  Match an open epic milestone title
+  --dry-run           Preview without mutation
+  --apply             Apply close and status label changes
+  --json              Emit stable JSON output
+  -h, --help          Show help
+`
+
 const workerHelp = `Worker coordination commands for issue ownership and handoff payloads.
 
 Usage:
@@ -955,6 +989,14 @@ var newTicketChecksReport = func(repo gira.RepoRef, issue int, wait time.Duratio
 	return gira.BuildTicketChecksReport(repo, issue, wait, pollInterval, devCommandRunner)
 }
 
+var newEpicStatusReport = func(input gira.EpicInput) (gira.EpicReport, error) {
+	return gira.BuildEpicStatusReport(input, devCommandRunner)
+}
+
+var newEpicFinishReport = func(input gira.EpicInput) (gira.EpicReport, error) {
+	return gira.FinishEpic(input, devCommandRunner)
+}
+
 var newUpgradeReport = func(channel string) (gira.UpgradeReport, error) {
 	executable, _ := os.Executable()
 	return gira.BuildUpgradeReport(channel, executable, nil)
@@ -988,6 +1030,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTicketStart(args[1:], stdout, stderr)
 	case "ticket":
 		return runTicket(args[1:], stdout, stderr)
+	case "epic":
+		return runEpic(args[1:], stdout, stderr)
 	case "ops":
 		return runOps(args[1:], stdout, stderr)
 	case "bootstrap":
@@ -1684,6 +1728,140 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 }
 
+func runEpic(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		_, _ = io.WriteString(stdout, epicHelp)
+		return 0
+	}
+	switch args[0] {
+	case "status":
+		return runEpicStatus(args[1:], stdout, stderr)
+	case "finish", "close":
+		return runEpicFinish(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown epic command: %s\n\n", args[0])
+		_, _ = io.WriteString(stderr, epicHelp)
+		return 2
+	}
+}
+
+func runEpicStatus(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("epic status", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Epic issue number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	title := fs.String("title", "", "Epic title substring")
+	slug := fs.String("slug", "", "Epic title slug")
+	milestone := fs.String("milestone", "", "Epic milestone title")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, epicHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, epicHelp)
+		return 0
+	}
+	positionalTicket, positionalOK := parseOptionalNumericPositional(fs.Args(), "epic", stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, epicHelp)
+		return 2
+	}
+	epicNumber, ok := resolveExplicitTicket(*ticket, *issue, positionalTicket, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, epicHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	result, err := newEpicStatusReport(gira.EpicInput{Repo: repo, Ticket: epicNumber, Title: *title, Slug: *slug, Milestone: *milestone})
+	result.NextStep = shortenEpicNextStep(result.NextStep, result.Repo, result.Epic.Number)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatEpicReport(result))
+	return 0
+}
+
+func runEpicFinish(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("epic finish", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Epic issue number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	title := fs.String("title", "", "Epic title substring")
+	slug := fs.String("slug", "", "Epic title slug")
+	milestone := fs.String("milestone", "", "Epic milestone title")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply changes")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, epicHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, epicHelp)
+		return 0
+	}
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run/--apply is required\n\n")
+		_, _ = io.WriteString(stderr, epicHelp)
+		return 2
+	}
+	positionalTicket, positionalOK := parseOptionalNumericPositional(fs.Args(), "epic", stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, epicHelp)
+		return 2
+	}
+	epicNumber, ok := resolveExplicitTicket(*ticket, *issue, positionalTicket, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, epicHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	result, err := newEpicFinishReport(gira.EpicInput{Repo: repo, Ticket: epicNumber, Title: *title, Slug: *slug, Milestone: *milestone, DryRun: *dryRun, Apply: *apply})
+	result.NextStep = shortenEpicNextStep(result.NextStep, result.Repo, result.Epic.Number)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatEpicReport(result))
+	return 0
+}
+
 func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 	args, positionalTitle, titleOK := extractTitlePositional(args, stderr)
 	if !titleOK {
@@ -2282,6 +2460,22 @@ func resolveExplicitTicket(ticket int, issue int, positional int, stderr io.Writ
 	return candidates[0], true
 }
 
+func parseOptionalNumericPositional(args []string, noun string, stderr io.Writer) (int, bool) {
+	if len(args) == 0 {
+		return 0, true
+	}
+	if len(args) > 1 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", args[1])
+		return 0, false
+	}
+	n, err := strconv.Atoi(args[0])
+	if err != nil || n <= 0 {
+		fmt.Fprintf(stderr, "unexpected positional argument %q; use a numeric %s number or --ticket N\n\n", args[0], noun)
+		return 0, false
+	}
+	return n, true
+}
+
 func resolveTicketContext(repo gira.RepoRef, ticket int, issue int, positional int, allowInference bool, stderr io.Writer) (int, bool) {
 	explicit, ok := resolveExplicitTicket(ticket, issue, positional, stderr)
 	if !ok {
@@ -2504,6 +2698,16 @@ func shortenTicketNextStep(next string, repo string, issue int) string {
 	if issue > 0 {
 		next = strings.ReplaceAll(next, fmt.Sprintf(" --ticket %d", issue), "")
 		next = strings.ReplaceAll(next, fmt.Sprintf("gira ticket start --ticket %d", issue), fmt.Sprintf("gira ticket start %d", issue))
+	}
+	return strings.Join(strings.Fields(next), " ")
+}
+
+func shortenEpicNextStep(next string, repo string, epic int) string {
+	if repo != "" {
+		next = strings.ReplaceAll(next, " --repo "+repo, "")
+	}
+	if epic > 0 {
+		next = strings.ReplaceAll(next, fmt.Sprintf(" --ticket %d", epic), "")
 	}
 	return strings.Join(strings.Fields(next), " ")
 }

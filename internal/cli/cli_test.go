@@ -922,6 +922,72 @@ func TestTicketNewRequiresModeAndTitle(t *testing.T) {
 	}
 }
 
+func TestEpicStatusHumanOutput(t *testing.T) {
+	restore := newEpicStatusReport
+	t.Cleanup(func() { newEpicStatusReport = restore })
+	newEpicStatusReport = func(input gira.EpicInput) (gira.EpicReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 0 || input.Milestone != "v1.4" {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		return gira.EpicReport{
+			Repo:       input.Repo.FullName(),
+			Epic:       gira.EpicIssue{Number: 207, Title: "[Epic] Public docs", State: "open", Slug: "epic-public-docs", Milestone: "v1.4"},
+			ChildCount: gira.EpicChildCount{Total: 2, Open: 0, Closed: 2},
+			NextStep:   "gira epic finish --repo StatPan/gira --ticket 207 --dry-run",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"epic", "status", "--repo", "StatPan/gira", "--milestone", "v1.4"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"epic status: epic #207", "children=2 open=0 closed=2", "next step: gira epic finish --dry-run"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("epic status output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestEpicFinishJSON(t *testing.T) {
+	restore := newEpicFinishReport
+	t.Cleanup(func() { newEpicFinishReport = restore })
+	newEpicFinishReport = func(input gira.EpicInput) (gira.EpicReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 207 || !input.Apply {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		return gira.EpicReport{
+			Repo:  input.Repo.FullName(),
+			Epic:  gira.EpicIssue{Number: 207, Title: "[Epic] Public docs", State: "open"},
+			Apply: true,
+			Actions: []gira.EpicAction{
+				{Action: "epic:close", Status: "applied", Detail: "close epic #207"},
+			},
+			NextStep: "epic is closed",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"epic", "finish", "--repo", "StatPan/gira", "--ticket", "207", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"number": 207`) || !strings.Contains(stdout.String(), `"action": "epic:close"`) {
+		t.Fatalf("epic finish JSON missing expected fields:\n%s", stdout.String())
+	}
+}
+
+func TestEpicFinishRequiresMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"epic", "finish", "--repo", "StatPan/gira", "--ticket", "207"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run/--apply") {
+		t.Fatalf("stderr missing mode guidance:\n%s", stderr.String())
+	}
+}
+
 func TestTicketStartIssueAlias(t *testing.T) {
 	restore := newWorkStartResult
 	t.Cleanup(func() { newWorkStartResult = restore })

@@ -76,6 +76,27 @@ gira projects sync --config .gira/config.yaml --dry-run
 
 You can open and merge a pull request with `gh pr create` and `gh pr merge`, but `gira ticket pr` and `gira ticket finish` keep the ticket lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
 
+## Ticket Flow Cases
+
+Most first-time work starts by creating a repo-bound ticket and immediately starting it:
+
+```bash
+gira ticket new "Fix install retry" \
+  --goal "Retry transient install downloads" \
+  --acceptance "retries temporary network failures;does not hide checksum errors;has tests" \
+  --apply --start
+```
+
+If the GitHub issue already exists, start from that ticket number once. After Gira checks out the `issue-N-*` branch, the rest of the flow infers the ticket from context:
+
+```bash
+gira ticket start 42 --apply
+gira ticket pr --apply --draft
+gira ticket finish --apply
+```
+
+If someone reports an issue in GitHub without enough structure, normalize it before starting work: add the missing goal, scope, acceptance criteria, and `status:ready`/`type:*` labels in GitHub or recreate it through `gira ticket new`. Start only after the ticket is executable.
+
 Use `--json` for automation:
 
 ```bash

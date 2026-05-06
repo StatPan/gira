@@ -39,7 +39,13 @@ gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --dry-run
 gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --apply --start
 ```
 
-For an existing issue, use `gira ticket start TICKET --apply`.
+For an existing ready issue, use the number once:
+
+```bash
+gira ticket start TICKET --apply
+```
+
+If an issue was opened by a user or contributor without enough structure, normalize it first. A dogfood ticket is executable only when the goal, scope, acceptance criteria, type label, and ready status are clear.
 
 Open or validate the linked pull request:
 

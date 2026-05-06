@@ -34,28 +34,18 @@ brew tap StatPan/tap
 brew install gira
 ```
 
-Read before writing. For repository setup, run init from a clean checkout so Gira can fail closed before apply steps:
+Authenticate GitHub first. Gira uses GitHub as the execution backend and shells through `gh` for GitHub API access:
 
 ```bash
 gira version
 gh auth status
+```
+
+Read before writing. For repository setup, run init from a clean checkout so Gira can fail closed before apply steps:
+
+```bash
 gira init --repo OWNER/REPO --path . --dry-run
 gira status --repo OWNER/REPO
-```
-
-Plan setup without changing GitHub or repository files:
-
-```bash
-gira ops bootstrap --repo OWNER/REPO --template default --dry-run
-gira ops sync --repo OWNER/REPO --dry-run
-```
-
-Apply the reviewed setup:
-
-```bash
-gira ops bootstrap --repo OWNER/REPO --path /path/to/repo
-gira ops sync --repo OWNER/REPO
-gira ops onboard verify --repo OWNER/REPO --stage steady-state
 ```
 
 Start and finish development from a ticket:
@@ -73,6 +63,8 @@ gira ticket pr --repo OWNER/REPO --ticket TICKET --apply --draft
 gira ticket status --repo OWNER/REPO --ticket TICKET
 gira projects sync --config .gira/config.yaml --dry-run
 ```
+
+You can open a pull request with `gh pr create`, but `gira ticket pr` keeps the ticket lifecycle consistent: it creates or reuses the linked PR, uses a closing body such as `Closes #TICKET`, computes the next ticket status, and gives the next Gira command to run.
 
 Use `--json` for automation:
 
@@ -118,6 +110,25 @@ The Go-built `gira` binary is the sole product implementation. The default user 
 - `gira sprint ...`, `gira release`, and `gira status` are daily planning and reporting commands.
 - `gira ops ...` contains advanced setup, migration, policy, audit, and raw GitHub controls.
 - `gira start` and `gira work ...` remain compatibility aliases.
+
+## Advanced Setup
+
+Most daily work should use `gira ticket`, `gira workspace`, `gira projects`, `gira sprint`, `gira release`, and `gira status`. Use `gira ops` for setup, adoption, policy, audit, and lower-level GitHub controls.
+
+Plan setup without changing GitHub or repository files:
+
+```bash
+gira ops bootstrap --repo OWNER/REPO --template default --dry-run
+gira ops sync --repo OWNER/REPO --dry-run
+```
+
+Apply the reviewed setup:
+
+```bash
+gira ops bootstrap --repo OWNER/REPO --path /path/to/repo
+gira ops sync --repo OWNER/REPO
+gira ops onboard verify --repo OWNER/REPO --stage steady-state
+```
 
 ## Jira To GitHub Mapping
 

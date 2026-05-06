@@ -360,7 +360,7 @@ func (c GHProjectsSyncClient) ProjectItems(owner string, number int) ([]Projects
 }
 
 func (c GHProjectsSyncClient) ProjectItemsGraphQL(projectID string) ([]ProjectsSyncItem, error) {
-	query := `query($id:ID!){node(id:$id){... on ProjectV2{items(first:500){nodes{id content{... on Issue{number repository{nameWithOwner}}} fieldValues(first:50){nodes{... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2FieldCommon{name}}} ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2FieldCommon{name}}}}}}}}}}`
+	query := `query($id:ID!){node(id:$id){... on ProjectV2{items(first:100){nodes{id content{... on Issue{number repository{nameWithOwner}}} fieldValues(first:50){nodes{... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2FieldCommon{name}}} ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2FieldCommon{name}}}}}}}}}}`
 	output, err := c.runner.Run("gh", "api", "graphql", "-f", "query="+query, "-f", "id="+projectID)
 	if err != nil {
 		return nil, err

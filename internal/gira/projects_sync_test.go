@@ -250,6 +250,21 @@ func TestBuildProjectsSyncReportSkipsMatchingTargetDate(t *testing.T) {
 	}
 }
 
+func TestGHProjectsSyncClientProjectItemsGraphQLUsesSupportedPageSize(t *testing.T) {
+	runner := &recordingProjectsSyncRunner{output: []byte(`{"data":{"node":{"items":{"nodes":[]}}}}`)}
+	client := NewGHProjectsSyncClient(runner)
+
+	if _, err := client.ProjectItemsGraphQL("PVT_1"); err != nil {
+		t.Fatalf("ProjectItemsGraphQL error: %v", err)
+	}
+	if !strings.Contains(runner.args, "items(first:100)") {
+		t.Fatalf("query should use GitHub-supported page size, args=%s", runner.args)
+	}
+	if strings.Contains(runner.args, "items(first:500)") {
+		t.Fatalf("query should not use unsupported page size, args=%s", runner.args)
+	}
+}
+
 type fakeProjectsSyncClient struct {
 	project        ProjectsSyncProject
 	projects       []ProjectsSyncProject
@@ -264,6 +279,16 @@ type fakeProjectsSyncClient struct {
 	added          []ProjectsSyncIssue
 	updated        []string
 	updatedDates   []string
+}
+
+type recordingProjectsSyncRunner struct {
+	args   string
+	output []byte
+}
+
+func (r *recordingProjectsSyncRunner) Run(name string, args ...string) ([]byte, error) {
+	r.args = name + " " + strings.Join(args, " ")
+	return r.output, nil
 }
 
 func (c *fakeProjectsSyncClient) Project(owner string, number int) (ProjectsSyncProject, error) {

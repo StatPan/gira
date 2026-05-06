@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -349,7 +350,7 @@ func localGitStateCheck(runner CommandRunner) DoctorCheck {
 			Remediation: "run `git status` to inspect the local worktree",
 		}
 	}
-	dirtyLines := countNonEmptyLines(statusOutput)
+	dirtyLines, auditLines := countGitStatusChanges(statusOutput)
 	if detached {
 		detail := "detached HEAD; worktree clean"
 		if dirtyLines > 0 {
@@ -363,10 +364,19 @@ func localGitStateCheck(runner CommandRunner) DoctorCheck {
 		}
 	}
 	if dirtyLines > 0 {
+		userLines := dirtyLines - auditLines
+		if userLines == 0 {
+			return DoctorCheck{
+				ID:          "local_git_state",
+				Status:      DoctorCheckWarn,
+				Detail:      fmt.Sprintf("branch=%s; Gira audit ledger changes=%d; user changes=0", branch, auditLines),
+				Remediation: "commit audit ledger changes when you want repository-tracked operation evidence, or leave them uncommitted for local audit history",
+			}
+		}
 		return DoctorCheck{
 			ID:          "local_git_state",
 			Status:      DoctorCheckFail,
-			Detail:      fmt.Sprintf("branch=%s; uncommitted changes=%d", branch, dirtyLines),
+			Detail:      fmt.Sprintf("branch=%s; uncommitted changes=%d; Gira audit ledger changes=%d; user changes=%d", branch, dirtyLines, auditLines, userLines),
 			Remediation: "commit, stash, or intentionally keep local changes before running mutating Gira commands",
 		}
 	}
@@ -419,12 +429,34 @@ func firstLine(output []byte) string {
 	return "command succeeded"
 }
 
-func countNonEmptyLines(output []byte) int {
-	count := 0
+func countGitStatusChanges(output []byte) (int, int) {
+	total := 0
+	audit := 0
 	for _, line := range strings.Split(string(output), "\n") {
-		if strings.TrimSpace(line) != "" {
-			count++
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		total++
+		if isGiraAuditStatusLine(line) {
+			audit++
 		}
 	}
-	return count
+	return total, audit
+}
+
+func isGiraAuditStatusLine(line string) bool {
+	if len(line) < 4 {
+		return false
+	}
+	path := strings.TrimSpace(line[3:])
+	if strings.Contains(path, " -> ") {
+		parts := strings.Split(path, " -> ")
+		path = strings.TrimSpace(parts[len(parts)-1])
+	}
+	path = strings.Trim(path, `"`)
+	path = filepath.ToSlash(path)
+	if !strings.HasPrefix(path, ".gira/audit/") {
+		return false
+	}
+	return strings.HasSuffix(path, ".jsonl") || strings.HasSuffix(path, ".jsonl.lasthash")
 }

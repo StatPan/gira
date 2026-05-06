@@ -140,7 +140,7 @@ func TestBuildDoctorReportDetachedHeadFailsReadiness(t *testing.T) {
 
 func TestBuildDoctorReportDirtyWorktreeFailsReadiness(t *testing.T) {
 	runner := readyDoctorRunner()
-	runner.responses["git status --porcelain"] = " M internal/gira/doctor.go\n?? scratch.txt\n"
+	runner.responses["git status --porcelain"] = " M internal/gira/doctor.go\n M .gira/audit/StatPan_gira.jsonl\n?? scratch.txt\n"
 	report := BuildDoctorReport("StatPan/gira", runner, time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC))
 
 	if report.Ready {
@@ -153,8 +153,28 @@ func TestBuildDoctorReportDirtyWorktreeFailsReadiness(t *testing.T) {
 	if check.Status != DoctorCheckFail {
 		t.Fatalf("local_git_state status = %s, want fail: %+v", check.Status, *check)
 	}
-	if !strings.Contains(check.Detail, "uncommitted changes=2") {
+	if !strings.Contains(check.Detail, "uncommitted changes=3") || !strings.Contains(check.Detail, "Gira audit ledger changes=1") || !strings.Contains(check.Detail, "user changes=2") {
 		t.Fatalf("local_git_state detail = %q, want dirty count", check.Detail)
+	}
+}
+
+func TestBuildDoctorReportAuditOnlyDirtyWorktreeWarns(t *testing.T) {
+	runner := readyDoctorRunner()
+	runner.responses["git status --porcelain"] = " M .gira/audit/StatPan_gira.jsonl\n M .gira/audit/StatPan_gira.jsonl.lasthash\n"
+	report := BuildDoctorReport("StatPan/gira", runner, time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC))
+
+	if !report.Ready {
+		t.Fatalf("ready = false, want true for audit-only changes: %+v", report.Checks)
+	}
+	check := doctorCheckByID(report, "local_git_state")
+	if check == nil {
+		t.Fatal("local_git_state check missing")
+	}
+	if check.Status != DoctorCheckWarn {
+		t.Fatalf("local_git_state status = %s, want warn: %+v", check.Status, *check)
+	}
+	if !strings.Contains(check.Detail, "Gira audit ledger changes=2") || !strings.Contains(check.Detail, "user changes=0") {
+		t.Fatalf("local_git_state detail = %q, want audit-owned dirty detail", check.Detail)
 	}
 }
 

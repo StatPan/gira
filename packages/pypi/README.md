@@ -10,3 +10,7 @@ gira version
 ```
 
 The PyPI package name is `gira-cli` because the `gira` package name is already occupied on PyPI. The installed command is still `gira`.
+
+- Repository: https://github.com/StatPan/gira
+- Issues: https://github.com/StatPan/gira/issues
+- Contact: statpan@outlook.com

@@ -356,7 +356,7 @@ jobs:
 
           cat > homebrew-tap/Formula/gira.rb <<EOF
           class Gira < Formula
-            desc "Jira-style project flow on GitHub"
+            desc "Jira-style ticket workflow for GitHub issues and pull requests"
             homepage "https://github.com/StatPan/gira"
             version "${tag#v}"
             license "MIT"

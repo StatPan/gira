@@ -10,3 +10,7 @@ gira version
 ```
 
 `bun install -g @statpan/gira` uses the same npm-compatible package.
+
+- Repository: https://github.com/StatPan/gira
+- Issues: https://github.com/StatPan/gira/issues
+- Contact: statpan@outlook.com

@@ -6,6 +6,10 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.4.2 - 2026-05-07
+
+- Fixed PyPI wrapper executions so uv and pipx installs propagate their install channel to the native `gira` binary before running `gira upgrade`.
+
 ## v1.4.1 - 2026-05-07
 
 - Fixed `gira upgrade` channel auto-detection for uv tool installs whose `gira` executable is exposed through a symlink in the user's bin directory.

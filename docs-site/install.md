@@ -13,6 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 ```bash
 npm install -g @statpan/gira
 bun install -g @statpan/gira
+uv tool install gira-cli
 pipx install gira-cli
 python -m pip install --user gira-cli
 brew tap StatPan/tap

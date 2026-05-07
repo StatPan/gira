@@ -303,8 +303,8 @@ Flags:
 const upgradeHelp = `Check latest release and print safe upgrade instructions.
 
 Usage:
-  gira upgrade [--channel auto|install.sh|pipx|pip|homebrew|npm|bun|go|unknown] [--json]
-  gira update [--channel auto|install.sh|pipx|pip|homebrew|npm|bun|go|unknown] [--json]
+  gira upgrade [--channel auto|install.sh|uv|pipx|pip|homebrew|npm|bun|go|unknown] [--json]
+  gira update [--channel auto|install.sh|uv|pipx|pip|homebrew|npm|bun|go|unknown] [--json]
 
 Flags:
   --channel string  Installed channel to use for the next-step command (default "auto")

@@ -6,6 +6,8 @@ Name shorthand: **Gira: Jira-style project flow on GitHub.**
 
 Documentation: <https://gira.statpan.com>
 
+Docs source lives in `docs-site/` and is built with VitePress. The docs toolchain is separate from the product runtime; the shipped product remains the Go-built `gira` binary.
+
 With Gira, GitHub remains the source of truth. Gira gives humans and agents a safer control plane over it:
 
 - `gira ... --dry-run` shows the plan before changing GitHub or repository files.

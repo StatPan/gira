@@ -2,6 +2,8 @@ package gira
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -92,6 +94,35 @@ func TestResolveUpgradeChannel(t *testing.T) {
 				t.Fatalf("channel = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestResolveUpgradeChannelFollowsUVToolSymlink(t *testing.T) {
+	t.Setenv("GIRA_INSTALL_CHANNEL", "")
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".local", "share", "uv", "tools", "gira-cli", "bin")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	target := filepath.Join(targetDir, "gira")
+	if err := os.WriteFile(target, []byte("#!/usr/bin/env sh\n"), 0o755); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	linkDir := filepath.Join(root, ".local", "bin")
+	if err := os.MkdirAll(linkDir, 0o755); err != nil {
+		t.Fatalf("mkdir link dir: %v", err)
+	}
+	link := filepath.Join(linkDir, "gira")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	got, err := ResolveUpgradeChannel("auto", link)
+	if err != nil {
+		t.Fatalf("ResolveUpgradeChannel error = %v", err)
+	}
+	if got != "uv" {
+		t.Fatalf("channel = %q, want uv", got)
 	}
 }
 

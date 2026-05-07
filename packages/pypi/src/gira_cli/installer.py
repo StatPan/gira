@@ -215,13 +215,47 @@ def ensure_binary() -> Path:
     return target
 
 
+def normalize_path(path: str) -> str:
+    return Path(path).expanduser().as_posix().lower()
+
+
+def candidate_wrapper_paths() -> list[str]:
+    paths = []
+    for value in (sys.argv[0], sys.executable):
+        if value:
+            paths.append(normalize_path(value))
+            try:
+                resolved = Path(value).expanduser().resolve()
+            except OSError:
+                continue
+            normalized = resolved.as_posix().lower()
+            if normalized not in paths:
+                paths.append(normalized)
+    return paths
+
+
+def install_channel_from_wrapper(paths: list[str]) -> Optional[str]:
+    for path in paths:
+        if "/uv/tools/" in path:
+            return "uv"
+        if "/pipx/" in path:
+            return "pipx"
+    return None
+
+
+def native_environment() -> Dict[str, str]:
+    env = dict(os.environ)
+    env.setdefault("GIRA_INSTALL_CHANNEL", install_channel_from_wrapper(candidate_wrapper_paths()) or "pip")
+    return env
+
+
 def main() -> int:
     try:
         binary = ensure_binary()
     except Exception as exc:
         print(f"gira pip wrapper: {exc}", file=sys.stderr)
         return 1
-    completed = subprocess.run([str(binary), *sys.argv[1:]], check=False)
+    completed = subprocess.run([str(binary), *sys.argv[1:]], check=False, env=native_environment())
     return int(completed.returncode)
 
 

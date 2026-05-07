@@ -82,6 +82,38 @@ class InstallerTest(unittest.TestCase):
             if previous is not None:
                 os.environ["GIRA_VERSION"] = previous
 
+    def test_install_channel_from_wrapper_detects_uv_tool_path(self):
+        paths = [
+            "/home/me/.local/bin/gira",
+            "/home/me/.local/share/uv/tools/gira-cli/bin/gira",
+        ]
+        self.assertEqual(installer.install_channel_from_wrapper(paths), "uv")
+
+    def test_install_channel_from_wrapper_detects_pipx_path(self):
+        paths = ["/home/me/.local/pipx/venvs/gira-cli/bin/gira"]
+        self.assertEqual(installer.install_channel_from_wrapper(paths), "pipx")
+
+    def test_native_environment_preserves_explicit_channel(self):
+        previous = os.environ.get("GIRA_INSTALL_CHANNEL")
+        os.environ["GIRA_INSTALL_CHANNEL"] = "homebrew"
+        try:
+            with mock.patch.object(installer, "candidate_wrapper_paths", return_value=[]):
+                self.assertEqual(installer.native_environment()["GIRA_INSTALL_CHANNEL"], "homebrew")
+        finally:
+            if previous is None:
+                os.environ.pop("GIRA_INSTALL_CHANNEL", None)
+            else:
+                os.environ["GIRA_INSTALL_CHANNEL"] = previous
+
+    def test_native_environment_defaults_to_pip(self):
+        previous = os.environ.pop("GIRA_INSTALL_CHANNEL", None)
+        try:
+            with mock.patch.object(installer, "candidate_wrapper_paths", return_value=[]):
+                self.assertEqual(installer.native_environment()["GIRA_INSTALL_CHANNEL"], "pip")
+        finally:
+            if previous is not None:
+                os.environ["GIRA_INSTALL_CHANNEL"] = previous
+
     def test_rejects_zip_path_traversal(self):
         with tempfile.TemporaryDirectory(prefix="gira-pypi-test-") as tmp:
             root = Path(tmp)

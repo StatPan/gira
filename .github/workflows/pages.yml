@@ -37,8 +37,15 @@ jobs:
         run: sh scripts/build-docs-site.sh docs-site site
 
       - name: Configure Pages
+        id: configure-pages
         if: github.event_name == 'push'
+        continue-on-error: true
         uses: actions/configure-pages@v4.0.0
+
+      - name: Report skipped Pages configuration
+        if: github.event_name == 'push' && steps.configure-pages.outcome == 'failure'
+        run: |
+          echo "::warning::GitHub Pages is not enabled for this repository yet. Enable Pages with GitHub Actions as the source, then rerun this workflow."
 
       - name: Upload Pages artifact
         if: github.event_name == 'push'

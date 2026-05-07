@@ -23,7 +23,7 @@ npm run docs:dev
 
 Pull requests run the docs build. Pushes to `main` upload the generated `site/` artifact and deploy it with GitHub Pages.
 
-If repository Pages settings are not enabled yet, the deployment step reports a warning instead of failing the workflow. Enable GitHub Pages in repository settings, then rerun the workflow to publish the uploaded site artifact.
+If repository Pages settings are not enabled yet, the configure and deployment steps report warnings instead of failing the workflow. Enable GitHub Pages in repository settings with GitHub Actions as the source, then rerun the workflow to publish the uploaded site artifact.
 
 ## Custom Domain
 

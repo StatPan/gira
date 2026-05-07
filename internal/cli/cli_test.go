@@ -3010,6 +3010,9 @@ func TestInitJSONReady(t *testing.T) {
 	if !strings.Contains(stdout.String(), `"ready": true`) {
 		t.Fatalf("expected ready true: %s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), `gira adopt repo --repo StatPan/gira --path /repo --dry-run`) {
+		t.Fatalf("expected init to point at repo adoption: %s", stdout.String())
+	}
 }
 
 func TestInitReadsConfig(t *testing.T) {
@@ -3157,6 +3160,43 @@ func TestInitInvalidConfigFails(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "required_approvals") {
 		t.Fatalf("expected actionable config error: %s", stderr.String())
+	}
+}
+
+func TestAdoptRepoJSONUsesInjectedReport(t *testing.T) {
+	original := newAdoptRepoReport
+	t.Cleanup(func() { newAdoptRepoReport = original })
+	newAdoptRepoReport = func(input gira.AdoptRepoInput) (gira.AdoptRepoReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Path != "." || !input.DryRun || input.Apply {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		return gira.AdoptRepoReport{Repo: input.Repo.FullName(), Path: "/repo", DryRun: true, Strategy: "merge", Recommendation: "merge", NextStep: "gira adopt repo --apply"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"adopt", "repo", "--repo", "StatPan/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"strategy": "merge"`) || !strings.Contains(stdout.String(), `"next_step": "gira adopt repo --apply"`) {
+		t.Fatalf("unexpected JSON: %s", stdout.String())
+	}
+}
+
+func TestAdoptRepoApplyRequiresExplicitStrategy(t *testing.T) {
+	original := newAdoptRepoReport
+	t.Cleanup(func() { newAdoptRepoReport = original })
+	newAdoptRepoReport = func(input gira.AdoptRepoInput) (gira.AdoptRepoReport, error) {
+		return gira.AdoptRepoReport{Repo: input.Repo.FullName(), Apply: input.Apply}, fmt.Errorf("--apply requires --strategy observe|merge|normalize or --yes")
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"adopt", "repo", "--repo", "StatPan/gira", "--apply"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero exit")
+	}
+	if !strings.Contains(stderr.String(), "--apply requires --strategy") {
+		t.Fatalf("stderr missing explicit strategy guidance: %s", stderr.String())
 	}
 }
 

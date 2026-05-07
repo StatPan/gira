@@ -33,15 +33,27 @@ Gira supports three metadata policy modes on `gira ops sync`:
 Always run these in order:
 
 ```bash
+gira adopt repo --repo OWNER/REPO --path . --dry-run
 gira ops sync --repo OWNER/REPO --dry-run --policy-mode adopt
 gira ops sync --repo OWNER/REPO --dry-run --policy-mode merge
 gira ops sync --repo OWNER/REPO --dry-run --policy-mode enforce
 ```
 
 Why this order:
-1. `adopt` gives a no-mutation baseline inventory.
-2. `merge` shows minimal safe convergence.
-3. `enforce` shows full convergence cost.
+1. `adopt repo` detects existing files, issues, Projects, labels, and milestones before any scaffold is proposed.
+2. `adopt` gives a no-mutation metadata baseline inventory.
+3. `merge` shows minimal safe convergence.
+4. `enforce` shows full convergence cost.
+
+Use repo adoption to choose how much Gira should write locally:
+
+```bash
+gira adopt repo --repo OWNER/REPO --path . --strategy observe --dry-run
+gira adopt repo --repo OWNER/REPO --path . --strategy merge --dry-run
+gira adopt repo --repo OWNER/REPO --path . --strategy merge --apply
+```
+
+`merge` preserves existing `AGENTS.md`, PR templates, and issue templates. If `AGENTS.md` exists, Gira inserts or updates only the `<!-- gira:start -->` managed block. Bootstrap sample issues are not part of normal adoption.
 
 The plan output is deterministic for a fixed repository state (same plan counts and sorted item actions).
 

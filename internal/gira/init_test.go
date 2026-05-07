@@ -41,7 +41,7 @@ func TestBuildInitReportReady(t *testing.T) {
 	if !report.Ready {
 		t.Fatalf("expected ready report: %+v", report)
 	}
-	if report.NextStep == "" || !strings.Contains(report.NextStep, "gira bootstrap") {
+	if report.NextStep == "" || !strings.Contains(report.NextStep, "gira adopt repo") {
 		t.Fatalf("unexpected next step: %q", report.NextStep)
 	}
 	text := FormatInitReport(report)

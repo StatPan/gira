@@ -23,7 +23,7 @@ Daily commands:
   guide       Built-in quickstart and workflow guides
   workspace   Personal workspace inbox and backlog overview
   projects    Sync visible GitHub Projects board items
-  adopt       Plan or apply explicit adoption mappings for existing issues
+  adopt       Plan or apply adoption for existing repositories and issues
   ticket      Jira-style ticket lifecycle commands
   epic        Numberless epic status and finish commands
   sprint      Sprint iteration planning/start/close workflow
@@ -69,6 +69,7 @@ const guideQuickstart = `Gira quickstart: first ticket to merged PR
 
 2. Confirm repo state.
    gira init --repo OWNER/REPO --path . --dry-run
+   gira adopt repo --repo OWNER/REPO --path . --dry-run
    gira status
 
 3. Create and start a ticket.
@@ -257,19 +258,25 @@ Flags:
   -h, --help       Show help
 `
 
-const adoptHelp = `Adopt existing GitHub issues into Gira planning.
+const adoptHelp = `Adopt existing GitHub repositories and issues into Gira planning.
 
 Usage:
+  gira adopt repo --repo OWNER/REPO --path . --dry-run [--strategy observe|merge|normalize] [--json]
+  gira adopt repo --repo OWNER/REPO --path . --strategy observe|merge|normalize --apply [--json]
   gira adopt issues --repo OWNER/REPO --dry-run [--state open|all] [--json]
   gira adopt issues --repo OWNER/REPO --issue N [--issue N] --milestone TITLE [--label LABEL] --dry-run|--apply [--json]
   gira adopt issues --repo OWNER/REPO --issues 1,2,3|1-12 --milestone TITLE [--label LABEL] --dry-run|--apply [--json]
   gira adopt issues --repo OWNER/REPO --state all --normalize-status --dry-run|--apply [--json]
 
 Commands:
+  repo    Detect existing repo state and apply a minimal Gira contract
   issues  List unmapped issues and apply explicit milestone/label mappings
 
 Flags:
   --repo string       Target GitHub repo in OWNER/REPO format
+  --path string       Local git workspace path for repo adoption (default ".")
+  --strategy string   Repo adoption strategy: observe, merge, or normalize
+  --yes               Apply the recommended repo adoption strategy
   --issue int         Issue number to map; repeatable
   --issues string     Issue numbers or ranges to map, for example 1,2,3 or 1-12; repeatable
   --milestone string  Milestone title to assign to selected issues
@@ -1004,6 +1011,10 @@ var newUpgradeReport = func(channel string) (gira.UpgradeReport, error) {
 
 var newAdoptIssuesReport = func(input gira.AdoptIssueInput) (gira.AdoptIssuesReport, error) {
 	return gira.BuildAdoptIssuesReport(input, gira.ExecCommandRunner{})
+}
+
+var newAdoptRepoReport = func(input gira.AdoptRepoInput) (gira.AdoptRepoReport, error) {
+	return gira.BuildAdoptRepoReport(input, gira.ExecCommandRunner{})
 }
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -3418,6 +3429,9 @@ func runAdopt(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stdout, adoptHelp)
 		return 0
 	}
+	if args[0] == "repo" {
+		return runAdoptRepo(args[1:], stdout, stderr)
+	}
 	if args[0] != "issues" {
 		fmt.Fprintf(stderr, "unknown adopt command: %s\n\n", args[0])
 		fmt.Fprint(stderr, adoptHelp)
@@ -3490,6 +3504,64 @@ func runAdopt(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatAdoptIssuesReport(report))
+	return 0
+}
+
+func runAdoptRepo(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("adopt repo", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	pathValue := fs.String("path", ".", "Local git workspace path")
+	strategy := fs.String("strategy", "", "Adoption strategy: observe, merge, or normalize")
+	yes := fs.Bool("yes", false, "Apply the recommended strategy")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply selected repo adoption actions")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, adoptHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, adoptHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, adoptHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, adoptHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newAdoptRepoReport(gira.AdoptRepoInput{Repo: repo, Path: *pathValue, Strategy: *strategy, Yes: *yes, DryRun: *dryRun, Apply: *apply})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode adopt repo JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatAdoptRepoReport(report))
 	return 0
 }
 

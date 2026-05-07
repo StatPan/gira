@@ -27,6 +27,7 @@ features:
 ```bash
 gh auth status
 gira init --repo OWNER/REPO --path . --dry-run
+gira adopt repo --repo OWNER/REPO --path . --dry-run
 gira ticket new "TITLE" --goal "GOAL" --acceptance "done criteria" --apply --start
 gira ticket pr --apply --draft
 gira ticket checks

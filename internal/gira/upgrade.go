@@ -87,13 +87,13 @@ func ResolveUpgradeChannel(override string, executablePath string) (string, erro
 	if strings.TrimSpace(override) != "" && strings.TrimSpace(override) != "auto" {
 		channel := strings.TrimSpace(override)
 		if !validUpgradeChannel(channel) {
-			return "", fmt.Errorf("channel must be one of auto, install.sh, pipx, pip, homebrew, npm, bun, go, unknown")
+			return "", fmt.Errorf("channel must be one of auto, install.sh, uv, pipx, pip, homebrew, npm, bun, go, unknown")
 		}
 		return channel, nil
 	}
 	if env := strings.TrimSpace(os.Getenv("GIRA_INSTALL_CHANNEL")); env != "" {
 		if !validUpgradeChannel(env) || env == "auto" {
-			return "", fmt.Errorf("GIRA_INSTALL_CHANNEL must be one of install.sh, pipx, pip, homebrew, npm, bun, go, unknown")
+			return "", fmt.Errorf("GIRA_INSTALL_CHANNEL must be one of install.sh, uv, pipx, pip, homebrew, npm, bun, go, unknown")
 		}
 		return env, nil
 	}
@@ -103,6 +103,8 @@ func ResolveUpgradeChannel(override string, executablePath string) (string, erro
 		return "homebrew", nil
 	case strings.Contains(path, "/node_modules/") || strings.Contains(path, "/packages/npm/"):
 		return "npm", nil
+	case strings.Contains(path, "/uv/tools/"):
+		return "uv", nil
 	case strings.Contains(path, "/pipx/"):
 		return "pipx", nil
 	case strings.Contains(path, "/site-packages/") || strings.Contains(path, "/gira-cli/"):
@@ -118,6 +120,8 @@ func UpgradeNextStep(channel string) string {
 	switch channel {
 	case "install.sh":
 		return "curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh"
+	case "uv":
+		return "uv tool upgrade gira-cli"
 	case "pipx":
 		return "pipx upgrade gira-cli"
 	case "pip":
@@ -141,7 +145,7 @@ func FormatUpgradeReport(report UpgradeReport) string {
 
 func validUpgradeChannel(channel string) bool {
 	switch channel {
-	case "auto", "install.sh", "pipx", "pip", "homebrew", "npm", "bun", "go", "unknown":
+	case "auto", "install.sh", "uv", "pipx", "pip", "homebrew", "npm", "bun", "go", "unknown":
 		return true
 	default:
 		return false

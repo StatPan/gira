@@ -77,6 +77,7 @@ func TestResolveUpgradeChannel(t *testing.T) {
 		{name: "override", override: "npm", path: "/tmp/gira", want: "npm"},
 		{name: "homebrew", path: "/opt/homebrew/bin/gira", want: "homebrew"},
 		{name: "npm", path: "/repo/node_modules/.bin/gira", want: "npm"},
+		{name: "uv", path: "/home/me/.local/share/uv/tools/gira-cli/bin/gira", want: "uv"},
 		{name: "pipx", path: "/home/me/.local/pipx/venvs/gira/bin/gira", want: "pipx"},
 		{name: "go", path: "/home/me/go/bin/gira", want: "go"},
 		{name: "unknown", path: "/usr/local/bin/gira", want: "unknown"},
@@ -120,6 +121,7 @@ func TestResolveUpgradeChannelRejectsInvalidValues(t *testing.T) {
 func TestUpgradeNextStepChannels(t *testing.T) {
 	cases := map[string]string{
 		"install.sh": "curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh",
+		"uv":         "uv tool upgrade gira-cli",
 		"pipx":       "pipx upgrade gira-cli",
 		"pip":        "python -m pip install --user --upgrade gira-cli",
 		"homebrew":   "brew update && brew upgrade gira",

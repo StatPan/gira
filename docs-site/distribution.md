@@ -7,6 +7,7 @@ Gira ships tagged Go release archives. Package managers download or wrap that of
 | install.sh | `curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh \| sh` |
 | npm | `npm install -g @statpan/gira` |
 | bun | `bun install -g @statpan/gira` |
+| uv | `uv tool install gira-cli` |
 | pipx | `pipx install gira-cli` |
 | pip | `python -m pip install --user gira-cli` |
 | Homebrew | `brew tap StatPan/tap && brew install gira` |
@@ -15,5 +16,6 @@ Gira ships tagged Go release archives. Package managers download or wrap that of
 
 ```bash
 gira update
+gira upgrade --channel uv
 gira upgrade --channel npm
 ```

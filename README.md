@@ -34,6 +34,7 @@ Or install through a currently published package manager channel:
 ```bash
 npm install -g @statpan/gira
 bun install -g @statpan/gira
+uv tool install gira-cli
 pipx install gira-cli
 python -m pip install --user gira-cli
 brew tap StatPan/tap
@@ -354,13 +355,14 @@ Official install channels:
 ```bash
 npm install -g @statpan/gira
 bun install -g @statpan/gira
+uv tool install gira-cli
 python -m pip install --user gira-cli
 pipx install gira-cli
 brew tap StatPan/tap
 brew install gira
 ```
 
-The npm and bun channels install the `@statpan/gira` wrapper from the npm registry. The pip and pipx channels install the `gira-cli` wrapper from PyPI. The Homebrew channel is published through `StatPan/homebrew-tap`. All wrapper channels install the same Go-built release binary and keep the `gira` command surface unchanged.
+The npm and bun channels install the `@statpan/gira` wrapper from the npm registry. The uv, pip, and pipx channels install the `gira-cli` wrapper from PyPI. The Homebrew channel is published through `StatPan/homebrew-tap`. All wrapper channels install the same Go-built release binary and keep the `gira` command surface unchanged.
 
 apt/deb packaging is a future target, not an initial official channel. It should wait until usage justifies signing keys, repository hosting, architecture matrix maintenance, and upgrade policy support.
 
@@ -373,11 +375,12 @@ Check the latest release and print the right next step for your install channel:
 ```bash
 gira upgrade
 gira update
+gira upgrade --channel uv
 gira upgrade --channel pipx
 gira upgrade --json
 ```
 
-`gira upgrade` and `gira update` are aliases. They are advisory by default: the installed Go-built binary checks the latest GitHub release and prints the channel-specific command, but it does not run package managers or mutate repositories. If Gira cannot confidently infer how it was installed, pass `--channel install.sh|pipx|pip|homebrew|npm|bun|go`.
+`gira upgrade` and `gira update` are aliases. They are advisory by default: the installed Go-built binary checks the latest GitHub release and prints the channel-specific command, but it does not run package managers or mutate repositories. If Gira cannot confidently infer how it was installed, pass `--channel install.sh|uv|pipx|pip|homebrew|npm|bun|go`.
 
 Use the same channel that installed Gira:
 
@@ -386,6 +389,7 @@ curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v1.0.0 sh
 go install github.com/StatPan/gira/cmd/gira@latest
 GOBIN="${HOME}/.local/bin" go install ./cmd/gira
+uv tool upgrade gira-cli
 python -m pip install --user --upgrade gira-cli
 pipx upgrade gira-cli
 brew update && brew upgrade gira
@@ -417,7 +421,7 @@ gira_path="${gira_path:-$(command -v gira)}"
 rm "${gira_path}"
 ```
 
-If you installed to a custom directory, set `GIRA_INSTALL_DIR` to that same directory or remove the path printed by `command -v gira`. For npm, bun, pip, pipx, or Homebrew installs, uninstall with the same package manager used for installation.
+If you installed to a custom directory, set `GIRA_INSTALL_DIR` to that same directory or remove the path printed by `command -v gira`. For npm, bun, uv, pip, pipx, or Homebrew installs, uninstall with the same package manager used for installation.
 
 Verification:
 
@@ -490,7 +494,7 @@ gira ops onboard verify --repo OWNER/REPO --stage init --json
 gira status --repo OWNER/REPO --json
 ```
 
-Package-manager wrappers such as `uv`, npm, bun, or Homebrew may be added as distribution channels when they install or invoke the Go-built `gira` binary. They are not alternate product implementations.
+Package-manager wrappers such as npm, bun, uv, pip, pipx, or Homebrew may be used as distribution channels when they install or invoke the Go-built `gira` binary. They are not alternate product implementations.
 
 For local development from this checkout:
 

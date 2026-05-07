@@ -5,6 +5,13 @@ PyPI distribution wrapper for the official Go-built `gira` binary.
 This package does not reimplement Gira in Python. The `gira` console command downloads the matching GitHub Release archive on first run, verifies `checksums.txt`, caches the native binary, and then executes it.
 
 ```bash
+uv tool install gira-cli
+gira version
+```
+
+or:
+
+```bash
 pip install gira-cli
 gira version
 ```

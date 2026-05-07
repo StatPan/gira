@@ -6,6 +6,10 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.4.1 - 2026-05-07
+
+- Fixed `gira upgrade` channel auto-detection for uv tool installs whose `gira` executable is exposed through a symlink in the user's bin directory.
+
 ## v1.4.0 - 2026-05-07
 
 - Added the public documentation site source and VitePress docs build for the GitHub Pages site.

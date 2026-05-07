@@ -115,6 +115,70 @@ func TestBuildWorkspaceTicketRouteDryRun(t *testing.T) {
 	}
 }
 
+func TestBuildWorkspaceTicketNewRouteDryRunDoesNotMutate(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/backlog"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	client := &recordingWorkspaceClient{}
+
+	report, err := BuildWorkspaceTicketNewRouteReport(config, client, "Route me", "", ParseRepoRefMust("StatPan/gira"), true)
+	if err != nil {
+		t.Fatalf("BuildWorkspaceTicketNewRouteReport error: %v", err)
+	}
+	if !report.DryRun || report.Created != nil || report.ExecutionIssue != nil {
+		t.Fatalf("dry-run report = %+v", report)
+	}
+	if client.createdInbox != 0 || client.createdExecution != 0 || client.updatedInbox != 0 {
+		t.Fatalf("dry-run mutated client: %+v", client)
+	}
+	if len(report.Actions) != 2 || report.Actions[0].Action != "inbox_ticket:create" || report.Actions[1].Action != "execution_issue:create" {
+		t.Fatalf("actions = %+v", report.Actions)
+	}
+}
+
+func TestBuildWorkspaceTicketNewRouteApplyCreatesAndLinks(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/backlog"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	client := &recordingWorkspaceClient{}
+
+	report, err := BuildWorkspaceTicketNewRouteReport(config, client, "Route me", "", ParseRepoRefMust("StatPan/gira"), false)
+	if err != nil {
+		t.Fatalf("BuildWorkspaceTicketNewRouteReport error: %v", err)
+	}
+	if report.Created == nil || report.Created.Number != 9 {
+		t.Fatalf("created inbox = %+v", report.Created)
+	}
+	if report.ExecutionIssue == nil || report.ExecutionIssue.Number != 10 {
+		t.Fatalf("execution issue = %+v", report.ExecutionIssue)
+	}
+	if client.createdInbox != 1 || client.createdExecution != 1 || client.updatedInbox != 1 || client.childIssue != "StatPan/gira#10" {
+		t.Fatalf("client mutations = %+v", client)
+	}
+	if report.NextSteps[0] != "gira ticket start --repo StatPan/gira --ticket 10 --apply" {
+		t.Fatalf("next steps = %+v", report.NextSteps)
+	}
+}
+
+func TestBuildWorkspaceTicketNewRouteRejectsRepoOutsideWorkspace(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/backlog"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	_, err := BuildWorkspaceTicketNewRouteReport(config, &recordingWorkspaceClient{}, "Route me", "", ParseRepoRefMust("Other/repo"), true)
+	if err == nil || !strings.Contains(err.Error(), "is not in workspace.repos") {
+		t.Fatalf("error = %v, want workspace.repos rejection", err)
+	}
+}
+
 func TestBuildWorkspaceTicketRouteReusesExistingChildIssue(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",
@@ -204,6 +268,37 @@ func TestBuildWorkspaceStatusReportNormalizesRoutedAndClosedInboxTickets(t *test
 type fakeWorkspaceClient struct {
 	inbox  []PortfolioRawTicket
 	status map[string]StatusSummary
+}
+
+type recordingWorkspaceClient struct {
+	createdInbox     int
+	createdExecution int
+	updatedInbox     int
+	childIssue       string
+}
+
+func (c *recordingWorkspaceClient) FetchInboxTickets(repo RepoRef) ([]PortfolioRawTicket, error) {
+	return nil, nil
+}
+
+func (c *recordingWorkspaceClient) FetchStatus(repo RepoRef, now time.Time, staleDays int) (StatusSummary, error) {
+	return StatusSummary{}, nil
+}
+
+func (c *recordingWorkspaceClient) CreateInboxTicket(repo RepoRef, title string, body string) (WorkspaceTicketRef, error) {
+	c.createdInbox++
+	return WorkspaceTicketRef{Repo: repo.FullName(), Number: 9, URL: "https://github.com/" + repo.FullName() + "/issues/9"}, nil
+}
+
+func (c *recordingWorkspaceClient) CreateExecutionIssue(repo RepoRef, ticket PortfolioTicket, inboxRepo RepoRef) (PortfolioLoweredIssue, error) {
+	c.createdExecution++
+	return PortfolioLoweredIssue{Repo: repo.FullName(), Number: 10, URL: "https://github.com/" + repo.FullName() + "/issues/10"}, nil
+}
+
+func (c *recordingWorkspaceClient) UpdateInboxTicketChildIssue(inboxRepo RepoRef, ticket PortfolioTicket, childIssue string) error {
+	c.updatedInbox++
+	c.childIssue = childIssue
+	return nil
 }
 
 func (c fakeWorkspaceClient) FetchInboxTickets(repo RepoRef) ([]PortfolioRawTicket, error) {

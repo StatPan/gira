@@ -222,7 +222,7 @@ Usage:
   gira workspace status [--config .gira/config.yaml] [--json]
   gira workspace backlog [--config .gira/config.yaml] [--json]
   gira workspace sync --dry-run|--apply [--config .gira/config.yaml] [--bootstrap-issues] [--json]
-  gira workspace ticket new "Title" [--body TEXT] [--config .gira/config.yaml] [--json]
+  gira workspace ticket new "Title" [--body TEXT] [--repo OWNER/REPO --dry-run|--apply] [--config .gira/config.yaml] [--json]
   gira workspace ticket route --ticket N --repo OWNER/REPO --dry-run|--apply [--config .gira/config.yaml] [--json]
   gira workspace capability [--config .gira/config.yaml] [--json]
   gira workspace project plan [--config .gira/config.yaml] [--json]
@@ -861,10 +861,13 @@ var newWorkspaceSyncReport = func(configPath string, dryRun bool, bootstrapIssue
 	return gira.BuildWorkspaceSyncReport(resolved, syncer, dryRun, bootstrapIssues)
 }
 
-var newWorkspaceTicketNewReport = func(configPath string, title string, body string) (gira.WorkspaceTicketNewReport, error) {
+var newWorkspaceTicketNewReport = func(configPath string, title string, body string, targetRepo gira.RepoRef, route bool, dryRun bool) (gira.WorkspaceTicketNewReport, error) {
 	resolved, err := gira.ResolveWorkspaceConfig(configPath)
 	if err != nil {
 		return gira.WorkspaceTicketNewReport{}, err
+	}
+	if route {
+		return gira.BuildWorkspaceTicketNewRouteReport(resolved, gira.NewGHWorkspaceClient(gira.ExecCommandRunner{}), title, body, targetRepo, dryRun)
 	}
 	return gira.BuildWorkspaceTicketNewReport(resolved, gira.NewGHWorkspaceClient(gira.ExecCommandRunner{}), title, body)
 }
@@ -3228,10 +3231,14 @@ func runWorkspaceTicketNew(args []string, stdout io.Writer, stderr io.Writer) in
 	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
 	title := fs.String("title", "", "Ticket title")
 	body := fs.String("body", "", "Ticket body")
+	repoValue := fs.String("repo", "", "Target execution repo")
+	dryRun := fs.Bool("dry-run", false, "Create and route without mutation")
+	apply := fs.Bool("apply", false, "Create and route")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
-	if err := fs.Parse(args); err != nil {
+	flagArgs, positionalArgs := splitWorkspaceTicketNewArgs(args)
+	if err := fs.Parse(flagArgs); err != nil {
 		fmt.Fprintf(stderr, "%v\n\n", err)
 		fmt.Fprint(stderr, workspaceHelp)
 		return 2
@@ -3241,15 +3248,35 @@ func runWorkspaceTicketNew(args []string, stdout io.Writer, stderr io.Writer) in
 		return 0
 	}
 	resolvedTitle := strings.TrimSpace(*title)
-	if fs.NArg() > 0 {
+	if len(positionalArgs) > 0 {
 		if resolvedTitle != "" {
 			fmt.Fprintf(stderr, "use either positional title or --title, not both\n\n")
 			fmt.Fprint(stderr, workspaceHelp)
 			return 2
 		}
-		resolvedTitle = strings.TrimSpace(strings.Join(fs.Args(), " "))
+		resolvedTitle = strings.TrimSpace(strings.Join(positionalArgs, " "))
 	}
-	report, err := newWorkspaceTicketNewReport(*configPath, resolvedTitle, *body)
+	route := strings.TrimSpace(*repoValue) != ""
+	if !route && (*dryRun || *apply) {
+		fmt.Fprintf(stderr, "--repo is required when using --dry-run or --apply for workspace ticket new\n\n")
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if route && *dryRun == *apply {
+		fmt.Fprintf(stderr, "--repo requires exactly one of --dry-run or --apply for workspace ticket new\n\n")
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	var repo gira.RepoRef
+	var err error
+	if route {
+		repo, err = gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+	}
+	report, err := newWorkspaceTicketNewReport(*configPath, resolvedTitle, *body, repo, route, *dryRun)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
@@ -3265,6 +3292,38 @@ func runWorkspaceTicketNew(args []string, stdout io.Writer, stderr io.Writer) in
 	}
 	fmt.Fprint(stdout, gira.FormatWorkspaceTicketNewReport(report))
 	return 0
+}
+
+func splitWorkspaceTicketNewArgs(args []string) ([]string, []string) {
+	flagArgs := []string{}
+	positionalArgs := []string{}
+	valueFlags := map[string]struct{}{"--config": {}, "--title": {}, "--body": {}, "--repo": {}}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if _, ok := valueFlags[arg]; ok {
+			flagArgs = append(flagArgs, arg)
+			if i+1 < len(args) {
+				i++
+				flagArgs = append(flagArgs, args[i])
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "--config=") || strings.HasPrefix(arg, "--title=") || strings.HasPrefix(arg, "--body=") || strings.HasPrefix(arg, "--repo=") {
+			flagArgs = append(flagArgs, arg)
+			continue
+		}
+		switch arg {
+		case "--json", "--dry-run", "--apply", "--help", "-h":
+			flagArgs = append(flagArgs, arg)
+		default:
+			if strings.HasPrefix(arg, "-") {
+				flagArgs = append(flagArgs, arg)
+			} else {
+				positionalArgs = append(positionalArgs, arg)
+			}
+		}
+	}
+	return flagArgs, positionalArgs
 }
 
 func runWorkspaceTicketRoute(args []string, stdout io.Writer, stderr io.Writer) int {

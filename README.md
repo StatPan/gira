@@ -1,19 +1,25 @@
 # Gira
 
-Gira brings a Jira-style project workflow to GitHub, with Terraform-like plan/apply safety.
+Gira is a GitHub-native Jira-style workflow CLI for humans and coding agents.
 
-Name shorthand: **Gira: Jira-style project flow on GitHub.**
+I built Gira because I wanted GitHub to stay the source of truth, but I still wanted a Jira-like workflow that coding agents could follow safely.
+
+Gira maps tickets to GitHub Issues, work-start evidence to branches, change units to PRs, sprint and release boundaries to milestones, and completion to merged PRs plus closed issues. The main design choice is Terraform-like `--dry-run` / `--apply`, so humans and agents can preview workflow mutations before touching GitHub.
+
+```text
+ticket -> branch -> PR -> checks -> merge -> done
+```
+
+Every mutating workflow follows the same safety contract:
+
+- `--dry-run` previews the GitHub or repository changes.
+- `--apply` executes only after review.
 
 Documentation: <https://gira.statpan.com>
 
 Docs source lives in `docs-site/` and is built with VitePress. The docs toolchain is separate from the product runtime; the shipped product remains the Go-built `gira` binary.
 
-With Gira, GitHub remains the source of truth. Gira gives humans and agents a safer control plane over it:
-
-- `gira ... --dry-run` shows the plan before changing GitHub or repository files.
-- `gira ... --apply` applies only the reviewed action.
-- Issues are tickets, milestones are sprint or release boundaries, branches are work-start evidence, and PRs are change units.
-- Optional workspace and Project sync commands make backlog and roadmap state visible without replacing GitHub.
+Gira is not a Jira clone or a separate planning database. It is a GitHub-native workflow control plane for the issue -> branch -> PR loop, with optional workspace and Project sync commands that make backlog and roadmap state visible without replacing GitHub.
 
 The core flow is:
 

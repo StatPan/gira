@@ -8,6 +8,7 @@ The first successful Gira flow is install, authenticate, inspect, create a ticke
 gh auth status
 gira version
 gira init --repo OWNER/REPO --path . --dry-run
+gira adopt repo --repo OWNER/REPO --path . --dry-run
 gira status --repo OWNER/REPO
 ```
 

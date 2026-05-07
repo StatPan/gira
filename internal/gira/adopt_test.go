@@ -2,6 +2,8 @@ package gira
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -103,4 +105,93 @@ func TestBuildAdoptIssuesReportNormalizesSelectedClosedIssueWithoutDoneLabel(t *
 	if !containsCall(runner.calls, "gh issue edit 12 --repo StatPan/gira --remove-label status:blocked") {
 		t.Fatalf("missing status cleanup call: %v", runner.calls)
 	}
+}
+
+func TestBuildAdoptRepoReportPlansMergeWithoutOverwritingExistingAgents(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# Custom\n\nKeep this.\n"), 0o644); err != nil {
+		t.Fatalf("write AGENTS: %v", err)
+	}
+	runner := adoptRepoRunner()
+
+	report, err := BuildAdoptRepoReport(AdoptRepoInput{Repo: repo, Path: dir, DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildAdoptRepoReport error: %v", err)
+	}
+	if report.Strategy != "merge" || report.Recommendation != "merge" {
+		t.Fatalf("unexpected strategy: %+v", report)
+	}
+	if !report.Local.AgentsExists || report.Local.AgentsManagedBlock != "missing" {
+		t.Fatalf("unexpected local agents state: %+v", report.Local)
+	}
+	if !adoptRepoHasAction(report.Actions, "agents:managed-block:insert", "planned") {
+		t.Fatalf("missing managed block action: %+v", report.Actions)
+	}
+	if got := readText(t, filepath.Join(dir, "AGENTS.md")); got != "# Custom\n\nKeep this.\n" {
+		t.Fatalf("dry-run changed AGENTS.md: %q", got)
+	}
+}
+
+func TestBuildAdoptRepoReportApplyMergeWritesConfigAndManagedBlock(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# Custom\n"), 0o644); err != nil {
+		t.Fatalf("write AGENTS: %v", err)
+	}
+	runner := adoptRepoRunner()
+
+	report, err := BuildAdoptRepoReport(AdoptRepoInput{Repo: repo, Path: dir, Strategy: "merge", Apply: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildAdoptRepoReport error: %v", err)
+	}
+	if report.Counts.AppliedActions != 2 {
+		t.Fatalf("applied actions = %d, want 2: %+v", report.Counts.AppliedActions, report.Actions)
+	}
+	config := readText(t, filepath.Join(dir, ".gira", "config.yaml"))
+	if !strings.Contains(config, "repo: StatPan/gira") || !strings.Contains(config, "profiles:") {
+		t.Fatalf("config missing contract fields:\n%s", config)
+	}
+	agents := readText(t, filepath.Join(dir, "AGENTS.md"))
+	if !strings.Contains(agents, "# Custom") || !strings.Contains(agents, "<!-- gira:start -->") || !strings.Contains(agents, "gira ticket finish") {
+		t.Fatalf("AGENTS managed block not inserted safely:\n%s", agents)
+	}
+}
+
+func TestBuildAdoptRepoReportApplyRequiresStrategyOrYes(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	_, err := BuildAdoptRepoReport(AdoptRepoInput{Repo: repo, Path: t.TempDir(), Apply: true}, adoptRepoRunner())
+	if err == nil || !strings.Contains(err.Error(), "--apply requires --strategy") {
+		t.Fatalf("expected apply strategy error, got %v", err)
+	}
+}
+
+func adoptRepoRunner() *adoptRunner {
+	return &adoptRunner{outputs: map[string][]byte{
+		"gh label list --repo StatPan/gira --json name,color,description --limit 1000":                []byte(`[{"name":"bug","color":"d73a4a","description":"Bug"}]`),
+		"gh api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100": []byte(`[[{"number":1,"title":"Roadmap","description":"Existing","due_on":null}]]`),
+		"gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=open -f per_page=100": []byte(`[[` +
+			`{"number":1,"title":"Legacy issue","state":"open","labels":[{"name":"bug"}],"milestone":null,"html_url":"u1"},` +
+			`{"number":2,"title":"Mapped issue","state":"open","labels":[{"name":"type:task"},{"name":"status:ready"}],"milestone":{"title":"Roadmap"},"html_url":"u2"}` +
+			`]]`),
+		"gh project list --owner StatPan --format json --limit 100": []byte(`{"projects":[{"title":"Gira Backlog","number":1}]}`),
+	}}
+}
+
+func adoptRepoHasAction(actions []AdoptRepoAction, action string, status string) bool {
+	for _, item := range actions {
+		if item.Action == action && item.Status == status {
+			return true
+		}
+	}
+	return false
+}
+
+func readText(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(content)
 }

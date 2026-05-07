@@ -44,8 +44,9 @@ func BuildInitReportWithConfig(repo RepoRef, path string, dryRun bool, configPat
 		Failures:     map[string]string{},
 		Remediations: map[string]string{},
 		PlannedSteps: []string{
-			"gira bootstrap --repo " + repo.FullName() + " --path " + absPath,
-			"gira ops sync --repo " + repo.FullName(),
+			"gira adopt repo --repo " + repo.FullName() + " --path " + absPath + " --dry-run",
+			"gira adopt repo --repo " + repo.FullName() + " --path " + absPath + " --strategy merge --apply",
+			"gira ops sync --repo " + repo.FullName() + " --dry-run",
 			"gira status --repo " + repo.FullName() + " --json",
 		},
 	}

@@ -13,18 +13,19 @@ Gira should make a GitHub repository feel like a small, explicit project operati
 
 ## First 10 Minutes
 
-The first ten minutes after `gira ops bootstrap` should answer four questions: what changed, what is safe to rerun, what should I do next, and what can an AI worker consume.
+The first ten minutes after `gira init` should answer four questions: what exists, what Gira recommends, what is safe to apply, and what can an AI worker consume.
 
-1. Preview the repo template:
+1. Detect existing repository state:
 
    ```bash
-   gira ops bootstrap --repo OWNER/REPO --template default --dry-run
+   gira init --repo OWNER/REPO --path . --dry-run
+   gira adopt repo --repo OWNER/REPO --path . --dry-run
    ```
 
-2. Install project files into a local git repo on a bootstrap branch:
+2. Apply the minimal adoption contract when the plan looks right:
 
    ```bash
-   gira ops bootstrap --repo OWNER/REPO --template default --path .
+   gira adopt repo --repo OWNER/REPO --path . --strategy merge --apply
    git status --short
    ```
 
@@ -63,11 +64,13 @@ The first ten minutes after `gira ops bootstrap` should answer four questions: w
    gira ops onboard verify --stage steady-state --json
    ```
 
-After bootstrap, the operator should see a short install summary and use `gira ops sync --repo OWNER/REPO --dry-run` as the next-step hint. After sync, the operator should use `gira status` from a checkout with a GitHub `origin` remote, or from a directory with `.gira/config.yaml` containing `repo: OWNER/REPO`, to pick the next ready ticket. `gira ops onboard verify` should provide the explicit go/no-go verdict and remediation checklist before the team treats the repo as daily-operable. Pass `--repo OWNER/REPO` when scripting or operating outside the target checkout/config directory.
+After repo adoption, the operator should see a short local contract summary and use `gira ops sync --repo OWNER/REPO --dry-run` as the next-step hint. After sync, the operator should use `gira status` from a checkout with a GitHub `origin` remote, or from a directory with `.gira/config.yaml` containing `repo: OWNER/REPO`, to pick the next ready ticket. `gira ops onboard verify` should provide the explicit go/no-go verdict and remediation checklist before the team treats the repo as daily-operable. Pass `--repo OWNER/REPO` when scripting or operating outside the target checkout/config directory.
 
 ## Command Taxonomy
 
-`bootstrap` prepares local project files from the default template. It owns `.github` templates, project docs, task list seeds, and local worker instructions. It should not create labels, milestones, issues, branches outside the target local repo, or remote PRs.
+`adopt repo` is the default existing-repository gateway. It detects existing local files and GitHub state, then applies only the minimal Gira contract selected by the operator. Existing `AGENTS.md`, PR templates, and issue templates are user-owned; Gira may insert or update only a managed block.
+
+`bootstrap` prepares local project files from the default template for fresh repositories. It owns `.github` templates, project docs, task list seeds, and local worker instructions. It should not create labels, milestones, issues, branches outside the target local repo, or remote PRs.
 
 `sync` reconciles GitHub execution metadata through `gh`. It owns Gira-managed labels, milestones, and (when `--bootstrap-issues` is provided) bootstrap issues. It may create or update known Gira metadata, but it must not delete labels, close issues, delete milestones, or change broad repository settings in the MVP.
 

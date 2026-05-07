@@ -54,6 +54,7 @@ Read before writing. For repository setup, run init from a clean checkout so Gir
 
 ```bash
 gira init --repo OWNER/REPO --path . --dry-run
+gira adopt repo --repo OWNER/REPO --path . --dry-run
 gira status --repo OWNER/REPO
 ```
 
@@ -83,6 +84,8 @@ gira ticket status
 ```
 
 `gira ticket new` creates a repo-bound executable ticket. It writes a structured issue body from `--goal`, `--scope`, `--acceptance`, and `--notes`, applies `type:*` and `status:ready`, and can immediately start the branch with `--start`. `gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket pr`, `ticket checks`, `ticket wait`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
+
+For an existing repository, run `gira adopt repo --dry-run` before full bootstrap. Gira detects existing issues, labels, milestones, Projects, `AGENTS.md`, and GitHub templates, then recommends an adoption strategy. The default `merge` strategy preserves user-owned files and metadata while adding only the minimal Gira contract, such as `.gira/config.yaml` and an `AGENTS.md` managed block. Bootstrap sample issues are never required for normal adoption.
 
 You can open and merge a pull request with `gh pr create` and `gh pr merge`, but `gira ticket pr`, `gira ticket checks`, `gira ticket wait`, and `gira ticket finish` keep the ticket lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, wait for pending checks, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
 
@@ -126,6 +129,7 @@ When an LLM or coding agent operates a Gira-managed repository, follow this orde
 # 1. Read current state.
 gh auth status
 gira init --repo OWNER/REPO --path . --dry-run
+gira adopt repo --repo OWNER/REPO --path . --dry-run
 gira status --repo OWNER/REPO
 
 # 2. Create and start a repo-bound ticket.
@@ -171,6 +175,7 @@ Most daily work should use `gira ticket`, `gira workspace`, `gira projects`, `gi
 Plan setup without changing GitHub or repository files:
 
 ```bash
+gira adopt repo --repo OWNER/REPO --path . --dry-run
 gira ops bootstrap --repo OWNER/REPO --template default --dry-run
 gira ops sync --repo OWNER/REPO --dry-run
 ```

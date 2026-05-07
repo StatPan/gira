@@ -97,22 +97,50 @@ func ResolveUpgradeChannel(override string, executablePath string) (string, erro
 		}
 		return env, nil
 	}
-	path := strings.ToLower(filepath.ToSlash(strings.TrimSpace(executablePath)))
+	paths := upgradeChannelCandidatePaths(executablePath)
+	for _, path := range paths {
+		if channel, ok := upgradeChannelFromPath(path); ok {
+			return channel, nil
+		}
+	}
+	return "unknown", nil
+}
+
+func upgradeChannelCandidatePaths(executablePath string) []string {
+	raw := strings.TrimSpace(executablePath)
+	if raw == "" {
+		return nil
+	}
+	paths := []string{normalizeUpgradePath(raw)}
+	if resolved, err := filepath.EvalSymlinks(raw); err == nil && strings.TrimSpace(resolved) != "" {
+		normalized := normalizeUpgradePath(resolved)
+		if normalized != paths[0] {
+			paths = append(paths, normalized)
+		}
+	}
+	return paths
+}
+
+func normalizeUpgradePath(path string) string {
+	return strings.ToLower(filepath.ToSlash(strings.TrimSpace(path)))
+}
+
+func upgradeChannelFromPath(path string) (string, bool) {
 	switch {
 	case strings.Contains(path, "/homebrew/") || strings.Contains(path, "/cellar/") || strings.Contains(path, "/opt/homebrew/"):
-		return "homebrew", nil
+		return "homebrew", true
 	case strings.Contains(path, "/node_modules/") || strings.Contains(path, "/packages/npm/"):
-		return "npm", nil
+		return "npm", true
 	case strings.Contains(path, "/uv/tools/"):
-		return "uv", nil
+		return "uv", true
 	case strings.Contains(path, "/pipx/"):
-		return "pipx", nil
+		return "pipx", true
 	case strings.Contains(path, "/site-packages/") || strings.Contains(path, "/gira-cli/"):
-		return "pip", nil
+		return "pip", true
 	case strings.HasSuffix(path, "/go/bin/gira") || strings.Contains(path, "/gopath/bin/gira"):
-		return "go", nil
+		return "go", true
 	default:
-		return "unknown", nil
+		return "", false
 	}
 }
 

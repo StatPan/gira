@@ -6,6 +6,15 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.4.0 - 2026-05-07
+
+- Added the public documentation site source and VitePress docs build for the GitHub Pages site.
+- Added existing repository adoption with `gira adopt repo`, including observe, merge, and normalize strategies that preserve existing user files.
+- Added numberless epic lifecycle commands so epics can be created, started, and closed without manually tracking issue numbers.
+- Documented the npm install channel and added uv global tool install guidance with `uv tool install gira-cli`.
+- Added `gira upgrade --channel uv` so uv installs receive the correct `uv tool upgrade gira-cli` next step.
+- Kept Pages deployment non-blocking while the custom domain and Pages environment are being finalized.
+
 ## v1.3.1 - 2026-05-06
 
 - Made `gira doctor` adoption-aware so optional Gira sample bootstrap issues no longer make existing repositories look unhealthy.

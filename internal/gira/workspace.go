@@ -132,11 +132,16 @@ type WorkspaceTicketRef struct {
 }
 
 type WorkspaceTicketNewReport struct {
-	Command   string             `json:"command"`
-	Workspace WorkspaceSummary   `json:"workspace"`
-	InboxRepo string             `json:"inbox_repo"`
-	Title     string             `json:"title"`
-	Created   WorkspaceTicketRef `json:"created"`
+	Command        string                 `json:"command"`
+	Workspace      WorkspaceSummary       `json:"workspace"`
+	InboxRepo      string                 `json:"inbox_repo"`
+	Title          string                 `json:"title"`
+	Created        *WorkspaceTicketRef    `json:"created,omitempty"`
+	TargetRepo     string                 `json:"target_repo,omitempty"`
+	DryRun         bool                   `json:"dry_run,omitempty"`
+	Actions        []WorkspaceRouteAction `json:"actions,omitempty"`
+	ExecutionIssue *PortfolioLoweredIssue `json:"execution_issue,omitempty"`
+	NextSteps      []string               `json:"next_steps,omitempty"`
 }
 
 type WorkspaceTicketRouteReport struct {
@@ -357,7 +362,60 @@ func BuildWorkspaceTicketNewReport(config WorkspaceConfigResolved, client Worksp
 	if err != nil {
 		return WorkspaceTicketNewReport{}, err
 	}
-	return WorkspaceTicketNewReport{Command: "workspace ticket new", Workspace: WorkspaceSummary{Name: config.Name, Owner: config.Owner}, InboxRepo: config.InboxRepo.FullName(), Title: title, Created: created}, nil
+	return WorkspaceTicketNewReport{Command: "workspace ticket new", Workspace: WorkspaceSummary{Name: config.Name, Owner: config.Owner}, InboxRepo: config.InboxRepo.FullName(), Title: title, Created: &created}, nil
+}
+
+func BuildWorkspaceTicketNewRouteReport(config WorkspaceConfigResolved, client WorkspaceClient, title string, body string, targetRepo RepoRef, dryRun bool) (WorkspaceTicketNewReport, error) {
+	if strings.TrimSpace(title) == "" {
+		return WorkspaceTicketNewReport{}, fmt.Errorf("--title is required")
+	}
+	if !workspaceContainsRepo(config.Repos, targetRepo) {
+		return WorkspaceTicketNewReport{}, fmt.Errorf("%s is not in workspace.repos", targetRepo.FullName())
+	}
+	if strings.TrimSpace(body) == "" {
+		body = renderWorkspaceInboxBody(title)
+	}
+	report := WorkspaceTicketNewReport{
+		Command:    "workspace ticket new",
+		Workspace:  WorkspaceSummary{Name: config.Name, Owner: config.Owner},
+		InboxRepo:  config.InboxRepo.FullName(),
+		Title:      title,
+		TargetRepo: targetRepo.FullName(),
+		DryRun:     dryRun,
+		Actions: []WorkspaceRouteAction{
+			{Action: "inbox_ticket:create", Repo: config.InboxRepo.FullName(), Reason: "capture workspace ticket before routing"},
+			{Action: "execution_issue:create", Repo: targetRepo.FullName(), Reason: "route inbox ticket to execution repo"},
+		},
+	}
+	if dryRun {
+		report.NextSteps = []string{fmt.Sprintf("gira workspace ticket new %q --repo %s --apply", title, targetRepo.FullName())}
+		return report, nil
+	}
+	created, err := client.CreateInboxTicket(config.InboxRepo, title, body)
+	if err != nil {
+		return WorkspaceTicketNewReport{}, err
+	}
+	report.Created = &created
+	ticket := normalizeWorkspaceRouteTicket(PortfolioTicket{
+		Number: created.Number,
+		Title:  title,
+		State:  "open",
+		URL:    created.URL,
+		Body:   body,
+		Goal:   title,
+	}, targetRepo)
+	executionIssue, err := client.CreateExecutionIssue(targetRepo, ticket, config.InboxRepo)
+	if err != nil {
+		return WorkspaceTicketNewReport{}, err
+	}
+	report.ExecutionIssue = &executionIssue
+	childIssue := fmt.Sprintf("%s#%d", targetRepo.FullName(), executionIssue.Number)
+	if err := client.UpdateInboxTicketChildIssue(config.InboxRepo, ticket, childIssue); err != nil {
+		return WorkspaceTicketNewReport{}, err
+	}
+	report.Actions = append(report.Actions, WorkspaceRouteAction{Action: "inbox_ticket:update_child_issues", Repo: config.InboxRepo.FullName(), Reason: "link created execution issue"})
+	report.NextSteps = []string{fmt.Sprintf("gira ticket start --repo %s --ticket %d --apply", targetRepo.FullName(), executionIssue.Number)}
+	return report, nil
 }
 
 func BuildWorkspaceTicketRouteReport(config WorkspaceConfigResolved, client WorkspaceClient, ticketNumber int, targetRepo RepoRef, dryRun bool) (WorkspaceTicketRouteReport, error) {
@@ -471,7 +529,31 @@ func FormatWorkspaceSyncReport(report WorkspaceSyncReport) string {
 }
 
 func FormatWorkspaceTicketNewReport(report WorkspaceTicketNewReport) string {
-	return fmt.Sprintf("workspace ticket new: %s#%d %s\nnext step: gira workspace ticket route --ticket %d --repo OWNER/REPO --dry-run\n", report.Created.Repo, report.Created.Number, report.Title, report.Created.Number)
+	if report.TargetRepo == "" {
+		if report.Created == nil {
+			return fmt.Sprintf("workspace ticket new: %s\n", report.Title)
+		}
+		return fmt.Sprintf("workspace ticket new: %s#%d %s\nnext step: gira workspace ticket route --ticket %d --repo OWNER/REPO --dry-run\n", report.Created.Repo, report.Created.Number, report.Title, report.Created.Number)
+	}
+	var b strings.Builder
+	mode := "apply"
+	if report.DryRun {
+		mode = "dry-run"
+	}
+	fmt.Fprintf(&b, "workspace ticket new: %s %s -> %s\n", mode, report.Title, report.TargetRepo)
+	if report.Created != nil {
+		fmt.Fprintf(&b, "inbox: %s#%d %s\n", report.Created.Repo, report.Created.Number, report.Created.URL)
+	}
+	if report.ExecutionIssue != nil {
+		fmt.Fprintf(&b, "execution: %s#%d %s\n", report.ExecutionIssue.Repo, report.ExecutionIssue.Number, report.ExecutionIssue.URL)
+	}
+	for _, action := range report.Actions {
+		fmt.Fprintf(&b, "  %s %s (%s)\n", action.Action, action.Repo, action.Reason)
+	}
+	if len(report.NextSteps) > 0 {
+		fmt.Fprintf(&b, "next step: %s\n", report.NextSteps[0])
+	}
+	return b.String()
 }
 
 func FormatWorkspaceTicketRouteReport(report WorkspaceTicketRouteReport) string {

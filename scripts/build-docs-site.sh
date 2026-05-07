@@ -10,19 +10,23 @@ if [ ! -d "${src}" ]; then
 fi
 
 rm -rf "${out}"
-mkdir -p "${out}"
-cp -R "${src}/." "${out}/"
+npm exec -- vitepress build "${src}" --outDir "${out}"
 
 if [ ! -f "${out}/index.html" ]; then
-  echo "docs build failed: ${out}/index.html missing" >&2
-  exit 1
+	echo "docs build failed: ${out}/index.html missing" >&2
+	exit 1
 fi
 
 for page in install quickstart jira-mapping ticket-workflow sprint-release distribution troubleshooting; do
-  if [ ! -f "${out}/${page}.html" ]; then
-    echo "docs build failed: ${out}/${page}.html missing" >&2
-    exit 1
-  fi
+	if [ ! -f "${out}/${page}/index.html" ] && [ ! -f "${out}/${page}.html" ]; then
+		echo "docs build failed: ${out}/${page} missing" >&2
+		exit 1
+	fi
 done
+
+if [ ! -f "${out}/CNAME" ]; then
+	echo "docs build failed: ${out}/CNAME missing" >&2
+	exit 1
+fi
 
 echo "docs site built: ${out}"

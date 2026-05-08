@@ -175,6 +175,7 @@ The Go-built `gira` binary is the sole product implementation. The default user 
 - `gira workspace ...` is the Jira-like personal workspace and inbox layer for repo-agnostic backlog before work is routed to an execution repo.
 - `gira projects ...` mirrors canonical repository issue state into visible GitHub Projects board items.
 - `gira sprint ...`, `gira release`, and `gira status` are daily planning and reporting commands.
+- `gira audit readiness --repo OWNER/REPO` combines doctor checks, audit ledger health, and the next Gira-first action.
 - `gira ops ...` contains advanced setup, migration, policy, audit, and raw GitHub controls.
 - `gira start` and `gira work ...` remain compatibility aliases.
 
@@ -314,6 +315,7 @@ gira --help
 gira version
 gira upgrade
 gira doctor --repo OWNER/REPO
+gira audit readiness --repo OWNER/REPO
 ```
 
 ### Developer Source Build
@@ -444,6 +446,7 @@ gira --help
 gira version
 gira upgrade
 gira doctor --repo OWNER/REPO
+gira audit readiness --repo OWNER/REPO
 ```
 
 ### Binary Uninstall

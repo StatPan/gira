@@ -3276,6 +3276,95 @@ func TestAuditVerifyScopesToRepoInCLI(t *testing.T) {
 	}
 }
 
+func TestAuditReadinessJSONUsesInjectedReportAndExitCode(t *testing.T) {
+	restore := newAuditReadinessReport
+	t.Cleanup(func() { newAuditReadinessReport = restore })
+	newAuditReadinessReport = func(repo gira.RepoRef, ledgerPath string) gira.AuditReadinessReport {
+		if repo.FullName() != "StatPan/gira" {
+			t.Fatalf("repo = %q, want StatPan/gira", repo.FullName())
+		}
+		if ledgerPath != ".gira/audit/*.jsonl" {
+			t.Fatalf("ledgerPath = %q, want default path", ledgerPath)
+		}
+		return gira.AuditReadinessReport{
+			Repo:      "StatPan/gira",
+			Command:   "audit readiness",
+			Ready:     false,
+			CheckedAt: "2026-05-08T12:00:00Z",
+			Doctor: gira.DoctorReport{
+				Repo:      "StatPan/gira",
+				Command:   "doctor",
+				CheckedAt: "2026-05-08T12:00:00Z",
+				Ready:     true,
+			},
+			Audit: gira.AuditReadinessHealth{
+				Status:      gira.AuditReadinessStatusFailed,
+				Detail:      "malformed_json in .gira/audit/StatPan_gira.jsonl line 1",
+				Remediation: "fix the audit ledger, then run `gira audit verify --repo StatPan/gira --path .gira/audit/*.jsonl`",
+				Verify: gira.AuditVerifyReport{
+					Valid:       false,
+					Failure:     "malformed_json",
+					FailureFile: ".gira/audit/StatPan_gira.jsonl",
+					FailureLine: 1,
+				},
+			},
+			NextStep: "fix audit ledger corruption, then run `gira audit verify --repo StatPan/gira --path .gira/audit/*.jsonl`",
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"audit", "readiness", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"repo": "StatPan/gira"`, `"command": "audit readiness"`, `"ready": false`, `"checked_at": "2026-05-08T12:00:00Z"`, `"audit": {`, `"next_step": "fix audit ledger corruption`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("audit readiness JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestAuditReadinessHumanUsesInjectedReport(t *testing.T) {
+	restore := newAuditReadinessReport
+	t.Cleanup(func() { newAuditReadinessReport = restore })
+	newAuditReadinessReport = func(repo gira.RepoRef, ledgerPath string) gira.AuditReadinessReport {
+		return gira.AuditReadinessReport{
+			Repo:      repo.FullName(),
+			Command:   "audit readiness",
+			Ready:     true,
+			CheckedAt: "2026-05-08T12:00:00Z",
+			Doctor: gira.DoctorReport{
+				Repo:      repo.FullName(),
+				Command:   "doctor",
+				CheckedAt: "2026-05-08T12:00:00Z",
+				Ready:     true,
+				Checks: []gira.DoctorCheck{{
+					ID:     "repo_context",
+					Status: gira.DoctorCheckPass,
+					Detail: "using --repo " + repo.FullName(),
+				}},
+			},
+			Audit: gira.AuditReadinessHealth{
+				Status: gira.AuditReadinessStatusMissing,
+				Detail: "no audit ledger found for " + repo.FullName() + " at " + ledgerPath,
+				Verify: gira.AuditVerifyReport{Valid: false, Failure: "no_audit_files_found"},
+			},
+			NextStep: "run `gira status --repo " + repo.FullName() + "`",
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"audit", "readiness", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"readiness/doctor checks:", "audit ledger health:", "[warn] audit_ledger"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("audit readiness output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestAuditVerifyFailsForMismatchedRepoPath(t *testing.T) {
 	dir := t.TempDir()
 	otherPath := filepath.Join(dir, "OtherOrg_other.jsonl")

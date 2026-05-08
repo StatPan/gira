@@ -77,6 +77,7 @@ gira ticket new "Add login retry" \
   --goal "Retry transient auth failures" \
   --acceptance "retries 3 times;does not retry 401;has tests" \
   --apply --start
+gira ticket list --state open --label status:ready --limit 20
 
 # implement the bounded issue scope, then verify locally
 go test ./...
@@ -90,13 +91,13 @@ gira ticket finish --apply
 gira ticket status
 ```
 
-`gira ticket new` creates a repo-bound executable ticket. It writes a structured issue body from `--goal`, `--scope`, `--acceptance`, and `--notes`, applies `type:*` and `status:ready`, and can immediately start the branch with `--start`. `gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket pr`, `ticket checks`, `ticket wait`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
+`gira ticket new` creates a repo-bound executable ticket. It writes a structured issue body from `--goal`, `--scope`, `--acceptance`, and `--notes`, applies `type:*` and `status:ready`, and can immediately start the branch with `--start`. `gira ticket list` lists GitHub issue-backed tickets with compact filters: `--state open|closed|all`, repeatable or comma-separated `--label`, `--assignee`, `--milestone`, `--limit`, and `--json`. `gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket pr`, `ticket checks`, `ticket wait`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
 
 For an existing repository, run `gira adopt repo --dry-run` before full bootstrap. Gira detects existing issues, labels, milestones, Projects, `AGENTS.md`, and GitHub templates, then recommends an adoption strategy. The default `merge` strategy preserves user-owned files and metadata while adding only the minimal Gira contract, such as `.gira/config.yaml` and an `AGENTS.md` managed block. Bootstrap sample issues are never required for normal adoption.
 
 You can open and merge a pull request with `gh pr create` and `gh pr merge`, but lifecycle work should use Gira ticket controls when available: `ticket status`, `ticket start`, `ticket pr`, `ticket checks`, `ticket wait`, and `ticket finish`. Use raw `gh` only when Gira has no lifecycle command. The ticket commands keep the lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, wait for pending checks, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
 
-`gira epic status` and `gira epic finish` close the larger planning loop without requiring raw `gh issue close`. Gira can resolve an epic from the current `issue-N-*` branch, `--title`, `--slug`, `--milestone`, or a sole open `type:epic`; `--ticket N` remains the explicit fallback. `epic finish --apply` refuses to close while child issues are still open, then normalizes active status labels and closes the epic through GitHub.
+`gira epic list`, `gira epic status`, and `gira epic finish` close the larger planning loop without requiring raw `gh issue list` or `gh issue close`. `epic list` is a `type:epic` view over GitHub issues with the same compact list filters as ticket list. Gira can resolve an epic from the current `issue-N-*` branch, `--title`, `--slug`, `--milestone`, or a sole open `type:epic`; `--ticket N` remains the explicit fallback. `epic finish --apply` refuses to close while child issues are still open, then normalizes active status labels and closes the epic through GitHub.
 
 ## Ticket Flow Cases
 
@@ -235,6 +236,7 @@ The inbox repo is where repo-agnostic tickets live. Execution repos are where br
 ```bash
 gira workspace status --config .gira/config.yaml
 gira workspace backlog --config .gira/config.yaml
+gira workspace list --config .gira/config.yaml
 gira workspace sync --dry-run --config .gira/config.yaml
 gira workspace ticket new "Define billing model" --repo OWNER/app --dry-run --config .gira/config.yaml
 gira workspace ticket new "Define billing model" --repo OWNER/app --apply --config .gira/config.yaml

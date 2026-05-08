@@ -222,6 +222,7 @@ Usage:
   gira workspace validate [--config .gira/config.yaml] [--json]
   gira workspace status [--config .gira/config.yaml] [--json]
   gira workspace backlog [--config .gira/config.yaml] [--json]
+  gira workspace list [--config .gira/config.yaml] [--json]  (alias: backlog)
   gira workspace sync --dry-run|--apply [--config .gira/config.yaml] [--bootstrap-issues] [--json]
   gira workspace ticket new "Title" [--body TEXT] [--repo OWNER/REPO --dry-run|--apply] [--config .gira/config.yaml] [--json]
   gira workspace ticket route --ticket N --repo OWNER/REPO --dry-run|--apply [--config .gira/config.yaml] [--json]
@@ -233,7 +234,7 @@ Commands:
   init     Create a workspace config for personal or repo-bound backlog use
   validate Validate inbox backlog routing readiness without mutation
   status   Show inbox and repo execution state in one Jira-like overview
-  backlog  List inbox tickets and repo issues together
+  backlog  List inbox tickets and repo issues together. Alias: list
   sync     Sync Gira metadata across inbox and execution repos
   ticket   Create or route repo-agnostic inbox tickets
   capability  Check inbox and execution repo read/write permissions
@@ -587,6 +588,7 @@ const ticketHelp = `Jira-style ticket lifecycle commands.
 
 Usage:
   gira ticket new "Title" --dry-run|--apply [--start] [--json]
+  gira ticket list [--repo OWNER/REPO] [--state open|closed|all] [--label LABEL] [--assignee LOGIN] [--milestone TITLE] [--limit N] [--json]
   gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
   gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]
@@ -596,6 +598,7 @@ Usage:
 
 Commands:
   new     Create a repo-bound executable ticket with a structured Gira body
+  list    List repo tickets with compact GitHub issue-backed filters
   start   Verify a ready ticket, create/reuse its branch, and move to in-progress on apply. Alias: gira start
   pr      Validate or create a linked PR with Closes #N and update review status on apply
   checks  Show linked PR checks, review blockers, and next action
@@ -607,6 +610,11 @@ Flags:
   --repo string    Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
   --ticket int     Ticket number. GitHub issue number in v1. Can also be positional
   --issue int      Compatibility alias for --ticket
+  --state string   Ticket list state filter: open, closed, or all. Default: open
+  --label string   Ticket list label filter. Repeatable or comma-separated
+  --assignee string Ticket list assignee login
+  --milestone string Ticket list milestone title
+  --limit int      Ticket list item limit. Default: 30
   --dry-run        Preview without mutation
   --apply          Apply branch, PR, and status label changes
   --draft          Create/keep PR as draft for ticket pr
@@ -621,10 +629,12 @@ Flags:
 const epicHelp = `Jira-style epic lifecycle commands.
 
 Usage:
+  gira epic list [--repo OWNER/REPO] [--state open|closed|all] [--label LABEL] [--assignee LOGIN] [--milestone TITLE] [--limit N] [--json]
   gira epic status [--repo OWNER/REPO] [--ticket N] [--title TEXT] [--slug SLUG] [--milestone TITLE] [--json]
   gira epic finish --dry-run|--apply [--repo OWNER/REPO] [--ticket N] [--title TEXT] [--slug SLUG] [--milestone TITLE] [--json]
 
 Commands:
+  list    List repo epics backed by type:epic GitHub issues
   status  Resolve an epic without requiring its number and show child readiness
   finish  Close an epic through Gira when all child issues are closed
 
@@ -640,6 +650,10 @@ Flags:
   --title string      Match an open epic title by substring
   --slug string       Match an open epic title slug
   --milestone string  Match an open epic milestone title
+  --state string      Epic list state filter: open, closed, or all. Default: open
+  --label string      Additional epic list label filter. Repeatable or comma-separated
+  --assignee string   Epic list assignee login
+  --limit int         Epic list item limit. Default: 30
   --dry-run           Preview without mutation
   --apply             Apply close and status label changes
   --json              Emit stable JSON output
@@ -1068,6 +1082,10 @@ var newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait t
 
 var newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
 	return gira.BuildTicketNewReport(input, devCommandRunner)
+}
+
+var newTicketListReport = func(options gira.TicketListOptions) (gira.TicketListReport, error) {
+	return gira.BuildTicketListReport(options, devCommandRunner)
 }
 
 var newTicketChecksReport = func(repo gira.RepoRef, issue int, wait time.Duration, pollInterval time.Duration) (gira.TicketChecksReport, error) {
@@ -1869,6 +1887,8 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "new":
 		return runTicketNew(args[1:], stdout, stderr)
+	case "list":
+		return runTicketList(args[1:], stdout, stderr)
 	case "start":
 		return runTicketStart(args[1:], stdout, stderr)
 	case "pr":
@@ -1888,12 +1908,75 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 }
 
+func runTicketList(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("ticket list", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	state := fs.String("state", "open", "Ticket state: open|closed|all")
+	assignee := fs.String("assignee", "", "Assignee login")
+	milestone := fs.String("milestone", "", "Milestone title")
+	limit := fs.Int("limit", 30, "Maximum tickets to list")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	var labels repeatedStringFlag
+	fs.Var(&labels, "label", "Label filter. Repeatable or comma-separated")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newTicketListReport(gira.TicketListOptions{
+		Repo:      repo,
+		State:     *state,
+		Labels:    labels,
+		Assignee:  *assignee,
+		Milestone: *milestone,
+		Limit:     *limit,
+	})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode ticket list JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatTicketList(report))
+	return 0
+}
+
 func runEpic(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		_, _ = io.WriteString(stdout, epicHelp)
 		return 0
 	}
 	switch args[0] {
+	case "list":
+		return runEpicList(args[1:], stdout, stderr)
 	case "status":
 		return runEpicStatus(args[1:], stdout, stderr)
 	case "finish", "close":
@@ -1903,6 +1986,69 @@ func runEpic(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, epicHelp)
 		return 2
 	}
+}
+
+func runEpicList(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("epic list", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	state := fs.String("state", "open", "Epic state: open|closed|all")
+	assignee := fs.String("assignee", "", "Assignee login")
+	milestone := fs.String("milestone", "", "Milestone title")
+	limit := fs.Int("limit", 30, "Maximum epics to list")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	var labels repeatedStringFlag
+	fs.Var(&labels, "label", "Additional label filter. Repeatable or comma-separated")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, epicHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, epicHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, epicHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	labels = append(repeatedStringFlag{"type:epic"}, labels...)
+	report, err := newTicketListReport(gira.TicketListOptions{
+		Repo:      repo,
+		State:     *state,
+		Labels:    labels,
+		Assignee:  *assignee,
+		Milestone: *milestone,
+		Limit:     *limit,
+	})
+	report.Command = "epic list"
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode epic list JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatTicketList(report))
+	return 0
 }
 
 func runEpicStatus(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -3114,7 +3260,7 @@ func runWorkspace(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runWorkspaceInit(args[1:], stdout, stderr)
 	case "validate":
 		return runWorkspaceValidate(args[1:], stdout, stderr)
-	case "status", "backlog":
+	case "status", "backlog", "list":
 		return runWorkspaceStatus(args[0], args[1:], stdout, stderr)
 	case "sync":
 		return runWorkspaceSync(args[1:], stdout, stderr)
@@ -3294,7 +3440,7 @@ func runWorkspaceStatus(command string, args []string, stdout io.Writer, stderr 
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	if command == "backlog" {
+	if command == "backlog" || command == "list" {
 		report.NextSteps = []string{"gira workspace status --config .gira/config.yaml"}
 	}
 	if *jsonOutput {

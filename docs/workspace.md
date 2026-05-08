@@ -57,6 +57,7 @@ Read the whole workspace:
 ```bash
 gira workspace status --config .gira/config.yaml
 gira workspace backlog --config .gira/config.yaml
+gira workspace list --config .gira/config.yaml
 ```
 
 Normalize labels and milestones across the inbox and execution repos:

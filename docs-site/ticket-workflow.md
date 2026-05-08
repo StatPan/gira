@@ -6,6 +6,7 @@ Use Gira for the issue to branch to PR to merge lifecycle. Raw `gh` remains the 
 
 ```bash
 gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply --start
+gira ticket list --state open --label status:ready --limit 20
 gira ticket pr --apply --draft
 gira ticket checks
 gira ticket wait --timeout 5m
@@ -19,6 +20,9 @@ gira ticket start 42 --apply
 gira ticket pr --apply --draft
 gira ticket finish --apply
 ```
+
+Use `gira ticket list` to discover repo issue-backed tickets without dropping to raw `gh`. It supports `--state open|closed|all`, repeatable or comma-separated `--label`, `--assignee`, `--milestone`, `--limit`, and `--json`.
+Use `gira epic list` for the same discovery pattern scoped to `type:epic` issues.
 
 ## Agent Rules
 

@@ -1,6 +1,8 @@
 package gira
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -56,11 +58,26 @@ func TestRenderTemplateTreeIncludesWorkspaceConfig(t *testing.T) {
 		"workspace:",
 		"inbox_repo: StatPan/example",
 		"- StatPan/example",
+		"project:",
+		"owner: StatPan",
+		"title: example",
 		"profiles:",
 		"review_policy:",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("workspace config missing %q:\n%s", want, content)
 		}
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write rendered config: %v", err)
+	}
+	resolved, err := ResolveWorkspaceConfig(path)
+	if err != nil {
+		t.Fatalf("ResolveWorkspaceConfig rendered template error: %v", err)
+	}
+	if resolved.Project.Owner != "StatPan" || resolved.Project.Title != "example" {
+		t.Fatalf("resolved project = %+v, want template defaults", resolved.Project)
 	}
 }

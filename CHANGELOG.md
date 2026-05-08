@@ -6,6 +6,32 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.5.0 - 2026-05-08
+
+- Added `gira audit readiness` to combine doctor checks, audit ledger health, and a Gira-first next action in one self-audit command.
+- Added `gira ticket list`, `gira epic list`, and `gira workspace list` so daily issue, epic, and backlog listing no longer requires dropping to raw `gh`.
+- Added multi-repository status summaries with `gira status --all` and owner discovery with `gira status --owner OWNER`.
+- Clarified binary-first install guidance across direct installer, npm/bun, PyPI, uv/pipx/pip, and Homebrew channels.
+- Raised the Go module baseline to Go 1.26.
+
+## v1.4.6 - 2026-05-08
+
+- Improved workspace project adoption help and follow-up guidance.
+
+## v1.4.5 - 2026-05-08
+
+- Added adoption support for existing workspace Project configuration.
+
+## v1.4.4 - 2026-05-08
+
+- Added `gira cache prune` to preview and remove stale wrapper-managed binary caches.
+
+## v1.4.3 - 2026-05-08
+
+- Added default workspace Project board setup.
+- Added numberless workspace ticket routing.
+- Clarified the repository execution boundary and launch positioning.
+
 ## v1.4.2 - 2026-05-07
 
 - Fixed PyPI wrapper executions so uv and pipx installs propagate their install channel to the native `gira` binary before running `gira upgrade`.

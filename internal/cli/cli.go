@@ -39,6 +39,7 @@ Setup:
   init        One-command onboarding with prerequisite checks and next-step plan
 
 Advanced:
+  audit       Self-audit readiness and append-only ledger verification
   ops         Advanced setup, migration, policy, audit, and raw GitHub controls
   work        Compatibility alias for ticket lifecycle commands
   dev         Compatibility developer workflow helpers
@@ -505,9 +506,11 @@ Flags:
 const auditHelp = `Audit utilities for append-only mutation ledger verification.
 
 Usage:
+  gira audit readiness --repo OWNER/REPO [--path .gira/audit/*.jsonl] [--json]
   gira audit verify --repo OWNER/REPO --path .gira/audit/*.jsonl [--json]
 
 Commands:
+  readiness    Inspect repo readiness, audit health, and next Gira step
   verify       Validate JSONL schema and hash-chain integrity
 
 Flags:
@@ -796,6 +799,10 @@ var newOnboardVerifyReport = func(repo gira.RepoRef, stage gira.OnboardStage) (g
 
 var newDoctorReport = func(repoValue string) gira.DoctorReport {
 	return gira.BuildDoctorReport(repoValue, gira.ExecCommandRunner{}, time.Now().UTC())
+}
+
+var newAuditReadinessReport = func(repo gira.RepoRef, ledgerPath string) gira.AuditReadinessReport {
+	return gira.BuildAuditReadinessReport(repo, ledgerPath, gira.ExecCommandRunner{}, time.Now().UTC())
 }
 
 var newSyncClient = func(repo gira.RepoRef) gira.SyncClient {
@@ -5284,12 +5291,65 @@ func runAudit(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stdout, auditHelp)
 		return 0
 	}
-	if args[0] != "verify" {
+	switch args[0] {
+	case "readiness":
+		return runAuditReadiness(args[1:], stdout, stderr)
+	case "verify":
+		return runAuditVerify(args[1:], stdout, stderr)
+	default:
 		fmt.Fprintf(stderr, "unknown audit command: %s\n\n", args[0])
 		fmt.Fprint(stderr, auditHelp)
 		return 2
 	}
-	return runAuditVerify(args[1:], stdout, stderr)
+}
+
+func runAuditReadiness(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("audit readiness", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ledgerPath := fs.String("path", ".gira/audit/*.jsonl", "Glob path to audit JSONL files")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON summary")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, auditHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, auditHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, auditHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		fmt.Fprint(stderr, auditHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report := newAuditReadinessReport(repo, *ledgerPath)
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode audit readiness JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+	} else {
+		fmt.Fprint(stdout, gira.FormatAuditReadinessReport(report))
+	}
+	if !report.Ready {
+		return 1
+	}
+	return 0
 }
 
 func runAuditVerify(args []string, stdout io.Writer, stderr io.Writer) int {

@@ -30,6 +30,7 @@ Daily commands:
   release     Release readiness gate report
   status      Show a compact read-only GitHub status summary
   upgrade     Check latest release and print upgrade instructions
+  cache       Manage local Gira caches
   version     Show Gira build version
   start       Shortcut for ticket start
 
@@ -310,6 +311,22 @@ Flags:
   --channel string  Installed channel to use for the next-step command (default "auto")
   --json            Emit stable JSON upgrade info
   -h, --help        Show help
+`
+
+const cacheHelp = `Manage local Gira caches.
+
+Usage:
+  gira cache prune --dry-run|--apply [--root PATH] [--json]
+
+Commands:
+  prune  Remove stale wrapper-managed native binary cache directories
+
+Flags:
+  --root string  Cache root (default: GIRA_PYPI_CACHE_DIR or ~/.cache/gira-cli)
+  --dry-run      Preview stale version directories without deleting
+  --apply        Delete stale version directories
+  --json         Emit stable JSON output
+  -h, --help     Show help
 `
 
 const onboardHelp = `Verify onboarding readiness from init to daily operation.
@@ -1012,6 +1029,13 @@ var newUpgradeReport = func(channel string) (gira.UpgradeReport, error) {
 	return gira.BuildUpgradeReport(channel, executable, nil)
 }
 
+var newCachePruneReport = func(options gira.CachePruneOptions) (gira.CachePruneReport, error) {
+	executable, _ := os.Executable()
+	options.ExecutablePath = executable
+	options.ActiveVersion = gira.BuildVersionInfo().Version
+	return gira.BuildCachePruneReport(options)
+}
+
 var newAdoptIssuesReport = func(input gira.AdoptIssueInput) (gira.AdoptIssuesReport, error) {
 	return gira.BuildAdoptIssuesReport(input, gira.ExecCommandRunner{})
 }
@@ -1066,6 +1090,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runStatus(args[1:], stdout, stderr)
 	case "upgrade", "update":
 		return runUpgrade(args[1:], stdout, stderr)
+	case "cache":
+		return runCache(args[1:], stdout, stderr)
 	case "version":
 		return runVersion(args[1:], stdout, stderr)
 	case "jira":
@@ -1208,6 +1234,68 @@ func runUpgrade(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatUpgradeReport(report))
+	return 0
+}
+
+func runCache(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+		fmt.Fprint(stdout, cacheHelp)
+		return 0
+	}
+	switch args[0] {
+	case "prune":
+		return runCachePrune(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown cache command: %s\n\n", args[0])
+		fmt.Fprint(stderr, cacheHelp)
+		return 2
+	}
+}
+
+func runCachePrune(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("cache prune", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	root := fs.String("root", "", "Cache root")
+	dryRun := fs.Bool("dry-run", false, "Preview stale version directories")
+	applyMode := fs.Bool("apply", false, "Delete stale version directories")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, cacheHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, cacheHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, cacheHelp)
+		return 2
+	}
+	if *dryRun == *applyMode {
+		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required\n\n")
+		fmt.Fprint(stderr, cacheHelp)
+		return 2
+	}
+
+	report, err := newCachePruneReport(gira.CachePruneOptions{Root: *root, DryRun: *dryRun, Apply: *applyMode})
+	if err != nil {
+		fmt.Fprintf(stderr, "cache prune failed: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode cache prune JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatCachePruneReport(report))
 	return 0
 }
 

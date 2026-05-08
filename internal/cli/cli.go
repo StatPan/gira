@@ -4486,6 +4486,8 @@ func ghStatusRepoList(owner string, limit int, archived bool, runner gira.Comman
 	args := []string{"repo", "list", owner, "--limit", strconv.Itoa(limit), "--json", "nameWithOwner,isArchived"}
 	if archived {
 		args = append(args, "--archived")
+	} else {
+		args = append(args, "--no-archived")
 	}
 	output, err := runner.Run("gh", args...)
 	if err != nil {

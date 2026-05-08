@@ -2309,6 +2309,39 @@ func TestStatusOwnerJSONUsesRepoDiscovery(t *testing.T) {
 	}
 }
 
+func TestStatusOwnerDiscoveryUsesArchivedFlags(t *testing.T) {
+	runner := devCLIRunner{outputs: map[string][]byte{
+		"gh repo list StatPan --limit 2 --json nameWithOwner,isArchived --no-archived": []byte(`[
+			{"nameWithOwner":"StatPan/app","isArchived":false},
+			{"nameWithOwner":"StatPan/old","isArchived":true}
+		]`),
+		"gh repo list StatPan --limit 2 --json nameWithOwner,isArchived --archived": []byte(`[
+			{"nameWithOwner":"StatPan/archive","isArchived":true},
+			{"nameWithOwner":"StatPan/live","isArchived":false}
+		]`),
+	}}
+
+	repos, err := ghStatusReposForOwner("StatPan", 2, false, runner)
+	if err != nil {
+		t.Fatalf("ghStatusReposForOwner error: %v", err)
+	}
+	if len(repos) != 1 || repos[0].FullName() != "StatPan/app" {
+		t.Fatalf("non-archived discovery should use --no-archived and ignore archived rows: %+v", repos)
+	}
+
+	repos, err = ghStatusReposForOwner("StatPan", 2, true, runner)
+	if err != nil {
+		t.Fatalf("ghStatusReposForOwner include archived error: %v", err)
+	}
+	got := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		got = append(got, repo.FullName())
+	}
+	if strings.Join(got, ",") != "StatPan/app,StatPan/archive" {
+		t.Fatalf("include archived discovery should merge non-archived and archived rows within limit, got %v", got)
+	}
+}
+
 func TestStatusRejectsMultipleRepoModes(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"status", "--repo", "StatPan/gira", "--all"}, &stdout, &stderr)

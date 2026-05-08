@@ -245,13 +245,66 @@ Flags:
   -h, --help       Show help
 `
 
+const workspaceProjectHelp = `Manage workspace GitHub Projects v2 visibility.
+
+Usage:
+  gira workspace project plan [--config .gira/config.yaml] [--json]
+  gira workspace project adopt --owner OWNER (--title TITLE | --number N) --dry-run|--apply [--config .gira/config.yaml] [--json]
+
+Commands:
+  plan    Inspect repository Project visibility without mutation
+  adopt   Register an existing profile or org Project in workspace.project
+
+Notes:
+  Profile and org Projects are the portfolio board surface.
+  Repository issues remain the execution source of truth.
+  Use gira projects sync after adoption to mirror repo issues into the configured Project.
+
+Flags:
+  --config string  Workspace config path (default ".gira/config.yaml")
+  --json           Emit stable JSON output
+  -h, --help       Show help
+`
+
+const workspaceProjectAdoptHelp = `Register an existing GitHub Project for a Gira workspace.
+
+Usage:
+  gira workspace project adopt --owner OWNER --title TITLE --dry-run|--apply [--config .gira/config.yaml] [--json]
+  gira workspace project adopt --owner OWNER --number N --dry-run|--apply [--config .gira/config.yaml] [--json]
+
+What it does:
+  Finds an existing profile or org GitHub Project owned by OWNER.
+  Records it in workspace.project in .gira/config.yaml.
+  Does not create Projects and does not replace a different configured Project.
+
+After adoption:
+  Run gira projects sync --config .gira/config.yaml --dry-run.
+  Run gira projects sync --config .gira/config.yaml --apply when the planned item and status changes look right.
+
+Flags:
+  --owner string   GitHub Project owner
+  --title string   GitHub Project title
+  --number int     GitHub Project number
+  --config string  Workspace config path (default ".gira/config.yaml")
+  --dry-run        Plan project adoption without mutation
+  --apply          Apply project adoption
+  --json           Emit stable JSON output
+  -h, --help       Show help
+`
+
 const projectsHelp = `Sync visible GitHub Projects board items.
 
 Usage:
   gira projects sync --dry-run|--apply [--config .gira/config.yaml] [--archive-closed] [--json]
 
 Commands:
-  sync  Add missing workspace issues to the configured GitHub Project
+  sync  Mirror configured repo issues into the existing workspace Project
+
+Notes:
+  The configured Project can be a profile or org Project linked to a repo.
+  Repo issues, labels, and milestones remain the execution source of truth.
+  Sync adds missing open issues, mirrors status labels, keeps closed issues Done,
+  and can archive closed issue items when --archive-closed is set.
 
 Flags:
   --config string    Workspace config path (default ".gira/config.yaml")
@@ -3477,7 +3530,7 @@ func runWorkspaceTicketRoute(args []string, stdout io.Writer, stderr io.Writer) 
 
 func runWorkspaceProject(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprint(stdout, workspaceHelp)
+		fmt.Fprint(stdout, workspaceProjectHelp)
 		return 0
 	}
 	if args[0] == "adopt" {
@@ -3485,7 +3538,7 @@ func runWorkspaceProject(args []string, stdout io.Writer, stderr io.Writer) int 
 	}
 	if args[0] != "plan" {
 		fmt.Fprintf(stderr, "unknown workspace project command: %s\n\n", args[0])
-		fmt.Fprint(stderr, workspaceHelp)
+		fmt.Fprint(stderr, workspaceProjectHelp)
 		return 2
 	}
 	fs := flag.NewFlagSet("workspace project plan", flag.ContinueOnError)
@@ -3496,16 +3549,16 @@ func runWorkspaceProject(args []string, stdout io.Writer, stderr io.Writer) int 
 	fs.BoolVar(help, "h", false, "Show help")
 	if err := fs.Parse(args[1:]); err != nil {
 		fmt.Fprintf(stderr, "%v\n\n", err)
-		fmt.Fprint(stderr, workspaceHelp)
+		fmt.Fprint(stderr, workspaceProjectHelp)
 		return 2
 	}
 	if *help {
-		fmt.Fprint(stdout, workspaceHelp)
+		fmt.Fprint(stdout, workspaceProjectHelp)
 		return 0
 	}
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
-		fmt.Fprint(stderr, workspaceHelp)
+		fmt.Fprint(stderr, workspaceProjectHelp)
 		return 2
 	}
 	report, err := newWorkspaceProjectPlanReport(*configPath)
@@ -3540,21 +3593,21 @@ func runWorkspaceProjectAdopt(args []string, stdout io.Writer, stderr io.Writer)
 	fs.BoolVar(help, "h", false, "Show help")
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(stderr, "%v\n\n", err)
-		fmt.Fprint(stderr, workspaceHelp)
+		fmt.Fprint(stderr, workspaceProjectAdoptHelp)
 		return 2
 	}
 	if *help {
-		fmt.Fprint(stdout, workspaceHelp)
+		fmt.Fprint(stdout, workspaceProjectAdoptHelp)
 		return 0
 	}
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
-		fmt.Fprint(stderr, workspaceHelp)
+		fmt.Fprint(stderr, workspaceProjectAdoptHelp)
 		return 2
 	}
 	if strings.TrimSpace(*owner) == "" || (strings.TrimSpace(*title) == "") == (*number == 0) || *dryRun == *apply {
 		fmt.Fprintf(stderr, "--owner, exactly one of --title or --number, and exactly one of --dry-run or --apply are required for workspace project adopt\n\n")
-		fmt.Fprint(stderr, workspaceHelp)
+		fmt.Fprint(stderr, workspaceProjectAdoptHelp)
 		return 2
 	}
 	report, err := newWorkspaceProjectAdoptReport(gira.WorkspaceProjectAdoptInput{

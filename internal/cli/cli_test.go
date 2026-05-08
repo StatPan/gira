@@ -921,6 +921,32 @@ func TestWorkspaceProjectAdoptRequiresBoundedInputs(t *testing.T) {
 	}
 }
 
+func TestWorkspaceProjectHelpDescribesPortfolioProjectModel(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "project", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"Manage workspace GitHub Projects v2 visibility", "profile or org Project", "Repository issues remain the execution source of truth"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace project help missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestWorkspaceProjectAdoptHelpDescribesExistingProjectAdoption(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "project", "adopt", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"Register an existing GitHub Project", "Does not create Projects", "gira projects sync --config .gira/config.yaml --dry-run"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace project adopt help missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestWorkspaceProjectAdoptJSON(t *testing.T) {
 	restore := newWorkspaceProjectAdoptReport
 	t.Cleanup(func() { newWorkspaceProjectAdoptReport = restore })

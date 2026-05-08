@@ -2,6 +2,7 @@ package gira
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -170,6 +171,48 @@ func TestBuildStatusSummaryFetchesIndependentReadsConcurrently(t *testing.T) {
 	}
 	if elapsed > 180*time.Millisecond {
 		t.Fatalf("BuildStatusSummary took %s, want concurrent fetch under 180ms", elapsed)
+	}
+}
+
+func TestBuildGlobalStatusReportKeepsRepoFailuresInRows(t *testing.T) {
+	repos := []RepoRef{mustRepo(t, "StatPan/app-b"), mustRepo(t, "StatPan/app-a")}
+	clientFor := func(repo RepoRef) StatusClient {
+		if repo.Name == "app-b" {
+			return fakeStatusClient{
+				repo: repo,
+				errs: map[string]error{
+					"api repos/StatPan/app-b/milestones --paginate --slurp -X GET -f state=all -f per_page=100": fmt.Errorf("not found"),
+				},
+			}
+		}
+		return fakeStatusClient{
+			repo: repo,
+			responses: map[string]string{
+				"api repos/StatPan/app-a/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                         `[[{"number":1,"title":"MVP","state":"open","description":null,"due_on":null,"open_issues":1,"closed_issues":1}]]`,
+				"issue list --repo StatPan/app-a --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url": `[{"number":1,"title":"Blocked","state":"OPEN","labels":[{"name":"status:blocked"}],"milestone":{"title":"MVP"},"updatedAt":"2026-04-01T12:00:00Z","url":"https://github.com/StatPan/app-a/issues/1"}]`,
+			},
+		}
+	}
+
+	report := BuildGlobalStatusReport("owner StatPan", repos, clientFor, statusNowFixture, 14)
+	if report.Counts.Repos != 2 || report.Counts.Failed != 1 {
+		t.Fatalf("unexpected repo counts: %+v", report.Counts)
+	}
+	if report.Counts.OpenIssues != 1 || report.Counts.BlockedIssues != 1 || report.Counts.StaleOpenIssues != 1 {
+		t.Fatalf("unexpected issue counts: %+v", report.Counts)
+	}
+	if report.Repos[0].Repo != "StatPan/app-a" || report.Repos[0].ActiveMilestone != "MVP" {
+		t.Fatalf("unexpected first row: %+v", report.Repos[0])
+	}
+	if report.Repos[1].Status != "error" || report.Repos[1].Error == "" {
+		t.Fatalf("missing error row: %+v", report.Repos[1])
+	}
+
+	text := FormatGlobalStatusText(report)
+	for _, want := range []string{"status: owner StatPan", "repos: 2 checked, 1 failed", "Repository", "StatPan/app-a", "StatPan/app-b", "next step:"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("global status text missing %q:\n%s", want, text)
+		}
 	}
 }
 

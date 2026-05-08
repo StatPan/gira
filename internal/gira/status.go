@@ -74,6 +74,39 @@ type StatusSummary struct {
 	StaleDays  int              `json:"stale_days"`
 }
 
+type GlobalStatusReport struct {
+	Command   string             `json:"command"`
+	Scope     string             `json:"scope"`
+	FetchedAt string             `json:"fetched_at"`
+	StaleDays int                `json:"stale_days"`
+	Counts    GlobalStatusCounts `json:"counts"`
+	Repos     []GlobalStatusRepo `json:"repos"`
+	NextSteps []string           `json:"next_steps"`
+}
+
+type GlobalStatusCounts struct {
+	Repos           int `json:"repos"`
+	Failed          int `json:"failed"`
+	OpenIssues      int `json:"open_issues"`
+	StaleOpenIssues int `json:"stale_open_issues"`
+	BlockedIssues   int `json:"blocked_issues"`
+	OpenMilestones  int `json:"open_milestones"`
+	TotalMilestones int `json:"total_milestones"`
+}
+
+type GlobalStatusRepo struct {
+	Repo            string `json:"repo"`
+	Open            int    `json:"open"`
+	Stale           int    `json:"stale"`
+	Blocked         int    `json:"blocked"`
+	OpenMilestones  int    `json:"open_milestones"`
+	TotalMilestones int    `json:"total_milestones"`
+	ActiveMilestone string `json:"active_milestone,omitempty"`
+	ProgressPercent int    `json:"progress_percent,omitempty"`
+	Status          string `json:"status"`
+	Error           string `json:"error,omitempty"`
+}
+
 type StatusCounts struct {
 	Issues     IssueCounts     `json:"issues"`
 	Milestones MilestoneCounts `json:"milestones"`
@@ -184,6 +217,65 @@ func BuildStatusSummary(client StatusClient, fetchedAt time.Time, staleDays int)
 		summary.Counts.Issues.PRsMissingClosureLink, summary.Counts.Issues.ClosureLinkMissingOpenIssues = closureLinkGapMetrics(prs)
 	}
 	return summary, nil
+}
+
+func BuildGlobalStatusReport(scope string, repos []RepoRef, clientFor func(RepoRef) StatusClient, fetchedAt time.Time, staleDays int) GlobalStatusReport {
+	report := GlobalStatusReport{
+		Command:   "status",
+		Scope:     scope,
+		FetchedAt: formatGitHubTime(fetchedAt),
+		StaleDays: staleDays,
+	}
+	ordered := append([]RepoRef(nil), repos...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return strings.ToLower(ordered[i].FullName()) < strings.ToLower(ordered[j].FullName())
+	})
+	rows := make([]GlobalStatusRepo, len(ordered))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for i, repo := range ordered {
+		i, repo := i, repo
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			rows[i] = buildGlobalStatusRepo(repo, clientFor, fetchedAt, staleDays)
+		}()
+	}
+	wg.Wait()
+	for _, row := range rows {
+		if row.Status == "error" {
+			report.Counts.Failed++
+		} else {
+			report.Counts.OpenIssues += row.Open
+			report.Counts.StaleOpenIssues += row.Stale
+			report.Counts.BlockedIssues += row.Blocked
+			report.Counts.OpenMilestones += row.OpenMilestones
+			report.Counts.TotalMilestones += row.TotalMilestones
+		}
+		report.Repos = append(report.Repos, row)
+	}
+	report.Counts.Repos = len(report.Repos)
+	report.NextSteps = globalStatusNextSteps(report)
+	return report
+}
+
+func buildGlobalStatusRepo(repo RepoRef, clientFor func(RepoRef) StatusClient, fetchedAt time.Time, staleDays int) GlobalStatusRepo {
+	row := GlobalStatusRepo{Repo: repo.FullName(), Status: "ok"}
+	summary, err := BuildStatusSummary(clientFor(repo), fetchedAt, staleDays)
+	if err != nil {
+		row.Status = "error"
+		row.Error = err.Error()
+		return row
+	}
+	row.Open = summary.Counts.Issues.Open
+	row.Stale = summary.Counts.Issues.StaleOpen
+	row.Blocked = summary.Counts.Issues.BlockedOpen
+	row.OpenMilestones = summary.Counts.Milestones.Open
+	row.TotalMilestones = summary.Counts.Milestones.Total
+	row.ActiveMilestone, row.ProgressPercent = activeStatusMilestone(summary.Milestones)
+	return row
 }
 
 func FetchMilestones(client StatusClient) ([]normalizedMilestone, error) {
@@ -520,6 +612,38 @@ func FormatStatusText(summary StatusSummary) string {
 	return builder.String()
 }
 
+func FormatGlobalStatusText(report GlobalStatusReport) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "status: %s\n", report.Scope)
+	fmt.Fprintf(&b, "repos: %d checked, %d failed\n", report.Counts.Repos, report.Counts.Failed)
+	fmt.Fprintf(
+		&b,
+		"issues: %d open, %d stale open (%dd), %d blocked\n",
+		report.Counts.OpenIssues,
+		report.Counts.StaleOpenIssues,
+		report.StaleDays,
+		report.Counts.BlockedIssues,
+	)
+	fmt.Fprintf(&b, "milestones: %d open, %d total\n", report.Counts.OpenMilestones, report.Counts.TotalMilestones)
+	b.WriteString("\n")
+	b.WriteString("Repository                 Open  Stale  Blocked  Milestones  Status\n")
+	for _, repo := range report.Repos {
+		milestones := fmt.Sprintf("%d/%d", repo.OpenMilestones, repo.TotalMilestones)
+		status := repo.Status
+		if repo.ActiveMilestone != "" {
+			status = fmt.Sprintf("%s:%d%%", repo.ActiveMilestone, repo.ProgressPercent)
+		}
+		if repo.Status == "error" {
+			status = "error"
+		}
+		fmt.Fprintf(&b, "%-26s %5d  %5d  %7d  %-10s  %s\n", repo.Repo, repo.Open, repo.Stale, repo.Blocked, milestones, status)
+	}
+	if len(report.NextSteps) > 0 {
+		fmt.Fprintf(&b, "\nnext step: %s\n", report.NextSteps[0])
+	}
+	return b.String()
+}
+
 func statusNextStep(summary StatusSummary) string {
 	if len(summary.Issues.BlockedOpen) > 0 {
 		return fmt.Sprintf("gira work status --repo %s --issue %d", summary.Repo, summary.Issues.BlockedOpen[0].Number)
@@ -531,6 +655,29 @@ func statusNextStep(summary StatusSummary) string {
 		return fmt.Sprintf("gira work start --repo %s --issue %d --dry-run", summary.Repo, summary.Issues.Open[0].Number)
 	}
 	return "gira ops sync --repo " + summary.Repo + " --dry-run"
+}
+
+func activeStatusMilestone(milestones []MilestoneStats) (string, int) {
+	for _, milestone := range milestones {
+		if milestone.State == "open" && milestone.TotalIssues > 0 {
+			return milestone.Title, milestone.ProgressPercent
+		}
+	}
+	return "", 0
+}
+
+func globalStatusNextSteps(report GlobalStatusReport) []string {
+	for _, repo := range report.Repos {
+		if repo.Status == "error" {
+			return []string{fmt.Sprintf("gira status --repo %s", repo.Repo)}
+		}
+	}
+	for _, repo := range report.Repos {
+		if repo.Blocked > 0 || repo.Stale > 0 || repo.Open > 0 {
+			return []string{fmt.Sprintf("gira status --repo %s", repo.Repo)}
+		}
+	}
+	return []string{"gira status --all"}
 }
 
 func flattenPages(value json.RawMessage) ([]json.RawMessage, error) {

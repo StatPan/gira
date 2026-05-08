@@ -35,7 +35,16 @@ Publishing requires `NPM_TOKEN`. If the secret is missing, the release workflow 
 
 ### PyPI
 
-`gira-cli` is a Python packaging wrapper for uv, pip, and pipx installs. It resolves the package version to the matching GitHub tag, downloads the release archive on first command execution, verifies `checksums.txt`, and caches the native binary under the user cache directory.
+`gira-cli` is a Python packaging wrapper for uv, pip, and pipx installs. It resolves the package version to the matching GitHub tag, downloads the release archive on first command execution, verifies `checksums.txt`, and caches the native binary under `~/.cache/gira-cli` by default.
+
+The native binary cache root is `GIRA_PYPI_CACHE_DIR` when set, otherwise `~/.cache/gira-cli`. Each release is cached under `<root>/<version>`. Stale wrapper-managed release caches can be previewed and removed with:
+
+```bash
+gira cache prune --dry-run
+gira cache prune --apply
+```
+
+The prune command only removes direct child stable semver release directories older than the active Gira version. It skips the active version, newer versions, malformed entries, files, symlinks, and any directory containing the current executable. Use `--root PATH` for a custom cache root and `--json` in automation.
 
 Publishing requires `PYPI_API_TOKEN`. If the secret is missing, the release workflow skips PyPI publishing without blocking the GitHub Release.
 

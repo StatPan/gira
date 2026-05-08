@@ -38,6 +38,9 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "upgrade") {
 		t.Fatalf("help output missing upgrade command:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "cache") {
+		t.Fatalf("help output missing cache command:\n%s", stdout.String())
+	}
 	if strings.Contains(stdout.String(), "portfolio   ") || strings.Contains(stdout.String(), "jira        ") {
 		t.Fatalf("help output should not frontload advanced commands:\n%s", stdout.String())
 	}
@@ -116,6 +119,78 @@ func TestUpgradeCommandHelpAndError(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "unexpected argument: extra") {
 		t.Fatalf("stderr missing unexpected argument:\n%s", stderr.String())
+	}
+}
+
+func TestCachePruneRequiresMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"cache", "prune"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required") {
+		t.Fatalf("stderr missing mode guidance:\n%s", stderr.String())
+	}
+}
+
+func TestCachePruneJSON(t *testing.T) {
+	restore := newCachePruneReport
+	t.Cleanup(func() { newCachePruneReport = restore })
+	newCachePruneReport = func(options gira.CachePruneOptions) (gira.CachePruneReport, error) {
+		if options.Root != "/tmp/gira-cache" || !options.DryRun || options.Apply {
+			t.Fatalf("unexpected cache prune options: %#v", options)
+		}
+		return gira.CachePruneReport{
+			Command:          "cache prune",
+			Root:             "/tmp/gira-cache",
+			ActiveVersion:    "v1.2.0",
+			ActiveComparable: true,
+			DryRun:           true,
+			Counts:           gira.CachePruneCounts{Planned: 1, Skipped: 1},
+			Actions: []gira.CachePruneAction{
+				{Action: "prune", Status: "planned", Name: "v1.1.0", Path: "/tmp/gira-cache/v1.1.0", Reason: "would remove stale version directory"},
+			},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"cache", "prune", "--root", "/tmp/gira-cache", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "cache prune"`, `"dry_run": true`, `"planned": 1`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("cache prune JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestCachePruneApplyBuilderWiring(t *testing.T) {
+	restore := newCachePruneReport
+	t.Cleanup(func() { newCachePruneReport = restore })
+	newCachePruneReport = func(options gira.CachePruneOptions) (gira.CachePruneReport, error) {
+		if options.Root != "" || options.DryRun || !options.Apply {
+			t.Fatalf("unexpected cache prune options: %#v", options)
+		}
+		return gira.CachePruneReport{
+			Command:       "cache prune",
+			Root:          "/home/me/.cache/gira-cli",
+			ActiveVersion: "v1.2.0",
+			DryRun:        false,
+			Counts:        gira.CachePruneCounts{Applied: 1},
+			Actions: []gira.CachePruneAction{
+				{Action: "prune", Status: "applied", Name: "v1.1.0", Path: "/home/me/.cache/gira-cli/v1.1.0", Reason: "removed stale version directory"},
+			},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"cache", "prune", "--apply"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "mode: apply") || !strings.Contains(stdout.String(), "applied prune: v1.1.0") {
+		t.Fatalf("cache prune text missing apply summary:\n%s", stdout.String())
 	}
 }
 

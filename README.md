@@ -406,6 +406,15 @@ bun update -g @statpan/gira
 
 Upgrade with the same package manager used for installation.
 
+For uv, pip, and pipx installs, the `gira-cli` PyPI wrapper caches downloaded native binaries under `GIRA_PYPI_CACHE_DIR` when set, otherwise under `~/.cache/gira-cli/<version>`. After upgrading, preview stale cache cleanup before deleting anything:
+
+```bash
+gira cache prune --dry-run
+gira cache prune --apply
+```
+
+`gira cache prune` only removes direct child directories with stable semver release names older than the active `gira` version. It skips the active version, newer versions, malformed entries, files, symlinks, and any directory containing the current executable. Use `--root PATH` for a custom wrapper cache and `--json` for automation.
+
 An upgrade replaces only the local `gira` binary or package wrapper. It must not mutate repository files or GitHub metadata. After upgrading, verify the command still resolves from the expected install location:
 
 ```bash

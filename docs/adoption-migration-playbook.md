@@ -57,6 +57,16 @@ gira adopt repo --repo OWNER/REPO --path . --strategy merge --apply
 
 The plan output is deterministic for a fixed repository state (same plan counts and sorted item actions).
 
+Adopt an existing profile or org GitHub Project only after the local workspace config exists:
+
+```bash
+gira workspace project adopt --owner OWNER --title "Existing Board" --config .gira/config.yaml --dry-run
+gira workspace project adopt --owner OWNER --title "Existing Board" --config .gira/config.yaml --apply
+gira projects sync --config .gira/config.yaml --dry-run
+```
+
+Use `--number N` instead of `--title TITLE` when multiple Projects share a title. This command registers an existing Project in `workspace.project`; it does not create Projects and does not replace a different existing `workspace.project`. Repository issues remain the execution source of truth, and `projects sync` mirrors them into the selected Project for board and roadmap visibility.
+
 Keep metadata sync separate from existing issue adoption:
 
 ```bash

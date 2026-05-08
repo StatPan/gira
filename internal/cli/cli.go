@@ -217,7 +217,7 @@ Flags:
 const workspaceHelp = `Personal workspace inbox and backlog commands.
 
 Usage:
-  gira workspace init --inbox-repo OWNER/REPO [--repo OWNER/REPO] --dry-run|--apply [--path .]
+  gira workspace init --inbox-repo OWNER/REPO [--repo OWNER/REPO] [--project-owner OWNER] [--project-title TITLE] [--project-number N] --dry-run|--apply [--path .]
   gira workspace validate [--config .gira/config.yaml] [--json]
   gira workspace status [--config .gira/config.yaml] [--json]
   gira workspace backlog [--config .gira/config.yaml] [--json]
@@ -2991,6 +2991,9 @@ func runWorkspaceInit(args []string, stdout io.Writer, stderr io.Writer) int {
 	name := fs.String("name", "", "Workspace name")
 	owner := fs.String("owner", "", "Workspace owner")
 	inboxRepo := fs.String("inbox-repo", "", "Inbox repo in OWNER/REPO format")
+	projectOwner := fs.String("project-owner", "", "GitHub Projects v2 owner; defaults to workspace owner")
+	projectTitle := fs.String("project-title", "", "GitHub Projects v2 title; defaults to workspace name")
+	projectNumber := fs.Int("project-number", 0, "GitHub Projects v2 number for disambiguation")
 	pathValue := fs.String("path", ".", "Directory where .gira/config.yaml is written")
 	overwrite := fs.Bool("overwrite", false, "Overwrite existing config")
 	dryRun := fs.Bool("dry-run", false, "Preview without writing config")
@@ -3019,7 +3022,7 @@ func runWorkspaceInit(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, workspaceHelp)
 		return 2
 	}
-	report, err := newWorkspaceInitReport(gira.WorkspaceInitInput{Name: *name, Owner: *owner, InboxRepo: *inboxRepo, Repos: repos, Path: *pathValue, Overwrite: *overwrite, DryRun: *dryRun, Apply: *apply})
+	report, err := newWorkspaceInitReport(gira.WorkspaceInitInput{Name: *name, Owner: *owner, InboxRepo: *inboxRepo, Repos: repos, ProjectOwner: *projectOwner, ProjectTitle: *projectTitle, ProjectNumber: *projectNumber, Path: *pathValue, Overwrite: *overwrite, DryRun: *dryRun, Apply: *apply})
 	if err != nil {
 		if *jsonOutput {
 			out, _ := json.MarshalIndent(report, "", "  ")

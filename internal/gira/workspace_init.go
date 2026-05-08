@@ -4,18 +4,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
 type WorkspaceInitInput struct {
-	Name      string   `json:"name,omitempty"`
-	Owner     string   `json:"owner,omitempty"`
-	InboxRepo string   `json:"inbox_repo"`
-	Repos     []string `json:"repos"`
-	Path      string   `json:"path"`
-	Overwrite bool     `json:"overwrite"`
-	DryRun    bool     `json:"dry_run"`
-	Apply     bool     `json:"apply"`
+	Name          string   `json:"name,omitempty"`
+	Owner         string   `json:"owner,omitempty"`
+	InboxRepo     string   `json:"inbox_repo"`
+	Repos         []string `json:"repos"`
+	ProjectOwner  string   `json:"project_owner,omitempty"`
+	ProjectTitle  string   `json:"project_title,omitempty"`
+	ProjectNumber int      `json:"project_number,omitempty"`
+	Path          string   `json:"path"`
+	Overwrite     bool     `json:"overwrite"`
+	DryRun        bool     `json:"dry_run"`
+	Apply         bool     `json:"apply"`
 }
 
 type WorkspaceInitReport struct {
@@ -26,6 +30,7 @@ type WorkspaceInitReport struct {
 	Created     bool             `json:"created"`
 	Overwritten bool             `json:"overwritten"`
 	Workspace   WorkspaceSummary `json:"workspace"`
+	Project     ProjectConfig    `json:"project"`
 	InboxRepo   string           `json:"inbox_repo"`
 	Repos       []string         `json:"repos"`
 	Content     string           `json:"content"`
@@ -70,12 +75,25 @@ func BuildWorkspaceInitReport(input WorkspaceInitInput) (WorkspaceInitReport, er
 	if owner == "" {
 		owner = inbox.Owner
 	}
-	content := renderWorkspaceInitConfig(name, owner, inbox.FullName(), normalizedRepos)
+	projectOwner := strings.TrimSpace(input.ProjectOwner)
+	if projectOwner == "" {
+		projectOwner = owner
+	}
+	projectTitle := strings.TrimSpace(input.ProjectTitle)
+	if projectTitle == "" {
+		projectTitle = name
+	}
+	if input.ProjectNumber < 0 {
+		return WorkspaceInitReport{}, fmt.Errorf("--project-number must be >= 0")
+	}
+	project := ProjectConfig{Owner: projectOwner, Title: projectTitle, Number: input.ProjectNumber}
+	content := renderWorkspaceInitConfig(name, owner, inbox.FullName(), normalizedRepos, project)
 	report := WorkspaceInitReport{
 		Command:    "workspace init",
 		ConfigPath: configPath,
 		DryRun:     input.DryRun,
 		Workspace:  WorkspaceSummary{Name: name, Owner: owner},
+		Project:    project,
 		InboxRepo:  inbox.FullName(),
 		Repos:      normalizedRepos,
 		Content:    content,
@@ -99,20 +117,31 @@ func BuildWorkspaceInitReport(input WorkspaceInitInput) (WorkspaceInitReport, er
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		return report, err
 	}
+	resolved, err := ResolveWorkspaceConfig(configPath)
+	if err != nil {
+		return report, err
+	}
+	report.Project = resolved.Project
 	report.Applied = true
 	return report, nil
 }
 
-func renderWorkspaceInitConfig(name string, owner string, inboxRepo string, repos []string) string {
+func renderWorkspaceInitConfig(name string, owner string, inboxRepo string, repos []string, project ProjectConfig) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "repo: %s\n\n", inboxRepo)
 	b.WriteString("workspace:\n")
-	fmt.Fprintf(&b, "  name: %s\n", name)
+	fmt.Fprintf(&b, "  name: %s\n", yamlQuotedString(name))
 	fmt.Fprintf(&b, "  owner: %s\n", owner)
 	fmt.Fprintf(&b, "  inbox_repo: %s\n", inboxRepo)
 	b.WriteString("  repos:\n")
 	for _, repo := range repos {
 		fmt.Fprintf(&b, "    - %s\n", repo)
+	}
+	b.WriteString("  project:\n")
+	fmt.Fprintf(&b, "    owner: %s\n", project.Owner)
+	fmt.Fprintf(&b, "    title: %s\n", yamlQuotedString(project.Title))
+	if project.Number > 0 {
+		fmt.Fprintf(&b, "    number: %d\n", project.Number)
 	}
 	b.WriteString("\nprofiles:\n")
 	b.WriteString("  default:\n")
@@ -125,6 +154,10 @@ func renderWorkspaceInitConfig(name string, owner string, inboxRepo string, repo
 	return b.String()
 }
 
+func yamlQuotedString(value string) string {
+	return strconv.Quote(value)
+}
+
 func FormatWorkspaceInitReport(report WorkspaceInitReport) string {
 	mode := "dry-run"
 	if report.Applied {
@@ -133,6 +166,11 @@ func FormatWorkspaceInitReport(report WorkspaceInitReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "workspace init: %s %s\n", mode, report.ConfigPath)
 	fmt.Fprintf(&b, "workspace: %s (%s)\n", report.Workspace.Name, report.Workspace.Owner)
+	if report.Project.Number > 0 {
+		fmt.Fprintf(&b, "project: %s/%s #%d\n", report.Project.Owner, report.Project.Title, report.Project.Number)
+	} else {
+		fmt.Fprintf(&b, "project: %s/%s\n", report.Project.Owner, report.Project.Title)
+	}
 	fmt.Fprintf(&b, "inbox: %s\n", report.InboxRepo)
 	fmt.Fprintf(&b, "repos: %s\n", strings.Join(report.Repos, ","))
 	if report.DryRun {

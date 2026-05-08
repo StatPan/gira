@@ -165,6 +165,43 @@ func TestGuideUnknownTopic(t *testing.T) {
 	}
 }
 
+func TestWorkspaceInitProjectFlagsJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"workspace",
+		"init",
+		"--inbox-repo",
+		"StatPan/backlog",
+		"--name",
+		"personal",
+		"--owner",
+		"StatPan",
+		"--project-owner",
+		"GiraOrg",
+		"--project-title",
+		"Roadmap",
+		"--project-number",
+		"12",
+		"--dry-run",
+		"--json",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkspaceInitReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode workspace init JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Project.Owner != "GiraOrg" || report.Project.Title != "Roadmap" || report.Project.Number != 12 {
+		t.Fatalf("project = %+v, want CLI overrides", report.Project)
+	}
+	for _, want := range []string{"owner: GiraOrg", "title: \"Roadmap\"", "number: 12"} {
+		if !strings.Contains(report.Content, want) {
+			t.Fatalf("content missing %q:\n%s", want, report.Content)
+		}
+	}
+}
+
 func TestVersionCommandHumanOutput(t *testing.T) {
 	originalVersion, originalCommit, originalDate := gira.Version, gira.Commit, gira.Date
 	t.Cleanup(func() {

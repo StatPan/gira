@@ -749,6 +749,33 @@ func TestWorkspaceStatusJSON(t *testing.T) {
 	}
 }
 
+func TestWorkspaceListAliasesBacklog(t *testing.T) {
+	restore := newWorkspaceStatusReport
+	t.Cleanup(func() { newWorkspaceStatusReport = restore })
+	newWorkspaceStatusReport = func(configPath string) (gira.WorkspaceReport, error) {
+		if configPath != "testdata/workspace.yaml" {
+			t.Fatalf("unexpected config path: %s", configPath)
+		}
+		return gira.WorkspaceReport{
+			Workspace: gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			Inbox:     gira.WorkspaceInbox{Repo: "StatPan/backlog", Open: 1, NeedsRouting: 1},
+			Backlog:   []gira.WorkspaceBacklogItem{{Source: "inbox", Repo: "StatPan/backlog", Number: 7, Title: "Route later", State: "open", Status: "needs-routing"}},
+			NextSteps: []string{"should be replaced by list alias"},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "list", "--config", "testdata/workspace.yaml"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"backlog:", "StatPan/backlog#7", "next step: gira workspace status --config .gira/config.yaml"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace list output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestWorkspaceSyncRequiresMode(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"workspace", "sync"}, &stdout, &stderr)
@@ -1169,6 +1196,143 @@ func TestTicketNewRequiresModeAndTitle(t *testing.T) {
 	code = Run([]string{"ticket", "new", "--repo", "StatPan/gira", "--dry-run"}, &stdout, &stderr)
 	if code != 2 || !strings.Contains(stderr.String(), "ticket title is required") {
 		t.Fatalf("expected title error, code=%d stderr=%s", code, stderr.String())
+	}
+}
+
+func TestTicketHelpIncludesListFilters(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"gira ticket list", "--state open|closed|all", "--label LABEL", "--assignee LOGIN", "--milestone TITLE"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket help missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestTicketListHumanOutput(t *testing.T) {
+	restore := newTicketListReport
+	t.Cleanup(func() { newTicketListReport = restore })
+	newTicketListReport = func(options gira.TicketListOptions) (gira.TicketListReport, error) {
+		if options.Repo.FullName() != "StatPan/gira" || options.State != "closed" || options.Assignee != "alice" || options.Milestone != "MVP" || options.Limit != 20 {
+			t.Fatalf("unexpected options: %+v", options)
+		}
+		if strings.Join(options.Labels, "|") != "status:ready,priority:p1|area:backend" {
+			t.Fatalf("unexpected labels: %+v", options.Labels)
+		}
+		return gira.TicketListReport{
+			Command: "ticket list",
+			Repo:    options.Repo.FullName(),
+			Filters: gira.TicketListFilters{State: "closed", Labels: []string{"status:ready", "priority:p1", "area:backend"}, Assignee: "alice", Milestone: "MVP", Limit: 20},
+			Counts:  gira.TicketListCounts{Tickets: 1},
+			Tickets: []gira.TicketListItem{{Number: 42, State: "closed", Title: "Ship list UX", Labels: []string{"status:done", "type:story"}, Assignees: []string{"alice"}, Milestone: "MVP"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "list", "--repo", "StatPan/gira", "--state", "closed", "--label", "status:ready,priority:p1", "--label", "area:backend", "--assignee", "alice", "--milestone", "MVP", "--limit", "20"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"ticket list: StatPan/gira state=closed count=1", "#42 closed", "labels=status:done,type:story", "assignees=alice", "milestone=MVP"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket list output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestTicketListJSONInfersRepo(t *testing.T) {
+	restoreList := newTicketListReport
+	restoreRepo := repoContextRunner
+	t.Cleanup(func() {
+		newTicketListReport = restoreList
+		repoContextRunner = restoreRepo
+	})
+	repoContextRunner = devCLIRunner{outputs: map[string][]byte{
+		"git remote get-url origin": []byte("https://github.com/StatPan/gira.git\n"),
+	}}
+	newTicketListReport = func(options gira.TicketListOptions) (gira.TicketListReport, error) {
+		if options.Repo.FullName() != "StatPan/gira" || options.State != "open" || options.Limit != 30 {
+			t.Fatalf("unexpected options: %+v", options)
+		}
+		return gira.TicketListReport{
+			Command: "ticket list",
+			Repo:    options.Repo.FullName(),
+			Filters: gira.TicketListFilters{State: "open", Limit: 30},
+			Counts:  gira.TicketListCounts{Tickets: 1},
+			Tickets: []gira.TicketListItem{{Number: 7, State: "open", Title: "Ready ticket", Status: "ready", Labels: []string{"status:ready"}, URL: "https://github.com/StatPan/gira/issues/7"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "list", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "ticket list"`, `"repo": "StatPan/gira"`, `"number": 7`, `"status": "ready"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket list JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "next step:") {
+		t.Fatalf("JSON stdout contains human prose:\n%s", stdout.String())
+	}
+}
+
+func TestTicketListUnexpectedArgument(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "list", "extra", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unexpected argument: extra") || !strings.Contains(stderr.String(), "gira ticket list") {
+		t.Fatalf("stderr missing list guidance:\n%s", stderr.String())
+	}
+}
+
+func TestEpicHelpIncludesList(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"epic", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"gira epic list", "--state open|closed|all", "--label LABEL", "--assignee LOGIN"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("epic help missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestEpicListAddsTypeEpicFilter(t *testing.T) {
+	restore := newTicketListReport
+	t.Cleanup(func() { newTicketListReport = restore })
+	newTicketListReport = func(options gira.TicketListOptions) (gira.TicketListReport, error) {
+		if options.Repo.FullName() != "StatPan/gira" || options.State != "all" || options.Limit != 10 {
+			t.Fatalf("unexpected options: %+v", options)
+		}
+		if strings.Join(options.Labels, "|") != "type:epic|status:ready" {
+			t.Fatalf("unexpected epic labels: %+v", options.Labels)
+		}
+		return gira.TicketListReport{
+			Command: "ticket list",
+			Repo:    options.Repo.FullName(),
+			Filters: gira.TicketListFilters{State: "all", Labels: []string{"type:epic", "status:ready"}, Limit: 10},
+			Counts:  gira.TicketListCounts{Tickets: 1},
+			Tickets: []gira.TicketListItem{{Number: 88, State: "open", Title: "Platform epic", Labels: []string{"type:epic", "status:ready"}}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"epic", "list", "--repo", "StatPan/gira", "--state", "all", "--label", "status:ready", "--limit", "10"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"epic list: StatPan/gira state=all count=1", "#88 open", "labels=type:epic,status:ready"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("epic list output missing %q:\n%s", want, stdout.String())
+		}
 	}
 }
 

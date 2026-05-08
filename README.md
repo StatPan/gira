@@ -4,7 +4,7 @@ Gira is a GitHub-native Jira-style workflow CLI for humans and coding agents.
 
 I built Gira because I wanted GitHub to stay the source of truth, but I still wanted a Jira-like workflow that coding agents could follow safely.
 
-Gira maps tickets to GitHub Issues, work-start evidence to branches, change units to PRs, sprint and release boundaries to milestones, and completion to merged PRs plus closed issues. The main design choice is Terraform-like `--dry-run` / `--apply`, so humans and agents can preview workflow mutations before touching GitHub.
+Gira maps tickets to GitHub Issues, work-start evidence to branches, change units to PRs, sprint and release boundaries to milestones, and completion to merged PRs plus closed issues. Repository issues are the executable work packets. Repo-linked Projects, including user or org Projects, are board views over those issues; Project-only items are intake, planning, roadmap, and visibility until routed to a repo issue. The main design choice is Terraform-like `--dry-run` / `--apply`, so humans and agents can preview workflow mutations before touching GitHub.
 
 ```text
 ticket -> branch -> PR -> checks -> merge -> done
@@ -19,7 +19,7 @@ Documentation: <https://gira.statpan.com>
 
 Docs source lives in `docs-site/` and is built with VitePress. The docs toolchain is separate from the product runtime; the shipped product remains the Go-built `gira` binary.
 
-Gira is not a Jira clone or a separate planning database. It is a GitHub-native workflow control plane for the issue -> branch -> PR loop, with optional workspace and Project sync commands that make backlog and roadmap state visible without replacing GitHub.
+Gira is not a Jira clone or a separate planning database. It is a GitHub-native workflow control plane for the issue -> branch -> PR loop, with optional workspace and Project sync commands that make backlog and roadmap state visible without replacing repository issue state.
 
 The core flow is:
 
@@ -94,7 +94,7 @@ gira ticket status
 
 For an existing repository, run `gira adopt repo --dry-run` before full bootstrap. Gira detects existing issues, labels, milestones, Projects, `AGENTS.md`, and GitHub templates, then recommends an adoption strategy. The default `merge` strategy preserves user-owned files and metadata while adding only the minimal Gira contract, such as `.gira/config.yaml` and an `AGENTS.md` managed block. Bootstrap sample issues are never required for normal adoption.
 
-You can open and merge a pull request with `gh pr create` and `gh pr merge`, but `gira ticket pr`, `gira ticket checks`, `gira ticket wait`, and `gira ticket finish` keep the ticket lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, wait for pending checks, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
+You can open and merge a pull request with `gh pr create` and `gh pr merge`, but lifecycle work should use Gira ticket controls when available: `ticket status`, `ticket start`, `ticket pr`, `ticket checks`, `ticket wait`, and `ticket finish`. Use raw `gh` only when Gira has no lifecycle command. The ticket commands keep the lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, wait for pending checks, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
 
 `gira epic status` and `gira epic finish` close the larger planning loop without requiring raw `gh issue close`. Gira can resolve an epic from the current `issue-N-*` branch, `--title`, `--slug`, `--milestone`, or a sole open `type:epic`; `--ticket N` remains the explicit fallback. `epic finish --apply` refuses to close while child issues are still open, then normalizes active status labels and closes the epic through GitHub.
 
@@ -130,7 +130,7 @@ gira ticket status --repo OWNER/REPO --ticket 12 --json
 
 ## LLM And Agent Runbook
 
-When an LLM or coding agent operates a Gira-managed repository, follow this order exactly. Do not skip dry-runs, do not use raw `gh` for product workflow steps when a `gira` command exists, and keep the PR body linked to the source issue with `Closes #TICKET`.
+When an LLM or coding agent operates a Gira-managed repository, follow this order exactly. Do not skip dry-runs, do not use raw `gh` for product workflow steps when a `gira` lifecycle command exists, and keep the PR body linked to the source issue with `Closes #TICKET`. A Project item by itself does not authorize branch, PR, checks, merge, or finish work unless it is backed by a repository issue; route or lower repo-agnostic items first.
 
 ```bash
 # 1. Read current state.
@@ -160,7 +160,7 @@ gira ticket finish --apply
 gira ticket status
 ```
 
-Use GitHub assignees for accountable humans. Use `agent:*` labels for the execution actor, for example `agent:human`, `agent:codex`, `agent:reviewer`, or `agent:gira`. `gira projects sync` mirrors that label into the Project planning field; it does not replace GitHub assignees.
+Use GitHub assignees for accountable humans. Use `agent:*` labels for the execution actor, for example `agent:human`, `agent:codex`, `agent:reviewer`, or `agent:gira`. `gira projects sync` mirrors that label into the Project planning field; it does not replace GitHub assignees or make the Project item the source of truth.
 
 Advanced visibility commands such as `gira projects sync --config .gira/config.yaml --dry-run`, `gira epic status`, and `gira epic finish --dry-run` are useful after the first ticket loop is working.
 
@@ -170,7 +170,7 @@ The Go-built `gira` binary is the sole product implementation. The default user 
 
 - `gira ticket ...` is the daily issue -> branch -> PR workflow.
 - `gira workspace ...` is the Jira-like personal workspace and inbox layer for repo-agnostic backlog before work is routed to an execution repo.
-- `gira projects ...` syncs visible GitHub Projects board items from the workspace issue source of truth.
+- `gira projects ...` mirrors canonical repository issue state into visible GitHub Projects board items.
 - `gira sprint ...`, `gira release`, and `gira status` are daily planning and reporting commands.
 - `gira ops ...` contains advanced setup, migration, policy, audit, and raw GitHub controls.
 - `gira start` and `gira work ...` remain compatibility aliases.
@@ -202,7 +202,7 @@ Gira keeps the user-facing workflow close to Jira while storing canonical state 
 | Jira concept | GitHub object | Gira behavior |
 | --- | --- | --- |
 | Workspace | GitHub account plus configured inbox and execution repos | A workspace groups repo-agnostic intake with one or more execution repos so personal backlog is visible before it is assigned to a repo. |
-| Project | Repository | A repo is the default execution space. Multi-repo work starts as a top-level ticket and is lowered into repo issues when ownership is clear. |
+| Project | Repository plus optional repo-linked GitHub Project board | A repo is the default execution space. Repo-linked Projects can show repo issue state even when the Project URL is under `users/OWNER/projects/N` or `orgs/OWNER/projects/N`. Multi-repo work starts as a top-level ticket and is lowered into repo issues when ownership is clear. |
 | Backlog | Inbox repo issues plus repo issues | `gira workspace status` and `gira workspace backlog` show unrouted inbox tickets together with routed repo work. |
 | Epic | Parent or top-level issue | A milestone-sized outcome. `gira epic status` and `gira epic finish` inspect and close epics without requiring the issue number when branch, title, slug, milestone, or repo context is enough. |
 | Story / Task / Bug | Issue | The main work packet. Type, priority, blocked, and status are represented with managed labels and issue metadata. |
@@ -214,7 +214,7 @@ Gira keeps the user-facing workflow close to Jira while storing canonical state 
 | Done | Merged PR plus closed issue | Completion is proven by GitHub merge and close evidence, not by hidden local state. |
 | Release | GitHub Release plus readiness report | `gira release readiness` checks whether issue, PR, review, and milestone evidence are ready for delivery. |
 
-Full GitHub Projects v2 view automation, Web UI/TUI, chat bots, LLM decomposition, and Jira import/export are not v1 product workflows. Projects sync is a visibility bridge over Issues, Labels, Milestones, PRs, and Releases.
+Full GitHub Projects v2 view automation, Web UI/TUI, chat bots, LLM decomposition, and Jira import/export are not v1 product workflows. Projects sync links and mirrors repository issue state into Projects; it does not make Project items the execution source of truth.
 
 ## Workspace Backlog
 
@@ -246,7 +246,7 @@ gira projects sync --apply --config .gira/config.yaml
 
 `workspace ticket new --repo OWNER/REPO --apply` creates an inbox ticket, routes it to a repo execution issue, and links the child issue back to the inbox ticket without requiring the user to copy the inbox issue number. `workspace ticket route --ticket N` remains available for older or externally-created inbox tickets. After routing, the normal loop continues with `gira ticket start`, `gira ticket pr`, and `gira ticket status` on the target repo.
 
-`projects sync` keeps an existing GitHub Projects v2 board visible by linking configured repos, adding missing open issues as project items, mirroring Gira status labels to the board's standard Status field, keeping closed issues as `Done`, creating supported planning fields, mirroring `priority:*`, `area:*`, and `agent:*` labels into Project planning fields, and copying milestone due dates into `Target date`. Add `--archive-closed` only when closed issue items should leave the active Project item set. GitHub does not expose supported Project view creation APIs, so Gira reports the manual Board/Schedule view setup step instead of hiding it behind raw Project numbers.
+`projects sync` keeps an existing GitHub Projects v2 board visible by linking configured repos, adding missing open issues as project items, mirroring Gira status labels to the board's standard Status field, keeping closed issues as `Done`, creating supported planning fields, mirroring `priority:*`, `area:*`, and `agent:*` labels into Project planning fields, and copying milestone due dates into `Target date`. A Project may live under `users/OWNER/projects/N` or `orgs/OWNER/projects/N`; when it is linked to the repo and its items are repo issues, it is still a normal repo board surface. Add `--archive-closed` only when closed issue items should leave the active Project item set. GitHub does not expose supported Project view creation APIs, so Gira reports the manual Board/Schedule view setup step instead of hiding it behind raw Project numbers.
 
 ## Install, Upgrade, and Remove
 

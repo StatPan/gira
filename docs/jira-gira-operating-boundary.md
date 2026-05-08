@@ -1,6 +1,8 @@
 # Jira vs Gira Operating Boundary
 
-Gira is GitHub-native project operating software, not a full Jira clone. Jira owns a broad, product-agnostic planning database. Gira deliberately keeps GitHub as the execution backend: issues are work packets, PRs are change units, milestones are sprint or phase boundaries, and CLI commands make those objects safer to operate.
+Gira is GitHub-native project operating software, not a full Jira clone. Jira owns a broad, product-agnostic planning database. Gira deliberately keeps GitHub as the execution backend: repository issues are executable work packets, PRs are change units, milestones are sprint or phase boundaries, and CLI commands make those objects safer to operate.
+
+GitHub Projects v2 ownership is not the execution boundary. A Project URL may be `users/OWNER/projects/N` or `orgs/OWNER/projects/N` and still be a normal repo board when it is linked to that repo and its items are repo issues. Profile, user, or org Project items that are not linked to repo issues remain intake, portfolio, or visibility context until routed or lowered to a repo issue.
 
 The current product is execution-strong and portfolio/backlog-weak. That is an intentional MVP tradeoff: Gira should make repository work reliable before adding a separate intake or portfolio layer.
 
@@ -10,7 +12,7 @@ Gira uses Jira-like language at the CLI boundary, then maps that language onto d
 
 | Jira concept | GitHub source of truth | Gira command surface | Notes |
 | --- | --- | --- | --- |
-| Project | Repository | `gira ops bootstrap`, `gira ops sync`, `gira status` | A repository is the normal execution space. Portfolio-level intake is only for work that has not yet been routed to a repo. |
+| Project | Repository plus optional repo-linked Project board | `gira ops bootstrap`, `gira ops sync`, `gira status`, `gira projects sync` | A repository is the normal execution space. A repo-linked Project can be the board surface even when owned by a user or org. |
 | Epic | Parent issue or top-level ticket | `gira portfolio ...`, issue templates | A large outcome stays as an issue. Cross-repo epics coordinate child repo issues instead of creating a separate planning database. |
 | Story / Task / Bug | Issue | `gira ticket ...`, templates, `gira ops sync` | The issue is the executable work packet for humans and agents. Labels carry type, status, priority, and blocked state. |
 | Sprint | Milestone | `gira sprint plan|start|close|rollover` | Milestones are the canonical sprint or phase boundary. |
@@ -21,7 +23,7 @@ Gira uses Jira-like language at the CLI boundary, then maps that language onto d
 | Pull request | Pull request with closing keyword | `gira ticket pr` | PRs are change units. PR bodies must include `Closes #N`, `Fixes #N`, or `Resolves #N` unless the issue intentionally stays open. |
 | Done | Merged PR and closed issue | `gira ticket status`, release/readiness commands | Completion is derived from GitHub evidence, not a local-only status file. |
 | Release | GitHub Release plus readiness evidence | `gira release readiness` | Releases are delivery checkpoints backed by issue, PR, milestone, review, and check state. |
-| Board / roadmap | Future or external view over GitHub state | Dashboard export, Project inspection | Projects v2 automation and UI surfaces are not v1 sources of truth. |
+| Board / roadmap | Repo-linked Projects over repo issues, or external views | `gira projects sync`, dashboard export, Project inspection | Boards show and mirror issue state. Project-only items are intake or roadmap context until linked to a repo issue. |
 
 ## Capability Matrix
 
@@ -49,13 +51,13 @@ Jira parity is only half of the decision. Gira can execute reliably only where G
 | Milestones | Sprint, phase, or release boundary with due dates and issue counts. | Sprint planning, sprint close, rollover, milestone progress, phase completion reporting. | Strong for repo-local sprint cadence. | Cross-repo portfolio planning needs an external parent layer or dashboard export. |
 | Pull requests | Change unit, review, checks, merge state, closing keywords. | PR creation/status, closure-link gates, review queue, merge queue, release readiness. | Strong. PRs are the best source of execution evidence. | Draft/review/check semantics need a friendlier issue-lifecycle wrapper for daily UX. |
 | Branches | Work-start signal and local execution context. | `ticket start` creates issue branches and transition planning can infer in-progress work. | Medium. Useful as evidence, but less durable than issues/PRs. | Branch-only work is ambiguous until linked back to an issue or PR. |
-| GitHub Projects v2 | Boards, fields, roadmap views, project items. | Capability probing and dry-run/project inspection; mutation is deliberately limited. | Medium for visibility, weak for MVP mutation. | Projects v2 automation is not MVP scope and has separate permission complexity. |
+| GitHub Projects v2 | Boards, fields, roadmap views, project items. | `gira projects sync` links configured repos, adds repo issues, and mirrors issue status/planning fields. | Medium for visibility, weak as an execution source. | Project ownership can be user or org; execution still belongs to repo issues. |
 | GitHub Actions / checks | CI status, scheduled jobs, policy checks. | Review gate, release readiness, quality gate, scheduled reporting concepts. | Medium. Good for verification and monitoring. | Poor default for primary development execution; failures often need interactive repair. |
 | Rulesets / branch protection | Merge safety, required checks, review policy. | Guardrails audit/apply and merge readiness inputs. | Strong for enforcement. | Requires admin capability and careful non-destructive policy ownership. |
 | Releases | Delivery checkpoint and published artifact boundary. | Release readiness reports. | Medium. Good as an output checkpoint. | Not a planning object by itself; needs issues, milestones, and PR evidence. |
 | Repository settings / permissions | Auth, scopes, admin controls. | Capability reports gate apply behavior. | Strong as a safety boundary. | Permission failures must stay explicit and non-magical. |
 
-The practical execution baseline is therefore: Issues + Labels + Milestones + PRs are strong enough for a Jira-like repository operating loop. Projects v2, Actions, and dashboards improve visibility, but they should not become the hidden source of truth in the MVP.
+The practical execution baseline is therefore: Issues + Labels + Milestones + PRs are strong enough for a Jira-like repository operating loop. Repo-linked Projects, Actions, and dashboards improve visibility, but they should not become the hidden source of truth in the MVP.
 
 ## Work Decomposition Contract
 
@@ -71,6 +73,7 @@ Lowering rules:
 
 - If the target repo is known, create or attach a repo execution issue.
 - If the target repo is unknown, keep the item top-level and do not hand it to a dev agent.
+- If the item exists only in a profile, user, or org Project, treat it as intake until it is linked to or lowered into a repo issue.
 - If the work spans multiple repos, split it into child repo issues and keep the top-level ticket as the parent coordination object.
 - If the work is only reporting, policy, or architecture context, it may remain top-level until an executable change is identified.
 
@@ -113,6 +116,8 @@ Live session orchestration is justified only for narrow exceptions:
 ## Everyday UX Target
 
 The current CLI exposes the Jira-style daily loop through `gira ticket`. Advanced setup and policy controls stay under `gira ops` so new users do not need to learn GitHub-native internals before starting work.
+
+Agents should use `gira ticket status`, `gira ticket start`, `gira ticket pr`, `gira ticket checks`, `gira ticket wait`, and `gira ticket finish` for lifecycle work. Use raw `gh` only when Gira has no lifecycle command.
 
 ```bash
 gira ticket new "Title" --goal "Goal" --acceptance "item 1;item 2" --dry-run

@@ -30,7 +30,7 @@ workspace:
 
 `workspace.inbox_repo` is required. It may be a private personal repo if the backlog should not appear inside any execution repo. `workspace.repos` is the explicit allowlist of repositories that can receive routed execution issues.
 
-`workspace.project` points to an existing GitHub Projects v2 board by user-facing title. Gira does not create the Project in this slice; it syncs configured repo issues, supported planning fields, status, and milestone target dates into that Project so the GitHub Projects tab stays visible without manual `gh project` commands. `number` is supported only as an advanced fallback when titles are ambiguous.
+`workspace.project` points to an existing GitHub Projects v2 board by user-facing title. The Project may be owned by a user or org and still act as a repo board when it is linked to configured repos and populated with repo issues. Gira does not create the Project in this slice; it syncs configured repo issues, supported planning fields, status, and milestone target dates into that Project so the GitHub Projects tab stays visible without manual `gh project` commands. `number` is supported only as an advanced fallback when titles are ambiguous.
 
 The older `portfolio` config remains a compatibility alias, but new docs should use `workspace` because it matches the intended Jira-like user model.
 
@@ -87,7 +87,9 @@ gira ticket status --repo OWNER/app --ticket 34
 
 ## Boundary
 
-This is not a separate Jira import/export database. Workspace commands operate on issues, labels, milestones, and links that remain visible in GitHub. `gira projects sync` is a visibility bridge for an existing GitHub Project; issues, labels, and milestones remain the source of truth. It mirrors `priority:*` labels to `Priority`, `area:*` labels to `Layer / workstream`, `agent:*` labels to `Owner / agent`, status labels to `Status`, and milestone due dates to `Target date`.
+This is not a separate Jira import/export database. Workspace commands operate on issues, labels, milestones, and links that remain visible in GitHub. `gira projects sync` links and mirrors repository issue state into an existing GitHub Project; repo issues, labels, and milestones remain the source of truth. It mirrors `priority:*` labels to `Priority`, `area:*` labels to `Layer / workstream`, `agent:*` labels to `Owner / agent`, status labels to `Status`, and milestone due dates to `Target date`.
+
+Project items that are not linked to repository issues are intake, portfolio, or visibility context only. Route or lower them to a repo issue before using ticket lifecycle commands.
 
 GitHub assignees remain the accountable human owners. The `agent:*` label is only the execution actor or workflow hint, for example `agent:human`, `agent:codex`, `agent:reviewer`, or `agent:gira`. Do not use `Owner / agent` as a replacement for assignee or reporter metadata.
 

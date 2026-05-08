@@ -24,5 +24,6 @@ gira ticket finish --apply
 
 - Start from a GitHub issue.
 - Use a feature branch per issue.
-- Prefer Gira commands over raw `gh` when a Gira command exists.
+- Use Gira ticket lifecycle commands for status, start, PR, checks, wait, and finish work; use raw `gh` only when Gira has no lifecycle command.
 - Keep PR bodies linked with `Closes #N`, `Fixes #N`, or `Resolves #N`.
+- Treat Project-only items as intake until they are backed by repository issues.

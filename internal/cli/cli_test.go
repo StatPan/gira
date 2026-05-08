@@ -910,6 +910,74 @@ func TestProjectsSyncRequiresMode(t *testing.T) {
 	}
 }
 
+func TestWorkspaceProjectAdoptRequiresBoundedInputs(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "project", "adopt", "--owner", "StatPan", "--title", "Gira"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--owner, exactly one of --title or --number") {
+		t.Fatalf("stderr missing bounded input guidance:\n%s", stderr.String())
+	}
+}
+
+func TestWorkspaceProjectAdoptJSON(t *testing.T) {
+	restore := newWorkspaceProjectAdoptReport
+	t.Cleanup(func() { newWorkspaceProjectAdoptReport = restore })
+	newWorkspaceProjectAdoptReport = func(input gira.WorkspaceProjectAdoptInput) (gira.WorkspaceProjectAdoptReport, error) {
+		if input.ConfigPath != "testdata/workspace.yaml" || input.Owner != "StatPan" || input.Title != "Gira" || !input.DryRun || input.Apply {
+			t.Fatalf("unexpected workspace project adopt input: %+v", input)
+		}
+		return gira.WorkspaceProjectAdoptReport{
+			Command:    "workspace project adopt",
+			DryRun:     true,
+			ConfigPath: "testdata/workspace.yaml",
+			Project:    gira.ProjectsSyncProject{Owner: "StatPan", Number: 7, Title: "Gira"},
+			Action:     gira.WorkspaceAdoptAction{Action: "workspace.project:set", Status: "planned"},
+			NextSteps:  []string{"gira projects sync --config testdata/workspace.yaml --dry-run"},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "project", "adopt", "--config", "testdata/workspace.yaml", "--owner", "StatPan", "--title", "Gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "workspace project adopt"`, `"dry_run": true`, `"action": "workspace.project:set"`, `"next_steps"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace project adopt JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestWorkspaceProjectAdoptTextMentionsIssueSourceOfTruth(t *testing.T) {
+	restore := newWorkspaceProjectAdoptReport
+	t.Cleanup(func() { newWorkspaceProjectAdoptReport = restore })
+	newWorkspaceProjectAdoptReport = func(input gira.WorkspaceProjectAdoptInput) (gira.WorkspaceProjectAdoptReport, error) {
+		if input.Number != 7 || !input.Apply {
+			t.Fatalf("unexpected workspace project adopt input: %+v", input)
+		}
+		return gira.WorkspaceProjectAdoptReport{
+			Command:    "workspace project adopt",
+			ConfigPath: ".gira/config.yaml",
+			Project:    gira.ProjectsSyncProject{Owner: "StatPan", Number: 7, Title: "Gira"},
+			Action:     gira.WorkspaceAdoptAction{Action: "workspace.project:set", Status: "applied"},
+			NextSteps:  []string{"gira projects sync --config .gira/config.yaml --dry-run"},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "project", "adopt", "--owner", "StatPan", "--number", "7", "--apply"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"workspace project adopt: apply", "next step: gira projects sync --config .gira/config.yaml --dry-run", "repo issues remain the execution source of truth"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace project adopt output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestProjectsSyncJSON(t *testing.T) {
 	restore := newProjectsSyncReport
 	t.Cleanup(func() { newProjectsSyncReport = restore })

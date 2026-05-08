@@ -30,7 +30,23 @@ workspace:
 
 `workspace.inbox_repo` is required. It may be a private personal repo if the backlog should not appear inside any execution repo. `workspace.repos` is the explicit allowlist of repositories that can receive routed execution issues.
 
-`workspace.project` points to an existing GitHub Projects v2 board by user-facing title. The Project may be owned by a user or org and still act as a repo board when it is linked to configured repos and populated with repo issues. Gira does not create the Project in this slice; it syncs configured repo issues, supported planning fields, status, and milestone target dates into that Project so the GitHub Projects tab stays visible without manual `gh project` commands. `number` is supported only as an advanced fallback when titles are ambiguous.
+`workspace.project` points to an existing GitHub Projects v2 board by user-facing title or Project number. The Project may be owned by a user profile or org and still act as a repo board when it is linked to configured repos and populated with repo issues. Gira does not create the Project in this slice; it syncs configured repo issues, supported planning fields, status, and milestone target dates into that Project so the GitHub Projects tab stays visible without manual `gh project` commands. `number` is supported as the fallback when titles are ambiguous.
+
+Adopt an existing profile or org Project into config before running sync:
+
+```bash
+gira workspace project adopt --owner OWNER --title "Gira" --config .gira/config.yaml --dry-run
+gira workspace project adopt --owner OWNER --title "Gira" --config .gira/config.yaml --apply
+gira workspace project adopt --owner OWNER --number 7 --config .gira/config.yaml --dry-run
+```
+
+Adoption only records `workspace.project`; it does not create or replace GitHub Projects. If `workspace.project` already points at the selected Project, the command skips. If it points somewhere else, adoption fails because replace support is intentionally out of scope. The next step after apply is always:
+
+```bash
+gira projects sync --config .gira/config.yaml --dry-run
+```
+
+Repository issues, labels, and milestones remain the execution source of truth. The GitHub Project is the visibility and planning surface that `projects sync` mirrors into.
 
 The older `portfolio` config remains a compatibility alias, but new docs should use `workspace` because it matches the intended Jira-like user model.
 

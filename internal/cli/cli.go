@@ -227,6 +227,7 @@ Usage:
   gira workspace ticket route --ticket N --repo OWNER/REPO --dry-run|--apply [--config .gira/config.yaml] [--json]
   gira workspace capability [--config .gira/config.yaml] [--json]
   gira workspace project plan [--config .gira/config.yaml] [--json]
+  gira workspace project adopt --owner OWNER (--title TITLE | --number N) --dry-run|--apply [--config .gira/config.yaml] [--json]
 
 Commands:
   init     Create a workspace config for personal or repo-bound backlog use
@@ -236,7 +237,7 @@ Commands:
   sync     Sync Gira metadata across inbox and execution repos
   ticket   Create or route repo-agnostic inbox tickets
   capability  Check inbox and execution repo read/write permissions
-  project  Read-only GitHub Projects v2 visibility planning
+  project  Read-only GitHub Projects v2 visibility planning and existing Project adoption
 
 Flags:
   --config string  Workspace config path (default ".gira/config.yaml")
@@ -910,6 +911,10 @@ var newWorkspaceProjectPlanReport = func(configPath string) (gira.WorkspaceProje
 		return gira.BuildProjectSyncReportForClient(gira.NewGHProjectSyncClient(repo, gira.ExecCommandRunner{}), time.Now())
 	}
 	return gira.BuildWorkspaceProjectPlanReport(resolved, builder)
+}
+
+var newWorkspaceProjectAdoptReport = func(input gira.WorkspaceProjectAdoptInput) (gira.WorkspaceProjectAdoptReport, error) {
+	return gira.BuildWorkspaceProjectAdoptReport(input, gira.NewGHProjectsSyncClient(gira.ExecCommandRunner{}))
 }
 
 var newProjectsSyncReport = func(configPath string, dryRun bool, archiveClosed bool) (gira.ProjectsSyncReport, error) {
@@ -3475,6 +3480,9 @@ func runWorkspaceProject(args []string, stdout io.Writer, stderr io.Writer) int 
 		fmt.Fprint(stdout, workspaceHelp)
 		return 0
 	}
+	if args[0] == "adopt" {
+		return runWorkspaceProjectAdopt(args[1:], stdout, stderr)
+	}
 	if args[0] != "plan" {
 		fmt.Fprintf(stderr, "unknown workspace project command: %s\n\n", args[0])
 		fmt.Fprint(stderr, workspaceHelp)
@@ -3515,6 +3523,62 @@ func runWorkspaceProject(args []string, stdout io.Writer, stderr io.Writer) int 
 		return 0
 	}
 	fmt.Fprintf(stdout, "workspace project plan: %d repos inspected\nnext step: keep Projects v2 read-only until workspace overview is stable\n", len(report.Repos))
+	return 0
+}
+
+func runWorkspaceProjectAdopt(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("workspace project adopt", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	owner := fs.String("owner", "", "GitHub Project owner")
+	title := fs.String("title", "", "GitHub Project title")
+	number := fs.Int("number", 0, "GitHub Project number")
+	dryRun := fs.Bool("dry-run", false, "Plan project adoption without mutation")
+	apply := fs.Bool("apply", false, "Apply project adoption")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if strings.TrimSpace(*owner) == "" || (strings.TrimSpace(*title) == "") == (*number == 0) || *dryRun == *apply {
+		fmt.Fprintf(stderr, "--owner, exactly one of --title or --number, and exactly one of --dry-run or --apply are required for workspace project adopt\n\n")
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	report, err := newWorkspaceProjectAdoptReport(gira.WorkspaceProjectAdoptInput{
+		ConfigPath: *configPath,
+		Owner:      *owner,
+		Title:      *title,
+		Number:     *number,
+		DryRun:     *dryRun,
+		Apply:      *apply,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode workspace project adopt JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatWorkspaceProjectAdoptReport(report))
 	return 0
 }
 

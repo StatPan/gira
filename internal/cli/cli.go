@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -206,9 +207,16 @@ const statusHelp = `Show a compact read-only status summary from GitHub issues a
 
 Usage:
   gira status [--repo OWNER/REPO] [--json] [--stale-days N]
+  gira status --all [--config .gira/config.yaml] [--json] [--stale-days N]
+  gira status --owner OWNER [--limit N] [--include-archived] [--json] [--stale-days N]
 
 Flags:
   --repo string       Target GitHub repo in OWNER/REPO format (default: infer from .gira/config.yaml or git origin)
+  --all               Summarize all execution repos from workspace config
+  --owner string      Discover repositories owned by a user or organization with gh repo list
+  --config string     Workspace config path for --all (default ".gira/config.yaml")
+  --limit int         Maximum repositories to inspect for --owner (default 50)
+  --include-archived  Include archived repositories in --owner discovery
   --json              Emit stable JSON for automation
   --stale-days int    Days since update before open issues count as stale (default 14)
   -h, --help          Show help
@@ -691,6 +699,10 @@ Flags:
 
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
 	return gira.NewGHStatusClient(repo, gira.ExecCommandRunner{})
+}
+
+var listStatusReposForOwner = func(owner string, limit int, includeArchived bool) ([]gira.RepoRef, error) {
+	return ghStatusReposForOwner(owner, limit, includeArchived, gira.ExecCommandRunner{})
 }
 
 var newOnboardVerifyReport = func(repo gira.RepoRef, stage gira.OnboardStage) (gira.OnboardVerifyReport, error) {
@@ -4340,6 +4352,11 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs.SetOutput(io.Discard)
 
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	allRepos := fs.Bool("all", false, "Summarize all execution repos from workspace config")
+	owner := fs.String("owner", "", "Discover repositories owned by a user or organization")
+	configPath := fs.String("config", ".gira/config.yaml", "Workspace config path for --all")
+	limit := fs.Int("limit", 50, "Maximum repositories to inspect for --owner")
+	includeArchived := fs.Bool("include-archived", false, "Include archived repositories in --owner discovery")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON for automation")
 	staleDays := fs.Int("stale-days", 14, "Days since update before open issues count as stale")
 	help := fs.Bool("help", false, "Show help")
@@ -4364,6 +4381,42 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, statusHelp)
 		return 2
 	}
+	if *limit < 1 {
+		fmt.Fprint(stderr, "--limit must be at least 1\n\n")
+		fmt.Fprint(stderr, statusHelp)
+		return 2
+	}
+	multiModes := 0
+	if *allRepos {
+		multiModes++
+	}
+	if strings.TrimSpace(*owner) != "" {
+		multiModes++
+	}
+	if strings.TrimSpace(*repoValue) != "" {
+		multiModes++
+	}
+	if multiModes > 1 {
+		fmt.Fprint(stderr, "choose only one of --repo, --all, or --owner\n\n")
+		fmt.Fprint(stderr, statusHelp)
+		return 2
+	}
+	if *allRepos {
+		config, err := gira.ResolveWorkspaceConfig(*configPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		return runGlobalStatus("workspace "+config.Name, config.Repos, *jsonOutput, *staleDays, stdout, stderr)
+	}
+	if strings.TrimSpace(*owner) != "" {
+		repos, err := listStatusReposForOwner(*owner, *limit, *includeArchived)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		return runGlobalStatus("owner "+strings.TrimSpace(*owner), repos, *jsonOutput, *staleDays, stdout, stderr)
+	}
 
 	repo, ok := resolveRepoContext(*repoValue, stderr, statusHelp)
 	if !ok {
@@ -4386,6 +4439,98 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	fmt.Fprint(stdout, gira.FormatStatusText(summary))
 	return 0
+}
+
+func runGlobalStatus(scope string, repos []gira.RepoRef, jsonOutput bool, staleDays int, stdout io.Writer, stderr io.Writer) int {
+	if len(repos) == 0 {
+		fmt.Fprint(stderr, "no repositories found for status summary\n")
+		return 2
+	}
+	report := gira.BuildGlobalStatusReport(scope, repos, newStatusClient, statusNow(), staleDays)
+	if jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode status JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatGlobalStatusText(report))
+	return 0
+}
+
+func ghStatusReposForOwner(owner string, limit int, includeArchived bool, runner gira.CommandRunner) ([]gira.RepoRef, error) {
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return nil, fmt.Errorf("--owner is required")
+	}
+	if runner == nil {
+		runner = gira.ExecCommandRunner{}
+	}
+	repos, err := ghStatusRepoList(owner, limit, false, runner)
+	if err != nil {
+		return nil, err
+	}
+	if includeArchived {
+		archived, err := ghStatusRepoList(owner, limit, true, runner)
+		if err != nil {
+			return nil, err
+		}
+		repos = append(repos, archived...)
+	}
+	return uniqueSortedRepos(repos, limit), nil
+}
+
+func ghStatusRepoList(owner string, limit int, archived bool, runner gira.CommandRunner) ([]gira.RepoRef, error) {
+	args := []string{"repo", "list", owner, "--limit", strconv.Itoa(limit), "--json", "nameWithOwner,isArchived"}
+	if archived {
+		args = append(args, "--archived")
+	}
+	output, err := runner.Run("gh", args...)
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		NameWithOwner string `json:"nameWithOwner"`
+		IsArchived    bool   `json:"isArchived"`
+	}
+	if err := json.Unmarshal(output, &rows); err != nil {
+		return nil, fmt.Errorf("parse gh repo list JSON: %w", err)
+	}
+	repos := make([]gira.RepoRef, 0, len(rows))
+	for _, row := range rows {
+		if archived && !row.IsArchived {
+			continue
+		}
+		if !archived && row.IsArchived {
+			continue
+		}
+		repo, err := gira.ParseRepoRef(row.NameWithOwner)
+		if err != nil {
+			return nil, fmt.Errorf("parse repo %q: %w", row.NameWithOwner, err)
+		}
+		repos = append(repos, repo)
+	}
+	return repos, nil
+}
+
+func uniqueSortedRepos(repos []gira.RepoRef, limit int) []gira.RepoRef {
+	seen := map[string]gira.RepoRef{}
+	for _, repo := range repos {
+		seen[strings.ToLower(repo.FullName())] = repo
+	}
+	out := make([]gira.RepoRef, 0, len(seen))
+	for _, repo := range seen {
+		out = append(out, repo)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return strings.ToLower(out[i].FullName()) < strings.ToLower(out[j].FullName())
+	})
+	if limit > 0 && len(out) > limit {
+		return out[:limit]
+	}
+	return out
 }
 
 func runTriage(args []string, stdout io.Writer, stderr io.Writer) int {

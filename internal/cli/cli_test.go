@@ -2247,6 +2247,79 @@ func TestStatusTextUsesInjectedClient(t *testing.T) {
 	}
 }
 
+func TestStatusAllUsesWorkspaceRepos(t *testing.T) {
+	restoreClient, restoreNow := newStatusClient, statusNow
+	t.Cleanup(func() {
+		newStatusClient = restoreClient
+		statusNow = restoreNow
+	})
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte("workspace:\n  name: personal\n  inbox_repo: StatPan/inbox\n  repos:\n    - StatPan/app-a\n    - StatPan/app-b\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
+		return cliFakeStatusClient{repo: repo, responses: cliStatusResponses(repo.FullName())}
+	}
+	statusNow = func() time.Time { return time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC) }
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"status", "--all", "--config", configPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"status: workspace personal", "repos: 2 checked, 0 failed", "StatPan/app-a", "StatPan/app-b", "Repository"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("status --all output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestStatusOwnerJSONUsesRepoDiscovery(t *testing.T) {
+	restoreClient, restoreList, restoreNow := newStatusClient, listStatusReposForOwner, statusNow
+	t.Cleanup(func() {
+		newStatusClient = restoreClient
+		listStatusReposForOwner = restoreList
+		statusNow = restoreNow
+	})
+	listStatusReposForOwner = func(owner string, limit int, includeArchived bool) ([]gira.RepoRef, error) {
+		if owner != "StatPan" || limit != 25 || !includeArchived {
+			t.Fatalf("unexpected discovery args owner=%q limit=%d includeArchived=%v", owner, limit, includeArchived)
+		}
+		return []gira.RepoRef{mustCLIRepo(t, "StatPan/app-b"), mustCLIRepo(t, "StatPan/app-a")}, nil
+	}
+	newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
+		return cliFakeStatusClient{repo: repo, responses: cliStatusResponses(repo.FullName())}
+	}
+	statusNow = func() time.Time { return time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC) }
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"status", "--owner", "StatPan", "--limit", "25", "--include-archived", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.GlobalStatusReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode global status JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Scope != "owner StatPan" || report.Counts.Repos != 2 || report.Counts.OpenIssues != 2 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+	if report.Repos[0].Repo != "StatPan/app-a" {
+		t.Fatalf("repos should be sorted deterministically: %+v", report.Repos)
+	}
+}
+
+func TestStatusRejectsMultipleRepoModes(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"status", "--repo", "StatPan/gira", "--all"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "choose only one of --repo, --all, or --owner") {
+		t.Fatalf("stderr missing mode error:\n%s", stderr.String())
+	}
+}
+
 func TestStatusInfersRepoFromGitOrigin(t *testing.T) {
 	restoreClient, restoreRunner, restoreNow := newStatusClient, repoContextRunner, statusNow
 	t.Cleanup(func() {
@@ -2596,6 +2669,13 @@ func (c cliFakeStatusClient) Repo() gira.RepoRef {
 func (c cliFakeStatusClient) JSON(args []string, target any) error {
 	key := strings.Join(args, " ")
 	return json.Unmarshal([]byte(c.responses[key]), target)
+}
+
+func cliStatusResponses(repo string) map[string]string {
+	return map[string]string{
+		"api repos/" + repo + "/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                         `[[{"number":1,"title":"MVP","state":"open","description":"","due_on":null,"open_issues":1,"closed_issues":1}]]`,
+		"issue list --repo " + repo + " --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url": `[{"number":1,"title":"Issue 1","state":"OPEN","labels":[],"milestone":{"title":"MVP"},"updatedAt":"2026-04-25T12:00:00Z","url":"https://github.com/` + repo + `/issues/1"}]`,
+	}
 }
 
 func TestProjectCapabilityCommandRequiresRepo(t *testing.T) {

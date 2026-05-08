@@ -120,7 +120,7 @@ Goal:
 - make installed `gira` the normal operator path outside the source checkout
 
 Recommended shape:
-- preserve `go install .../cmd/gira@latest` as the canonical path
+- keep release binary channels canonical for users; keep `go install .../cmd/gira@latest` for source-build development only
 - keep smoke-test commands in README/DX
 
 ## Epic #91 breakdown and execution order

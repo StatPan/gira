@@ -98,13 +98,20 @@ go run ./cmd/gira ops onboard verify --repo OWNER/REPO --stage init --json
 go run ./cmd/gira ops onboard verify --repo OWNER/REPO --stage steady-state --json
 ```
 
-The official release install path is `install.sh`:
+Release users should install the Go-built binary through a release channel. These installs do not require Go:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
+npm install -g @statpan/gira
+bun install -g @statpan/gira
+uv tool install gira-cli
+pipx install gira-cli
+python -m pip install --user gira-cli
+brew tap StatPan/tap
+brew install gira
 ```
 
-The CLI can also be installed from source for development:
+The CLI can also be built from source for development:
 
 ```bash
 go install github.com/StatPan/gira/cmd/gira@latest
@@ -122,9 +129,9 @@ gira ops sync --repo OWNER/REPO --dry-run
 gira status --repo OWNER/REPO --json
 ```
 
-The module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. Private repository installs need Go private module access, such as `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication. The bootstrap path embeds the default template so output and local installs are independent of the caller's working directory. `sync` shells out through `gh` to create or update only Gira-managed labels, milestones, and bootstrap issues. `status` is read-only and shells out through `gh api` with stable JSON for worker automation.
+For source builds, the module is `github.com/StatPan/gira` and the binary package is under `cmd/gira`, so the install path includes `/cmd/gira`. Private repository source builds need Go private module access, such as `GOPRIVATE=github.com/StatPan/gira` plus normal GitHub authentication. The bootstrap path embeds the default template so output and local installs are independent of the caller's working directory. `sync` shells out through `gh` to create or update only Gira-managed labels, milestones, and bootstrap issues. `status` is read-only and shells out through `gh api` with stable JSON for worker automation.
 
-Package-manager wrappers such as npm, bun, uv, pip, pipx, or Homebrew may be used as distribution channels when they install or invoke the Go-built `gira` release binary. They should not introduce a second product runtime. apt/deb packaging remains a future channel.
+Package-manager wrappers such as npm, bun, uv, pip, pipx, or Homebrew are distribution channels for the Go-built `gira` release binary. They should not introduce a second product runtime. apt/deb packaging remains a future channel.
 
 Tagged Go releases are built by `.github/workflows/release.yml`. Maintainers publish one by tagging `main` with a `v*` tag and pushing the tag; the workflow checks the installer syntax, runs Go tests plus npm and PyPI wrapper tests, builds Linux/macOS/Windows archives with version metadata, generates `checksums.txt`, verifies it, attaches the assets to the GitHub release, and publishes configured npm/PyPI/Homebrew channels.
 

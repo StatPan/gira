@@ -18,7 +18,7 @@ This guide defines a safe, deterministic migration path for adopting Gira on rep
 - Run from the repository root.
 - `gira doctor --repo OWNER/REPO` passes or any failures are understood before applying migration changes.
 
-The install script upgrades or replaces only the local Go-built `gira` binary. It does not change repository files, labels, milestones, issues, or GitHub settings. Package-manager wrappers, when added, must remain distribution channels for the same Go-built release binary and are not alternate Gira runtimes.
+The install script upgrades or replaces only the local Go-built `gira` binary. It does not change repository files, labels, milestones, issues, or GitHub settings. Package-manager wrappers remain distribution channels for the same Go-built release binary and are not alternate Gira runtimes.
 
 ## Migration Modes
 

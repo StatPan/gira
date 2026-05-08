@@ -14,11 +14,15 @@ Gira ships tagged Go release archives. Package managers download or wrap that of
 
 ## Upgrade
 
+`gira update` and `gira upgrade` are advisory. They check the latest GitHub release and print the channel-specific command; they do not run package managers or mutate repositories.
+
 ```bash
 gira update
 gira upgrade --channel uv
 gira upgrade --channel npm
 ```
+
+Then upgrade with the same channel that installed Gira, for example `uv tool upgrade gira-cli`, `npm update -g @statpan/gira`, or `brew update && brew upgrade gira`.
 
 ## Wrapper Cache Cleanup
 

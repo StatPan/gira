@@ -1,6 +1,6 @@
 # Install Gira
 
-Every channel installs the same Go-built `gira` binary. Package managers are wrappers, not alternate runtimes, and normal release installs do not require Go.
+Every channel installs, wraps, or executes the same Go-built `gira` release binary. Package managers are wrappers, not alternate runtimes, and normal release installs do not require Go.
 
 ## One-line Installer
 

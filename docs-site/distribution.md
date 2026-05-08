@@ -1,6 +1,6 @@
 # Distribution
 
-Gira ships tagged Go release archives. Package managers download or wrap that official binary.
+Gira ships tagged Go release archives. Package managers download or wrap that official binary. Normal release-binary users do not need Go installed.
 
 | Channel | Command |
 | --- | --- |

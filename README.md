@@ -47,6 +47,8 @@ brew tap StatPan/tap
 brew install gira
 ```
 
+Release binary installs do not require Go. Use Go only when building or testing Gira from source.
+
 Authenticate GitHub first. Gira uses GitHub as the execution backend and shells through `gh` for GitHub API access:
 
 ```bash
@@ -254,7 +256,24 @@ gira projects sync --apply --config .gira/config.yaml
 
 ## Install, Upgrade, and Remove
 
-Gira is implemented as a Go-built CLI. For v1 users, `install.sh` is the official release install and upgrade path. It installs the Go-built binary from GitHub release assets; it does not build from source and does not mutate any repository.
+Gira is implemented as a Go-built CLI. Normal users should install the release binary through `install.sh`, npm/bun, PyPI via uv/pipx/pip, or Homebrew. These channels do not require Go, do not build from source, and do not mutate any repository.
+
+### Release Binary Channels
+
+Use one of the release channels:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
+npm install -g @statpan/gira
+bun install -g @statpan/gira
+uv tool install gira-cli
+python -m pip install --user gira-cli
+pipx install gira-cli
+brew tap StatPan/tap
+brew install gira
+```
+
+All channels install the same Go-built `gira` binary. Package managers are wrappers around the release binary, not alternate runtimes.
 
 ### Install Script
 
@@ -297,9 +316,9 @@ gira upgrade
 gira doctor --repo OWNER/REPO
 ```
 
-### Developer Go Install
+### Developer Source Build
 
-Use `go install` for source and development workflows, not as the preferred v1 user install path:
+Use `go install` only for source and development workflows, not as a normal user install path:
 
 ```bash
 go install github.com/StatPan/gira/cmd/gira@latest
@@ -361,7 +380,7 @@ gira ops sync --repo OWNER/REPO --dry-run
 gira status --repo OWNER/REPO --json
 ```
 
-Official install channels:
+Official release install channels:
 
 ```bash
 npm install -g @statpan/gira
@@ -373,7 +392,7 @@ brew tap StatPan/tap
 brew install gira
 ```
 
-The npm and bun channels install the `@statpan/gira` wrapper from the npm registry. The uv, pip, and pipx channels install the `gira-cli` wrapper from PyPI. The Homebrew channel is published through `StatPan/homebrew-tap`. All wrapper channels install the same Go-built release binary and keep the `gira` command surface unchanged.
+The install script downloads GitHub Release assets directly. The npm and bun channels install the `@statpan/gira` wrapper from the npm registry. The uv, pip, and pipx channels install the `gira-cli` wrapper from PyPI. The Homebrew channel is published through `StatPan/homebrew-tap`. All channels install the same Go-built release binary and keep the `gira` command surface unchanged. Normal release-binary users do not need Go installed.
 
 apt/deb packaging is a future target, not an initial official channel. It should wait until usage justifies signing keys, repository hosting, architecture matrix maintenance, and upgrade policy support.
 
@@ -391,15 +410,13 @@ gira upgrade --channel pipx
 gira upgrade --json
 ```
 
-`gira upgrade` and `gira update` are aliases. They are advisory by default: the installed Go-built binary checks the latest GitHub release and prints the channel-specific command, but it does not run package managers or mutate repositories. If Gira cannot confidently infer how it was installed, pass `--channel install.sh|uv|pipx|pip|homebrew|npm|bun|go`.
+`gira upgrade` and `gira update` are aliases. They are advisory by default: the installed Go-built binary checks the latest GitHub release and prints the channel-specific command, but it does not run package managers or mutate repositories. If Gira cannot confidently infer how it was installed, pass `--channel install.sh|uv|pipx|pip|homebrew|npm|bun`. Use `--channel go` only for developer source builds.
 
 Use the same channel that installed Gira:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | sh
 curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh | GIRA_VERSION=v1.0.0 sh
-go install github.com/StatPan/gira/cmd/gira@latest
-GOBIN="${HOME}/.local/bin" go install ./cmd/gira
 uv tool upgrade gira-cli
 python -m pip install --user --upgrade gira-cli
 pipx upgrade gira-cli
@@ -408,7 +425,7 @@ npm update -g @statpan/gira
 bun update -g @statpan/gira
 ```
 
-Upgrade with the same package manager used for installation.
+Upgrade with the same release channel used for installation. Developer source builds can be refreshed with `go install github.com/StatPan/gira/cmd/gira@latest` or `GOBIN="${HOME}/.local/bin" go install ./cmd/gira`, but those are not normal release-binary upgrade paths.
 
 For uv, pip, and pipx installs, the `gira-cli` PyPI wrapper caches downloaded native binaries under `GIRA_PYPI_CACHE_DIR` when set, otherwise under `~/.cache/gira-cli/<version>`. After upgrading, preview stale cache cleanup before deleting anything:
 

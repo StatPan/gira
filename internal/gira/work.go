@@ -15,6 +15,7 @@ type WorkStartResult struct {
 	CreatedBranch bool            `json:"created_branch"`
 	Status        string          `json:"status"`
 	NextStatus    string          `json:"next_status"`
+	NextStep      string          `json:"next_step,omitempty"`
 	Checks        map[string]bool `json:"checks"`
 }
 
@@ -73,6 +74,7 @@ func StartWork(repo RepoRef, issueNumber int, dryRun bool, runner CommandRunner)
 		CreatedBranch: start.Created,
 		Status:        status,
 		NextStatus:    "In progress",
+		NextStep:      workStartNextStep(repo.FullName(), issueNumber, issue.State, status, dryRun),
 		Checks:        start.Checked,
 	}
 	if err != nil {
@@ -263,6 +265,9 @@ func nextWorkAction(issueState string, status string, pr DevPRStatusResult) stri
 		return "closed"
 	}
 	if pr.PRNumber == 0 {
+		if status == "Blocked" {
+			return "resolve_blockers"
+		}
 		if status == "Ready" {
 			return "start_work"
 		}
@@ -341,13 +346,16 @@ func appendMissingWorkBlocker(blockers []string, blocker string) []string {
 }
 
 func FormatWorkStart(result WorkStartResult) string {
+	next := strings.TrimSpace(result.NextStep)
+	if next == "" {
+		next = fmt.Sprintf("gira work pr --repo %s --issue %d --dry-run", result.Repo, result.Issue)
+	}
 	return fmt.Sprintf(
-		"work start: issue #%d branch=%s status=%s\nnext step: gira work pr --repo %s --issue %d --dry-run\n",
+		"work start: issue #%d branch=%s status=%s\nnext step: %s\n",
 		result.Issue,
 		result.Branch,
 		result.NextStatus,
-		result.Repo,
-		result.Issue,
+		next,
 	)
 }
 
@@ -394,12 +402,33 @@ func FormatWorkStatus(result WorkStatusResult) string {
 	)
 }
 
+func workStartNextStep(repo string, issue int, issueState string, status string, dryRun bool) string {
+	if !strings.EqualFold(issueState, "open") {
+		return fmt.Sprintf("gira work status --repo %s --issue %d", repo, issue)
+	}
+	if isMissingWorkStatus(status) {
+		return readyStatusNextStep(repo, issue)
+	}
+	if dryRun && (status == "Ready" || status == "In progress") {
+		return fmt.Sprintf("gira work start --repo %s --issue %d --apply", repo, issue)
+	}
+	if status == "Ready" || status == "In progress" {
+		return fmt.Sprintf("gira work pr --repo %s --issue %d --dry-run", repo, issue)
+	}
+	return fmt.Sprintf("gira work status --repo %s --issue %d", repo, issue)
+}
+
 func workStatusNextStep(result WorkStatusResult) string {
 	switch result.NextAction {
 	case "start_work":
+		if isMissingWorkStatus(result.Status) {
+			return readyStatusNextStep(result.Repo, result.Issue)
+		}
 		return fmt.Sprintf("gira work start --repo %s --issue %d --apply", result.Repo, result.Issue)
 	case "open_pr":
 		return fmt.Sprintf("gira work pr --repo %s --issue %d --apply", result.Repo, result.Issue)
+	case "resolve_blockers":
+		return "resolve blockers, then set status:ready before starting work"
 	case "mark_pr_ready":
 		return "mark the PR ready for review"
 	case "address_review":
@@ -415,4 +444,13 @@ func workStatusNextStep(result WorkStatusResult) string {
 	default:
 		return fmt.Sprintf("gira status --repo %s", result.Repo)
 	}
+}
+
+func readyStatusNextStep(repo string, issue int) string {
+	return fmt.Sprintf("gira adopt issues --repo %s --issue %d --label status:ready --apply", repo, issue)
+}
+
+func isMissingWorkStatus(status string) bool {
+	trimmed := strings.TrimSpace(status)
+	return trimmed == "" || strings.EqualFold(trimmed, "null")
 }

@@ -6,6 +6,11 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.5.1 - 2026-05-09
+
+- Fixed `gira ticket start` guidance for open issues without `status:ready`, including actionable human and JSON next steps.
+- Added a dependency security audit gate for Next.js and React Server DOM advisory floors across docs and npm wrapper build paths.
+
 ## v1.5.0 - 2026-05-08
 
 - Added `gira audit readiness` to combine doctor checks, audit ledger health, and a Gira-first next action in one self-audit command.

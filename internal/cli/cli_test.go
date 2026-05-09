@@ -1135,6 +1135,32 @@ func TestTicketStartDryRunJSON(t *testing.T) {
 	}
 }
 
+func TestTicketStartDryRunJSONPreservesApplyTicketNumber(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		return gira.WorkStartResult{
+			Repo:       repo.FullName(),
+			Issue:      issue,
+			Branch:     "issue-33-rag-docling",
+			DryRun:     true,
+			Status:     "Ready",
+			NextStatus: "In progress",
+			NextStep:   "gira work start --repo " + repo.FullName() + " --issue 33 --apply",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "33", "--repo", "StatPan/statpan-infra", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	want := `"next_step": "gira ticket start 33 --apply"`
+	if !strings.Contains(stdout.String(), want) {
+		t.Fatalf("ticket start dry-run JSON missing apply next step:\n%s", stdout.String())
+	}
+}
+
 func TestTicketNewDryRunJSON(t *testing.T) {
 	restore := newTicketNewReport
 	restoreRepo := repoContextRunner
@@ -1473,6 +1499,61 @@ func TestTicketStartWithoutTicketDoesNotAutoSelect(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "--ticket or positional ticket is required") {
 		t.Fatalf("stderr missing explicit ticket guidance:\n%s", stderr.String())
+	}
+}
+
+func TestTicketStartMissingReadyHumanShowsNextStep(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		return gira.WorkStartResult{
+			Repo:       repo.FullName(),
+			Issue:      issue,
+			Title:      "RAG Docling",
+			Status:     "null",
+			NextStatus: "In progress",
+			NextStep:   "gira adopt issues --repo " + repo.FullName() + " --issue 33 --label status:ready --apply",
+		}, fmt.Errorf("issue #33 is not ready (missing status:ready)")
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "33", "--repo", "StatPan/statpan-infra", "--apply"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	for _, want := range []string{
+		"issue #33 is not ready (missing status:ready)",
+		"next step: gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr missing %q:\n%s", want, stderr.String())
+		}
+	}
+}
+
+func TestTicketStartMissingReadyJSONUsesTicketNextStep(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		return gira.WorkStartResult{
+			Repo:       repo.FullName(),
+			Issue:      issue,
+			Status:     "null",
+			NextStatus: "In progress",
+			NextStep:   "gira adopt issues --repo " + repo.FullName() + " --issue 33 --label status:ready --apply",
+		}, fmt.Errorf("issue #33 is not ready (missing status:ready)")
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "33", "--repo", "StatPan/statpan-infra", "--apply", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), `"next_step": "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply"`) {
+		t.Fatalf("stdout missing actionable next step:\n%s", stdout.String())
 	}
 }
 
@@ -1823,6 +1904,45 @@ func TestTicketStatusJSONUsesTicketNextStep(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "gira work start") {
 		t.Fatalf("ticket status JSON leaked work next step:\n%s", stdout.String())
+	}
+}
+
+func TestTicketStatusJSONGuidesMissingStatusToAdoptReady(t *testing.T) {
+	restore := newWorkStatusResult
+	t.Cleanup(func() { newWorkStatusResult = restore })
+	newWorkStatusResult = func(repo gira.RepoRef, issue int) (gira.WorkStatusResult, error) {
+		return gira.WorkStatusResult{Repo: repo.FullName(), Issue: issue, Status: "null", NextAction: "start_work"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "status", "--repo", "StatPan/statpan-infra", "--ticket", "33", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	want := `"next_step": "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply"`
+	if !strings.Contains(stdout.String(), want) {
+		t.Fatalf("ticket status JSON missing adopt next step:\n%s", stdout.String())
+	}
+}
+
+func TestTicketStatusJSONGuidesBlockedIssueToResolveBlockers(t *testing.T) {
+	restore := newWorkStatusResult
+	t.Cleanup(func() { newWorkStatusResult = restore })
+	newWorkStatusResult = func(repo gira.RepoRef, issue int) (gira.WorkStatusResult, error) {
+		return gira.WorkStatusResult{Repo: repo.FullName(), Issue: issue, Status: "Blocked", NextAction: "resolve_blockers"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "status", "--repo", "StatPan/statpan-infra", "--ticket", "33", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	want := `"next_step": "resolve blockers, then set status:ready before starting work"`
+	if !strings.Contains(stdout.String(), want) {
+		t.Fatalf("ticket status JSON missing blocker next step:\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "gira ticket start 33 --apply") {
+		t.Fatalf("blocked ticket status should not point to start:\n%s", stdout.String())
 	}
 }
 

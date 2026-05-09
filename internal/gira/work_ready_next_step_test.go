@@ -37,6 +37,53 @@ func TestWorkStatusNextStepStartsReadyIssue(t *testing.T) {
 	}
 }
 
+func TestWorkStatusNextStepDoesNotAdoptExplicitBlockedStatus(t *testing.T) {
+	result := WorkStatusResult{
+		Repo:       "StatPan/statpan-infra",
+		Issue:      33,
+		State:      "open",
+		Status:     "Blocked",
+		NextAction: "resolve_blockers",
+	}
+
+	got := workStatusNextStep(result)
+	want := "resolve blockers, then set status:ready before starting work"
+	if got != want {
+		t.Fatalf("next step = %q, want %q", got, want)
+	}
+}
+
+func TestNextWorkActionResolvesBlockedIssueBeforeStart(t *testing.T) {
+	action := nextWorkAction("open", "Blocked", DevPRStatusResult{})
+	if action != "resolve_blockers" {
+		t.Fatalf("next action = %q, want resolve_blockers", action)
+	}
+}
+
+func TestWorkStartDryRunGuidesToApplyBeforePR(t *testing.T) {
+	got := workStartNextStep("StatPan/statpan-infra", 33, "open", "Ready", true)
+	want := "gira work start --repo StatPan/statpan-infra --issue 33 --apply"
+	if got != want {
+		t.Fatalf("next step = %q, want %q", got, want)
+	}
+}
+
+func TestStartWorkMissingReadyIncludesActionableNextStep(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "statpan-infra"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/statpan-infra/issues/33": []byte(`{"number":33,"title":"RAG Docling","state":"open","labels":[{"name":"type:task"}]}`),
+	}}
+
+	result, err := StartWork(repo, 33, false, runner)
+	if err == nil {
+		t.Fatal("expected missing ready error")
+	}
+	want := "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply"
+	if result.NextStep != want {
+		t.Fatalf("next step = %q, want %q", result.NextStep, want)
+	}
+}
+
 func TestFormatWorkStartUsesActionableReadyNextStep(t *testing.T) {
 	result := WorkStartResult{
 		Repo:       "StatPan/statpan-infra",

@@ -2307,13 +2307,18 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 	result, err := newWorkStartResult(repo, ticketNumber, *dryRun)
 	if err != nil {
 		if *jsonOutput {
+			result.NextStep = ticketWorkStartNextStep(result)
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
 		fmt.Fprintf(stderr, "%v\n", err)
+		if next := ticketWorkStartNextStep(result); next != "" {
+			fmt.Fprintf(stderr, "next step: %s\n", next)
+		}
 		return 1
 	}
 	if *jsonOutput {
+		result.NextStep = ticketWorkStartNextStep(result)
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0
@@ -2582,6 +2587,9 @@ func runWorkStart(args []string, stdout io.Writer, stderr io.Writer) int {
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
 		fmt.Fprintf(stderr, "%v\n", err)
+		if next := strings.TrimSpace(result.NextStep); next != "" {
+			fmt.Fprintf(stderr, "next step: %s\n", next)
+		}
 		return 1
 	}
 	if *jsonOutput {
@@ -2899,11 +2907,14 @@ func issueNumberFromRef(ref string) int {
 }
 
 func formatTicketStart(result gira.WorkStartResult) string {
-	next := fmt.Sprintf("gira ticket pr --repo %s --ticket %d --dry-run", result.Repo, result.Issue)
-	if result.DryRun {
-		next = fmt.Sprintf("gira ticket start %d --apply", result.Issue)
-	} else {
-		next = "gira ticket pr --dry-run"
+	next := ticketWorkStartNextStep(result)
+	if next == "" {
+		next = fmt.Sprintf("gira ticket pr --repo %s --ticket %d --dry-run", result.Repo, result.Issue)
+		if result.DryRun {
+			next = fmt.Sprintf("gira ticket start %d --apply", result.Issue)
+		} else {
+			next = "gira ticket pr --dry-run"
+		}
 	}
 	return fmt.Sprintf(
 		"ticket start: ticket #%d branch=%s status=%s\nnext step: %s\n",
@@ -2983,9 +2994,14 @@ func formatTicketFinish(result gira.WorkFinishResult) string {
 func ticketStatusNextStep(result gira.WorkStatusResult) string {
 	switch result.NextAction {
 	case "start_work":
+		if isMissingTicketStatus(result.Status) {
+			return readyTicketStatusNextStep(result.Repo, result.Issue)
+		}
 		return fmt.Sprintf("gira ticket start %d --apply", result.Issue)
 	case "open_pr":
 		return "gira ticket pr --apply"
+	case "resolve_blockers":
+		return "resolve blockers, then set status:ready before starting work"
 	case "mark_pr_ready":
 		return "mark the PR ready for review"
 	case "address_review":
@@ -3001,6 +3017,34 @@ func ticketStatusNextStep(result gira.WorkStatusResult) string {
 	default:
 		return fmt.Sprintf("gira status --repo %s", result.Repo)
 	}
+}
+
+func ticketWorkStartNextStep(result gira.WorkStartResult) string {
+	next := strings.TrimSpace(result.NextStep)
+	if next == "" {
+		return ""
+	}
+	if strings.HasPrefix(next, "gira adopt issues ") {
+		return next
+	}
+	next = strings.ReplaceAll(next, "gira work status", "gira ticket status")
+	next = strings.ReplaceAll(next, "gira work pr", "gira ticket pr")
+	next = strings.ReplaceAll(next, "gira work start", "gira ticket start")
+	next = strings.ReplaceAll(next, "--issue", "--ticket")
+	next = shortenTicketNextStep(next, result.Repo, result.Issue)
+	if strings.HasPrefix(next, "gira ticket start ") && result.Issue > 0 && !strings.Contains(next, strconv.Itoa(result.Issue)) {
+		next = strings.Replace(next, "gira ticket start ", fmt.Sprintf("gira ticket start %d ", result.Issue), 1)
+	}
+	return next
+}
+
+func readyTicketStatusNextStep(repo string, issue int) string {
+	return fmt.Sprintf("gira adopt issues --repo %s --issue %d --label status:ready --apply", repo, issue)
+}
+
+func isMissingTicketStatus(status string) bool {
+	trimmed := strings.TrimSpace(status)
+	return trimmed == "" || strings.EqualFold(trimmed, "null")
 }
 
 func ticketFinishNextStep(result gira.WorkFinishResult) string {

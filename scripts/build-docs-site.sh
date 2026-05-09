@@ -10,6 +10,7 @@ if [ ! -d "${src}" ]; then
 fi
 
 rm -rf "${out}"
+node scripts/check-security-deps.mjs
 npm exec -- vitepress build "${src}" --outDir "${out}"
 
 if [ ! -f "${out}/index.html" ]; then

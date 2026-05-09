@@ -37,6 +37,8 @@
     "README.md"
   ],
   "scripts": {
+    "check:security-deps": "node ../../scripts/check-security-deps.mjs",
+    "pretest": "npm run check:security-deps",
     "postinstall": "node scripts/install.js",
     "test": "node --test test/*.test.js"
   },

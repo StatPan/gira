@@ -2,7 +2,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check:security-deps": "node scripts/check-security-deps.mjs",
     "docs:dev": "vitepress dev docs-site",
+    "predocs:build": "npm run check:security-deps",
     "docs:build": "vitepress build docs-site",
     "docs:preview": "vitepress preview docs-site"
   },

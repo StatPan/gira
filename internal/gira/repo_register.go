@@ -11,12 +11,14 @@ import (
 )
 
 type RepoRegisterInput struct {
-	Repo       RepoRef `json:"repo"`
-	Path       string  `json:"path,omitempty"`
-	ConfigRoot string  `json:"config_root,omitempty"`
-	Overwrite  bool    `json:"overwrite"`
-	DryRun     bool    `json:"dry_run"`
-	Apply      bool    `json:"apply"`
+	Repo          RepoRef `json:"repo"`
+	Path          string  `json:"path,omitempty"`
+	ConfigRoot    string  `json:"config_root,omitempty"`
+	Contract      string  `json:"contract,omitempty"`
+	WorkspaceName string  `json:"workspace_name,omitempty"`
+	Overwrite     bool    `json:"overwrite"`
+	DryRun        bool    `json:"dry_run"`
+	Apply         bool    `json:"apply"`
 }
 
 type RepoRegisterReport struct {
@@ -57,7 +59,10 @@ func BuildRepoRegisterReport(input RepoRegisterInput, runner CommandRunner) (Rep
 			return RepoRegisterReport{}, err
 		}
 	}
-	entry := GlobalRepoRegistryEntry{Repo: input.Repo.FullName(), Path: storedPath}
+	entry := GlobalRepoRegistryEntry{Repo: input.Repo.FullName(), Path: storedPath, Contract: strings.TrimSpace(input.Contract)}
+	if strings.TrimSpace(input.WorkspaceName) != "" {
+		entry.Workspace = GlobalRepoWorkspaceRef{Name: strings.TrimSpace(input.WorkspaceName)}
+	}
 	if err := ValidateGlobalRepoRegistryEntry(entry, input.Repo, file); err != nil {
 		return RepoRegisterReport{}, err
 	}

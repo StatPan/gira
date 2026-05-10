@@ -439,12 +439,15 @@ const repoHelp = `Manage Gira global registry entries for repositories.
 
 Usage:
   gira repo register OWNER/REPO [--path PATH] --dry-run|--apply [--config-root PATH] [--overwrite] [--json]
+  gira repo migrate [--repo OWNER/REPO] [--path PATH] --dry-run|--apply [--config-root PATH] [--overwrite] [--json]
 
 Commands:
   register  Register a GitHub repository and optional checkout path in the global registry
+  migrate   Import repo-local contract metadata into the global registry
 
 Flags:
   --path string        Local checkout path to validate and record
+  --repo string        Target GitHub repo in OWNER/REPO format
   --config-root string Override global config root
   --overwrite          Replace a conflicting existing registry entry
   --dry-run            Preview without writing files
@@ -1207,6 +1210,10 @@ var newRepoRegisterReport = func(input gira.RepoRegisterInput) (gira.RepoRegiste
 	return gira.BuildRepoRegisterReport(input, devCommandRunner)
 }
 
+var newRepoMigrateReport = func(input gira.RepoMigrateInput) (gira.RepoMigrateReport, error) {
+	return gira.BuildRepoMigrateReport(input, devCommandRunner)
+}
+
 var newAdoptIssuesReport = func(input gira.AdoptIssueInput) (gira.AdoptIssuesReport, error) {
 	return gira.BuildAdoptIssuesReport(input, gira.ExecCommandRunner{})
 }
@@ -1552,6 +1559,8 @@ func runRepo(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	case "register":
 		return runRepoRegister(args[1:], stdout, stderr)
+	case "migrate":
+		return runRepoMigrate(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown repo command: %s\n\n", args[0])
 		fmt.Fprint(stderr, repoHelp)
@@ -1632,6 +1641,60 @@ func extractRepoRegisterPositional(args []string) ([]string, string) {
 		}
 	}
 	return out, repo
+}
+
+func runRepoMigrate(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("repo migrate", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	pathValue := fs.String("path", ".", "Local checkout path containing .gira/config.yaml")
+	configRoot := fs.String("config-root", "", "Override global config root")
+	overwrite := fs.Bool("overwrite", false, "Replace conflicting existing registry entry")
+	dryRun := fs.Bool("dry-run", false, "Preview without writing files")
+	apply := fs.Bool("apply", false, "Write the registry entry")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, repoHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, repoHelp)
+		return 0
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, repoHelp)
+		return 2
+	}
+	var repo gira.RepoRef
+	if strings.TrimSpace(*repoValue) != "" {
+		parsed, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, repoHelp)
+			return 2
+		}
+		repo = parsed
+	}
+	report, err := newRepoMigrateReport(gira.RepoMigrateInput{Repo: repo, Path: *pathValue, ConfigRoot: *configRoot, Overwrite: *overwrite, DryRun: *dryRun, Apply: *apply})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "repo migrate failed: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatRepoMigrateReport(report))
+	return 0
 }
 
 func runCachePrune(args []string, stdout io.Writer, stderr io.Writer) int {

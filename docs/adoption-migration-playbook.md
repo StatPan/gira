@@ -57,6 +57,38 @@ gira adopt repo --repo OWNER/REPO --path . --strategy merge --apply
 
 The plan output is deterministic for a fixed repository state (same plan counts and sorted item actions).
 
+## Repo-Local Contract to Global Registry
+
+Existing repositories that already have `.gira/config.yaml` should migrate by
+adding a global repo registry entry, not by moving or replacing the repo-local
+file. The repo-local file remains the optional shared contract for team policy,
+while the global registry stores personal operator metadata such as checkout
+path and workspace association.
+
+Plan the migration first:
+
+```bash
+gira repo migrate --path . --dry-run
+```
+
+Apply only after the plan is correct:
+
+```bash
+gira repo migrate --path . --apply
+gira config repo --repo OWNER/REPO
+```
+
+The migration writes a global repo entry such as
+`~/.config/gira/repos/OWNER/REPO.yaml` and records
+`contract: .gira/config.yaml` when the repo-local contract exists. It preserves
+`.gira/config.yaml`; deleting or rewriting that file is not part of the normal
+migration.
+
+If the target repo already has a different global registry entry, use
+`--overwrite` only after reviewing the diff. Symlink migration is an advanced
+explicit operation and is not the default compatibility path, because symlinks
+can hide ownership and portability differences across machines.
+
 Adopt an existing profile or org GitHub Project only after the local workspace config exists:
 
 ```bash

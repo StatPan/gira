@@ -192,7 +192,7 @@ func inspectAdoptRepoLocal(path string) AdoptRepoLocalState {
 		content, err := os.ReadFile(agentsPath)
 		if err == nil {
 			text := string(content)
-			if strings.Contains(text, "<!-- gira:start -->") && strings.Contains(text, "<!-- gira:end -->") {
+			if strings.Contains(text, AgentsManagedBlockStart) && strings.Contains(text, AgentsManagedBlockEnd) {
 				state.AgentsManagedBlock = "present"
 			}
 		}
@@ -342,16 +342,7 @@ profiles:
 }
 
 func upsertAgentsManagedBlock(path string) error {
-	const start = "<!-- gira:start -->"
-	const end = "<!-- gira:end -->"
-	block := start + `
-Gira workflow:
-- Start from a GitHub issue.
-- Use ` + "`gira ticket new`" + ` or ` + "`gira ticket start`" + ` before implementation.
-- Use ` + "`gira ticket pr`" + ` for pull requests.
-- Use ` + "`gira ticket finish`" + ` after checks and review are ready.
-- PR bodies must contain ` + "`Closes #N`" + `, ` + "`Fixes #N`" + `, or ` + "`Resolves #N`" + `.
-` + end + "\n"
+	block := RenderAgentsManagedBlock(CoreAgentGuidanceSpec(), CoreCommandSpecs())
 	existing, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -360,10 +351,10 @@ Gira workflow:
 		return err
 	}
 	text := string(existing)
-	startAt := strings.Index(text, start)
-	endAt := strings.Index(text, end)
+	startAt := strings.Index(text, AgentsManagedBlockStart)
+	endAt := strings.Index(text, AgentsManagedBlockEnd)
 	if startAt >= 0 && endAt > startAt {
-		endAt += len(end)
+		endAt += len(AgentsManagedBlockEnd)
 		updated := strings.TrimRight(text[:startAt], "\n") + "\n\n" + strings.TrimRight(block, "\n") + "\n" + text[endAt:]
 		return os.WriteFile(path, []byte(updated), 0o644)
 	}

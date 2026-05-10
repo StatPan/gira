@@ -6,6 +6,10 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Added shared agent guidance renderers so `gira guide agent`, `gira guide
+  skill`, docs-site agent guidance, and `AGENTS.md` managed blocks can reuse
+  command registry descriptions without overwriting human-owned instructions.
+
 ## v1.10.0 - 2026-05-10
 
 - Rendered the built-in ticket guide command section from the command metadata

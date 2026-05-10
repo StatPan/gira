@@ -14,6 +14,7 @@ type CommandSpec struct {
 	Since       string
 	Docs        []string
 	GuideTopics []string
+	GuideOrder  int
 	Examples    []CommandExample
 }
 
@@ -89,7 +90,8 @@ func CoreCommandSpecs() []CommandSpec {
 				{Name: "--start", Summary: "Start the created ticket after apply."},
 			},
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
-			GuideTopics: []string{"quickstart", "ticket"},
+			GuideTopics: []string{"quickstart", "ticket", "agent"},
+			GuideOrder:  10,
 			Examples: []CommandExample{
 				{Summary: "Preview structured ticket", Command: "gira ticket new \"TITLE\" --goal \"GOAL\" --acceptance \"a;b;c\" --dry-run"},
 				{Summary: "Preview full Markdown packet", Command: "gira ticket new --title \"TITLE\" --body-file issue.md --dry-run"},
@@ -101,7 +103,8 @@ func CoreCommandSpecs() []CommandSpec {
 			Usage:       "gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO]",
 			Since:       "v1.0.0",
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
-			GuideTopics: []string{"ticket"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  20,
 			Examples: []CommandExample{
 				{Summary: "Start an existing ready issue", Command: "gira ticket start 42 --apply"},
 			},
@@ -112,7 +115,8 @@ func CoreCommandSpecs() []CommandSpec {
 			Usage:       "gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft]",
 			Since:       "v1.0.0",
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
-			GuideTopics: []string{"ticket"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  30,
 			Examples: []CommandExample{
 				{Summary: "Open a draft PR", Command: "gira ticket pr --apply --draft"},
 			},
@@ -123,7 +127,8 @@ func CoreCommandSpecs() []CommandSpec {
 			Usage:       "gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]",
 			Since:       "v1.0.0",
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
-			GuideTopics: []string{"ticket"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  40,
 			Examples: []CommandExample{
 				{Summary: "Inspect PR readiness", Command: "gira ticket checks"},
 			},
@@ -134,7 +139,8 @@ func CoreCommandSpecs() []CommandSpec {
 			Usage:       "gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s]",
 			Since:       "v1.0.0",
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
-			GuideTopics: []string{"ticket"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  50,
 			Examples: []CommandExample{
 				{Summary: "Wait for CI", Command: "gira ticket wait --timeout 5m"},
 			},
@@ -145,7 +151,8 @@ func CoreCommandSpecs() []CommandSpec {
 			Usage:       "gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO]",
 			Since:       "v1.0.0",
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
-			GuideTopics: []string{"ticket"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  60,
 			Examples: []CommandExample{
 				{Summary: "Preview finish", Command: "gira ticket finish --dry-run"},
 			},
@@ -156,7 +163,8 @@ func CoreCommandSpecs() []CommandSpec {
 			Usage:       "gira ticket status [TICKET] [--repo OWNER/REPO] [--json]",
 			Since:       "v1.0.0",
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
-			GuideTopics: []string{"ticket"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  70,
 			Examples: []CommandExample{
 				{Summary: "Inspect current branch ticket", Command: "gira ticket status"},
 			},
@@ -218,9 +226,7 @@ func RenderCommandReferenceMarkdown(specs []CommandSpec) string {
 
 func RenderGuideCommandSection(topic string, specs []CommandSpec) string {
 	specs = filterCommandSpecsForGuide(topic, specs)
-	sort.Slice(specs, func(i, j int) bool {
-		return commandSpecKey(specs[i].Path) < commandSpecKey(specs[j].Path)
-	})
+	sortGuideSpecs(specs)
 	var b strings.Builder
 	for _, spec := range specs {
 		fmt.Fprintf(&b, "  %s\n", spec.Usage)
@@ -243,6 +249,21 @@ func filterCommandSpecsForGuide(topic string, specs []CommandSpec) []CommandSpec
 		}
 	}
 	return filtered
+}
+
+func sortGuideSpecs(specs []CommandSpec) {
+	sort.Slice(specs, func(i, j int) bool {
+		if specs[i].GuideOrder != specs[j].GuideOrder {
+			if specs[i].GuideOrder == 0 {
+				return false
+			}
+			if specs[j].GuideOrder == 0 {
+				return true
+			}
+			return specs[i].GuideOrder < specs[j].GuideOrder
+		}
+		return commandSpecKey(specs[i].Path) < commandSpecKey(specs[j].Path)
+	})
 }
 
 func commandSpecKey(path []string) string {

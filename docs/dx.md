@@ -101,7 +101,9 @@ instead of relying only on the reference page:
   `docs-site/agent-operator-skill.md`.
 
 The registry is not a replacement for narrative docs. It is the drift-prevention
-source for command facts and examples.
+source for command facts and examples. Agent adapter snippets must also be
+generated through the shared guidance renderer and written only inside managed
+blocks such as `<!-- gira:start -->` and `<!-- gira:end -->`.
 
 This taxonomy keeps a clean recovery model: rerun `bootstrap` for local files, rerun `sync` for GitHub metadata, rerun `status` to decide what to do next, and rerun `onboard verify` to confirm the repo is truly ready for daily operation.
 

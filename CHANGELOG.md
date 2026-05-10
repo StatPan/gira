@@ -6,6 +6,8 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.6.0 - 2026-05-10
+
 - Prefer the OS-user global registry for default workspace config resolution
   when a matching global workspace is available, while preserving explicit
   `--config .gira/config.yaml` as the repo-local contract opt-out.

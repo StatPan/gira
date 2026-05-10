@@ -6,6 +6,8 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.8.0 - 2026-05-10
+
 - Added `gira workspace repos sync` to discover GitHub user/org repositories
   and update a global workspace execution repo list through dry-run/apply.
 

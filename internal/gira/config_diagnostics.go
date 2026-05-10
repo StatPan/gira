@@ -80,7 +80,7 @@ func BuildConfigRepoReport(repoValue string, configRoot string, runner CommandRu
 	if err != nil {
 		return ConfigRepoReport{}, err
 	}
-	repo, source, detail, err := resolveConfigDiagnosticRepo(repoValue, runner)
+	repo, source, detail, err := resolveConfigDiagnosticRepo(repoValue, root, runner)
 	if err != nil {
 		return ConfigRepoReport{}, err
 	}
@@ -178,34 +178,26 @@ func FormatConfigDoctorReport(report ConfigDoctorReport) string {
 	return b.String()
 }
 
-func resolveConfigDiagnosticRepo(repoValue string, runner CommandRunner) (RepoRef, string, string, error) {
-	if strings.TrimSpace(repoValue) != "" {
-		repo, err := ParseRepoRef(repoValue)
-		if err != nil {
-			return RepoRef{}, "", "", err
+func resolveConfigDiagnosticRepo(repoValue string, configRoot string, runner CommandRunner) (RepoRef, string, string, error) {
+	ctx, err := ResolveRepoContextDetails(RepoContextOptions{RepoValue: repoValue, ConfigRoot: configRoot, Runner: runner})
+	if err != nil {
+		if strings.TrimSpace(repoValue) == "" && strings.Contains(err.Error(), "repo context unavailable") {
+			return RepoRef{}, "defaults", "", nil
 		}
-		return repo, "explicit", "--repo", nil
+		return RepoRef{}, "", "", err
 	}
-	if runner == nil {
-		runner = ExecCommandRunner{}
-	}
-	if out, err := runner.Run("git", "remote", "get-url", "origin"); err == nil {
-		repo, err := ParseGitHubRemoteRepo(strings.TrimSpace(string(out)))
-		if err == nil {
-			return repo, "git_origin", "git remote get-url origin", nil
+	source := ctx.Source
+	detail := ctx.Detail
+	if source == "repo_config" {
+		source = "repo_local_contract"
+		if strings.HasPrefix(detail, "."+string(filepath.Separator)) {
+			detail = strings.TrimPrefix(detail, "."+string(filepath.Separator))
 		}
 	}
-	if repo, ok, err := repoContextFromConfig(DefaultInitConfigPath(".")); err != nil {
-		return RepoRef{}, "", "", err
-	} else if ok {
-		return repo, "repo_local_contract", ".gira/config.yaml", nil
+	if source == "explicit" {
+		detail = "--repo"
 	}
-	if repo, ok, err := repoContextFromConfig(filepath.Join(".", ".gira", "config.toml")); err != nil {
-		return RepoRef{}, "", "", err
-	} else if ok {
-		return repo, "repo_local_contract", ".gira/config.toml", nil
-	}
-	return RepoRef{}, "defaults", "", nil
+	return ctx.Repo, source, detail, nil
 }
 
 func inspectRepoContracts() []ConfigFileStatus {

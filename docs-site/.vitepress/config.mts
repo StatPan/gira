@@ -29,7 +29,8 @@ export default defineConfig({
           { text: 'Global Config', link: '/global-config' },
           { text: 'Ticket Workflow', link: '/ticket-workflow' },
           { text: 'Command Reference', link: '/command-reference' },
-          { text: 'Agent Operator Skill', link: '/agent-operator-skill' }
+          { text: 'Agent Operator Skill', link: '/agent-operator-skill' },
+          { text: 'Agent Delegation Lanes', link: '/agent-delegation-lanes' }
         ]
       },
       {

@@ -44,6 +44,9 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "config") {
 		t.Fatalf("help output missing config command:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "repo") {
+		t.Fatalf("help output missing repo command:\n%s", stdout.String())
+	}
 	if strings.Contains(stdout.String(), "portfolio   ") || strings.Contains(stdout.String(), "jira        ") {
 		t.Fatalf("help output should not frontload advanced commands:\n%s", stdout.String())
 	}
@@ -119,6 +122,52 @@ func TestConfigUnknownCommand(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "unknown config command: missing") {
 		t.Fatalf("stderr missing unknown command:\n%s", stderr.String())
+	}
+}
+
+func TestRepoRegisterCommandJSON(t *testing.T) {
+	original := newRepoRegisterReport
+	t.Cleanup(func() { newRepoRegisterReport = original })
+	newRepoRegisterReport = func(input gira.RepoRegisterInput) (gira.RepoRegisterReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Path != "/repo" || input.ConfigRoot != "/tmp/gira" || !input.DryRun || input.Apply {
+			t.Fatalf("unexpected repo register input: %+v", input)
+		}
+		return gira.RepoRegisterReport{
+			Command:    "repo register",
+			Repo:       input.Repo.FullName(),
+			ConfigRoot: input.ConfigRoot,
+			Path:       input.Path,
+			File:       "/tmp/gira/repos/StatPan/gira.yaml",
+			DryRun:     true,
+			Status:     "planned",
+			Action:     "create",
+			Entry:      gira.GlobalRepoRegistryEntry{Repo: input.Repo.FullName(), Path: input.Path},
+			NextStep:   "gira repo register StatPan/gira --apply",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"repo", "register", "StatPan/gira", "--path", "/repo", "--config-root", "/tmp/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.RepoRegisterReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode repo register JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Action != "create" || report.Status != "planned" {
+		t.Fatalf("unexpected repo register report: %+v", report)
+	}
+}
+
+func TestRepoRegisterRequiresRepo(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"repo", "register", "--dry-run"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "repo register requires OWNER/REPO") {
+		t.Fatalf("stderr missing required repo message:\n%s", stderr.String())
 	}
 }
 

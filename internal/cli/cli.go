@@ -24,6 +24,7 @@ Daily commands:
   guide       Built-in quickstart and workflow guides
   workspace   Personal workspace inbox and backlog overview
   projects    Sync visible GitHub Projects board items
+  repo        Manage global registry entries for repositories
   adopt       Plan or apply adoption for existing repositories and issues
   ticket      Jira-style ticket lifecycle commands
   epic        Numberless epic status and finish commands
@@ -432,6 +433,24 @@ Flags:
   --config-root string  Override global config root for diagnostics
   --json                Emit stable JSON output
   -h, --help            Show help
+`
+
+const repoHelp = `Manage Gira global registry entries for repositories.
+
+Usage:
+  gira repo register OWNER/REPO [--path PATH] --dry-run|--apply [--config-root PATH] [--overwrite] [--json]
+
+Commands:
+  register  Register a GitHub repository and optional checkout path in the global registry
+
+Flags:
+  --path string        Local checkout path to validate and record
+  --config-root string Override global config root
+  --overwrite          Replace a conflicting existing registry entry
+  --dry-run            Preview without writing files
+  --apply              Write the registry entry
+  --json               Emit stable JSON output
+  -h, --help           Show help
 `
 
 const onboardHelp = `Verify onboarding readiness from init to daily operation.
@@ -1184,6 +1203,10 @@ var newConfigDoctorReport = func(repoValue string, configRoot string) (gira.Conf
 	return gira.BuildConfigDoctorReport(repoValue, configRoot, repoContextRunner)
 }
 
+var newRepoRegisterReport = func(input gira.RepoRegisterInput) (gira.RepoRegisterReport, error) {
+	return gira.BuildRepoRegisterReport(input, devCommandRunner)
+}
+
 var newAdoptIssuesReport = func(input gira.AdoptIssueInput) (gira.AdoptIssuesReport, error) {
 	return gira.BuildAdoptIssuesReport(input, gira.ExecCommandRunner{})
 }
@@ -1210,6 +1233,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runWorkspace(args[1:], stdout, stderr)
 	case "projects":
 		return runProjects(args[1:], stdout, stderr)
+	case "repo":
+		return runRepo(args[1:], stdout, stderr)
 	case "adopt":
 		return runAdopt(args[1:], stdout, stderr)
 	case "start":
@@ -1514,6 +1539,99 @@ func runConfigDoctor(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	fmt.Fprint(stdout, gira.FormatConfigDoctorReport(report))
 	return 0
+}
+
+func runRepo(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprint(stdout, repoHelp)
+		return 0
+	}
+	switch args[0] {
+	case "--help", "-h":
+		fmt.Fprint(stdout, repoHelp)
+		return 0
+	case "register":
+		return runRepoRegister(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown repo command: %s\n\n", args[0])
+		fmt.Fprint(stderr, repoHelp)
+		return 2
+	}
+}
+
+func runRepoRegister(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, repoArg := extractRepoRegisterPositional(args)
+	fs := flag.NewFlagSet("repo register", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	pathValue := fs.String("path", "", "Local checkout path to validate and record")
+	configRoot := fs.String("config-root", "", "Override global config root")
+	overwrite := fs.Bool("overwrite", false, "Replace conflicting existing registry entry")
+	dryRun := fs.Bool("dry-run", false, "Preview without writing files")
+	apply := fs.Bool("apply", false, "Write the registry entry")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, repoHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, repoHelp)
+		return 0
+	}
+	if repoArg == "" || fs.NArg() != 0 {
+		fmt.Fprint(stderr, "repo register requires OWNER/REPO\n\n")
+		fmt.Fprint(stderr, repoHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(repoArg)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, repoHelp)
+		return 2
+	}
+	report, err := newRepoRegisterReport(gira.RepoRegisterInput{Repo: repo, Path: *pathValue, ConfigRoot: *configRoot, Overwrite: *overwrite, DryRun: *dryRun, Apply: *apply})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "repo register failed: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatRepoRegisterReport(report))
+	return 0
+}
+
+func extractRepoRegisterPositional(args []string) ([]string, string) {
+	var repo string
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--path" || arg == "--config-root":
+			out = append(out, arg)
+			if i+1 < len(args) {
+				i++
+				out = append(out, args[i])
+			}
+		case strings.HasPrefix(arg, "--path=") || strings.HasPrefix(arg, "--config-root="):
+			out = append(out, arg)
+		case strings.HasPrefix(arg, "-"):
+			out = append(out, arg)
+		case repo == "":
+			repo = arg
+		default:
+			out = append(out, arg)
+		}
+	}
+	return out, repo
 }
 
 func runCachePrune(args []string, stdout io.Writer, stderr io.Writer) int {

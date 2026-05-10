@@ -6,6 +6,9 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Added full-body ticket creation support with `gira ticket new --body`,
+  `--body-file PATH`, and `--body-file -` while preserving dry-run previews.
+
 ## v1.8.0 - 2026-05-10
 
 - Added `gira workspace repos sync` to discover GitHub user/org repositories

@@ -13,6 +13,7 @@ type TicketNewInput struct {
 	Scope      string   `json:"scope,omitempty"`
 	Acceptance []string `json:"acceptance,omitempty"`
 	Notes      string   `json:"notes,omitempty"`
+	Body       string   `json:"body,omitempty"`
 	Type       string   `json:"type"`
 	Priority   string   `json:"priority,omitempty"`
 	Milestone  string   `json:"milestone,omitempty"`
@@ -96,6 +97,12 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 }
 
 func ticketNewBody(input TicketNewInput) (string, error) {
+	if strings.TrimSpace(input.Body) != "" && strings.TrimSpace(input.BodyFile) != "" {
+		return "", fmt.Errorf("use either --body or --body-file, not both")
+	}
+	if strings.TrimSpace(input.Body) != "" {
+		return strings.TrimSpace(input.Body), nil
+	}
 	if strings.TrimSpace(input.BodyFile) != "" {
 		content, err := os.ReadFile(input.BodyFile)
 		if err != nil {
@@ -197,7 +204,18 @@ func noResponse(value string) string {
 
 func FormatTicketNew(report TicketNewReport) string {
 	if report.DryRun {
-		return fmt.Sprintf("ticket new: dry-run %s\nlabels: %s\nbody:\n%s\nnext step: %s\n", report.Title, strings.Join(report.Labels, ","), strings.TrimSpace(report.Body), report.NextStep)
+		var b strings.Builder
+		fmt.Fprintf(&b, "ticket new: dry-run %s\n", report.Title)
+		fmt.Fprintf(&b, "repo: %s\n", report.Repo)
+		fmt.Fprintf(&b, "labels: %s\n", strings.Join(report.Labels, ","))
+		if strings.TrimSpace(report.Milestone) != "" {
+			fmt.Fprintf(&b, "milestone: %s\n", report.Milestone)
+		}
+		if report.Start {
+			b.WriteString("after create: start ticket\n")
+		}
+		fmt.Fprintf(&b, "body:\n%s\nnext step: %s\n", strings.TrimSpace(report.Body), report.NextStep)
+		return b.String()
 	}
 	return fmt.Sprintf("ticket new: ticket #%d %s\nnext step: %s\n", report.Created.Number, report.Title, report.NextStep)
 }

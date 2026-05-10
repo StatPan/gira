@@ -69,6 +69,43 @@ func TestTicketNewApplyCreatesIssue(t *testing.T) {
 	}
 }
 
+func TestTicketNewApplyCreatesIssueWithFullBody(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	body := "## Goal\nUse exact packet\n\n## Acceptance Criteria\n- preserved"
+	runner := &ticketNewRunner{outputs: map[string][]byte{
+		"gh issue create --repo StatPan/gira --title Add packet --body " + body + " --label type:task --label status:ready": []byte("https://github.com/StatPan/gira/issues/225\n"),
+	}}
+
+	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add packet", Body: body, Type: "task"}, runner)
+	if err != nil {
+		t.Fatalf("BuildTicketNewReport error: %v", err)
+	}
+	if report.Created.Number != 225 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+}
+
+func TestTicketNewUsesFullBody(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	body := "## Goal\nUse exact packet\n\n## Acceptance Criteria\n- preserved"
+
+	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add packet", Body: body, Type: "task", DryRun: true}, &ticketNewRunner{})
+	if err != nil {
+		t.Fatalf("BuildTicketNewReport error: %v", err)
+	}
+	if report.Body != body {
+		t.Fatalf("body = %q, want exact body %q", report.Body, body)
+	}
+}
+
+func TestTicketNewRejectsBodyAndBodyFile(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	_, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add packet", Body: "body", BodyFile: "issue.md", Type: "task", DryRun: true}, &ticketNewRunner{})
+	if err == nil || !strings.Contains(err.Error(), "either --body or --body-file") {
+		t.Fatalf("error = %v, want body conflict", err)
+	}
+}
+
 func TestTicketNewAllowsEpicType(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 

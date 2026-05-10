@@ -93,7 +93,7 @@ gira ticket finish --apply
 gira ticket status
 ```
 
-`gira ticket new` creates a repo-bound executable ticket. It writes a structured issue body from `--goal`, `--scope`, `--acceptance`, and `--notes`, applies `type:*` and `status:ready`, and can immediately start the branch with `--start`. `gira ticket list` lists GitHub issue-backed tickets with compact filters: `--state open|closed|all`, repeatable or comma-separated `--label`, `--assignee`, `--milestone`, `--limit`, and `--json`. `gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket pr`, `ticket checks`, `ticket wait`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
+`gira ticket new` creates a repo-bound executable ticket. It writes a structured issue body from `--goal`, `--scope`, `--acceptance`, and `--notes`, or accepts a complete issue packet through `--body`, `--body-file PATH`, or `--body-file -`. It applies `type:*` and `status:ready`, previews the exact payload with `--dry-run`, and can immediately start the branch with `--start`. `gira ticket list` lists GitHub issue-backed tickets with compact filters: `--state open|closed|all`, repeatable or comma-separated `--label`, `--assignee`, `--milestone`, `--limit`, and `--json`. `gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket pr`, `ticket checks`, `ticket wait`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
 
 For an existing repository, run `gira adopt repo --dry-run` before full bootstrap. Gira detects existing issues, labels, milestones, Projects, `AGENTS.md`, and GitHub templates, then recommends an adoption strategy. The default `merge` strategy preserves user-owned files and metadata while adding only the minimal Gira contract, such as `.gira/config.yaml` and an `AGENTS.md` managed block. Bootstrap sample issues are never required for normal adoption.
 
@@ -145,6 +145,8 @@ gira status --repo OWNER/REPO
 # 2. Create and start a repo-bound ticket.
 gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --dry-run
 gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --apply --start
+gira ticket new --title "TITLE" --body-file issue.md --dry-run
+gira ticket new --title "TITLE" --body-file issue.md --apply --start
 
 # 3. Implement the bounded issue scope, then verify locally.
 go test ./...

@@ -39,6 +39,14 @@ gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --dry-run
 gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --apply --start
 ```
 
+For a complete Markdown issue packet, use Gira instead of raw `gh` so the
+reviewed dry-run/apply contract remains intact:
+
+```bash
+gira ticket new --title "TITLE" --body-file issue.md --dry-run
+gira ticket new --title "TITLE" --body-file issue.md --apply --start
+```
+
 For an existing ready issue, use the number once:
 
 ```bash

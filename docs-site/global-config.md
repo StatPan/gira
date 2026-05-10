@@ -54,6 +54,12 @@ together. It detects an existing repo-local `.gira/config.yaml`; `global-only`
 does not reference it, while `--mode hybrid` keeps a `contract:
 .gira/config.yaml` pointer for shared repo policy.
 
+`--inbox-repo` is the backlog/intake repo for tickets that are not yet assigned
+to an execution repo. Use a dedicated repo such as `OWNER/backlog` for
+multi-repo workspaces. Reusing the execution repo as the inbox is acceptable
+for a small single-repo setup, but it mixes untriaged intake with product
+execution issues.
+
 Use the lower-level primitives only when you need to compose the pieces
 manually:
 

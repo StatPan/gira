@@ -63,13 +63,18 @@ For personal global-first operation, use setup instead of hand-editing global
 YAML files:
 
 ```bash
-gira setup global --repo OWNER/REPO --path . --workspace personal --inbox-repo OWNER/REPO --mode global-only --dry-run
-gira setup global --repo OWNER/REPO --path . --workspace personal --inbox-repo OWNER/REPO --mode global-only --apply
+gira setup global --repo OWNER/REPO --path . --workspace personal --inbox-repo OWNER/backlog --mode global-only --dry-run
+gira setup global --repo OWNER/REPO --path . --workspace personal --inbox-repo OWNER/backlog --mode global-only --apply
 ```
 
 `global-only` detects an existing `.gira/config.yaml` but does not reference it
 from the global repo entry. This is the right mode when the current OS-user's
 global registry should be the operating source.
+
+Use a dedicated backlog/intake repo for `--inbox-repo` when the workspace will
+span more than one execution repo. Pointing `--inbox-repo` at the same repo as
+`--repo` is acceptable for single-repo operation, but it mixes untriaged intake
+with product execution issues.
 
 Existing repositories that already have `.gira/config.yaml` and want to keep it
 as shared team policy should migrate by adding a global repo registry entry, not

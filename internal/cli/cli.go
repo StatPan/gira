@@ -449,7 +449,7 @@ Flags:
   --path string          Local checkout path to validate and record. Default: .
   --workspace string     Global workspace name. Default: personal
   --owner string         Workspace/default owner. Default: inbox repo owner
-  --inbox-repo string    Inbox repo in OWNER/REPO format. Default: target repo
+  --inbox-repo string    Backlog/intake repo in OWNER/REPO format. Default: target repo with a single-repo warning
   --project-owner string GitHub Projects v2 owner. Default: workspace owner
   --project-title string GitHub Projects v2 title. Default: workspace name
   --project-number int   GitHub Projects v2 number for disambiguation

@@ -451,6 +451,35 @@ func TestWorkspaceInitProjectFlagsJSON(t *testing.T) {
 	}
 }
 
+func TestWorkspaceInitGlobalScopeJSON(t *testing.T) {
+	root := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"workspace",
+		"init",
+		"--inbox-repo",
+		"StatPan/backlog",
+		"--name",
+		"personal",
+		"--scope",
+		"global",
+		"--config-root",
+		root,
+		"--dry-run",
+		"--json",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkspaceInitReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode workspace init JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Scope != "global" || report.ConfigRoot != root || report.ConfigPath != filepath.Join(root, "workspaces", "personal.yaml") {
+		t.Fatalf("unexpected global workspace init report: %+v", report)
+	}
+}
+
 func TestVersionCommandHumanOutput(t *testing.T) {
 	originalVersion, originalCommit, originalDate := gira.Version, gira.Commit, gira.Date
 	t.Cleanup(func() {

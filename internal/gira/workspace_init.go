@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +17,8 @@ type WorkspaceInitInput struct {
 	ProjectOwner  string   `json:"project_owner,omitempty"`
 	ProjectTitle  string   `json:"project_title,omitempty"`
 	ProjectNumber int      `json:"project_number,omitempty"`
+	Scope         string   `json:"scope,omitempty"`
+	ConfigRoot    string   `json:"config_root,omitempty"`
 	Path          string   `json:"path"`
 	Overwrite     bool     `json:"overwrite"`
 	DryRun        bool     `json:"dry_run"`
@@ -24,11 +27,14 @@ type WorkspaceInitInput struct {
 
 type WorkspaceInitReport struct {
 	Command     string           `json:"command"`
+	Scope       string           `json:"scope"`
+	ConfigRoot  string           `json:"config_root,omitempty"`
 	ConfigPath  string           `json:"config_path"`
 	DryRun      bool             `json:"dry_run"`
 	Applied     bool             `json:"applied"`
 	Created     bool             `json:"created"`
 	Overwritten bool             `json:"overwritten"`
+	Skipped     bool             `json:"skipped"`
 	Workspace   WorkspaceSummary `json:"workspace"`
 	Project     ProjectConfig    `json:"project"`
 	InboxRepo   string           `json:"inbox_repo"`
@@ -41,10 +47,13 @@ func BuildWorkspaceInitReport(input WorkspaceInitInput) (WorkspaceInitReport, er
 	if input.DryRun == input.Apply {
 		return WorkspaceInitReport{}, fmt.Errorf("exactly one of --dry-run or --apply is required")
 	}
+	scope, err := normalizeWorkspaceInitScope(input.Scope)
+	if err != nil {
+		return WorkspaceInitReport{}, err
+	}
 	if strings.TrimSpace(input.Path) == "" {
 		input.Path = "."
 	}
-	configPath := DefaultInitConfigPath(input.Path)
 	inbox, err := ParseRepoRef(input.InboxRepo)
 	if err != nil {
 		return WorkspaceInitReport{}, fmt.Errorf("--inbox-repo must be in OWNER/REPO format")
@@ -87,9 +96,25 @@ func BuildWorkspaceInitReport(input WorkspaceInitInput) (WorkspaceInitReport, er
 		return WorkspaceInitReport{}, fmt.Errorf("--project-number must be >= 0")
 	}
 	project := ProjectConfig{Owner: projectOwner, Title: projectTitle, Number: input.ProjectNumber}
+	configPath := DefaultInitConfigPath(input.Path)
+	configRoot := ""
 	content := renderWorkspaceInitConfig(name, owner, inbox.FullName(), normalizedRepos, project)
+	if scope == "global" {
+		root, err := globalConfigRoot(input.ConfigRoot)
+		if err != nil {
+			return WorkspaceInitReport{}, err
+		}
+		configRoot = root
+		configPath, err = GlobalWorkspaceRegistryPath(root, name)
+		if err != nil {
+			return WorkspaceInitReport{}, err
+		}
+		content = renderWorkspaceGlobalConfig(name, owner, inbox.FullName(), normalizedRepos, project)
+	}
 	report := WorkspaceInitReport{
 		Command:    "workspace init",
+		Scope:      scope,
+		ConfigRoot: configRoot,
 		ConfigPath: configPath,
 		DryRun:     input.DryRun,
 		Workspace:  WorkspaceSummary{Name: name, Owner: owner},
@@ -102,9 +127,14 @@ func BuildWorkspaceInitReport(input WorkspaceInitInput) (WorkspaceInitReport, er
 	if input.DryRun {
 		return report, nil
 	}
-	if _, err := os.Stat(configPath); err == nil && !input.Overwrite {
-		return report, fmt.Errorf("%s already exists; pass --overwrite to replace it", configPath)
-	} else if err == nil {
+	if existing, err := os.ReadFile(configPath); err == nil {
+		if bytes.Equal(bytes.TrimSpace(existing), bytes.TrimSpace([]byte(content))) {
+			report.Skipped = true
+			return report, nil
+		}
+		if !input.Overwrite {
+			return report, fmt.Errorf("%s already exists; pass --overwrite to replace it", configPath)
+		}
 		report.Overwritten = true
 	} else if os.IsNotExist(err) {
 		report.Created = true
@@ -117,13 +147,34 @@ func BuildWorkspaceInitReport(input WorkspaceInitInput) (WorkspaceInitReport, er
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		return report, err
 	}
-	resolved, err := ResolveWorkspaceConfig(configPath)
-	if err != nil {
-		return report, err
+	if scope == "global" {
+		entry, err := LoadGlobalWorkspaceRegistryEntry(configRoot, name)
+		if err != nil {
+			return report, err
+		}
+		report.Project = entry.Workspace.Project
+	} else {
+		resolved, err := ResolveWorkspaceConfig(configPath)
+		if err != nil {
+			return report, err
+		}
+		report.Project = resolved.Project
 	}
-	report.Project = resolved.Project
 	report.Applied = true
 	return report, nil
+}
+
+func normalizeWorkspaceInitScope(value string) (string, error) {
+	scope := strings.ToLower(strings.TrimSpace(value))
+	if scope == "" {
+		return "repo", nil
+	}
+	switch scope {
+	case "repo", "global":
+		return scope, nil
+	default:
+		return "", fmt.Errorf("--scope must be repo or global")
+	}
 }
 
 func renderWorkspaceInitConfig(name string, owner string, inboxRepo string, repos []string, project ProjectConfig) string {
@@ -154,6 +205,25 @@ func renderWorkspaceInitConfig(name string, owner string, inboxRepo string, repo
 	return b.String()
 }
 
+func renderWorkspaceGlobalConfig(name string, owner string, inboxRepo string, repos []string, project ProjectConfig) string {
+	var b strings.Builder
+	b.WriteString("workspace:\n")
+	fmt.Fprintf(&b, "  name: %s\n", yamlQuotedString(name))
+	fmt.Fprintf(&b, "  owner: %s\n", owner)
+	fmt.Fprintf(&b, "  inbox_repo: %s\n", inboxRepo)
+	b.WriteString("  repos:\n")
+	for _, repo := range repos {
+		fmt.Fprintf(&b, "    - %s\n", repo)
+	}
+	b.WriteString("  project:\n")
+	fmt.Fprintf(&b, "    owner: %s\n", project.Owner)
+	fmt.Fprintf(&b, "    title: %s\n", yamlQuotedString(project.Title))
+	if project.Number > 0 {
+		fmt.Fprintf(&b, "    number: %d\n", project.Number)
+	}
+	return b.String()
+}
+
 func yamlQuotedString(value string) string {
 	return strconv.Quote(value)
 }
@@ -162,9 +232,11 @@ func FormatWorkspaceInitReport(report WorkspaceInitReport) string {
 	mode := "dry-run"
 	if report.Applied {
 		mode = "applied"
+	} else if report.Skipped {
+		mode = "skipped"
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "workspace init: %s %s\n", mode, report.ConfigPath)
+	fmt.Fprintf(&b, "workspace init: %s %s %s\n", mode, report.Scope, report.ConfigPath)
 	fmt.Fprintf(&b, "workspace: %s (%s)\n", report.Workspace.Name, report.Workspace.Owner)
 	if report.Project.Number > 0 {
 		fmt.Fprintf(&b, "project: %s/%s #%d\n", report.Project.Owner, report.Project.Title, report.Project.Number)

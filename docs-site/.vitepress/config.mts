@@ -25,7 +25,8 @@ export default defineConfig({
         items: [
           { text: 'Install', link: '/install' },
           { text: 'Quick Start', link: '/quickstart' },
-          { text: 'Ticket Workflow', link: '/ticket-workflow' }
+          { text: 'Ticket Workflow', link: '/ticket-workflow' },
+          { text: 'Agent Operator Skill', link: '/agent-operator-skill' }
         ]
       },
       {

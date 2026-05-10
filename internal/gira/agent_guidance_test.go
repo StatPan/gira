@@ -49,6 +49,33 @@ func TestRenderAgentsManagedBlockUsesRegistry(t *testing.T) {
 	}
 }
 
+func TestRenderAgentSkillManagedBlockUsesRegistry(t *testing.T) {
+	block := RenderAgentSkillManagedBlock([]CommandSpec{
+		{
+			Path:        []string{"ticket", "start"},
+			Summary:     "Start the ticket.",
+			Usage:       "gira ticket start 42 --dry-run",
+			GuideTopics: []string{"agent"},
+			GuideOrder:  20,
+		},
+		{
+			Path:        []string{"ticket", "finish"},
+			Summary:     "Finish the ticket.",
+			Usage:       "gira ticket finish --dry-run",
+			GuideTopics: []string{"agent"},
+			GuideOrder:  60,
+		},
+	})
+	for _, want := range []string{AgentSkillBlockStart, AgentSkillBlockEnd, "Registry-Backed Lifecycle Command Guidance", "`gira ticket start 42 --dry-run`: Start the ticket."} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("skill managed block missing %q:\n%s", want, block)
+		}
+	}
+	if strings.Index(block, "gira ticket start") > strings.Index(block, "gira ticket finish") {
+		t.Fatalf("skill managed block ignored guide order:\n%s", block)
+	}
+}
+
 func TestUpsertAgentsManagedBlockReplacesOnlyManagedRegion(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "AGENTS.md")
@@ -84,4 +111,33 @@ func TestAgentOperatorDocsSiteIsGeneratedFromRegistry(t *testing.T) {
 	if string(got) != want {
 		t.Fatalf("%s is out of sync with agent guidance registry", path)
 	}
+}
+
+func TestAgentSkillManagedBlockIsGeneratedFromRegistry(t *testing.T) {
+	want := RenderAgentSkillManagedBlock(CoreCommandSpecs())
+	path := filepath.Join("..", "..", "docs", "skills", "gira-agent-operator.md")
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read agent skill: %v", err)
+	}
+	block, ok := extractManagedBlock(string(got), AgentSkillBlockStart, AgentSkillBlockEnd)
+	if !ok {
+		t.Fatalf("%s is missing managed skill block markers", path)
+	}
+	if block != want {
+		t.Fatalf("%s managed skill block is out of sync with registry", path)
+	}
+}
+
+func extractManagedBlock(text string, start string, end string) (string, bool) {
+	startAt := strings.Index(text, start)
+	endAt := strings.Index(text, end)
+	if startAt < 0 || endAt < startAt {
+		return "", false
+	}
+	endAt += len(end)
+	if endAt < len(text) && text[endAt] == '\n' {
+		endAt++
+	}
+	return text[startAt:endAt], true
 }

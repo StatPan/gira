@@ -6,6 +6,8 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Added a generated managed block to the canonical agent operator skill so
+  lifecycle command guidance stays in sync with command registry metadata.
 - Added shared agent guidance renderers so `gira guide agent`, `gira guide
   skill`, docs-site agent guidance, and `AGENTS.md` managed blocks can reuse
   command registry descriptions without overwriting human-owned instructions.

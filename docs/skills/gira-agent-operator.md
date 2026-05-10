@@ -64,6 +64,21 @@ lifecycle, safety, or evidence rules defined here.
    - Completion requires a merged linked PR and the issue closed by GitHub or
      Gira lifecycle handling.
 
+<!-- gira:agent-skill:start -->
+## Registry-Backed Lifecycle Command Guidance
+
+This generated section contains command facts for the agent lifecycle. Update `internal/gira/command_registry.go` first, then refresh this block.
+
+- `gira ticket new "Title" --dry-run|--apply [--body TEXT|--body-file PATH|-] [--start]`: Create a repo-bound executable GitHub issue with structured or full Markdown body input.
+- `gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO]`: Verify a ready issue, create or reuse its branch, and move it to in-progress.
+- `gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft]`: Create or validate a linked PR with required issue closing text.
+- `gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]`: Show linked PR checks, review blockers, and next action.
+- `gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s]`: Wait for pending linked PR checks without merging.
+- `gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO]`: Merge the linked PR when policy allows, sync main, and close the ticket loop.
+- `gira ticket status [TICKET] [--repo OWNER/REPO] [--json]`: Report ticket status, linked PR blockers, and next action.
+
+<!-- gira:agent-skill:end -->
+
 ## Safety Rules
 
 - Use `--dry-run` before `--apply` for mutating Gira operations.
@@ -115,6 +130,10 @@ creation, check/wait, or finish.
   `internal/gira/command_registry.go`; `gira guide agent`, `gira guide skill`,
   `gira guide ticket`, and docs-site command surfaces render from that
   registry.
+- Keep the registry-backed section in this skill inside
+  `<!-- gira:agent-skill:start -->` and `<!-- gira:agent-skill:end -->`; tests
+  enforce that block stays in sync while the surrounding policy text remains
+  human-owned.
 - Add or update CLI/docs tests when changing required lifecycle wording.
 - Prefer managed blocks for generated adapters so Gira can refresh summaries
   without overwriting human-owned content.

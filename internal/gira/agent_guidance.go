@@ -8,6 +8,8 @@ import (
 const (
 	AgentsManagedBlockStart = "<!-- gira:start -->"
 	AgentsManagedBlockEnd   = "<!-- gira:end -->"
+	AgentSkillBlockStart    = "<!-- gira:agent-skill:start -->"
+	AgentSkillBlockEnd      = "<!-- gira:agent-skill:end -->"
 )
 
 type AgentGuidanceSpec struct {
@@ -81,6 +83,22 @@ func RenderAgentsManagedBlock(spec AgentGuidanceSpec, commands []CommandSpec) st
 		fmt.Fprintf(&b, "- %s\n", rule)
 	}
 	b.WriteString(AgentsManagedBlockEnd)
+	b.WriteString("\n")
+	return b.String()
+}
+
+func RenderAgentSkillManagedBlock(commands []CommandSpec) string {
+	var b strings.Builder
+	agentCommands := filterCommandSpecsForGuide("agent", commands)
+	sortGuideSpecs(agentCommands)
+	b.WriteString(AgentSkillBlockStart)
+	b.WriteString("\n## Registry-Backed Lifecycle Command Guidance\n\n")
+	b.WriteString("This generated section contains command facts for the agent lifecycle. Update `internal/gira/command_registry.go` first, then refresh this block.\n\n")
+	for _, command := range agentCommands {
+		fmt.Fprintf(&b, "- `%s`: %s\n", command.Usage, command.Summary)
+	}
+	b.WriteString("\n")
+	b.WriteString(AgentSkillBlockEnd)
 	b.WriteString("\n")
 	return b.String()
 }

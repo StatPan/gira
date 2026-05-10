@@ -329,9 +329,87 @@ func TestBuildWorkspaceStatusReportNormalizesRoutedAndClosedInboxTickets(t *test
 	}
 }
 
+func TestBuildWorkspaceStatusReportWithOptionsCachesRepoStatus(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	client := &countingWorkspaceClient{
+		status: map[string]StatusSummary{
+			"StatPan/gira": {Repo: "StatPan/gira", Counts: StatusCounts{Issues: IssueCounts{Open: 1}}},
+		},
+	}
+	options := WorkspaceStatusOptions{CacheRoot: t.TempDir(), CacheTTL: time.Hour, MaxConcurrency: 1}
+	now := time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC)
+
+	first, err := BuildWorkspaceStatusReportWithOptions(config, client, now, 14, options)
+	if err != nil {
+		t.Fatalf("first BuildWorkspaceStatusReportWithOptions error: %v", err)
+	}
+	second, err := BuildWorkspaceStatusReportWithOptions(config, client, now.Add(time.Minute), 14, options)
+	if err != nil {
+		t.Fatalf("second BuildWorkspaceStatusReportWithOptions error: %v", err)
+	}
+	if client.fetchStatusCalls != 1 {
+		t.Fatalf("FetchStatus calls = %d, want 1 cache-backed reuse", client.fetchStatusCalls)
+	}
+	if first.Cache.Misses != 1 || first.Cache.Writes != 1 || second.Cache.Hits != 1 {
+		t.Fatalf("unexpected cache summaries first=%+v second=%+v", first.Cache, second.Cache)
+	}
+}
+
+func TestBuildWorkspaceStatusReportWithOptionsNarrowsReposAndReportsRateBudget(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/inbox"),
+		Repos: []RepoRef{
+			ParseRepoRefMust("StatPan/app-a"),
+			ParseRepoRefMust("StatPan/app-b"),
+			ParseRepoRefMust("StatPan/app-c"),
+		},
+	}
+	client := &rateLimitWorkspaceClient{
+		fakeWorkspaceClient: fakeWorkspaceClient{
+			status: map[string]StatusSummary{
+				"StatPan/app-b": {Repo: "StatPan/app-b", Counts: StatusCounts{Issues: IssueCounts{Open: 1}}},
+			},
+		},
+		rateLimit: WorkspaceRateLimit{Limit: 5000, Remaining: 2},
+	}
+	report, err := BuildWorkspaceStatusReportWithOptions(config, client, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC), 14, WorkspaceStatusOptions{
+		Repos: []RepoRef{ParseRepoRefMust("StatPan/app-b")},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkspaceStatusReportWithOptions error: %v", err)
+	}
+	if len(report.Repos) != 1 || report.Repos[0].Repo != "StatPan/app-b" {
+		t.Fatalf("repos were not narrowed: %+v", report.Repos)
+	}
+	if report.RateLimit == nil || report.RateLimit.EstimatedRequests != 3 || report.RateLimit.BudgetOK {
+		t.Fatalf("unexpected rate limit report: %+v", report.RateLimit)
+	}
+	if len(report.Warnings) == 0 || !strings.Contains(report.Warnings[0], "GitHub API budget low") {
+		t.Fatalf("missing budget warning: %+v", report.Warnings)
+	}
+}
+
 type fakeWorkspaceClient struct {
 	inbox  []PortfolioRawTicket
 	status map[string]StatusSummary
+}
+
+type countingWorkspaceClient struct {
+	fakeWorkspaceClient
+	status           map[string]StatusSummary
+	fetchStatusCalls int
+}
+
+type rateLimitWorkspaceClient struct {
+	fakeWorkspaceClient
+	rateLimit WorkspaceRateLimit
 }
 
 type recordingWorkspaceClient struct {
@@ -371,6 +449,31 @@ func (c fakeWorkspaceClient) FetchInboxTickets(repo RepoRef) ([]PortfolioRawTick
 
 func (c fakeWorkspaceClient) FetchStatus(repo RepoRef, now time.Time, staleDays int) (StatusSummary, error) {
 	return c.status[repo.FullName()], nil
+}
+
+func (c *countingWorkspaceClient) FetchInboxTickets(repo RepoRef) ([]PortfolioRawTicket, error) {
+	return nil, nil
+}
+
+func (c *countingWorkspaceClient) FetchStatus(repo RepoRef, now time.Time, staleDays int) (StatusSummary, error) {
+	c.fetchStatusCalls++
+	return c.status[repo.FullName()], nil
+}
+
+func (c *countingWorkspaceClient) CreateInboxTicket(repo RepoRef, title string, body string) (WorkspaceTicketRef, error) {
+	return WorkspaceTicketRef{}, nil
+}
+
+func (c *countingWorkspaceClient) CreateExecutionIssue(repo RepoRef, ticket PortfolioTicket, inboxRepo RepoRef) (PortfolioLoweredIssue, error) {
+	return PortfolioLoweredIssue{}, nil
+}
+
+func (c *countingWorkspaceClient) UpdateInboxTicketChildIssue(inboxRepo RepoRef, ticket PortfolioTicket, childIssue string) error {
+	return nil
+}
+
+func (c *rateLimitWorkspaceClient) FetchRateLimit() (WorkspaceRateLimit, error) {
+	return c.rateLimit, nil
 }
 
 func (c fakeWorkspaceClient) CreateInboxTicket(repo RepoRef, title string, body string) (WorkspaceTicketRef, error) {

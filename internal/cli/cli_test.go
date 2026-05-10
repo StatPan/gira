@@ -991,11 +991,14 @@ func TestPortfolioValidateJSONDiagnosticsExitOne(t *testing.T) {
 }
 
 func TestWorkspaceStatusJSON(t *testing.T) {
-	restore := newWorkspaceStatusReport
-	t.Cleanup(func() { newWorkspaceStatusReport = restore })
-	newWorkspaceStatusReport = func(configPath string) (gira.WorkspaceReport, error) {
+	restore := newWorkspaceStatusReportWithOptions
+	t.Cleanup(func() { newWorkspaceStatusReportWithOptions = restore })
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
 		if configPath != "testdata/workspace.yaml" {
 			t.Fatalf("unexpected config path: %s", configPath)
+		}
+		if options.CacheTTL != 5*time.Minute || options.MaxConcurrency != 4 || options.Refresh {
+			t.Fatalf("unexpected workspace status options: %+v", options)
 		}
 		return gira.WorkspaceReport{
 			Workspace: gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
@@ -1020,10 +1023,37 @@ func TestWorkspaceStatusJSON(t *testing.T) {
 	}
 }
 
+func TestWorkspaceStatusPassesOptimizationOptions(t *testing.T) {
+	restore := newWorkspaceStatusReportWithOptions
+	t.Cleanup(func() { newWorkspaceStatusReportWithOptions = restore })
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		if configPath != "testdata/workspace.yaml" {
+			t.Fatalf("unexpected config path: %s", configPath)
+		}
+		if len(options.Repos) != 2 || options.Repos[0].FullName() != "StatPan/app-a" || options.Repos[1].FullName() != "StatPan/app-b" {
+			t.Fatalf("unexpected repo filters: %+v", options.Repos)
+		}
+		if options.Limit != 5 || !options.ActiveOnly || options.MaxConcurrency != 2 || options.CacheTTL != time.Minute || !options.Refresh || options.CacheRoot != "/tmp/gira-cache" {
+			t.Fatalf("unexpected options: %+v", options)
+		}
+		return gira.WorkspaceReport{
+			Workspace: gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			Inbox:     gira.WorkspaceInbox{Repo: "StatPan/backlog"},
+			FetchedAt: "2026-05-06T00:00:00Z",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "status", "--config", "testdata/workspace.yaml", "--repo", "StatPan/app-a,StatPan/app-b", "--limit", "5", "--active-only", "--max-concurrency", "2", "--cache-ttl", "1m", "--refresh", "--cache-root", "/tmp/gira-cache"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+}
+
 func TestWorkspaceListAliasesBacklog(t *testing.T) {
-	restore := newWorkspaceStatusReport
-	t.Cleanup(func() { newWorkspaceStatusReport = restore })
-	newWorkspaceStatusReport = func(configPath string) (gira.WorkspaceReport, error) {
+	restore := newWorkspaceStatusReportWithOptions
+	t.Cleanup(func() { newWorkspaceStatusReportWithOptions = restore })
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
 		if configPath != "testdata/workspace.yaml" {
 			t.Fatalf("unexpected config path: %s", configPath)
 		}

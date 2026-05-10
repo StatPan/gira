@@ -41,6 +41,8 @@ For personal multi-repo operation, prefer the OS-user global registry:
 gira setup global --repo OWNER/app --path . --workspace personal --inbox-repo OWNER/backlog --dry-run
 gira setup global --repo OWNER/app --path . --workspace personal --inbox-repo OWNER/backlog --apply
 gira workspace status
+gira workspace status --limit 10 --active-only
+gira workspace status --repo OWNER/app --refresh
 ```
 
 `gira setup global` creates the global default config, workspace entry, and repo
@@ -60,6 +62,13 @@ Repository discovery is opt-in. Gira does not automatically scan every GitHub
 repo during normal workspace commands. The workspace inbox repo is treated as
 backlog/intake and is skipped from `workspace.repos`; pass `--include-archived`
 only when archived repositories should remain visible in the workspace.
+
+For large global workspaces, `workspace status` is rate-limit aware. It checks
+the GitHub API budget when available, bounds concurrent repo fetches with
+`--max-concurrency` (default `4`), and caches per-repo status under the Gira
+cache directory for `--cache-ttl` (default `5m`). Use `--repo`, `--limit`, and
+`--active-only` for frequent CLI or future GUI refreshes. Use `--refresh` only
+when a fresh full read is more important than preserving API budget.
 
 For a shared repository contract, keep using repo scope:
 

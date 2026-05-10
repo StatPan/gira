@@ -18,8 +18,10 @@ summarize that skill instead of redefining it.
 ## Registry-Backed Lifecycle Commands
 
 - `gira ticket new "Title" --dry-run|--apply [--body TEXT|--body-file PATH|-] [--start]`: Create a repo-bound executable GitHub issue with structured or full Markdown body input.
+- `gira ticket view [TICKET] [--repo OWNER/REPO] [--json]`: Show a Gira operating card for the ticket, linked PR, blockers, and next action.
 - `gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO]`: Verify a ready issue, create or reuse its branch, and move it to in-progress.
 - `gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft]`: Create or validate a linked PR with required issue closing text.
+- `gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both]`: Post a structured context note to the issue, linked PR, or both.
 - `gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]`: Show linked PR checks, review blockers, and next action.
 - `gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s]`: Wait for pending linked PR checks without merging.
 - `gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO]`: Merge the linked PR when policy allows, sync main, and close the ticket loop.

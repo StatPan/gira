@@ -105,6 +105,18 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:        []string{"ticket", "view"},
+			Summary:     "Show a Gira operating card for the ticket, linked PR, blockers, and next action.",
+			Usage:       "gira ticket view [TICKET] [--repo OWNER/REPO] [--json]",
+			Since:       "v1.12.0",
+			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  15,
+			Examples: []CommandExample{
+				{Summary: "Inspect current branch ticket context", Command: "gira ticket view"},
+			},
+		},
+		{
 			Path:        []string{"ticket", "start"},
 			Summary:     "Verify a ready issue, create or reuse its branch, and move it to in-progress.",
 			Usage:       "gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO]",
@@ -126,6 +138,27 @@ func CoreCommandSpecs() []CommandSpec {
 			GuideOrder:  30,
 			Examples: []CommandExample{
 				{Summary: "Open a draft PR", Command: "gira ticket pr --apply --draft"},
+			},
+		},
+		{
+			Path:    []string{"ticket", "note"},
+			Summary: "Post a structured context note to the issue, linked PR, or both.",
+			Usage:   "gira ticket note [TICKET] \"BODY\" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both]",
+			Since:   "v1.12.0",
+			Flags: []FlagSpec{
+				{Name: "--kind", Summary: "Template kind for the note. Default: progress."},
+				{Name: "--target", Summary: "Comment target: auto, issue, pr, or both. Default: auto."},
+				{Name: "--body", Summary: "Explicit note body."},
+				{Name: "--body-file", Summary: "Read note body from file or stdin with -."},
+				{Name: "--dry-run", Summary: "Preview target resolution and rendered note without posting."},
+				{Name: "--apply", Summary: "Post the rendered note."},
+			},
+			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  35,
+			Examples: []CommandExample{
+				{Summary: "Preview a progress note", Command: "gira ticket note \"Implemented parser path\" --dry-run"},
+				{Summary: "Post a blocker to both issue and PR", Command: "gira ticket note --kind blocker --target both --body-file note.md --apply"},
 			},
 		},
 		{

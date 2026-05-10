@@ -103,7 +103,11 @@ instead of relying only on the reference page:
 The registry is not a replacement for narrative docs. It is the drift-prevention
 source for command facts and examples. Agent adapter snippets must also be
 generated through the shared guidance renderer and written only inside managed
-blocks such as `<!-- gira:start -->` and `<!-- gira:end -->`.
+blocks such as `<!-- gira:start -->` and `<!-- gira:end -->`. Canonical skill
+documents may use their own managed blocks, such as
+`<!-- gira:agent-skill:start -->` and `<!-- gira:agent-skill:end -->`, for
+registry-backed command guidance while keeping surrounding policy text
+human-owned.
 
 This taxonomy keeps a clean recovery model: rerun `bootstrap` for local files, rerun `sync` for GitHub metadata, rerun `status` to decide what to do next, and rerun `onboard verify` to confirm the repo is truly ready for daily operation.
 

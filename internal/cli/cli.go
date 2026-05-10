@@ -101,7 +101,7 @@ const guideQuickstart = `Gira quickstart: first ticket to merged PR
    gira epic finish --dry-run
 `
 
-const guideTicket = `Gira ticket guide
+const guideTicketIntro = `Gira ticket guide
 
 Daily loop:
   gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply --start
@@ -122,6 +122,8 @@ Context rules:
 Safety:
   Use --dry-run before mutating commands when unsure.
   PR bodies must contain Closes #N, Fixes #N, or Resolves #N.
+
+Registry-backed commands:
 `
 
 const guideAgent = `Gira agent operator skill
@@ -1375,7 +1377,7 @@ func runGuide(args []string, stdout io.Writer, stderr io.Writer) int {
 	case "quickstart":
 		fmt.Fprint(stdout, guideQuickstart)
 	case "ticket":
-		fmt.Fprint(stdout, guideTicket)
+		fmt.Fprint(stdout, renderTicketGuide())
 	case "agent", "skill":
 		fmt.Fprint(stdout, guideAgent)
 	case "concepts":
@@ -1386,6 +1388,10 @@ func runGuide(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+func renderTicketGuide() string {
+	return guideTicketIntro + gira.RenderGuideCommandSection("ticket", gira.CoreCommandSpecs()) + "\n"
 }
 
 func runVersion(args []string, stdout io.Writer, stderr io.Writer) int {

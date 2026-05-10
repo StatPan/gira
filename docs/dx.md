@@ -85,9 +85,10 @@ treated as complete. Update `internal/gira/command_registry.go` with the
 command path, summary, usage, flags, examples, release version, docs surfaces,
 and guide topics.
 
-The docs-site command reference is rendered from that registry. If command
-metadata changes, refresh `docs-site/command-reference.md` so
-`go test ./internal/gira` can verify it is still in sync.
+The docs-site command reference and registry-backed guide sections are rendered
+from that registry. If command metadata changes, refresh
+`docs-site/command-reference.md` so `go test ./internal/gira` can verify it is
+still in sync.
 
 For high-value user-facing commands, also update the relevant user journey page
 instead of relying only on the reference page:

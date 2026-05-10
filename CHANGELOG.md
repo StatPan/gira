@@ -6,6 +6,8 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Rendered the built-in ticket guide command section from the command metadata
+  registry to reduce help/docs drift.
 - Added a command metadata registry with a generated docs-site command
   reference and drift-prevention tests for core public commands.
 

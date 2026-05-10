@@ -59,11 +59,23 @@ The plan output is deterministic for a fixed repository state (same plan counts 
 
 ## Repo-Local Contract to Global Registry
 
-Existing repositories that already have `.gira/config.yaml` should migrate by
-adding a global repo registry entry, not by moving or replacing the repo-local
-file. The repo-local file remains the optional shared contract for team policy,
-while the global registry stores personal operator metadata such as checkout
-path and workspace association.
+For personal global-first operation, use setup instead of hand-editing global
+YAML files:
+
+```bash
+gira setup global --repo OWNER/REPO --path . --workspace personal --inbox-repo OWNER/REPO --mode global-only --dry-run
+gira setup global --repo OWNER/REPO --path . --workspace personal --inbox-repo OWNER/REPO --mode global-only --apply
+```
+
+`global-only` detects an existing `.gira/config.yaml` but does not reference it
+from the global repo entry. This is the right mode when the current OS-user's
+global registry should be the operating source.
+
+Existing repositories that already have `.gira/config.yaml` and want to keep it
+as shared team policy should migrate by adding a global repo registry entry, not
+by moving or replacing the repo-local file. The repo-local file remains the
+optional shared contract, while the global registry stores personal operator
+metadata such as checkout path and workspace association.
 
 Plan the migration first:
 
@@ -83,6 +95,13 @@ The migration writes a global repo entry such as
 `contract: .gira/config.yaml` when the repo-local contract exists. It preserves
 `.gira/config.yaml`; deleting or rewriting that file is not part of the normal
 migration.
+
+The equivalent setup mode is:
+
+```bash
+gira setup global --repo OWNER/REPO --path . --workspace personal --mode hybrid --dry-run
+gira setup global --repo OWNER/REPO --path . --workspace personal --mode hybrid --apply
+```
 
 If the target repo already has a different global registry entry, use
 `--overwrite` only after reviewing the diff. Symlink migration is an advanced

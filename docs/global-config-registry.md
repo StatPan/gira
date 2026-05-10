@@ -86,6 +86,32 @@ workspace:
   name: personal
 ```
 
+For normal global-first setup, prefer the intention-based setup flow. It
+creates the global config, workspace registry entry, and repo registry entry in
+one reviewed plan:
+
+```bash
+gira setup global \
+  --repo StatPan/gira \
+  --path ~/workspace/apps/gira \
+  --workspace personal \
+  --inbox-repo StatPan/gira \
+  --mode global-only \
+  --dry-run
+
+gira setup global \
+  --repo StatPan/gira \
+  --path ~/workspace/apps/gira \
+  --workspace personal \
+  --inbox-repo StatPan/gira \
+  --mode global-only \
+  --apply
+```
+
+Use `--mode hybrid` when the repo-local `.gira/config.yaml` should remain a
+referenced shared contract. Use the lower-level commands below only when you
+need to compose the registry primitives manually.
+
 Create the personal workspace registry without writing repo files:
 
 ```bash

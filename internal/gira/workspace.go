@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,6 +51,9 @@ type WorkspaceReport struct {
 	Repos      []WorkspaceRepo        `json:"repos"`
 	Counts     WorkspaceCounts        `json:"counts"`
 	Backlog    []WorkspaceBacklogItem `json:"backlog,omitempty"`
+	RateLimit  *WorkspaceRateLimit    `json:"rate_limit,omitempty"`
+	Cache      WorkspaceStatusCache   `json:"cache,omitempty"`
+	Warnings   []string               `json:"warnings,omitempty"`
 	NextSteps  []string               `json:"next_steps"`
 	FetchedAt  string                 `json:"fetched_at"`
 }
@@ -85,6 +89,24 @@ type WorkspaceCounts struct {
 	InProgress int `json:"in_progress"`
 	Blocked    int `json:"blocked"`
 	Stale      int `json:"stale"`
+}
+
+type WorkspaceRateLimit struct {
+	Limit             int    `json:"limit"`
+	Remaining         int    `json:"remaining"`
+	ResetAt           string `json:"reset_at,omitempty"`
+	EstimatedRequests int    `json:"estimated_requests"`
+	BudgetOK          bool   `json:"budget_ok"`
+}
+
+type WorkspaceStatusCache struct {
+	Enabled    bool   `json:"enabled"`
+	Root       string `json:"root,omitempty"`
+	TTLSeconds int    `json:"ttl_seconds,omitempty"`
+	Hits       int    `json:"hits,omitempty"`
+	Misses     int    `json:"misses,omitempty"`
+	Writes     int    `json:"writes,omitempty"`
+	Stale      int    `json:"stale,omitempty"`
 }
 
 type WorkspaceBacklogItem struct {
@@ -344,11 +366,56 @@ func loadWorkspaceConfig(path string) (InitConfig, error) {
 }
 
 func (c GHWorkspaceClient) FetchInboxTickets(repo RepoRef) ([]PortfolioRawTicket, error) {
-	return NewGHPortfolioClient(repo, c.runner).FetchTickets()
+	tickets, err := NewGHPortfolioClient(repo, c.runner).FetchTickets()
+	if err != nil {
+		return nil, actionableGitHubStatusError(err)
+	}
+	return tickets, nil
 }
 
 func (c GHWorkspaceClient) FetchStatus(repo RepoRef, now time.Time, staleDays int) (StatusSummary, error) {
-	return BuildStatusSummary(NewGHStatusClient(repo, c.runner), now, staleDays)
+	summary, err := BuildStatusSummaryWithOptions(NewGHStatusClient(repo, c.runner), now, staleDays, StatusSummaryOptions{IncludePullRequests: false})
+	if err != nil {
+		return StatusSummary{}, actionableGitHubStatusError(err)
+	}
+	return summary, nil
+}
+
+func (c GHWorkspaceClient) FetchRateLimit() (WorkspaceRateLimit, error) {
+	var raw struct {
+		Resources struct {
+			Core struct {
+				Limit     int   `json:"limit"`
+				Remaining int   `json:"remaining"`
+				Reset     int64 `json:"reset"`
+			} `json:"core"`
+		} `json:"resources"`
+		Rate struct {
+			Limit     int   `json:"limit"`
+			Remaining int   `json:"remaining"`
+			Reset     int64 `json:"reset"`
+		} `json:"rate"`
+	}
+	output, err := c.runner.Run("gh", "api", "rate_limit")
+	if err != nil {
+		return WorkspaceRateLimit{}, actionableGitHubStatusError(err)
+	}
+	if err := json.Unmarshal(output, &raw); err != nil {
+		return WorkspaceRateLimit{}, fmt.Errorf("parse gh rate limit JSON: %w", err)
+	}
+	limit := raw.Resources.Core.Limit
+	remaining := raw.Resources.Core.Remaining
+	reset := raw.Resources.Core.Reset
+	if limit == 0 && raw.Rate.Limit > 0 {
+		limit = raw.Rate.Limit
+		remaining = raw.Rate.Remaining
+		reset = raw.Rate.Reset
+	}
+	resetAt := ""
+	if reset > 0 {
+		resetAt = time.Unix(reset, 0).UTC().Format(time.RFC3339)
+	}
+	return WorkspaceRateLimit{Limit: limit, Remaining: remaining, ResetAt: resetAt}, nil
 }
 
 func (c GHWorkspaceClient) CreateInboxTicket(repo RepoRef, title string, body string) (WorkspaceTicketRef, error) {
@@ -369,12 +436,38 @@ func (c GHWorkspaceClient) UpdateInboxTicketChildIssue(inboxRepo RepoRef, ticket
 }
 
 func BuildWorkspaceStatusReport(config WorkspaceConfigResolved, client WorkspaceClient, now time.Time, staleDays int) (WorkspaceReport, error) {
+	return BuildWorkspaceStatusReportWithOptions(config, client, now, staleDays, WorkspaceStatusOptions{})
+}
+
+func BuildWorkspaceStatusReportWithOptions(config WorkspaceConfigResolved, client WorkspaceClient, now time.Time, staleDays int, options WorkspaceStatusOptions) (WorkspaceReport, error) {
+	repos, err := selectWorkspaceStatusRepos(config.Repos, options)
+	if err != nil {
+		return WorkspaceReport{}, err
+	}
 	report := WorkspaceReport{
 		Workspace:  WorkspaceSummary{Name: config.Name, Owner: config.Owner},
 		Source:     config.Source,
 		ConfigPath: config.ConfigPath,
 		Inbox:      WorkspaceInbox{Repo: config.InboxRepo.FullName()},
 		FetchedAt:  now.UTC().Format(time.RFC3339),
+	}
+	cache, err := newWorkspaceStatusCache(options, now)
+	if err != nil {
+		return WorkspaceReport{}, err
+	}
+	report.Cache = cache.summary()
+	if provider, ok := client.(WorkspaceRateLimitClient); ok {
+		rateLimit, err := provider.FetchRateLimit()
+		if err != nil {
+			report.Warnings = append(report.Warnings, err.Error())
+		} else {
+			rateLimit.EstimatedRequests = estimateWorkspaceStatusRequests(config, repos)
+			rateLimit.BudgetOK = rateLimit.Limit == 0 || rateLimit.Remaining >= rateLimit.EstimatedRequests
+			report.RateLimit = &rateLimit
+			if !rateLimit.BudgetOK {
+				report.Warnings = append(report.Warnings, fmt.Sprintf("GitHub API budget low: remaining=%d estimated=%d reset=%s", rateLimit.Remaining, rateLimit.EstimatedRequests, rateLimit.ResetAt))
+			}
+		}
 	}
 	if !workspaceContainsRepo(config.Repos, config.InboxRepo) {
 		tickets, err := client.FetchInboxTickets(config.InboxRepo)
@@ -399,21 +492,17 @@ func BuildWorkspaceStatusReport(config WorkspaceConfigResolved, client Workspace
 			}
 		}
 	}
-	for _, repo := range config.Repos {
-		summary, err := client.FetchStatus(repo, now, staleDays)
-		if err != nil {
-			return WorkspaceReport{}, err
-		}
+	summaries, err := fetchWorkspaceStatusSummaries(repos, client, now, staleDays, options, cache)
+	if err != nil {
+		return WorkspaceReport{}, err
+	}
+	report.Cache = cache.summary()
+	for _, summary := range summaries {
 		repoView := workspaceRepoFromStatus(summary)
-		report.Repos = append(report.Repos, repoView)
-		report.Counts.RepoOpen += repoView.Open
-		report.Counts.Ready += repoView.Ready
-		report.Counts.InProgress += repoView.InProgress
-		report.Counts.Blocked += repoView.Blocked
-		report.Counts.Stale += repoView.Stale
-		for _, issue := range summary.Issues.Open {
-			report.Backlog = append(report.Backlog, workspaceBacklogFromIssue(repo.FullName(), issue))
+		if options.ActiveOnly && !workspaceRepoIsActive(repoView) {
+			continue
 		}
+		addWorkspaceStatusSummary(&report, summary, repoView)
 	}
 	sortWorkspaceBacklog(report.Backlog)
 	report.Counts.InboxOpen = report.Inbox.Open
@@ -600,6 +689,15 @@ func FormatWorkspaceReport(report WorkspaceReport) string {
 	fmt.Fprintf(&b, "workspace: %s (%s)\n", report.Workspace.Name, report.Workspace.Owner)
 	if strings.TrimSpace(report.Source) != "" {
 		fmt.Fprintf(&b, "source: %s %s\n", report.Source, report.ConfigPath)
+	}
+	if report.RateLimit != nil {
+		fmt.Fprintf(&b, "github budget: remaining=%d/%d estimated=%d reset=%s\n", report.RateLimit.Remaining, report.RateLimit.Limit, report.RateLimit.EstimatedRequests, report.RateLimit.ResetAt)
+	}
+	if report.Cache.Enabled {
+		fmt.Fprintf(&b, "cache: ttl=%ds hits=%d misses=%d writes=%d stale=%d root=%s\n", report.Cache.TTLSeconds, report.Cache.Hits, report.Cache.Misses, report.Cache.Writes, report.Cache.Stale, report.Cache.Root)
+	}
+	for _, warning := range report.Warnings {
+		fmt.Fprintf(&b, "warning: %s\n", warning)
 	}
 	fmt.Fprintf(&b, "inbox:     %s open=%d needs-routing=%d ready-to-route=%d\n", report.Inbox.Repo, report.Inbox.Open, report.Inbox.NeedsRouting, report.Inbox.ExecutionReady)
 	b.WriteString("repos:\n")

@@ -130,6 +130,20 @@ repo discovery. It skips the configured `workspace.inbox_repo` because that repo
 is backlog/intake rather than an execution target. Add `--include-archived` only
 when archived repositories should be listed too.
 
+For day-to-day overview, prefer bounded and cached reads:
+
+```bash
+gira workspace status --limit 10 --active-only
+gira workspace status --repo StatPan/gira
+```
+
+`workspace status` reports the visible GitHub API budget when `gh api
+rate_limit` is available, uses bounded concurrent repo fetching, and reuses
+recent per-repo status cache for five minutes by default. GUI or background
+surfaces should avoid aggressive polling; a refresh interval of several minutes
+with `--cache-ttl 5m` is the intended default. Use `--refresh` for explicit
+operator-triggered fresh reads.
+
 Create the personal workspace registry without writing repo files:
 
 ```bash

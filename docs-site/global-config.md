@@ -72,6 +72,18 @@ This is an explicit registry update, not background discovery. The inbox repo is
 skipped because it is backlog/intake, not an execution repo. Use
 `--include-archived` only when archived repos should stay in the global view.
 
+For large global workspaces, use bounded and cached status reads:
+
+```bash
+gira workspace status --limit 10 --active-only
+gira workspace status --repo OWNER/app
+```
+
+`workspace status` reports the GitHub API budget when available, bounds
+concurrent repo fetches, and reuses recent per-repo status cache for five
+minutes by default. Future GUI/background surfaces should refresh on a
+multi-minute interval and reserve `--refresh` for explicit operator reads.
+
 Use the lower-level primitives only when you need to compose the pieces
 manually:
 

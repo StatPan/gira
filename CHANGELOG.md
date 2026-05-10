@@ -6,6 +6,9 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Added rate-limit-aware `workspace status` operation with GitHub API budget
+  reporting, bounded multi-repo fetch concurrency, per-repo status caching,
+  and repo/limit/active filters.
 - Added a generated managed block to the canonical agent operator skill so
   lifecycle command guidance stays in sync with command registry metadata.
 - Added shared agent guidance renderers so `gira guide agent`, `gira guide

@@ -233,7 +233,7 @@ Show inbox and execution repo state from a workspace config or global workspace 
 Usage:
 
 ```bash
-gira workspace status [--config .gira/config.yaml] [--json]
+gira workspace status [--config .gira/config.yaml] [--repo OWNER/REPO] [--limit N] [--active-only] [--cache-ttl 5m] [--refresh] [--json]
 ```
 
 Since: `v1.0.0`
@@ -241,6 +241,12 @@ Since: `v1.0.0`
 Flags:
 
 - `--config`: Explicit workspace config path. Defaults to global registry, then .gira/config.yaml.
+- `--repo`: Narrow status to one or more execution repos.
+- `--limit`: Inspect only the first N selected execution repos.
+- `--active-only`: Show only execution repos with open work or an active milestone.
+- `--max-concurrency`: Bound concurrent repo status fetches. Default: 4.
+- `--cache-ttl`: Reuse recent per-repo status cache for this duration. Default: 5m.
+- `--refresh`: Ignore cached status and fetch fresh data.
 - `--json`: Emit stable JSON.
 
 Examples:
@@ -249,6 +255,12 @@ Examples:
 
 ```bash
 gira workspace status
+```
+
+- Inspect a bounded subset
+
+```bash
+gira workspace status --limit 10 --active-only
 ```
 
 Documented in: `README.md`, `docs/workspace.md`, `docs-site/global-config.md`

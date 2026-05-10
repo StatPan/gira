@@ -65,16 +65,23 @@ func CoreCommandSpecs() []CommandSpec {
 		{
 			Path:    []string{"workspace", "status"},
 			Summary: "Show inbox and execution repo state from a workspace config or global workspace registry.",
-			Usage:   "gira workspace status [--config .gira/config.yaml] [--json]",
+			Usage:   "gira workspace status [--config .gira/config.yaml] [--repo OWNER/REPO] [--limit N] [--active-only] [--cache-ttl 5m] [--refresh] [--json]",
 			Since:   "v1.0.0",
 			Flags: []FlagSpec{
 				{Name: "--config", Summary: "Explicit workspace config path. Defaults to global registry, then .gira/config.yaml."},
+				{Name: "--repo", Summary: "Narrow status to one or more execution repos."},
+				{Name: "--limit", Summary: "Inspect only the first N selected execution repos."},
+				{Name: "--active-only", Summary: "Show only execution repos with open work or an active milestone."},
+				{Name: "--max-concurrency", Summary: "Bound concurrent repo status fetches. Default: 4."},
+				{Name: "--cache-ttl", Summary: "Reuse recent per-repo status cache for this duration. Default: 5m."},
+				{Name: "--refresh", Summary: "Ignore cached status and fetch fresh data."},
 				{Name: "--json", Summary: "Emit stable JSON."},
 			},
 			Docs:        []string{"README.md", "docs/workspace.md", "docs-site/global-config.md"},
 			GuideTopics: []string{"quickstart"},
 			Examples: []CommandExample{
 				{Summary: "Read the default workspace", Command: "gira workspace status"},
+				{Summary: "Inspect a bounded subset", Command: "gira workspace status --limit 10 --active-only"},
 			},
 		},
 		{

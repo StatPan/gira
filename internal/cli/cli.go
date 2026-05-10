@@ -209,9 +209,9 @@ const workspaceHelp = `Personal workspace inbox and backlog commands.
 Usage:
   gira workspace init --inbox-repo OWNER/REPO [--repo OWNER/REPO] [--scope repo|global] [--project-owner OWNER] [--project-title TITLE] [--project-number N] --dry-run|--apply [--path .] [--config-root PATH]
   gira workspace validate [--config .gira/config.yaml] [--json]
-  gira workspace status [--config .gira/config.yaml] [--json]
-  gira workspace backlog [--config .gira/config.yaml] [--json]
-  gira workspace list [--config .gira/config.yaml] [--json]  (alias: backlog)
+  gira workspace status [--config .gira/config.yaml] [--repo OWNER/REPO] [--limit N] [--active-only] [--cache-ttl 5m] [--refresh] [--json]
+  gira workspace backlog [--config .gira/config.yaml] [--repo OWNER/REPO] [--limit N] [--cache-ttl 5m] [--refresh] [--json]
+  gira workspace list [--config .gira/config.yaml] [--repo OWNER/REPO] [--limit N] [--cache-ttl 5m] [--refresh] [--json]  (alias: backlog)
   gira workspace sync --dry-run|--apply [--config .gira/config.yaml] [--bootstrap-issues] [--json]
   gira workspace repos sync [--owner OWNER] [--workspace NAME] --dry-run|--apply [--config-root PATH] [--limit N] [--include-archived] [--json]
   gira workspace ticket new "Title" [--body TEXT] [--repo OWNER/REPO --dry-run|--apply] [--config .gira/config.yaml] [--json]
@@ -232,9 +232,15 @@ Commands:
   project  Read-only GitHub Projects v2 visibility planning and existing Project adoption
 
 Flags:
-  --config string  Explicit workspace config path; defaults to global registry, then ".gira/config.yaml"
-  --json           Emit stable JSON output
-  -h, --help       Show help
+  --config string       Explicit workspace config path; defaults to global registry, then ".gira/config.yaml"
+  --repo string         Narrow status/backlog/list to execution repo. Repeatable or comma-separated
+  --limit int           Maximum execution repos to inspect for status/backlog/list
+  --active-only         Show only repos with open work or active milestone
+  --max-concurrency int Maximum concurrent repo status fetches (default 4)
+  --cache-ttl duration  Reuse recent per-repo status cache (default 5m)
+  --refresh             Ignore cached workspace status and fetch fresh data
+  --json                Emit stable JSON output
+  -h, --help            Show help
 `
 
 const workspaceProjectHelp = `Manage workspace GitHub Projects v2 visibility.
@@ -970,11 +976,15 @@ var newPortfolioLowerReport = func(configPath string, apply bool) (gira.Portfoli
 }
 
 var newWorkspaceStatusReport = func(configPath string) (gira.WorkspaceReport, error) {
+	return newWorkspaceStatusReportWithOptions(configPath, gira.WorkspaceStatusOptions{})
+}
+
+var newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
 	resolved, err := gira.ResolveWorkspaceConfig(configPath)
 	if err != nil {
 		return gira.WorkspaceReport{}, err
 	}
-	return gira.BuildWorkspaceStatusReport(resolved, gira.NewGHWorkspaceClient(gira.ExecCommandRunner{}), time.Now(), 14)
+	return gira.BuildWorkspaceStatusReportWithOptions(resolved, gira.NewGHWorkspaceClient(gira.ExecCommandRunner{}), time.Now(), 14, options)
 }
 
 var newWorkspaceInitReport = func(input gira.WorkspaceInitInput) (gira.WorkspaceInitReport, error) {
@@ -4052,6 +4062,14 @@ func runWorkspaceStatus(command string, args []string, stdout io.Writer, stderr 
 	fs := flag.NewFlagSet("workspace "+command, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	configPath := fs.String("config", "", "Workspace config path")
+	var repos repeatedStringFlag
+	fs.Var(&repos, "repo", "Execution repo to include. Repeatable or comma-separated")
+	limit := fs.Int("limit", 0, "Maximum execution repos to inspect")
+	activeOnly := fs.Bool("active-only", false, "Show only execution repos with open work or active milestone")
+	maxConcurrency := fs.Int("max-concurrency", 4, "Maximum concurrent repo status fetches")
+	cacheTTL := fs.Duration("cache-ttl", 5*time.Minute, "Reuse recent per-repo status cache for this duration. Use 0 to disable")
+	refresh := fs.Bool("refresh", false, "Ignore cached workspace status and fetch fresh data")
+	cacheRoot := fs.String("cache-root", "", "Workspace status cache root")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -4069,7 +4087,46 @@ func runWorkspaceStatus(command string, args []string, stdout io.Writer, stderr 
 		fmt.Fprint(stderr, workspaceHelp)
 		return 2
 	}
-	report, err := newWorkspaceStatusReport(*configPath)
+	if *limit < 0 {
+		fmt.Fprint(stderr, "--limit must be at least 0\n\n")
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *maxConcurrency < 1 {
+		fmt.Fprint(stderr, "--max-concurrency must be at least 1\n\n")
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *cacheTTL < 0 {
+		fmt.Fprint(stderr, "--cache-ttl must be non-negative\n\n")
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	var selectedRepos []gira.RepoRef
+	for _, raw := range repos {
+		for _, value := range strings.Split(raw, ",") {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			repo, err := gira.ParseRepoRef(value)
+			if err != nil {
+				fmt.Fprintf(stderr, "--repo must be in OWNER/REPO format: %v\n\n", err)
+				fmt.Fprint(stderr, workspaceHelp)
+				return 2
+			}
+			selectedRepos = append(selectedRepos, repo)
+		}
+	}
+	report, err := newWorkspaceStatusReportWithOptions(*configPath, gira.WorkspaceStatusOptions{
+		Repos:          selectedRepos,
+		Limit:          *limit,
+		ActiveOnly:     *activeOnly,
+		MaxConcurrency: *maxConcurrency,
+		CacheTTL:       *cacheTTL,
+		Refresh:        *refresh,
+		CacheRoot:      *cacheRoot,
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2

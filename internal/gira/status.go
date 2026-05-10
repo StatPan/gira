@@ -38,6 +38,10 @@ type StatusClient interface {
 	JSON(args []string, target any) error
 }
 
+type StatusSummaryOptions struct {
+	IncludePullRequests bool
+}
+
 type GHStatusClient struct {
 	repo   RepoRef
 	runner CommandRunner
@@ -182,6 +186,10 @@ type statusPullRequest struct {
 }
 
 func BuildStatusSummary(client StatusClient, fetchedAt time.Time, staleDays int) (StatusSummary, error) {
+	return BuildStatusSummaryWithOptions(client, fetchedAt, staleDays, StatusSummaryOptions{IncludePullRequests: true})
+}
+
+func BuildStatusSummaryWithOptions(client StatusClient, fetchedAt time.Time, staleDays int, options StatusSummaryOptions) (StatusSummary, error) {
 	var milestones []normalizedMilestone
 	var issues []normalizedIssue
 	var prs []statusPullRequest
@@ -189,7 +197,7 @@ func BuildStatusSummary(client StatusClient, fetchedAt time.Time, staleDays int)
 	var issuesErr error
 	var prsErr error
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		milestones, milestonesErr = FetchMilestones(client)
@@ -198,10 +206,13 @@ func BuildStatusSummary(client StatusClient, fetchedAt time.Time, staleDays int)
 		defer wg.Done()
 		issues, issuesErr = FetchIssues(client)
 	}()
-	go func() {
-		defer wg.Done()
-		prs, prsErr = FetchOpenPullRequests(client)
-	}()
+	if options.IncludePullRequests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			prs, prsErr = FetchOpenPullRequests(client)
+		}()
+	}
 	wg.Wait()
 	if milestonesErr != nil {
 		return StatusSummary{}, milestonesErr
@@ -213,7 +224,7 @@ func BuildStatusSummary(client StatusClient, fetchedAt time.Time, staleDays int)
 	if err != nil {
 		return StatusSummary{}, err
 	}
-	if prsErr == nil {
+	if options.IncludePullRequests && prsErr == nil {
 		summary.Counts.Issues.PRsMissingClosureLink, summary.Counts.Issues.ClosureLinkMissingOpenIssues = closureLinkGapMetrics(prs)
 	}
 	return summary, nil

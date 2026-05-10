@@ -111,8 +111,10 @@ creation, check/wait, or finish.
 
 - Keep this file as the source of truth for lifecycle and safety rules.
 - Keep adapter files short and refer back to this file.
-- Keep `gira guide agent` and `gira guide skill` as compact summaries of the
-  same rules.
+- Keep command summaries, usage, examples, and guide ordering in
+  `internal/gira/command_registry.go`; `gira guide agent`, `gira guide skill`,
+  `gira guide ticket`, and docs-site command surfaces render from that
+  registry.
 - Add or update CLI/docs tests when changing required lifecycle wording.
 - Prefer managed blocks for generated adapters so Gira can refresh summaries
   without overwriting human-owned content.

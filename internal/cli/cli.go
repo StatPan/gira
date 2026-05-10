@@ -126,52 +126,6 @@ Safety:
 Registry-backed commands:
 `
 
-const guideAgent = `Gira agent operator skill
-
-Canonical source:
-  docs/skills/gira-agent-operator.md
-
-Operating model:
-  GitHub Issues are executable work packets.
-  Branches are work-start evidence.
-  PRs are change units.
-  Merged PR plus closed issue is completion evidence.
-
-Standard flow:
-  gh auth status
-  gira status --repo OWNER/REPO
-  gira ticket start TICKET --repo OWNER/REPO --dry-run
-  gira ticket start TICKET --repo OWNER/REPO --apply
-  go test ./...
-  gira ticket pr TICKET --repo OWNER/REPO --dry-run
-  gira ticket pr TICKET --repo OWNER/REPO --apply
-  gira ticket checks TICKET --repo OWNER/REPO
-  gira ticket wait TICKET --repo OWNER/REPO --timeout 5m
-  gira ticket finish TICKET --repo OWNER/REPO --dry-run
-  gira ticket finish TICKET --repo OWNER/REPO --apply
-
-Rules:
-  Use --dry-run before --apply for mutating Gira operations.
-  Prefer Gira commands over raw gh when a Gira command exists.
-  PR bodies must contain Closes #N, Fixes #N, or Resolves #N.
-  Keep changes bounded to the ticket.
-  Route project-only items to repository issues before implementation.
-  Do not start work missing status:ready until triaged or adopted.
-  Reuse an existing branch or PR only when it clearly belongs to the ticket.
-  Fix failed checks before finish unless explicitly instructed.
-  Ask for clarification when acceptance criteria or repo/ticket context is ambiguous.
-
-Raw gh is allowed:
-  For gh auth status.
-  For extra read-only issue, PR, or workflow diagnostics not exposed by Gira.
-  When Gira has no lifecycle command for the needed operation.
-
-Do not:
-  Do not bypass Gira start, PR, checks/wait, or finish when those commands apply.
-  Do not merge without Gira finish unless explicitly instructed.
-  Do not change unrelated files or revert user changes.
-`
-
 const guideConcepts = `Gira concepts: Jira terms on GitHub
 
 Ticket:
@@ -1379,7 +1333,7 @@ func runGuide(args []string, stdout io.Writer, stderr io.Writer) int {
 	case "ticket":
 		fmt.Fprint(stdout, renderTicketGuide())
 	case "agent", "skill":
-		fmt.Fprint(stdout, guideAgent)
+		fmt.Fprint(stdout, renderAgentGuide())
 	case "concepts":
 		fmt.Fprint(stdout, guideConcepts)
 	default:
@@ -1392,6 +1346,10 @@ func runGuide(args []string, stdout io.Writer, stderr io.Writer) int {
 
 func renderTicketGuide() string {
 	return guideTicketIntro + gira.RenderGuideCommandSection("ticket", gira.CoreCommandSpecs()) + "\n"
+}
+
+func renderAgentGuide() string {
+	return gira.RenderAgentGuide(gira.CoreAgentGuidanceSpec(), gira.CoreCommandSpecs())
 }
 
 func runVersion(args []string, stdout io.Writer, stderr io.Writer) int {

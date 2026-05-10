@@ -30,6 +30,7 @@ Daily commands:
   sprint      Sprint iteration planning/start/close workflow
   release     Release readiness gate report
   status      Show a compact read-only GitHub status summary
+  config      Inspect global and repo-local Gira config sources
   upgrade     Check latest release and print upgrade instructions
   cache       Manage local Gira caches
   version     Show Gira build version
@@ -412,6 +413,25 @@ Flags:
   --apply        Delete stale version directories
   --json         Emit stable JSON output
   -h, --help     Show help
+`
+
+const configHelp = `Inspect Gira config sources without mutation.
+
+Usage:
+  gira config global [--config-root PATH] [--json]
+  gira config repo [--repo OWNER/REPO] [--config-root PATH] [--json]
+  gira config doctor [--repo OWNER/REPO] [--config-root PATH] [--json]
+
+Commands:
+  global  Show the resolved global config root and registry paths
+  repo    Show repo-specific global registry and repo-local contract paths
+  doctor  Explain which config source is selected and why
+
+Flags:
+  --repo string         Target GitHub repo in OWNER/REPO format
+  --config-root string  Override global config root for diagnostics
+  --json                Emit stable JSON output
+  -h, --help            Show help
 `
 
 const onboardHelp = `Verify onboarding readiness from init to daily operation.
@@ -1152,6 +1172,18 @@ var newCachePruneReport = func(options gira.CachePruneOptions) (gira.CachePruneR
 	return gira.BuildCachePruneReport(options)
 }
 
+var newConfigGlobalReport = func(configRoot string) (gira.ConfigGlobalReport, error) {
+	return gira.BuildConfigGlobalReport(configRoot)
+}
+
+var newConfigRepoReport = func(repoValue string, configRoot string) (gira.ConfigRepoReport, error) {
+	return gira.BuildConfigRepoReport(repoValue, configRoot, repoContextRunner)
+}
+
+var newConfigDoctorReport = func(repoValue string, configRoot string) (gira.ConfigDoctorReport, error) {
+	return gira.BuildConfigDoctorReport(repoValue, configRoot, repoContextRunner)
+}
+
 var newAdoptIssuesReport = func(input gira.AdoptIssueInput) (gira.AdoptIssuesReport, error) {
 	return gira.BuildAdoptIssuesReport(input, gira.ExecCommandRunner{})
 }
@@ -1204,6 +1236,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runDetach(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
+	case "config":
+		return runConfig(args[1:], stdout, stderr)
 	case "upgrade", "update":
 		return runUpgrade(args[1:], stdout, stderr)
 	case "cache":
@@ -1366,6 +1400,120 @@ func runCache(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, cacheHelp)
 		return 2
 	}
+}
+
+func runConfig(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprint(stdout, configHelp)
+		return 0
+	}
+	switch args[0] {
+	case "--help", "-h":
+		fmt.Fprint(stdout, configHelp)
+		return 0
+	case "global":
+		return runConfigGlobal(args[1:], stdout, stderr)
+	case "repo":
+		return runConfigRepo(args[1:], stdout, stderr)
+	case "doctor":
+		return runConfigDoctor(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown config command: %s\n\n", args[0])
+		fmt.Fprint(stderr, configHelp)
+		return 2
+	}
+}
+
+func runConfigGlobal(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("config global", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configRoot := fs.String("config-root", "", "Override global config root")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, configHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, configHelp)
+		return 0
+	}
+	report, err := newConfigGlobalReport(*configRoot)
+	if err != nil {
+		fmt.Fprintf(stderr, "config global failed: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatConfigGlobalReport(report))
+	return 0
+}
+
+func runConfigRepo(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("config repo", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	configRoot := fs.String("config-root", "", "Override global config root")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, configHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, configHelp)
+		return 0
+	}
+	report, err := newConfigRepoReport(*repoValue, *configRoot)
+	if err != nil {
+		fmt.Fprintf(stderr, "config repo failed: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatConfigRepoReport(report))
+	return 0
+}
+
+func runConfigDoctor(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("config doctor", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	configRoot := fs.String("config-root", "", "Override global config root")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, configHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, configHelp)
+		return 0
+	}
+	report, err := newConfigDoctorReport(*repoValue, *configRoot)
+	if err != nil {
+		fmt.Fprintf(stderr, "config doctor failed: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatConfigDoctorReport(report))
+	return 0
 }
 
 func runCachePrune(args []string, stdout io.Writer, stderr io.Writer) int {

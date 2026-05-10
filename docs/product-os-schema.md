@@ -36,6 +36,7 @@ Labels own:
 - Priority: `priority:p0`, `priority:p1`, `priority:p2`, or the current repo's managed priority set.
 - Layer or area: `area:docs`, `area:backend`, `area:ai`, `area:infra`, or future `layer:*` labels when the product schema needs a cleaner split from implementation area.
 - Agent class: `agent:human`, `agent:codex`, `agent:reviewer`, `agent:gira`, or similar managed labels. This is the execution actor, not a replacement for GitHub assignee or issue author.
+- Delegation lane: `lane:agent`, `lane:human`, or `lane:hybrid` when the repo opts into agent delegation policy. Lane labels describe authority and risk, while `agent:*` labels describe the execution actor.
 - Cross-cutting state that must be visible without opening a Project view, such as `blocked`, if Gira later manages it.
 
 Milestones own:
@@ -402,11 +403,13 @@ Required labels for roadmap-able Product OS issues:
 
 Optional labels:
 - `blocked` (status override trigger)
+- `lane:agent`, `lane:human`, or `lane:hybrid` for delegation authority and risk
+- `requires-human-approval` or `agent:auto-merge-allowed` as delegation policy modifiers
 - Additional routing labels such as `area:*` combinations or domain tags
 
 Naming rules:
 - Prefix labels MUST use lowercase `<namespace>:<value>` format.
-- Namespace set for this slice: `type`, `priority`, `area`, `layer`, `agent`.
+- Namespace set for this slice: `type`, `priority`, `area`, `layer`, `agent`, `lane`.
 - Unknown namespaces are tolerated but ignored by Product OS validation.
 
 ### Milestone conventions

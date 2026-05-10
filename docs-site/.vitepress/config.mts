@@ -16,6 +16,7 @@ export default defineConfig({
       { text: 'Guide', link: '/quickstart' },
       { text: 'Mapping', link: '/jira-mapping' },
       { text: 'Workflow', link: '/ticket-workflow' },
+      { text: 'Config', link: '/global-config' },
       { text: 'Distribution', link: '/distribution' },
       { text: 'GitHub', link: 'https://github.com/StatPan/gira' }
     ],
@@ -25,6 +26,7 @@ export default defineConfig({
         items: [
           { text: 'Install', link: '/install' },
           { text: 'Quick Start', link: '/quickstart' },
+          { text: 'Global Config', link: '/global-config' },
           { text: 'Ticket Workflow', link: '/ticket-workflow' },
           { text: 'Agent Operator Skill', link: '/agent-operator-skill' }
         ]

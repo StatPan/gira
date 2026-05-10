@@ -30,6 +30,24 @@ workspace:
 
 `workspace.inbox_repo` is required. It may be a private personal repo if the backlog should not appear inside any execution repo. `workspace.repos` is the explicit allowlist of repositories that can receive routed execution issues.
 
+For personal multi-repo operation, prefer the OS-user global registry:
+
+```bash
+gira workspace init --scope global --name personal --inbox-repo OWNER/backlog --repo OWNER/app --dry-run
+gira workspace init --scope global --name personal --inbox-repo OWNER/backlog --repo OWNER/app --apply
+gira workspace status --config ~/.config/gira/workspaces/personal.yaml
+```
+
+For a shared repository contract, keep using repo scope:
+
+```bash
+gira workspace init --scope repo --inbox-repo OWNER/backlog --repo OWNER/app --path . --dry-run
+gira workspace init --scope repo --inbox-repo OWNER/backlog --repo OWNER/app --path . --apply
+```
+
+Repo scope writes `.gira/config.yaml` in the checkout. Global scope writes
+`~/.config/gira/workspaces/NAME.yaml` and leaves the repository untouched.
+
 `workspace.project` points to an existing GitHub Projects v2 board by user-facing title or Project number. The Project may be owned by a user profile or org and still act as a repo board when it is linked to configured repos and populated with repo issues. Gira does not create the Project in this slice; it syncs configured repo issues, supported planning fields, status, and milestone target dates into that Project so the GitHub Projects tab stays visible without manual `gh project` commands. `number` is supported as the fallback when titles are ambiguous.
 
 Adopt an existing profile or org Project into config before running sync:

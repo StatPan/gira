@@ -438,7 +438,7 @@ func TestDocsAliasAndGuideTopics(t *testing.T) {
 	}{
 		{[]string{"docs", "agent"}, "docs/skills/gira-agent-operator.md"},
 		{[]string{"guide", "skill"}, "Use --dry-run before --apply"},
-		{[]string{"guide", "ticket"}, "Existing GitHub issue"},
+		{[]string{"guide", "ticket"}, "Registry-backed commands:"},
 		{[]string{"guide", "concepts"}, "Jira terms on GitHub"},
 		{[]string{"guide", "--help"}, "Topics:"},
 	}
@@ -450,6 +450,23 @@ func TestDocsAliasAndGuideTopics(t *testing.T) {
 		}
 		if !strings.Contains(stdout.String(), tc.want) {
 			t.Fatalf("%v output missing %q:\n%s", tc.args, tc.want, stdout.String())
+		}
+	}
+}
+
+func TestTicketGuideUsesCommandRegistry(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"guide", "ticket"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`gira ticket new "Title" --dry-run|--apply`,
+		"Create a repo-bound executable GitHub issue",
+		"Example: gira ticket new --title \"TITLE\" --body-file issue.md --dry-run",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket guide missing registry-backed %q:\n%s", want, stdout.String())
 		}
 	}
 }

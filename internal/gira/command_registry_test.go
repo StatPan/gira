@@ -58,6 +58,31 @@ func TestCommandReferenceDocsSiteIsGeneratedFromRegistry(t *testing.T) {
 	}
 }
 
+func TestRenderGuideCommandSectionUsesRegistryExamples(t *testing.T) {
+	out := RenderGuideCommandSection("ticket", []CommandSpec{
+		{
+			Path:        []string{"ticket", "new"},
+			Summary:     "Create a ticket.",
+			Usage:       "gira ticket new \"Title\" --dry-run",
+			GuideTopics: []string{"ticket"},
+			Examples:    []CommandExample{{Summary: "Preview", Command: "gira ticket new \"Title\" --dry-run"}},
+		},
+		{
+			Path:        []string{"setup", "global"},
+			Summary:     "Set up global config.",
+			Usage:       "gira setup global --dry-run",
+			GuideTopics: []string{"quickstart"},
+			Examples:    []CommandExample{{Summary: "Preview", Command: "gira setup global --dry-run"}},
+		},
+	})
+	if !strings.Contains(out, "Create a ticket.") || !strings.Contains(out, "Example: gira ticket new") {
+		t.Fatalf("guide section missing ticket metadata:\n%s", out)
+	}
+	if strings.Contains(out, "setup global") {
+		t.Fatalf("guide section included wrong topic:\n%s", out)
+	}
+}
+
 func containsDocsSite(values []string) bool {
 	for _, value := range values {
 		if strings.HasPrefix(value, "docs-site/") {

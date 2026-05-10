@@ -96,61 +96,67 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
-			Path:    []string{"ticket", "start"},
-			Summary: "Verify a ready issue, create or reuse its branch, and move it to in-progress.",
-			Usage:   "gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO]",
-			Since:   "v1.0.0",
-			Docs:    []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			Path:        []string{"ticket", "start"},
+			Summary:     "Verify a ready issue, create or reuse its branch, and move it to in-progress.",
+			Usage:       "gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO]",
+			Since:       "v1.0.0",
+			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			GuideTopics: []string{"ticket"},
 			Examples: []CommandExample{
 				{Summary: "Start an existing ready issue", Command: "gira ticket start 42 --apply"},
 			},
 		},
 		{
-			Path:    []string{"ticket", "pr"},
-			Summary: "Create or validate a linked PR with required issue closing text.",
-			Usage:   "gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft]",
-			Since:   "v1.0.0",
-			Docs:    []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			Path:        []string{"ticket", "pr"},
+			Summary:     "Create or validate a linked PR with required issue closing text.",
+			Usage:       "gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft]",
+			Since:       "v1.0.0",
+			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			GuideTopics: []string{"ticket"},
 			Examples: []CommandExample{
 				{Summary: "Open a draft PR", Command: "gira ticket pr --apply --draft"},
 			},
 		},
 		{
-			Path:    []string{"ticket", "checks"},
-			Summary: "Show linked PR checks, review blockers, and next action.",
-			Usage:   "gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]",
-			Since:   "v1.0.0",
-			Docs:    []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			Path:        []string{"ticket", "checks"},
+			Summary:     "Show linked PR checks, review blockers, and next action.",
+			Usage:       "gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]",
+			Since:       "v1.0.0",
+			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			GuideTopics: []string{"ticket"},
 			Examples: []CommandExample{
 				{Summary: "Inspect PR readiness", Command: "gira ticket checks"},
 			},
 		},
 		{
-			Path:    []string{"ticket", "wait"},
-			Summary: "Wait for pending linked PR checks without merging.",
-			Usage:   "gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s]",
-			Since:   "v1.0.0",
-			Docs:    []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			Path:        []string{"ticket", "wait"},
+			Summary:     "Wait for pending linked PR checks without merging.",
+			Usage:       "gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s]",
+			Since:       "v1.0.0",
+			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			GuideTopics: []string{"ticket"},
 			Examples: []CommandExample{
 				{Summary: "Wait for CI", Command: "gira ticket wait --timeout 5m"},
 			},
 		},
 		{
-			Path:    []string{"ticket", "finish"},
-			Summary: "Merge the linked PR when policy allows, sync main, and close the ticket loop.",
-			Usage:   "gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO]",
-			Since:   "v1.0.0",
-			Docs:    []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			Path:        []string{"ticket", "finish"},
+			Summary:     "Merge the linked PR when policy allows, sync main, and close the ticket loop.",
+			Usage:       "gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO]",
+			Since:       "v1.0.0",
+			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			GuideTopics: []string{"ticket"},
 			Examples: []CommandExample{
 				{Summary: "Preview finish", Command: "gira ticket finish --dry-run"},
 			},
 		},
 		{
-			Path:    []string{"ticket", "status"},
-			Summary: "Report ticket status, linked PR blockers, and next action.",
-			Usage:   "gira ticket status [TICKET] [--repo OWNER/REPO] [--json]",
-			Since:   "v1.0.0",
-			Docs:    []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			Path:        []string{"ticket", "status"},
+			Summary:     "Report ticket status, linked PR blockers, and next action.",
+			Usage:       "gira ticket status [TICKET] [--repo OWNER/REPO] [--json]",
+			Since:       "v1.0.0",
+			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			GuideTopics: []string{"ticket"},
 			Examples: []CommandExample{
 				{Summary: "Inspect current branch ticket", Command: "gira ticket status"},
 			},
@@ -208,6 +214,35 @@ func RenderCommandReferenceMarkdown(specs []CommandSpec) string {
 		}
 	}
 	return b.String()
+}
+
+func RenderGuideCommandSection(topic string, specs []CommandSpec) string {
+	specs = filterCommandSpecsForGuide(topic, specs)
+	sort.Slice(specs, func(i, j int) bool {
+		return commandSpecKey(specs[i].Path) < commandSpecKey(specs[j].Path)
+	})
+	var b strings.Builder
+	for _, spec := range specs {
+		fmt.Fprintf(&b, "  %s\n", spec.Usage)
+		fmt.Fprintf(&b, "    %s\n", spec.Summary)
+		for _, example := range spec.Examples {
+			fmt.Fprintf(&b, "    Example: %s\n", example.Command)
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func filterCommandSpecsForGuide(topic string, specs []CommandSpec) []CommandSpec {
+	var filtered []CommandSpec
+	for _, spec := range specs {
+		for _, guideTopic := range spec.GuideTopics {
+			if guideTopic == topic {
+				filtered = append(filtered, spec)
+				break
+			}
+		}
+	}
+	return filtered
 }
 
 func commandSpecKey(path []string) string {

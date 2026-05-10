@@ -257,6 +257,7 @@ Usage:
   gira workspace backlog [--config .gira/config.yaml] [--json]
   gira workspace list [--config .gira/config.yaml] [--json]  (alias: backlog)
   gira workspace sync --dry-run|--apply [--config .gira/config.yaml] [--bootstrap-issues] [--json]
+  gira workspace repos sync [--owner OWNER] [--workspace NAME] --dry-run|--apply [--config-root PATH] [--limit N] [--include-archived] [--json]
   gira workspace ticket new "Title" [--body TEXT] [--repo OWNER/REPO --dry-run|--apply] [--config .gira/config.yaml] [--json]
   gira workspace ticket route --ticket N --repo OWNER/REPO --dry-run|--apply [--config .gira/config.yaml] [--json]
   gira workspace capability [--config .gira/config.yaml] [--json]
@@ -269,6 +270,7 @@ Commands:
   status   Show inbox and repo execution state in one Jira-like overview
   backlog  List inbox tickets and repo issues together. Alias: list
   sync     Sync Gira metadata across inbox and execution repos
+  repos    Discover and register GitHub owner repos into a global workspace
   ticket   Create or route repo-agnostic inbox tickets
   capability  Check inbox and execution repo read/write permissions
   project  Read-only GitHub Projects v2 visibility planning and existing Project adoption
@@ -1056,6 +1058,10 @@ var newWorkspaceSyncReport = func(configPath string, dryRun bool, bootstrapIssue
 		return plan, nil
 	}
 	return gira.BuildWorkspaceSyncReport(resolved, syncer, dryRun, bootstrapIssues)
+}
+
+var newWorkspaceRepoSyncReport = func(input gira.WorkspaceRepoSyncInput) (gira.WorkspaceRepoSyncReport, error) {
+	return gira.BuildWorkspaceRepoSyncReport(input, gira.ExecCommandRunner{})
 }
 
 var newWorkspaceTicketNewReport = func(configPath string, title string, body string, targetRepo gira.RepoRef, route bool, dryRun bool) (gira.WorkspaceTicketNewReport, error) {
@@ -3818,6 +3824,8 @@ func runWorkspace(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runWorkspaceStatus(args[0], args[1:], stdout, stderr)
 	case "sync":
 		return runWorkspaceSync(args[1:], stdout, stderr)
+	case "repos":
+		return runWorkspaceRepos(args[1:], stdout, stderr)
 	case "ticket":
 		return runWorkspaceTicket(args[1:], stdout, stderr)
 	case "capability":
@@ -3829,6 +3837,75 @@ func runWorkspace(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, workspaceHelp)
 		return 2
 	}
+}
+
+func runWorkspaceRepos(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	switch args[0] {
+	case "sync":
+		return runWorkspaceReposSync(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown workspace repos command: %s\n\n", args[0])
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+}
+
+func runWorkspaceReposSync(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("workspace repos sync", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	owner := fs.String("owner", "", "GitHub owner or organization to discover")
+	workspaceName := fs.String("workspace", "", "Global workspace name; defaults to global config default_workspace")
+	configRoot := fs.String("config-root", "", "Override global config root")
+	limit := fs.Int("limit", 100, "Maximum repositories to discover")
+	includeArchived := fs.Bool("include-archived", false, "Include archived repositories")
+	dryRun := fs.Bool("dry-run", false, "Preview without writing files")
+	apply := fs.Bool("apply", false, "Write workspace registry")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, workspaceHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required for workspace repos sync\n\n")
+		fmt.Fprint(stderr, workspaceHelp)
+		return 2
+	}
+	report, err := newWorkspaceRepoSyncReport(gira.WorkspaceRepoSyncInput{WorkspaceName: *workspaceName, Owner: *owner, ConfigRoot: *configRoot, Limit: *limit, IncludeArchived: *includeArchived, DryRun: *dryRun, Apply: *apply})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode workspace repos sync JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatWorkspaceRepoSyncReport(report))
+	return 0
 }
 
 func runWorkspaceInit(args []string, stdout io.Writer, stderr io.Writer) int {

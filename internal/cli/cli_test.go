@@ -1041,6 +1041,78 @@ func TestWorkspaceSyncRequiresMode(t *testing.T) {
 	}
 }
 
+func TestWorkspaceReposSyncJSON(t *testing.T) {
+	restore := newWorkspaceRepoSyncReport
+	t.Cleanup(func() { newWorkspaceRepoSyncReport = restore })
+	newWorkspaceRepoSyncReport = func(input gira.WorkspaceRepoSyncInput) (gira.WorkspaceRepoSyncReport, error) {
+		if input.Owner != "StatPan" || input.WorkspaceName != "personal" || input.ConfigRoot != "/tmp/gira" || input.Limit != 50 || !input.IncludeArchived || !input.DryRun || input.Apply {
+			t.Fatalf("unexpected workspace repos sync input: %+v", input)
+		}
+		return gira.WorkspaceRepoSyncReport{
+			Command:         "workspace repos sync",
+			ConfigRoot:      input.ConfigRoot,
+			ConfigPath:      "/tmp/gira/workspaces/personal.yaml",
+			Owner:           input.Owner,
+			Workspace:       gira.WorkspaceSummary{Name: input.WorkspaceName, Owner: input.Owner},
+			InboxRepo:       "StatPan/backlog",
+			DiscoveredRepos: []string{"StatPan/backlog", "StatPan/gira", "StatPan/statpan-infra"},
+			TargetRepos:     []string{"StatPan/gira", "StatPan/statpan-infra"},
+			AddedRepos:      []string{"StatPan/statpan-infra"},
+			SkippedRepos:    []string{"StatPan/backlog"},
+			File:            gira.SetupGlobalFilePlan{Path: "/tmp/gira/workspaces/personal.yaml", Action: "update"},
+			DryRun:          true,
+			Status:          "planned",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "repos", "sync", "--owner", "StatPan", "--workspace", "personal", "--config-root", "/tmp/gira", "--limit", "50", "--include-archived", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkspaceRepoSyncReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode workspace repos sync JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Status != "planned" || strings.Join(report.AddedRepos, ",") != "StatPan/statpan-infra" {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+}
+
+func TestWorkspaceReposSyncOwnerOptional(t *testing.T) {
+	restore := newWorkspaceRepoSyncReport
+	t.Cleanup(func() { newWorkspaceRepoSyncReport = restore })
+	newWorkspaceRepoSyncReport = func(input gira.WorkspaceRepoSyncInput) (gira.WorkspaceRepoSyncReport, error) {
+		if input.Owner != "" || input.WorkspaceName != "personal" || !input.DryRun {
+			t.Fatalf("unexpected workspace repos sync input: %+v", input)
+		}
+		return gira.WorkspaceRepoSyncReport{
+			Command:   "workspace repos sync",
+			Workspace: gira.WorkspaceSummary{Name: input.WorkspaceName, Owner: "StatPan"},
+			Owner:     "StatPan",
+			DryRun:    true,
+			Status:    "planned",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "repos", "sync", "--workspace", "personal", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+}
+
+func TestWorkspaceReposSyncRequiresMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "repos", "sync", "--owner", "StatPan"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required") {
+		t.Fatalf("stderr missing dry-run/apply guidance:\n%s", stderr.String())
+	}
+}
+
 func TestWorkspaceTicketNewJSON(t *testing.T) {
 	restore := newWorkspaceTicketNewReport
 	t.Cleanup(func() { newWorkspaceTicketNewReport = restore })

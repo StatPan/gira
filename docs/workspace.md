@@ -48,6 +48,19 @@ registry entry together. Use `--mode global-only` when personal global config is
 the operating source. Use `--mode hybrid` when an existing repo-local
 `.gira/config.yaml` should remain referenced as a shared contract.
 
+After the first global setup, populate the workspace execution repo allowlist
+from a GitHub user or organization:
+
+```bash
+gira workspace repos sync --owner OWNER --workspace personal --dry-run
+gira workspace repos sync --owner OWNER --workspace personal --apply
+```
+
+Repository discovery is opt-in. Gira does not automatically scan every GitHub
+repo during normal workspace commands. The workspace inbox repo is treated as
+backlog/intake and is skipped from `workspace.repos`; pass `--include-archived`
+only when archived repositories should remain visible in the workspace.
+
 For a shared repository contract, keep using repo scope:
 
 ```bash

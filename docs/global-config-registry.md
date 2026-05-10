@@ -117,6 +117,19 @@ assigned to an execution repo. It can match `--repo` for a small single-repo
 setup, but multi-repo global operation should usually use a dedicated repo such
 as `OWNER/backlog`.
 
+After the first setup, populate the workspace execution repo allowlist from a
+GitHub user or organization:
+
+```bash
+gira workspace repos sync --owner StatPan --workspace personal --dry-run
+gira workspace repos sync --owner StatPan --workspace personal --apply
+```
+
+This command updates `~/.config/gira/workspaces/NAME.yaml` from reviewed GitHub
+repo discovery. It skips the configured `workspace.inbox_repo` because that repo
+is backlog/intake rather than an execution target. Add `--include-archived` only
+when archived repositories should be listed too.
+
 Create the personal workspace registry without writing repo files:
 
 ```bash

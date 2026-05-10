@@ -60,6 +60,18 @@ multi-repo workspaces. Reusing the execution repo as the inbox is acceptable
 for a small single-repo setup, but it mixes untriaged intake with product
 execution issues.
 
+After the first repo is registered, sync the global workspace execution repo
+list from a GitHub user or organization:
+
+```bash
+gira workspace repos sync --owner OWNER --workspace personal --dry-run
+gira workspace repos sync --owner OWNER --workspace personal --apply
+```
+
+This is an explicit registry update, not background discovery. The inbox repo is
+skipped because it is backlog/intake, not an execution repo. Use
+`--include-archived` only when archived repos should stay in the global view.
+
 Use the lower-level primitives only when you need to compose the pieces
 manually:
 

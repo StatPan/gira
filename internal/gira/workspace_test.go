@@ -45,6 +45,70 @@ func TestResolveWorkspaceConfigValidAndPortfolioAlias(t *testing.T) {
 	}
 }
 
+func TestResolveWorkspaceConfigGlobalDefaultWorkspace(t *testing.T) {
+	chdirTemp(t)
+	root := defaultGlobalConfigRootForTest(t)
+	writeTestFile(t, filepath.Join(root, "config.yaml"), "default_workspace: personal\n")
+	writeTestFile(t, filepath.Join(root, "workspaces", "personal.yaml"), "workspace:\n  name: personal\n  owner: StatPan\n  inbox_repo: StatPan/backlog\n  repos:\n    - StatPan/gira\n")
+
+	resolved, err := ResolveWorkspaceConfig("")
+	if err != nil {
+		t.Fatalf("ResolveWorkspaceConfig error: %v", err)
+	}
+	if resolved.Source != "global_workspace" || resolved.ConfigPath != filepath.Join(root, "workspaces", "personal.yaml") || resolved.InboxRepo.FullName() != "StatPan/backlog" {
+		t.Fatalf("unexpected global workspace resolution: %+v", resolved)
+	}
+}
+
+func TestResolveWorkspaceConfigGlobalWinsUnlessConfigExplicit(t *testing.T) {
+	dir := chdirTemp(t)
+	root := defaultGlobalConfigRootForTest(t)
+	writeTestFile(t, filepath.Join(root, "config.yaml"), "default_workspace: personal\n")
+	writeTestFile(t, filepath.Join(root, "workspaces", "personal.yaml"), "workspace:\n  name: personal\n  owner: StatPan\n  inbox_repo: StatPan/backlog\n  repos:\n    - StatPan/gira\n")
+	localPath := filepath.Join(dir, ".gira", "config.yaml")
+	writeTestFile(t, localPath, "workspace:\n  name: local\n  owner: Local\n  inbox_repo: Local/backlog\n  repos:\n    - Local/app\n")
+
+	resolved, err := ResolveWorkspaceConfig("")
+	if err != nil {
+		t.Fatalf("ResolveWorkspaceConfig default error: %v", err)
+	}
+	if resolved.Source != "global_workspace" || resolved.InboxRepo.FullName() != "StatPan/backlog" {
+		t.Fatalf("default should prefer global workspace, got %+v", resolved)
+	}
+
+	explicit, err := ResolveWorkspaceConfig(localPath)
+	if err != nil {
+		t.Fatalf("ResolveWorkspaceConfig explicit error: %v", err)
+	}
+	if explicit.Source != "explicit_config" || explicit.InboxRepo.FullName() != "Local/backlog" {
+		t.Fatalf("explicit config should preserve repo-local behavior, got %+v", explicit)
+	}
+}
+
+func TestResolveWorkspaceConfigRepoLocalFallback(t *testing.T) {
+	dir := chdirTemp(t)
+	defaultGlobalConfigRootForTest(t)
+	writeTestFile(t, filepath.Join(dir, ".gira", "config.yaml"), "workspace:\n  name: local\n  owner: StatPan\n  inbox_repo: StatPan/backlog\n  repos:\n    - StatPan/gira\n")
+
+	resolved, err := ResolveWorkspaceConfig("")
+	if err != nil {
+		t.Fatalf("ResolveWorkspaceConfig error: %v", err)
+	}
+	if resolved.Source != "repo_local_contract" || resolved.InboxRepo.FullName() != "StatPan/backlog" {
+		t.Fatalf("unexpected repo-local fallback: %+v", resolved)
+	}
+}
+
+func TestResolveWorkspaceConfigMissingContext(t *testing.T) {
+	chdirTemp(t)
+	defaultGlobalConfigRootForTest(t)
+
+	_, err := ResolveWorkspaceConfig("")
+	if err == nil || !strings.Contains(err.Error(), ".gira/config.yaml") {
+		t.Fatalf("error = %v, want missing repo-local config after global miss", err)
+	}
+}
+
 func TestBuildWorkspaceStatusReportAggregatesInboxAndRepos(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",
@@ -319,4 +383,25 @@ func (c fakeWorkspaceClient) CreateExecutionIssue(repo RepoRef, ticket Portfolio
 
 func (c fakeWorkspaceClient) UpdateInboxTicketChildIssue(inboxRepo RepoRef, ticket PortfolioTicket, childIssue string) error {
 	return nil
+}
+
+func chdirTemp(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	return dir
+}
+
+func defaultGlobalConfigRootForTest(t *testing.T) string {
+	t.Helper()
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	return filepath.Join(xdg, "gira")
 }

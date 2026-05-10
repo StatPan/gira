@@ -6,6 +6,12 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Prefer the OS-user global registry for default workspace config resolution
+  when a matching global workspace is available, while preserving explicit
+  `--config .gira/config.yaml` as the repo-local contract opt-out.
+- Added global registry commands and docs for repo registration,
+  repo-local contract migration, and `workspace init --scope global`.
+
 ## v1.5.1 - 2026-05-09
 
 - Fixed `gira ticket start` guidance for open issues without `status:ready`, including actionable human and JSON next steps.

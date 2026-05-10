@@ -273,7 +273,7 @@ Commands:
   project  Read-only GitHub Projects v2 visibility planning and existing Project adoption
 
 Flags:
-  --config string  Workspace config path (default ".gira/config.yaml")
+  --config string  Explicit workspace config path; defaults to global registry, then ".gira/config.yaml"
   --json           Emit stable JSON output
   -h, --help       Show help
 `
@@ -340,7 +340,7 @@ Notes:
   and can archive closed issue items when --archive-closed is set.
 
 Flags:
-  --config string    Workspace config path (default ".gira/config.yaml")
+  --config string    Explicit workspace config path; defaults to global registry, then ".gira/config.yaml"
   --archive-closed   Archive Project items whose backing issues are closed
   --json             Emit stable JSON output
   -h, --help       Show help
@@ -3754,7 +3754,7 @@ func runWorkspaceInit(args []string, stdout io.Writer, stderr io.Writer) int {
 func runWorkspaceCapability(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs := flag.NewFlagSet("workspace capability", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	configPath := fs.String("config", "", "Workspace config path")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -3793,7 +3793,7 @@ func runWorkspaceCapability(args []string, stdout io.Writer, stderr io.Writer) i
 func runWorkspaceValidate(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs := flag.NewFlagSet("workspace validate", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	configPath := fs.String("config", "", "Workspace config path")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -3832,7 +3832,7 @@ func runWorkspaceValidate(args []string, stdout io.Writer, stderr io.Writer) int
 func runWorkspaceStatus(command string, args []string, stdout io.Writer, stderr io.Writer) int {
 	fs := flag.NewFlagSet("workspace "+command, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	configPath := fs.String("config", "", "Workspace config path")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -3856,7 +3856,11 @@ func runWorkspaceStatus(command string, args []string, stdout io.Writer, stderr 
 		return 2
 	}
 	if command == "backlog" || command == "list" {
-		report.NextSteps = []string{"gira workspace status --config .gira/config.yaml"}
+		nextConfig := report.ConfigPath
+		if strings.TrimSpace(nextConfig) == "" {
+			nextConfig = gira.DefaultInitConfigPath(".")
+		}
+		report.NextSteps = []string{"gira workspace status --config " + nextConfig}
 	}
 	if *jsonOutput {
 		output, err := json.MarshalIndent(report, "", "  ")
@@ -3874,7 +3878,7 @@ func runWorkspaceStatus(command string, args []string, stdout io.Writer, stderr 
 func runWorkspaceSync(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs := flag.NewFlagSet("workspace sync", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	configPath := fs.String("config", "", "Workspace config path")
 	dryRun := fs.Bool("dry-run", false, "Plan sync without mutation")
 	apply := fs.Bool("apply", false, "Apply workspace sync")
 	bootstrapIssues := fs.Bool("bootstrap-issues", false, "Enable bootstrap issue sync")
@@ -3938,7 +3942,7 @@ func runWorkspaceTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 func runWorkspaceTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs := flag.NewFlagSet("workspace ticket new", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	configPath := fs.String("config", "", "Workspace config path")
 	title := fs.String("title", "", "Ticket title")
 	body := fs.String("body", "", "Ticket body")
 	repoValue := fs.String("repo", "", "Target execution repo")
@@ -4039,7 +4043,7 @@ func splitWorkspaceTicketNewArgs(args []string) ([]string, []string) {
 func runWorkspaceTicketRoute(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs := flag.NewFlagSet("workspace ticket route", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	configPath := fs.String("config", "", "Workspace config path")
 	ticket := fs.String("ticket", "", "Inbox ticket number")
 	repoValue := fs.String("repo", "", "Target execution repo")
 	dryRun := fs.Bool("dry-run", false, "Plan route without mutation")
@@ -4104,7 +4108,7 @@ func runWorkspaceProject(args []string, stdout io.Writer, stderr io.Writer) int 
 	}
 	fs := flag.NewFlagSet("workspace project plan", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	configPath := fs.String("config", "", "Workspace config path")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -4208,7 +4212,7 @@ func runProjects(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	fs := flag.NewFlagSet("projects sync", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", gira.DefaultInitConfigPath("."), "Workspace config path")
+	configPath := fs.String("config", "", "Workspace config path")
 	dryRun := fs.Bool("dry-run", false, "Plan sync without mutation")
 	apply := fs.Bool("apply", false, "Apply projects sync")
 	archiveClosed := fs.Bool("archive-closed", false, "Archive Project items whose backing issues are closed")

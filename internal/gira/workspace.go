@@ -14,11 +14,13 @@ import (
 )
 
 type WorkspaceConfigResolved struct {
-	Name      string
-	Owner     string
-	InboxRepo RepoRef
-	Repos     []RepoRef
-	Project   ProjectConfig
+	Name       string
+	Owner      string
+	InboxRepo  RepoRef
+	Repos      []RepoRef
+	Project    ProjectConfig
+	Source     string
+	ConfigPath string
 }
 
 type WorkspaceClient interface {
@@ -41,13 +43,15 @@ func NewGHWorkspaceClient(runner CommandRunner) GHWorkspaceClient {
 }
 
 type WorkspaceReport struct {
-	Workspace WorkspaceSummary       `json:"workspace"`
-	Inbox     WorkspaceInbox         `json:"inbox"`
-	Repos     []WorkspaceRepo        `json:"repos"`
-	Counts    WorkspaceCounts        `json:"counts"`
-	Backlog   []WorkspaceBacklogItem `json:"backlog,omitempty"`
-	NextSteps []string               `json:"next_steps"`
-	FetchedAt string                 `json:"fetched_at"`
+	Workspace  WorkspaceSummary       `json:"workspace"`
+	Source     string                 `json:"source,omitempty"`
+	ConfigPath string                 `json:"config_path,omitempty"`
+	Inbox      WorkspaceInbox         `json:"inbox"`
+	Repos      []WorkspaceRepo        `json:"repos"`
+	Counts     WorkspaceCounts        `json:"counts"`
+	Backlog    []WorkspaceBacklogItem `json:"backlog,omitempty"`
+	NextSteps  []string               `json:"next_steps"`
+	FetchedAt  string                 `json:"fetched_at"`
 }
 
 type WorkspaceSummary struct {
@@ -171,9 +175,18 @@ type WorkspaceProjectPlanReport struct {
 }
 
 func ResolveWorkspaceConfig(path string) (WorkspaceConfigResolved, error) {
-	if strings.TrimSpace(path) == "" {
-		path = DefaultInitConfigPath(".")
+	if strings.TrimSpace(path) != "" {
+		return resolveWorkspaceConfigFile(path, "explicit_config")
 	}
+	if resolved, ok, err := resolveWorkspaceConfigFromGlobalRegistry(""); err != nil {
+		return WorkspaceConfigResolved{}, err
+	} else if ok {
+		return resolved, nil
+	}
+	return resolveWorkspaceConfigFile(DefaultInitConfigPath("."), "repo_local_contract")
+}
+
+func resolveWorkspaceConfigFile(path string, source string) (WorkspaceConfigResolved, error) {
 	cfg, err := loadWorkspaceConfig(path)
 	if err != nil {
 		return WorkspaceConfigResolved{}, err
@@ -215,7 +228,100 @@ func ResolveWorkspaceConfig(path string) (WorkspaceConfigResolved, error) {
 	if owner == "" {
 		owner = inboxRepo.Owner
 	}
-	return WorkspaceConfigResolved{Name: name, Owner: owner, InboxRepo: inboxRepo, Repos: repos, Project: workspace.Project}, nil
+	return WorkspaceConfigResolved{Name: name, Owner: owner, InboxRepo: inboxRepo, Repos: repos, Project: workspace.Project, Source: source, ConfigPath: path}, nil
+}
+
+func resolveWorkspaceConfigFromGlobalRegistry(configRoot string) (WorkspaceConfigResolved, bool, error) {
+	root, err := globalConfigRoot(configRoot)
+	if err != nil {
+		return WorkspaceConfigResolved{}, false, err
+	}
+	if cfg, err := LoadGlobalConfig(root); err == nil && strings.TrimSpace(cfg.DefaultWorkspace) != "" {
+		resolved, err := resolveGlobalWorkspaceConfig(root, cfg.DefaultWorkspace)
+		return resolved, err == nil, err
+	}
+	if ctx, ok, err := repoContextFromGlobalPath(root, "."); err != nil {
+		return WorkspaceConfigResolved{}, false, err
+	} else if ok && ctx.GlobalRepo != nil && strings.TrimSpace(ctx.GlobalRepo.Workspace.Name) != "" {
+		resolved, err := resolveGlobalWorkspaceConfig(root, ctx.GlobalRepo.Workspace.Name)
+		return resolved, err == nil, err
+	}
+	repo, hasRepo, err := repoContextFromConfig(DefaultInitConfigPath("."))
+	if err != nil {
+		return WorkspaceConfigResolved{}, false, err
+	}
+	if !hasRepo {
+		if repoFromPath, ok, err := repoContextFromGlobalPath(root, "."); err != nil {
+			return WorkspaceConfigResolved{}, false, err
+		} else if ok {
+			repo = repoFromPath.Repo
+			hasRepo = true
+		}
+	}
+	if !hasRepo {
+		return WorkspaceConfigResolved{}, false, nil
+	}
+	return resolveGlobalWorkspaceContainingRepo(root, repo)
+}
+
+func resolveGlobalWorkspaceConfig(configRoot string, name string) (WorkspaceConfigResolved, error) {
+	entry, err := LoadGlobalWorkspaceRegistryEntry(configRoot, name)
+	if err != nil {
+		return WorkspaceConfigResolved{}, err
+	}
+	path, err := GlobalWorkspaceRegistryPath(configRoot, name)
+	if err != nil {
+		return WorkspaceConfigResolved{}, err
+	}
+	resolved, err := resolveWorkspaceConfigFile(path, "global_workspace")
+	if err != nil {
+		return WorkspaceConfigResolved{}, err
+	}
+	resolved.Project = entry.Workspace.Project
+	resolved.Source = "global_workspace"
+	resolved.ConfigPath = path
+	return resolved, nil
+}
+
+func resolveGlobalWorkspaceContainingRepo(configRoot string, repo RepoRef) (WorkspaceConfigResolved, bool, error) {
+	root, err := GlobalWorkspacesRoot(configRoot)
+	if err != nil {
+		return WorkspaceConfigResolved{}, false, err
+	}
+	if _, err := os.Stat(root); err != nil {
+		if os.IsNotExist(err) {
+			return WorkspaceConfigResolved{}, false, nil
+		}
+		return WorkspaceConfigResolved{}, false, err
+	}
+	var matches []WorkspaceConfigResolved
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.EqualFold(filepath.Ext(path), ".yaml") {
+			return nil
+		}
+		name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		resolved, err := resolveGlobalWorkspaceConfig(configRoot, name)
+		if err != nil {
+			return err
+		}
+		if sameRepoRef(resolved.InboxRepo, repo) || workspaceContainsRepo(resolved.Repos, repo) {
+			matches = append(matches, resolved)
+		}
+		return nil
+	})
+	if err != nil {
+		return WorkspaceConfigResolved{}, false, err
+	}
+	if len(matches) > 1 {
+		return WorkspaceConfigResolved{}, false, fmt.Errorf("workspace config unavailable: multiple global workspaces contain %s", repo.FullName())
+	}
+	if len(matches) == 1 {
+		return matches[0], true, nil
+	}
+	return WorkspaceConfigResolved{}, false, nil
 }
 
 func loadWorkspaceConfig(path string) (InitConfig, error) {
@@ -264,9 +370,11 @@ func (c GHWorkspaceClient) UpdateInboxTicketChildIssue(inboxRepo RepoRef, ticket
 
 func BuildWorkspaceStatusReport(config WorkspaceConfigResolved, client WorkspaceClient, now time.Time, staleDays int) (WorkspaceReport, error) {
 	report := WorkspaceReport{
-		Workspace: WorkspaceSummary{Name: config.Name, Owner: config.Owner},
-		Inbox:     WorkspaceInbox{Repo: config.InboxRepo.FullName()},
-		FetchedAt: now.UTC().Format(time.RFC3339),
+		Workspace:  WorkspaceSummary{Name: config.Name, Owner: config.Owner},
+		Source:     config.Source,
+		ConfigPath: config.ConfigPath,
+		Inbox:      WorkspaceInbox{Repo: config.InboxRepo.FullName()},
+		FetchedAt:  now.UTC().Format(time.RFC3339),
 	}
 	if !workspaceContainsRepo(config.Repos, config.InboxRepo) {
 		tickets, err := client.FetchInboxTickets(config.InboxRepo)
@@ -310,7 +418,7 @@ func BuildWorkspaceStatusReport(config WorkspaceConfigResolved, client Workspace
 	sortWorkspaceBacklog(report.Backlog)
 	report.Counts.InboxOpen = report.Inbox.Open
 	report.Counts.Backlog = len(report.Backlog)
-	report.NextSteps = workspaceNextSteps(report)
+	report.NextSteps = workspaceNextSteps(report, config.ConfigPath)
 	return report, nil
 }
 
@@ -344,9 +452,9 @@ func BuildWorkspaceSyncReport(config WorkspaceConfigResolved, syncer func(RepoRe
 		report.Counts.BootstrapIssuesCreate += row.BootstrapIssuesCreate
 	}
 	if dryRun {
-		report.NextSteps = []string{"review workspace sync plan", "gira workspace sync --apply --config .gira/config.yaml"}
+		report.NextSteps = []string{"review workspace sync plan", "gira workspace sync --apply --config " + workspaceNextStepConfigPath(config.ConfigPath)}
 	} else {
-		report.NextSteps = []string{"gira workspace status --config .gira/config.yaml"}
+		report.NextSteps = []string{"gira workspace status --config " + workspaceNextStepConfigPath(config.ConfigPath)}
 	}
 	return report, nil
 }
@@ -490,6 +598,9 @@ func BuildWorkspaceProjectPlanReport(config WorkspaceConfigResolved, builder fun
 func FormatWorkspaceReport(report WorkspaceReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "workspace: %s (%s)\n", report.Workspace.Name, report.Workspace.Owner)
+	if strings.TrimSpace(report.Source) != "" {
+		fmt.Fprintf(&b, "source: %s %s\n", report.Source, report.ConfigPath)
+	}
 	fmt.Fprintf(&b, "inbox:     %s open=%d needs-routing=%d ready-to-route=%d\n", report.Inbox.Repo, report.Inbox.Open, report.Inbox.NeedsRouting, report.Inbox.ExecutionReady)
 	b.WriteString("repos:\n")
 	for _, repo := range report.Repos {
@@ -652,16 +763,24 @@ func sortWorkspaceBacklog(items []WorkspaceBacklogItem) {
 	})
 }
 
-func workspaceNextSteps(report WorkspaceReport) []string {
+func workspaceNextSteps(report WorkspaceReport, configPath string) []string {
+	configArg := workspaceNextStepConfigPath(configPath)
 	if report.Inbox.NeedsRouting > 0 {
-		return []string{"gira workspace backlog --config .gira/config.yaml"}
+		return []string{"gira workspace backlog --config " + configArg}
 	}
 	for _, item := range report.Backlog {
 		if item.Source == "repo" && item.Status == "ready" {
 			return []string{fmt.Sprintf("gira ticket start --repo %s --ticket %d --apply", item.Repo, item.Number)}
 		}
 	}
-	return []string{"gira workspace status --config .gira/config.yaml"}
+	return []string{"gira workspace status --config " + configArg}
+}
+
+func workspaceNextStepConfigPath(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return DefaultInitConfigPath(".")
+	}
+	return path
 }
 
 func renderWorkspaceInboxBody(title string) string {

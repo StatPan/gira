@@ -52,13 +52,14 @@ Flags:
 const guideHelp = `Built-in Gira guides for installed CLI users.
 
 Usage:
-  gira guide [quickstart|ticket|agent|concepts]
-  gira docs [quickstart|ticket|agent|concepts]
+  gira guide [quickstart|ticket|agent|skill|concepts]
+  gira docs [quickstart|ticket|agent|skill|concepts]
 
 Topics:
   quickstart  First successful flow from auth to merged PR
   ticket      Daily ticket lifecycle commands
   agent       Minimal rules for AI/coding agents
+  skill       Alias for the canonical agent operator summary
   concepts    Jira terms mapped to Gira and GitHub
 
 Start here:
@@ -120,28 +121,48 @@ Safety:
   PR bodies must contain Closes #N, Fixes #N, or Resolves #N.
 `
 
-const guideAgent = `Gira agent runbook
+const guideAgent = `Gira agent operator skill
+
+Canonical source:
+  docs/skills/gira-agent-operator.md
+
+Operating model:
+  GitHub Issues are executable work packets.
+  Branches are work-start evidence.
+  PRs are change units.
+  Merged PR plus closed issue is completion evidence.
+
+Standard flow:
+  gh auth status
+  gira status --repo OWNER/REPO
+  gira ticket start TICKET --repo OWNER/REPO --dry-run
+  gira ticket start TICKET --repo OWNER/REPO --apply
+  go test ./...
+  gira ticket pr TICKET --repo OWNER/REPO --dry-run
+  gira ticket pr TICKET --repo OWNER/REPO --apply
+  gira ticket checks TICKET --repo OWNER/REPO
+  gira ticket wait TICKET --repo OWNER/REPO --timeout 5m
+  gira ticket finish TICKET --repo OWNER/REPO --dry-run
+  gira ticket finish TICKET --repo OWNER/REPO --apply
 
 Rules:
-  Start from a GitHub issue.
-  Use a feature branch per issue.
+  Use --dry-run before --apply for mutating Gira operations.
   Prefer Gira commands over raw gh when a Gira command exists.
+  PR bodies must contain Closes #N, Fixes #N, or Resolves #N.
   Keep changes bounded to the ticket.
-  Run tests before PR and before finish.
+  Route project-only items to repository issues before implementation.
+  Do not start work missing status:ready until triaged or adopted.
+  Reuse an existing branch or PR only when it clearly belongs to the ticket.
+  Fix failed checks before finish unless explicitly instructed.
+  Ask for clarification when acceptance criteria or repo/ticket context is ambiguous.
 
-Flow:
-  gh auth status
-  gira init --repo OWNER/REPO --path . --dry-run
-  gira status
-  gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply --start
-  go test ./...
-  gira ticket pr --apply --draft
-  gira ticket checks
-  gira ticket wait --timeout 5m
-  gira ticket finish --apply
+Raw gh is allowed:
+  For gh auth status.
+  For extra read-only issue, PR, or workflow diagnostics not exposed by Gira.
+  When Gira has no lifecycle command for the needed operation.
 
 Do not:
-  Do not call raw gh pr checks when gira ticket checks/wait exists.
+  Do not bypass Gira start, PR, checks/wait, or finish when those commands apply.
   Do not merge without Gira finish unless explicitly instructed.
   Do not change unrelated files or revert user changes.
 `
@@ -1245,7 +1266,7 @@ func runGuide(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stdout, guideQuickstart)
 	case "ticket":
 		fmt.Fprint(stdout, guideTicket)
-	case "agent":
+	case "agent", "skill":
 		fmt.Fprint(stdout, guideAgent)
 	case "concepts":
 		fmt.Fprint(stdout, guideConcepts)

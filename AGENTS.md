@@ -4,6 +4,8 @@
 
 Gira turns a GitHub repository into an AI-ready project operating system. GitHub is the execution backend: Issues are task packets, PRs are change units, milestones are phase/sprint boundaries, and repo templates define the process.
 
+Canonical operating rules live in [docs/skills/gira-agent-operator.md](docs/skills/gira-agent-operator.md). This file is the Codex/OpenAI adapter and should stay short.
+
 ## MVP Boundaries
 
 Keep the product CLI-first and small. The Go-built `gira` binary is the only product implementation.
@@ -24,9 +26,10 @@ Do not implement these in MVP unless explicitly requested:
 
 ## Worker Rules
 
-- Start implementation from a GitHub Issue.
-- Use a feature branch per issue.
+- Follow the canonical Gira agent operator skill.
+- Start implementation from a GitHub Issue and use one feature branch per issue.
+- Prefer Gira lifecycle commands over raw `gh` when Gira provides the operation.
+- Use `--dry-run` before `--apply` for mutating Gira commands.
 - PR body must contain `Closes #N`, `Fixes #N`, or `Resolves #N` unless the issue is intentionally kept open.
-- Keep changes bounded to the target issue.
-- Avoid destructive operations: no secret rotation, credential edits, repository deletion, or broad GitHub setting changes without explicit user approval.
-- Prefer tests for CLI behavior and idempotency.
+- Keep changes bounded to the target issue and prefer tests for CLI behavior and idempotency.
+- Avoid destructive operations without explicit user approval.

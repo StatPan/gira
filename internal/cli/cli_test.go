@@ -171,6 +171,54 @@ func TestRepoRegisterRequiresRepo(t *testing.T) {
 	}
 }
 
+func TestRepoMigrateCommandJSON(t *testing.T) {
+	original := newRepoMigrateReport
+	t.Cleanup(func() { newRepoMigrateReport = original })
+	newRepoMigrateReport = func(input gira.RepoMigrateInput) (gira.RepoMigrateReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Path != "/repo" || input.ConfigRoot != "/tmp/gira" || !input.DryRun || input.Apply {
+			t.Fatalf("unexpected repo migrate input: %+v", input)
+		}
+		return gira.RepoMigrateReport{
+			Command:      "repo migrate",
+			Repo:         input.Repo.FullName(),
+			ConfigRoot:   input.ConfigRoot,
+			Path:         input.Path,
+			Contract:     ".gira/config.yaml",
+			ContractFile: "/repo/.gira/config.yaml",
+			File:         "/tmp/gira/repos/StatPan/gira.yaml",
+			DryRun:       true,
+			Status:       "planned",
+			Action:       "create",
+			Entry:        gira.GlobalRepoRegistryEntry{Repo: input.Repo.FullName(), Path: input.Path, Contract: ".gira/config.yaml"},
+			NextStep:     "gira repo migrate --apply",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"repo", "migrate", "--repo", "StatPan/gira", "--path", "/repo", "--config-root", "/tmp/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.RepoMigrateReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode repo migrate JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Entry.Contract != ".gira/config.yaml" || report.Action != "create" {
+		t.Fatalf("unexpected repo migrate report: %+v", report)
+	}
+}
+
+func TestRepoMigrateRejectsUnexpectedArgument(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"repo", "migrate", "StatPan/gira", "--dry-run"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unexpected argument") {
+		t.Fatalf("stderr missing unexpected argument message:\n%s", stderr.String())
+	}
+}
+
 func TestUpgradeCommandHumanOutput(t *testing.T) {
 	original := newUpgradeReport
 	t.Cleanup(func() { newUpgradeReport = original })

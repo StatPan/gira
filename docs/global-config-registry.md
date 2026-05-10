@@ -86,6 +86,29 @@ workspace:
   name: personal
 ```
 
+Create the personal workspace registry without writing repo files:
+
+```bash
+gira workspace init --scope global \
+  --name personal \
+  --inbox-repo StatPan/backlog \
+  --repo StatPan/gira \
+  --dry-run
+
+gira workspace init --scope global \
+  --name personal \
+  --inbox-repo StatPan/backlog \
+  --repo StatPan/gira \
+  --apply
+```
+
+Register a checkout in the global repo registry:
+
+```bash
+gira repo register StatPan/gira --path ~/workspace/apps/gira --dry-run
+gira repo register StatPan/gira --path ~/workspace/apps/gira --apply
+```
+
 ## Target Selection Order
 
 Target selection decides which GitHub repo or workspace a command operates on.
@@ -162,9 +185,9 @@ Local overrides own machine-specific values only:
 - local cache or state path overrides
 - machine-specific tool paths
 
-Local overrides must be gitignored and should not be used to change shared
-repo policy. If an override attempts to change shared policy, Gira should warn
-or reject it once validation exists.
+Use `.gira/config.local.yaml` for local overrides. It must be gitignored and
+should not be used to change shared repo policy. If an override attempts to
+change shared policy, Gira should warn or reject it once validation exists.
 
 ## Merge Precedence
 
@@ -191,11 +214,18 @@ silently changing behavior.
 Recommended migration:
 
 1. Detect existing `.gira/config.yaml`.
-2. Offer a dry-run migration plan.
+2. Offer a dry-run migration plan with `gira repo migrate --path . --dry-run`.
 3. Create or update a global repo registry entry with personal metadata.
 4. Preserve `.gira/config.yaml` as the repo-local contract.
 5. Store a `contract: .gira/config.yaml` reference in the global repo entry
    when appropriate.
+
+Apply only after the plan is correct:
+
+```bash
+gira repo migrate --path . --apply
+gira config repo --repo OWNER/REPO
+```
 
 Symlink migration should be explicit and advanced, not the default. Import plus
 contract reference is the preferred compatibility path.

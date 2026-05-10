@@ -9,7 +9,7 @@ The source of truth is still GitHub:
 | Gira term | GitHub source of truth | Purpose |
 | --- | --- | --- |
 | Workspace | A local `.gira/config.yaml` grouping | Names the personal operating space and lists the inbox plus execution repos. |
-| Inbox | A GitHub repository used for intake issues | Holds tickets that are not ready to be assigned to a repo. |
+| Inbox | A GitHub repository used for backlog/intake issues | Holds tickets that are not ready to be assigned to an execution repo. |
 | Execution repo | Normal GitHub repository | Holds issues that can become branches, PRs, milestones, releases, and done evidence. |
 | Route | Issue creation plus parent link | Turns an inbox ticket into a repo execution issue when ownership is clear. |
 
@@ -29,6 +29,11 @@ workspace:
 ```
 
 `workspace.inbox_repo` is required. It may be a private personal repo if the backlog should not appear inside any execution repo. `workspace.repos` is the explicit allowlist of repositories that can receive routed execution issues.
+
+For multi-repo global operation, prefer a dedicated backlog repo such as
+`OWNER/backlog`. Using the same repo for `inbox_repo` and `repos` is fine for a
+small single-repo setup, but it mixes untriaged intake with product execution
+issues.
 
 For personal multi-repo operation, prefer the OS-user global registry:
 

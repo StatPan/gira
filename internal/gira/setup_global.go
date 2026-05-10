@@ -47,6 +47,7 @@ type SetupGlobalReport struct {
 	Path            string                       `json:"path"`
 	Workspace       WorkspaceSummary             `json:"workspace"`
 	InboxRepo       string                       `json:"inbox_repo"`
+	InboxExplicit   bool                         `json:"inbox_explicit"`
 	Defaults        GlobalDefaults               `json:"defaults,omitempty"`
 	RepoContract    ConfigFileStatus             `json:"repo_contract"`
 	Files           []SetupGlobalFilePlan        `json:"files"`
@@ -88,6 +89,7 @@ func BuildSetupGlobalReport(input SetupGlobalInput, runner CommandRunner) (Setup
 			return SetupGlobalReport{}, err
 		}
 	}
+	inboxExplicit := strings.TrimSpace(input.InboxRepo) != ""
 	inbox, err := setupGlobalInboxRepo(input.InboxRepo, repo)
 	if err != nil {
 		return SetupGlobalReport{}, err
@@ -192,6 +194,7 @@ func BuildSetupGlobalReport(input SetupGlobalInput, runner CommandRunner) (Setup
 		Path:            storedPath,
 		Workspace:       WorkspaceSummary{Name: workspaceName, Owner: owner},
 		InboxRepo:       inbox.FullName(),
+		InboxExplicit:   inboxExplicit,
 		Defaults:        defaults,
 		RepoContract:    contractStatus,
 		Files:           plans,
@@ -200,7 +203,7 @@ func BuildSetupGlobalReport(input SetupGlobalInput, runner CommandRunner) (Setup
 		GlobalRepo:      repoEntry,
 		DryRun:          input.DryRun,
 		Status:          setupGlobalStatus(input.DryRun, plans),
-		Notes:           setupGlobalNotes(mode, contractStatus),
+		Notes:           setupGlobalNotes(mode, contractStatus, inboxExplicit, sameRepoRef(inbox, repo)),
 		NextStep:        fmt.Sprintf("gira workspace status --config %s", workspaceFile),
 	}
 	if input.DryRun {
@@ -354,8 +357,15 @@ func setupPlansAllSkipped(plans []SetupGlobalFilePlan) bool {
 	return true
 }
 
-func setupGlobalNotes(mode string, contract ConfigFileStatus) []string {
+func setupGlobalNotes(mode string, contract ConfigFileStatus, inboxExplicit bool, inboxMatchesRepo bool) []string {
 	var notes []string
+	if !inboxExplicit {
+		notes = append(notes, "--inbox-repo was not provided; using the target repo as a single-repo inbox. For multi-repo global operation, prefer a dedicated backlog repo such as OWNER/backlog.")
+	} else if inboxMatchesRepo {
+		notes = append(notes, "inbox repo matches the execution repo; this is acceptable for single-repo operation, but a dedicated backlog repo is clearer for multi-repo workspaces.")
+	} else {
+		notes = append(notes, "inbox repo is separate from the execution repo and will act as the workspace backlog/intake queue.")
+	}
 	if contract.Exists && mode == SetupGlobalModeGlobalOnly {
 		notes = append(notes, "repo-local .gira/config.yaml exists but global-only mode does not reference it")
 	}

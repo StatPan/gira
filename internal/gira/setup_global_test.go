@@ -47,6 +47,29 @@ func TestBuildSetupGlobalReportDryRunGlobalOnly(t *testing.T) {
 	}
 }
 
+func TestBuildSetupGlobalReportWarnsWhenInboxRepoOmitted(t *testing.T) {
+	checkout := t.TempDir()
+	root := t.TempDir()
+
+	report, err := BuildSetupGlobalReport(SetupGlobalInput{
+		Repo:          ParseRepoRefMust("StatPan/gira"),
+		Path:          checkout,
+		ConfigRoot:    root,
+		WorkspaceName: "personal",
+		DryRun:        true,
+	}, fakeRegisterRunner{origin: "https://github.com/StatPan/gira.git"})
+	if err != nil {
+		t.Fatalf("BuildSetupGlobalReport returned error: %v", err)
+	}
+	if report.InboxExplicit {
+		t.Fatalf("InboxExplicit = true, want false")
+	}
+	notes := strings.Join(report.Notes, "\n")
+	if !strings.Contains(notes, "--inbox-repo was not provided") || !strings.Contains(notes, "dedicated backlog repo") {
+		t.Fatalf("notes should guide dedicated backlog repo when omitted: %+v", report.Notes)
+	}
+}
+
 func TestBuildSetupGlobalReportApplyHybrid(t *testing.T) {
 	checkout := t.TempDir()
 	writeTestFile(t, filepath.Join(checkout, ".gira", "config.yaml"), "repo: StatPan/gira\n")

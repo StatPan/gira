@@ -9,6 +9,9 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 - Added `gira setup global` to configure global-first operation through one
   dry-run/apply flow, including global defaults, workspace registry, repo
   registry, and global-only versus hybrid repo-local contract modes.
+- Clarified global setup guidance so `inbox_repo` is presented as a
+  backlog/intake repo, with single-repo inbox fallback called out as a limited
+  convenience.
 
 ## v1.6.0 - 2026-05-10
 

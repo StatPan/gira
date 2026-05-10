@@ -95,7 +95,7 @@ gira setup global \
   --repo StatPan/gira \
   --path ~/workspace/apps/gira \
   --workspace personal \
-  --inbox-repo StatPan/gira \
+  --inbox-repo StatPan/backlog \
   --mode global-only \
   --dry-run
 
@@ -103,7 +103,7 @@ gira setup global \
   --repo StatPan/gira \
   --path ~/workspace/apps/gira \
   --workspace personal \
-  --inbox-repo StatPan/gira \
+  --inbox-repo StatPan/backlog \
   --mode global-only \
   --apply
 ```
@@ -111,6 +111,11 @@ gira setup global \
 Use `--mode hybrid` when the repo-local `.gira/config.yaml` should remain a
 referenced shared contract. Use the lower-level commands below only when you
 need to compose the registry primitives manually.
+
+`--inbox-repo` is the backlog/intake repository for work that has not yet been
+assigned to an execution repo. It can match `--repo` for a small single-repo
+setup, but multi-repo global operation should usually use a dedicated repo such
+as `OWNER/backlog`.
 
 Create the personal workspace registry without writing repo files:
 

@@ -78,6 +78,30 @@ After repo adoption, the operator should see a short local contract summary and 
 
 `onboard verify` is read-only and composes the other recovery steps into a staged go/no-go verdict. It owns prerequisite checks, committed bootstrap artifact checks, metadata convergence checks, and sample daily-run validation.
 
+## Adding Public Commands
+
+Public commands must be added to the command metadata registry before they are
+treated as complete. Update `internal/gira/command_registry.go` with the
+command path, summary, usage, flags, examples, release version, docs surfaces,
+and guide topics.
+
+The docs-site command reference is rendered from that registry. If command
+metadata changes, refresh `docs-site/command-reference.md` so
+`go test ./internal/gira` can verify it is still in sync.
+
+For high-value user-facing commands, also update the relevant user journey page
+instead of relying only on the reference page:
+
+- first-run or global workflow: `README.md`, `docs-site/quickstart.md`,
+  `docs-site/global-config.md`, and `docs/workspace.md`;
+- ticket lifecycle: `README.md`, `docs-site/ticket-workflow.md`, and
+  `docs/dogfood.md`;
+- agent/operator behavior: `docs/skills/gira-agent-operator.md` and
+  `docs-site/agent-operator-skill.md`.
+
+The registry is not a replacement for narrative docs. It is the drift-prevention
+source for command facts and examples.
+
 This taxonomy keeps a clean recovery model: rerun `bootstrap` for local files, rerun `sync` for GitHub metadata, rerun `status` to decide what to do next, and rerun `onboard verify` to confirm the repo is truly ready for daily operation.
 
 ## CLI Development Path

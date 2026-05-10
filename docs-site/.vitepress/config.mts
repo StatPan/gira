@@ -28,6 +28,7 @@ export default defineConfig({
           { text: 'Quick Start', link: '/quickstart' },
           { text: 'Global Config', link: '/global-config' },
           { text: 'Ticket Workflow', link: '/ticket-workflow' },
+          { text: 'Command Reference', link: '/command-reference' },
           { text: 'Agent Operator Skill', link: '/agent-operator-skill' }
         ]
       },

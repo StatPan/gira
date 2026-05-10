@@ -6,6 +6,9 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Added a command metadata registry with a generated docs-site command
+  reference and drift-prevention tests for core public commands.
+
 ## v1.9.0 - 2026-05-10
 
 - Added full-body ticket creation support with `gira ticket new --body`,

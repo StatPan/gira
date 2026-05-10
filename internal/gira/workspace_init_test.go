@@ -107,14 +107,15 @@ func TestFormatWorkspaceInitReportIncludesProject(t *testing.T) {
 
 func TestBuildWorkspaceInitReportApplyWritesConfig(t *testing.T) {
 	dir := t.TempDir()
-	report, err := BuildWorkspaceInitReport(WorkspaceInitInput{
+	input := WorkspaceInitInput{
 		Name:      "personal",
 		Owner:     "StatPan",
 		InboxRepo: "StatPan/backlog",
 		Repos:     []string{"StatPan/gira", "StatPan/docs"},
 		Path:      dir,
 		Apply:     true,
-	})
+	}
+	report, err := BuildWorkspaceInitReport(input)
 	if err != nil {
 		t.Fatalf("BuildWorkspaceInitReport error: %v", err)
 	}
@@ -136,6 +137,83 @@ func TestBuildWorkspaceInitReportApplyWritesConfig(t *testing.T) {
 	}
 	if _, err := os.Stat(report.ConfigPath); err != nil {
 		t.Fatalf("config path not written: %v", err)
+	}
+
+	second, err := BuildWorkspaceInitReport(input)
+	if err != nil {
+		t.Fatalf("second BuildWorkspaceInitReport error: %v", err)
+	}
+	if !second.Skipped || second.Applied || second.Created || second.Overwritten {
+		t.Fatalf("expected idempotent repo skip: %+v", second)
+	}
+}
+
+func TestBuildWorkspaceInitReportGlobalDryRun(t *testing.T) {
+	root := t.TempDir()
+	report, err := BuildWorkspaceInitReport(WorkspaceInitInput{
+		Name:       "personal",
+		Owner:      "StatPan",
+		InboxRepo:  "StatPan/backlog",
+		Repos:      []string{"StatPan/gira"},
+		Scope:      "global",
+		ConfigRoot: root,
+		DryRun:     true,
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkspaceInitReport error: %v", err)
+	}
+	wantPath := filepath.Join(root, "workspaces", "personal.yaml")
+	if report.Scope != "global" || report.ConfigRoot != root || report.ConfigPath != wantPath {
+		t.Fatalf("unexpected global report: %+v", report)
+	}
+	if _, err := os.Stat(wantPath); !os.IsNotExist(err) {
+		t.Fatalf("dry-run wrote global workspace or stat failed: %v", err)
+	}
+	if strings.Contains(report.Content, "\nrepo:") || strings.Contains(report.Content, "profiles:") {
+		t.Fatalf("global workspace content should not include repo contract fields:\n%s", report.Content)
+	}
+}
+
+func TestBuildWorkspaceInitReportGlobalApplyWritesRegistry(t *testing.T) {
+	root := t.TempDir()
+	input := WorkspaceInitInput{
+		Name:          "personal",
+		Owner:         "StatPan",
+		InboxRepo:     "StatPan/backlog",
+		Repos:         []string{"StatPan/gira"},
+		ProjectNumber: 7,
+		Scope:         "global",
+		ConfigRoot:    root,
+		Apply:         true,
+	}
+	report, err := BuildWorkspaceInitReport(input)
+	if err != nil {
+		t.Fatalf("BuildWorkspaceInitReport error: %v", err)
+	}
+	if !report.Created || !report.Applied || report.Scope != "global" {
+		t.Fatalf("expected global created/applied report: %+v", report)
+	}
+	entry, err := LoadGlobalWorkspaceRegistryEntry(root, "personal")
+	if err != nil {
+		t.Fatalf("LoadGlobalWorkspaceRegistryEntry error: %v", err)
+	}
+	if entry.Workspace.InboxRepo != "StatPan/backlog" || len(entry.Workspace.Repos) != 1 || entry.Workspace.Project.Number != 7 {
+		t.Fatalf("unexpected global workspace entry: %+v", entry)
+	}
+
+	second, err := BuildWorkspaceInitReport(input)
+	if err != nil {
+		t.Fatalf("second BuildWorkspaceInitReport error: %v", err)
+	}
+	if !second.Skipped || second.Applied || second.Created || second.Overwritten {
+		t.Fatalf("expected idempotent global skip: %+v", second)
+	}
+}
+
+func TestBuildWorkspaceInitReportRejectsInvalidScope(t *testing.T) {
+	_, err := BuildWorkspaceInitReport(WorkspaceInitInput{InboxRepo: "StatPan/gira", Scope: "user", DryRun: true})
+	if err == nil || !strings.Contains(err.Error(), "--scope must be repo or global") {
+		t.Fatalf("expected scope error, got %v", err)
 	}
 }
 

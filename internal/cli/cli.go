@@ -22,6 +22,7 @@ Usage:
 
 Daily commands:
   guide       Built-in quickstart and workflow guides
+  setup       Intention-based first-run and global registry setup
   workspace   Personal workspace inbox and backlog overview
   projects    Sync visible GitHub Projects board items
   repo        Manage global registry entries for repositories
@@ -433,6 +434,35 @@ Flags:
   --config-root string  Override global config root for diagnostics
   --json                Emit stable JSON output
   -h, --help            Show help
+`
+
+const setupHelp = `Intention-based Gira setup flows.
+
+Usage:
+  gira setup global [--repo OWNER/REPO] [--path .] [--workspace NAME] [--inbox-repo OWNER/REPO] [--mode global-only|hybrid] --dry-run|--apply [--config-root PATH] [--overwrite] [--json]
+
+Commands:
+  global  Configure OS-user global Gira operation in one dry-run/apply flow
+
+Flags:
+  --repo string          Target GitHub repo in OWNER/REPO format. Defaults to git origin or registry context
+  --path string          Local checkout path to validate and record. Default: .
+  --workspace string     Global workspace name. Default: personal
+  --owner string         Workspace/default owner. Default: inbox repo owner
+  --inbox-repo string    Inbox repo in OWNER/REPO format. Default: target repo
+  --project-owner string GitHub Projects v2 owner. Default: workspace owner
+  --project-title string GitHub Projects v2 title. Default: workspace name
+  --project-number int   GitHub Projects v2 number for disambiguation
+  --mode string          global-only ignores repo-local contracts; hybrid references .gira/config.yaml when present. Default: global-only
+  --agent string         Default coding agent name
+  --assignee string      Default assignee login
+  --agent-label string   Preferred agent label. Repeatable or comma-separated
+  --config-root string   Override global config root
+  --overwrite            Replace existing global setup files with different content
+  --dry-run              Preview without writing files
+  --apply                Write setup files
+  --json                 Emit stable JSON output
+  -h, --help             Show help
 `
 
 const repoHelp = `Manage Gira global registry entries for repositories.
@@ -1206,6 +1236,10 @@ var newConfigDoctorReport = func(repoValue string, configRoot string) (gira.Conf
 	return gira.BuildConfigDoctorReport(repoValue, configRoot, repoContextRunner)
 }
 
+var newSetupGlobalReport = func(input gira.SetupGlobalInput) (gira.SetupGlobalReport, error) {
+	return gira.BuildSetupGlobalReport(input, devCommandRunner)
+}
+
 var newRepoRegisterReport = func(input gira.RepoRegisterInput) (gira.RepoRegisterReport, error) {
 	return gira.BuildRepoRegisterReport(input, devCommandRunner)
 }
@@ -1234,6 +1268,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "guide", "docs":
 		return runGuide(args[1:], stdout, stderr)
+	case "setup":
+		return runSetup(args[1:], stdout, stderr)
 	case "init":
 		return runInit(args[1:], stdout, stderr)
 	case "workspace":
@@ -1545,6 +1581,111 @@ func runConfigDoctor(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatConfigDoctorReport(report))
+	return 0
+}
+
+func runSetup(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprint(stdout, setupHelp)
+		return 0
+	}
+	switch args[0] {
+	case "--help", "-h":
+		fmt.Fprint(stdout, setupHelp)
+		return 0
+	case "global":
+		return runSetupGlobal(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown setup command: %s\n\n", args[0])
+		fmt.Fprint(stderr, setupHelp)
+		return 2
+	}
+}
+
+func runSetupGlobal(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("setup global", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	pathValue := fs.String("path", ".", "Local checkout path to validate and record")
+	configRoot := fs.String("config-root", "", "Override global config root")
+	workspaceName := fs.String("workspace", "personal", "Global workspace name")
+	owner := fs.String("owner", "", "Workspace/default owner")
+	inboxRepo := fs.String("inbox-repo", "", "Inbox repo in OWNER/REPO format")
+	projectOwner := fs.String("project-owner", "", "GitHub Projects v2 owner; defaults to workspace owner")
+	projectTitle := fs.String("project-title", "", "GitHub Projects v2 title; defaults to workspace name")
+	projectNumber := fs.Int("project-number", 0, "GitHub Projects v2 number for disambiguation")
+	mode := fs.String("mode", "global-only", "Setup mode: global-only or hybrid")
+	agent := fs.String("agent", "", "Default coding agent name")
+	assignee := fs.String("assignee", "", "Default assignee login")
+	overwrite := fs.Bool("overwrite", false, "Replace conflicting existing setup files")
+	dryRun := fs.Bool("dry-run", false, "Preview without writing files")
+	apply := fs.Bool("apply", false, "Write setup files")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	var agentLabels repeatedStringFlag
+	fs.Var(&agentLabels, "agent-label", "Preferred agent label. Repeatable or comma-separated")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, setupHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, setupHelp)
+		return 0
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, setupHelp)
+		return 2
+	}
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run/--apply is required\n\n")
+		fmt.Fprint(stderr, setupHelp)
+		return 2
+	}
+	var repo gira.RepoRef
+	if strings.TrimSpace(*repoValue) != "" {
+		parsed, err := gira.ParseRepoRef(*repoValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, setupHelp)
+			return 2
+		}
+		repo = parsed
+	}
+	report, err := newSetupGlobalReport(gira.SetupGlobalInput{
+		Repo:          repo,
+		Path:          *pathValue,
+		ConfigRoot:    *configRoot,
+		WorkspaceName: *workspaceName,
+		Owner:         *owner,
+		InboxRepo:     *inboxRepo,
+		ProjectOwner:  *projectOwner,
+		ProjectTitle:  *projectTitle,
+		ProjectNumber: *projectNumber,
+		Mode:          *mode,
+		Agent:         *agent,
+		Assignee:      *assignee,
+		AgentLabels:   agentLabels,
+		Overwrite:     *overwrite,
+		DryRun:        *dryRun,
+		Apply:         *apply,
+	})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "setup global failed: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatSetupGlobalReport(report))
 	return 0
 }
 

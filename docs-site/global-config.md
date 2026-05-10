@@ -28,25 +28,38 @@ contracts:
 Use global workspace and repo registry entries when you want one operator view
 across many repositories without committing `.gira/config.yaml` everywhere.
 
-Create a workspace entry:
+Start with the setup flow when you want Gira to own personal config from the
+global registry:
 
 ```bash
-gira workspace init --scope global \
-  --name personal \
-  --inbox-repo OWNER/backlog \
+gira setup global \
   --repo OWNER/app \
+  --path ~/workspace/app \
+  --workspace personal \
+  --inbox-repo OWNER/backlog \
+  --mode global-only \
   --dry-run
 
-gira workspace init --scope global \
-  --name personal \
-  --inbox-repo OWNER/backlog \
+gira setup global \
   --repo OWNER/app \
+  --path ~/workspace/app \
+  --workspace personal \
+  --inbox-repo OWNER/backlog \
+  --mode global-only \
   --apply
 ```
 
-Register a checkout:
+`setup global` writes the global config, workspace entry, and repo entry
+together. It detects an existing repo-local `.gira/config.yaml`; `global-only`
+does not reference it, while `--mode hybrid` keeps a `contract:
+.gira/config.yaml` pointer for shared repo policy.
+
+Use the lower-level primitives only when you need to compose the pieces
+manually:
 
 ```bash
+gira workspace init --scope global --name personal --inbox-repo OWNER/backlog --repo OWNER/app --dry-run
+gira workspace init --scope global --name personal --inbox-repo OWNER/backlog --repo OWNER/app --apply
 gira repo register OWNER/app --path ~/workspace/app --dry-run
 gira repo register OWNER/app --path ~/workspace/app --apply
 ```

@@ -33,10 +33,15 @@ workspace:
 For personal multi-repo operation, prefer the OS-user global registry:
 
 ```bash
-gira workspace init --scope global --name personal --inbox-repo OWNER/backlog --repo OWNER/app --dry-run
-gira workspace init --scope global --name personal --inbox-repo OWNER/backlog --repo OWNER/app --apply
-gira workspace status --config ~/.config/gira/workspaces/personal.yaml
+gira setup global --repo OWNER/app --path . --workspace personal --inbox-repo OWNER/backlog --dry-run
+gira setup global --repo OWNER/app --path . --workspace personal --inbox-repo OWNER/backlog --apply
+gira workspace status
 ```
+
+`gira setup global` creates the global default config, workspace entry, and repo
+registry entry together. Use `--mode global-only` when personal global config is
+the operating source. Use `--mode hybrid` when an existing repo-local
+`.gira/config.yaml` should remain referenced as a shared contract.
 
 For a shared repository contract, keep using repo scope:
 

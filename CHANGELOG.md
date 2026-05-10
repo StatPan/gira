@@ -6,6 +6,10 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Added `gira setup global` to configure global-first operation through one
+  dry-run/apply flow, including global defaults, workspace registry, repo
+  registry, and global-only versus hybrid repo-local contract modes.
+
 ## v1.6.0 - 2026-05-10
 
 - Prefer the OS-user global registry for default workspace config resolution

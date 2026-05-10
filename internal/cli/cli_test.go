@@ -29,6 +29,9 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "guide") {
 		t.Fatalf("help output missing guide command:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "setup") {
+		t.Fatalf("help output missing setup command:\n%s", stdout.String())
+	}
 	if !strings.Contains(stdout.String(), "ops") {
 		t.Fatalf("help output missing ops command:\n%s", stdout.String())
 	}
@@ -122,6 +125,54 @@ func TestConfigUnknownCommand(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "unknown config command: missing") {
 		t.Fatalf("stderr missing unknown command:\n%s", stderr.String())
+	}
+}
+
+func TestSetupGlobalCommandJSON(t *testing.T) {
+	original := newSetupGlobalReport
+	t.Cleanup(func() { newSetupGlobalReport = original })
+	newSetupGlobalReport = func(input gira.SetupGlobalInput) (gira.SetupGlobalReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Path != "/repo" || input.ConfigRoot != "/tmp/gira" || input.WorkspaceName != "personal" || input.Mode != "global-only" || !input.DryRun || input.Apply {
+			t.Fatalf("unexpected setup global input: %+v", input)
+		}
+		return gira.SetupGlobalReport{
+			Command:    "setup global",
+			Mode:       input.Mode,
+			ConfigRoot: input.ConfigRoot,
+			Repo:       input.Repo.FullName(),
+			Path:       input.Path,
+			Workspace:  gira.WorkspaceSummary{Name: input.WorkspaceName, Owner: "StatPan"},
+			InboxRepo:  "StatPan/gira",
+			DryRun:     true,
+			Status:     "planned",
+			Files: []gira.SetupGlobalFilePlan{
+				{Path: "/tmp/gira/config.yaml", Action: "create"},
+			},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"setup", "global", "--repo", "StatPan/gira", "--path", "/repo", "--config-root", "/tmp/gira", "--workspace", "personal", "--mode", "global-only", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.SetupGlobalReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode setup global JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Status != "planned" || report.Mode != "global-only" || len(report.Files) != 1 {
+		t.Fatalf("unexpected setup global report: %+v", report)
+	}
+}
+
+func TestSetupGlobalRequiresDryRunOrApply(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"setup", "global", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run/--apply is required") {
+		t.Fatalf("stderr missing dry-run/apply message:\n%s", stderr.String())
 	}
 }
 
@@ -3115,6 +3166,7 @@ func TestStatusRepoOverrideWinsOverContext(t *testing.T) {
 }
 
 func TestStatusMissingRepoContextReturnsRemediation(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	restoreRunner := repoContextRunner
 	t.Cleanup(func() { repoContextRunner = restoreRunner })
 	repoContextRunner = devCLIRunner{errs: map[string]error{

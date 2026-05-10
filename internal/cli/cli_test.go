@@ -41,8 +41,84 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "cache") {
 		t.Fatalf("help output missing cache command:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "config") {
+		t.Fatalf("help output missing config command:\n%s", stdout.String())
+	}
 	if strings.Contains(stdout.String(), "portfolio   ") || strings.Contains(stdout.String(), "jira        ") {
 		t.Fatalf("help output should not frontload advanced commands:\n%s", stdout.String())
+	}
+}
+
+func TestConfigGlobalCommandJSON(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("default_owner: StatPan\n"), 0o644); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"config", "global", "--config-root", root, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.ConfigGlobalReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode config global JSON: %v\n%s", err, stdout.String())
+	}
+	if report.ConfigRoot != root || !report.Config.Exists || !report.Config.Valid {
+		t.Fatalf("unexpected config global report: %+v", report)
+	}
+}
+
+func TestConfigRepoCommandText(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "repos", "StatPan", "gira.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir repo registry: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("repo: StatPan/gira\npath: ~/workspace/apps/gira\n"), 0o644); err != nil {
+		t.Fatalf("write repo registry: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"config", "repo", "--repo", "StatPan/gira", "--config-root", root}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"config repo: StatPan/gira", "source: explicit", "global repo:", "valid=true", ".gira/config.yaml"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("config repo output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestConfigDoctorCommandJSON(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("default_workspace: personal\n"), 0o644); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"config", "doctor", "--repo", "StatPan/gira", "--config-root", root, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.ConfigDoctorReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode config doctor JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Source != "explicit" || report.Repo != "StatPan/gira" || !report.GlobalConfig.Exists {
+		t.Fatalf("unexpected config doctor report: %+v", report)
+	}
+}
+
+func TestConfigUnknownCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"config", "missing"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unknown config command: missing") {
+		t.Fatalf("stderr missing unknown command:\n%s", stderr.String())
 	}
 }
 

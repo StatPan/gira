@@ -6,6 +6,8 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.11.0 - 2026-05-10
+
 - Added rate-limit-aware `workspace status` operation with GitHub API budget
   reporting, bounded multi-repo fetch concurrency, per-repo status caching,
   and repo/limit/active filters.

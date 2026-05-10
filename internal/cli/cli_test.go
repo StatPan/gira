@@ -2180,6 +2180,58 @@ func TestTicketChecksJSON(t *testing.T) {
 	}
 }
 
+func TestTicketViewInfersTicketAndPrintsCard(t *testing.T) {
+	restoreView := newTicketViewReport
+	restoreRepo := repoContextRunner
+	restoreDev := devCommandRunner
+	t.Cleanup(func() {
+		newTicketViewReport = restoreView
+		repoContextRunner = restoreRepo
+		devCommandRunner = restoreDev
+	})
+	repoContextRunner = devCLIRunner{outputs: map[string][]byte{
+		"git remote get-url origin": []byte("https://github.com/StatPan/gira.git\n"),
+	}}
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"git branch --show-current": []byte("issue-126-work-command\n"),
+	}}
+	newTicketViewReport = func(repo gira.RepoRef, issue int) (gira.TicketViewReport, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 {
+			t.Fatalf("unexpected args repo=%s issue=%d", repo.FullName(), issue)
+		}
+		return gira.TicketViewReport{Command: "ticket view", Repo: repo.FullName(), Ticket: issue, Status: gira.WorkStatusResult{Repo: repo.FullName(), Issue: issue, Title: "Work command", State: "open", Status: "In progress", PRNumber: 127, PRState: "OPEN", NextAction: "wait_for_checks", NextStep: "gira ticket wait --repo StatPan/gira --ticket 126"}}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "view"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "ticket view: #126 Work command") || !strings.Contains(stdout.String(), "next step: gira ticket wait") {
+		t.Fatalf("ticket view output missing context:\n%s", stdout.String())
+	}
+}
+
+func TestTicketNoteParsesBodyAndDryRunJSON(t *testing.T) {
+	restoreNote := newTicketNoteReport
+	t.Cleanup(func() { newTicketNoteReport = restoreNote })
+	newTicketNoteReport = func(input gira.TicketNoteInput) (gira.TicketNoteReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 126 || input.Body != "Parser path works" || input.Kind != "decision" || input.Target != "both" || !input.DryRun {
+			t.Fatalf("unexpected input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.TicketNoteReport{Command: "ticket note", Repo: input.Repo.FullName(), Ticket: input.Ticket, Kind: input.Kind, Target: input.Target, DryRun: true, Targets: []gira.TicketNoteSink{{Type: "issue", Number: 126, Status: "planned"}, {Type: "pr", Number: 127, Status: "planned"}}, RenderedBody: "## Decision\n\nParser path works\n", NextStep: "gira ticket note --apply"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "note", "126", "Parser path works", "--repo", "StatPan/gira", "--kind", "decision", "--target", "both", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"command": "ticket note"`) || !strings.Contains(stdout.String(), `"rendered_body": "## Decision`) {
+		t.Fatalf("ticket note JSON missing rendered body:\n%s", stdout.String())
+	}
+}
+
 func TestTicketWaitUsesTimeoutAndInterval(t *testing.T) {
 	restoreChecks := newTicketChecksReport
 	t.Cleanup(func() { newTicketChecksReport = restoreChecks })

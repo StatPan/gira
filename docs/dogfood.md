@@ -60,6 +60,15 @@ Open or validate the linked pull request:
 ```bash
 gira ticket pr --dry-run
 gira ticket pr --apply --draft
+gira ticket view
+```
+
+Use structured ticket notes instead of raw issue or PR comments when the update
+fits a Gira work-log shape:
+
+```bash
+gira ticket note "Implementation is ready for CI." --dry-run
+gira ticket note "Implementation is ready for CI." --apply
 ```
 
 Finish the ticket through Gira after review and checks are ready:
@@ -75,6 +84,7 @@ Check the ticket at any point:
 
 ```bash
 gira ticket status
+gira ticket view
 ```
 
 ## Sprint Commands
@@ -113,6 +123,7 @@ Use `--json` for automation and saved evidence.
 ## Command Boundary
 
 - Use `gira ticket`, `gira sprint`, `gira release`, and `gira status` for daily work.
+- Use raw `gh issue comment`, `gh pr comment`, `gh issue view`, or `gh pr view` only when the Gira view or note UX does not cover the operation.
 - Use `gira ops` for setup, sync, onboarding, guardrails, audit, export, and lower-level GitHub controls.
 - Keep PR bodies linked with `Closes #N`, `Fixes #N`, or `Resolves #N` unless the source issue intentionally stays open.
 - Keep changes bounded to the ticket and run the verification commands listed in the issue body.

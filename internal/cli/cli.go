@@ -657,8 +657,10 @@ const ticketHelp = `Jira-style ticket lifecycle commands.
 Usage:
   gira ticket new "Title" --dry-run|--apply [--body TEXT|--body-file PATH|-] [--start] [--json]
   gira ticket list [--repo OWNER/REPO] [--state open|closed|all] [--label LABEL] [--assignee LOGIN] [--milestone TITLE] [--limit N] [--json]
+  gira ticket view [TICKET] [--repo OWNER/REPO] [--json]
   gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
+  gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both] [--body TEXT|--body-file PATH|-] [--json]
   gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]
   gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--json]
   gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--wait 0s] [--json]
@@ -667,8 +669,10 @@ Usage:
 Commands:
   new     Create a repo-bound executable ticket with a structured Gira body
   list    List repo tickets with compact GitHub issue-backed filters
+  view    Show an operating card for the ticket, linked PR, blockers, and next action
   start   Verify a ready ticket, create/reuse its branch, and move to in-progress on apply. Alias: gira start
   pr      Validate or create a linked PR with Closes #N and update review status on apply
+  note    Post a structured context note to the issue, linked PR, or both
   checks  Show linked PR checks, review blockers, and next action
   wait    Wait for pending linked PR checks without merging
   finish  Mark the linked PR ready when needed, merge safely, and report convergence
@@ -682,6 +686,8 @@ Flags:
   --label string   Ticket list label filter. Repeatable or comma-separated
   --body string    Full issue body for ticket new. Overrides structured goal/scope fields
   --body-file string Read full issue body from file, or "-" for stdin
+  --kind string    Ticket note kind: progress, blocker, decision, handoff, summary, or check. Default: progress
+  --target string  Ticket note target: auto, issue, pr, or both. Default: auto
   --assignee string Ticket list assignee login
   --milestone string Ticket list milestone title
   --limit int      Ticket list item limit. Default: 30
@@ -1176,6 +1182,14 @@ var newTicketListReport = func(options gira.TicketListOptions) (gira.TicketListR
 
 var newTicketChecksReport = func(repo gira.RepoRef, issue int, wait time.Duration, pollInterval time.Duration) (gira.TicketChecksReport, error) {
 	return gira.BuildTicketChecksReport(repo, issue, wait, pollInterval, devCommandRunner)
+}
+
+var newTicketViewReport = func(repo gira.RepoRef, issue int) (gira.TicketViewReport, error) {
+	return gira.BuildTicketViewReport(repo, issue, devCommandRunner)
+}
+
+var newTicketNoteReport = func(input gira.TicketNoteInput) (gira.TicketNoteReport, error) {
+	return gira.BuildTicketNoteReport(input, devCommandRunner)
 }
 
 var newEpicStatusReport = func(input gira.EpicInput) (gira.EpicReport, error) {
@@ -2381,10 +2395,14 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTicketNew(args[1:], stdout, stderr)
 	case "list":
 		return runTicketList(args[1:], stdout, stderr)
+	case "view":
+		return runTicketView(args[1:], stdout, stderr)
 	case "start":
 		return runTicketStart(args[1:], stdout, stderr)
 	case "pr":
 		return runTicketPR(args[1:], stdout, stderr)
+	case "note":
+		return runTicketNote(args[1:], stdout, stderr)
 	case "checks":
 		return runTicketChecks(args[1:], stdout, stderr)
 	case "wait":
@@ -2458,6 +2476,58 @@ func runTicketList(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatTicketList(report))
+	return 0
+}
+
+func runTicketView(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalTicket, positionalOK := extractTicketPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("ticket view", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	ticketNumber, ok := resolveTicketContext(repo, *ticket, *issue, positionalTicket, true, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	result, err := newTicketViewReport(repo, ticketNumber)
+	result.Status.NextStep = shortenTicketNextStep(result.Status.NextStep, result.Repo, result.Ticket)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatTicketView(result))
 	return 0
 }
 
@@ -2860,6 +2930,83 @@ func runTicketPR(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
+func runTicketNote(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalTicket, positionalBody, positionalOK := extractTicketNotePositionals(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("ticket note", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	body := fs.String("body", "", "Ticket note body")
+	bodyFile := fs.String("body-file", "", "Read ticket note body from file")
+	kind := fs.String("kind", "progress", "Ticket note kind")
+	target := fs.String("target", "auto", "Ticket note target")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply comment")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run/--apply is required\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	resolvedBody, err := readTicketNoteBody(positionalBody, *body, *bodyFile, os.Stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	ticketNumber, ok := resolveTicketContext(repo, *ticket, *issue, positionalTicket, true, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	result, err := newTicketNoteReport(gira.TicketNoteInput{
+		Repo:   repo,
+		Ticket: ticketNumber,
+		Body:   resolvedBody,
+		Kind:   *kind,
+		Target: *target,
+		DryRun: *dryRun,
+		Apply:  *apply,
+	})
+	result.Status.NextStep = shortenTicketNextStep(result.Status.NextStep, result.Repo, result.Ticket)
+	result.NextStep = shortenTicketNextStep(result.NextStep, result.Repo, result.Ticket)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatTicketNote(result))
+	return 0
+}
+
 func runTicketChecks(args []string, stdout io.Writer, stderr io.Writer) int {
 	return runTicketChecksLike(args, stdout, stderr, false)
 }
@@ -3209,6 +3356,39 @@ func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bo
 	return cleaned, positional, true
 }
 
+func extractTicketNotePositionals(args []string, stderr io.Writer) ([]string, int, string, bool) {
+	cleaned := make([]string, 0, len(args))
+	positionalTicket := 0
+	positionalBody := ""
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--kind": {}, "--target": {}, "--body": {}, "--body-file": {}}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		cleaned = append(cleaned, arg)
+		if _, ok := valueFlags[arg]; ok {
+			if i+1 < len(args) {
+				i++
+				cleaned = append(cleaned, args[i])
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		if n, err := strconv.Atoi(arg); err == nil && n > 0 && positionalTicket == 0 {
+			positionalTicket = n
+			cleaned = cleaned[:len(cleaned)-1]
+			continue
+		}
+		if positionalBody != "" {
+			fmt.Fprint(stderr, "only one positional note body can be provided; use --body for explicit body\n\n")
+			return nil, 0, "", false
+		}
+		positionalBody = arg
+		cleaned = cleaned[:len(cleaned)-1]
+	}
+	return cleaned, positionalTicket, positionalBody, true
+}
+
 func extractTitlePositional(args []string, stderr io.Writer) ([]string, string, bool) {
 	cleaned := make([]string, 0, len(args))
 	title := ""
@@ -3280,6 +3460,35 @@ func readTicketNewBody(body string, bodyFile string, stdin io.Reader) (string, e
 		return "", fmt.Errorf("--body-file is empty")
 	}
 	return trimmed, nil
+}
+
+func readTicketNoteBody(positional string, body string, bodyFile string, stdin io.Reader) (string, error) {
+	body = strings.TrimSpace(body)
+	positional = strings.TrimSpace(positional)
+	bodyFile = strings.TrimSpace(bodyFile)
+	set := 0
+	if positional != "" {
+		set++
+	}
+	if body != "" {
+		set++
+	}
+	if bodyFile != "" {
+		set++
+	}
+	if set > 1 {
+		return "", fmt.Errorf("use only one of positional body, --body, or --body-file")
+	}
+	if positional != "" {
+		return positional, nil
+	}
+	if body != "" {
+		return body, nil
+	}
+	if bodyFile == "" {
+		return "", fmt.Errorf("ticket note body is required")
+	}
+	return readTicketNewBody("", bodyFile, stdin)
 }
 
 func resolveExplicitTicket(ticket int, issue int, positional int, stderr io.Writer) (int, bool) {

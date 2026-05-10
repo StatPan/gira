@@ -110,6 +110,43 @@ gira ticket new --title "TITLE" --body-file issue.md --dry-run
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
+## `ticket note`
+
+Post a structured context note to the issue, linked PR, or both.
+
+Usage:
+
+```bash
+gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both]
+```
+
+Since: `v1.12.0`
+
+Flags:
+
+- `--kind`: Template kind for the note. Default: progress.
+- `--target`: Comment target: auto, issue, pr, or both. Default: auto.
+- `--body`: Explicit note body.
+- `--body-file`: Read note body from file or stdin with -.
+- `--dry-run`: Preview target resolution and rendered note without posting.
+- `--apply`: Post the rendered note.
+
+Examples:
+
+- Preview a progress note
+
+```bash
+gira ticket note "Implemented parser path" --dry-run
+```
+
+- Post a blocker to both issue and PR
+
+```bash
+gira ticket note --kind blocker --target both --body-file note.md --apply
+```
+
+Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
+
 ## `ticket pr`
 
 Create or validate a linked PR with required issue closing text.
@@ -172,6 +209,28 @@ Examples:
 
 ```bash
 gira ticket status
+```
+
+Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
+
+## `ticket view`
+
+Show a Gira operating card for the ticket, linked PR, blockers, and next action.
+
+Usage:
+
+```bash
+gira ticket view [TICKET] [--repo OWNER/REPO] [--json]
+```
+
+Since: `v1.12.0`
+
+Examples:
+
+- Inspect current branch ticket context
+
+```bash
+gira ticket view
 ```
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`

@@ -693,7 +693,7 @@ Usage:
 const ticketHelp = `Jira-style ticket lifecycle commands.
 
 Usage:
-  gira ticket new "Title" --dry-run|--apply [--start] [--json]
+  gira ticket new "Title" --dry-run|--apply [--body TEXT|--body-file PATH|-] [--start] [--json]
   gira ticket list [--repo OWNER/REPO] [--state open|closed|all] [--label LABEL] [--assignee LOGIN] [--milestone TITLE] [--limit N] [--json]
   gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
@@ -718,6 +718,8 @@ Flags:
   --issue int      Compatibility alias for --ticket
   --state string   Ticket list state filter: open, closed, or all. Default: open
   --label string   Ticket list label filter. Repeatable or comma-separated
+  --body string    Full issue body for ticket new. Overrides structured goal/scope fields
+  --body-file string Read full issue body from file, or "-" for stdin
   --assignee string Ticket list assignee login
   --milestone string Ticket list milestone title
   --limit int      Ticket list item limit. Default: 30
@@ -2698,6 +2700,7 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 	scope := fs.String("scope", "", "Ticket scope")
 	acceptance := fs.String("acceptance", "", "Semicolon-separated acceptance criteria")
 	notes := fs.String("notes", "", "Ticket notes")
+	body := fs.String("body", "", "Full issue body")
 	ticketType := fs.String("type", "task", "Ticket type: epic|story|task|bug|spike|chore")
 	priority := fs.String("priority", "", "Priority: p0|p1|p2|p3")
 	milestone := fs.String("milestone", "", "Milestone title")
@@ -2729,6 +2732,11 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
 	}
+	resolvedBody, err := readTicketNewBody(*body, *bodyFile, os.Stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
 	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -2741,11 +2749,11 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 		Scope:      *scope,
 		Acceptance: splitList(*acceptance),
 		Notes:      *notes,
+		Body:       resolvedBody,
 		Type:       *ticketType,
 		Priority:   *priority,
 		Milestone:  *milestone,
 		Labels:     labels,
-		BodyFile:   *bodyFile,
 		Start:      *start,
 		DryRun:     *dryRun,
 	})
@@ -3230,7 +3238,7 @@ func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bo
 func extractTitlePositional(args []string, stderr io.Writer) ([]string, string, bool) {
 	cleaned := make([]string, 0, len(args))
 	title := ""
-	valueFlags := map[string]struct{}{"--repo": {}, "--title": {}, "--goal": {}, "--scope": {}, "--acceptance": {}, "--notes": {}, "--type": {}, "--priority": {}, "--milestone": {}, "--label": {}, "--body-file": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--title": {}, "--goal": {}, "--scope": {}, "--acceptance": {}, "--notes": {}, "--body": {}, "--type": {}, "--priority": {}, "--milestone": {}, "--label": {}, "--body-file": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)
@@ -3269,6 +3277,35 @@ func resolveTicketNewTitle(positional string, title string, stderr io.Writer) (s
 	}
 	fmt.Fprint(stderr, "ticket title is required\n\n")
 	return "", false
+}
+
+func readTicketNewBody(body string, bodyFile string, stdin io.Reader) (string, error) {
+	body = strings.TrimSpace(body)
+	bodyFile = strings.TrimSpace(bodyFile)
+	if body != "" && bodyFile != "" {
+		return "", fmt.Errorf("use either --body or --body-file, not both")
+	}
+	if body != "" {
+		return body, nil
+	}
+	if bodyFile == "" {
+		return "", nil
+	}
+	var content []byte
+	var err error
+	if bodyFile == "-" {
+		content, err = io.ReadAll(stdin)
+	} else {
+		content, err = os.ReadFile(bodyFile)
+	}
+	if err != nil {
+		return "", fmt.Errorf("read --body-file: %w", err)
+	}
+	trimmed := strings.TrimSpace(string(content))
+	if trimmed == "" {
+		return "", fmt.Errorf("--body-file is empty")
+	}
+	return trimmed, nil
 }
 
 func resolveExplicitTicket(ticket int, issue int, positional int, stderr io.Writer) (int, bool) {

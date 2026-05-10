@@ -1517,6 +1517,64 @@ func TestTicketNewDryRunJSON(t *testing.T) {
 	}
 }
 
+func TestTicketNewBodyFlagJSON(t *testing.T) {
+	restore := newTicketNewReport
+	t.Cleanup(func() { newTicketNewReport = restore })
+	newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
+		if input.Body != "## Goal\nExact packet" || input.BodyFile != "" {
+			t.Fatalf("unexpected body input: %+v", input)
+		}
+		return gira.TicketNewReport{Repo: input.Repo.FullName(), Title: input.Title, DryRun: true, Labels: []string{"type:task", "status:ready"}, Body: input.Body, NextStep: "gira ticket new --apply"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "new", "--repo", "StatPan/gira", "--title", "Add packet", "--body", "## Goal\nExact packet", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Exact packet") {
+		t.Fatalf("ticket new JSON missing body:\n%s", stdout.String())
+	}
+}
+
+func TestTicketNewBodyFileJSON(t *testing.T) {
+	restore := newTicketNewReport
+	t.Cleanup(func() { newTicketNewReport = restore })
+	dir := t.TempDir()
+	bodyPath := filepath.Join(dir, "issue.md")
+	if err := os.WriteFile(bodyPath, []byte("## Goal\nFrom file\n"), 0o644); err != nil {
+		t.Fatalf("write body file: %v", err)
+	}
+	newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
+		if input.Body != "## Goal\nFrom file" || input.BodyFile != "" {
+			t.Fatalf("unexpected body input: %+v", input)
+		}
+		return gira.TicketNewReport{Repo: input.Repo.FullName(), Title: input.Title, DryRun: true, Labels: []string{"type:task", "status:ready"}, Body: input.Body, NextStep: "gira ticket new --apply"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "new", "--repo", "StatPan/gira", "--title", "Add packet", "--body-file", bodyPath, "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "From file") {
+		t.Fatalf("ticket new JSON missing body:\n%s", stdout.String())
+	}
+}
+
+func TestReadTicketNewBodyStdin(t *testing.T) {
+	body, err := readTicketNewBody("", "-", strings.NewReader("## Goal\nFrom stdin\n"))
+	if err != nil {
+		t.Fatalf("readTicketNewBody returned error: %v", err)
+	}
+	if body != "## Goal\nFrom stdin" {
+		t.Fatalf("body = %q", body)
+	}
+	if _, err := readTicketNewBody("body", "-", strings.NewReader("ignored")); err == nil || !strings.Contains(err.Error(), "either --body or --body-file") {
+		t.Fatalf("expected conflict error, got %v", err)
+	}
+}
+
 func TestTicketNewApplyStart(t *testing.T) {
 	restore := newTicketNewReport
 	t.Cleanup(func() { newTicketNewReport = restore })

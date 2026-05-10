@@ -232,14 +232,23 @@ contract reference is the preferred compatibility path.
 
 ## Default Flip Strategy
 
-Global registry support should ship in stages:
+Global registry support ships in stages:
 
 1. Add paths, schemas, loaders, and diagnostics without changing defaults.
 2. Add repo registration and workspace global initialization as opt-in flows.
 3. Add migration guidance for existing repo-local configs.
 4. Document global mode as the recommended personal/operator mode.
-5. Later, flip default config resolution to global registry when available.
+5. Flip default workspace config resolution to the global registry when a
+   matching global workspace is available.
 
-The default flip is a separate compatibility-sensitive change. It should happen
-only after `gira config doctor` can explain which source won and after docs
-provide an opt-out or explicit legacy path such as `--config .gira/config.yaml`.
+The default flip is compatibility-sensitive. The rollback and opt-out path is
+to pass an explicit config path:
+
+```bash
+gira workspace status --config .gira/config.yaml
+gira projects sync --config .gira/config.yaml --dry-run
+```
+
+Explicit `--config` flags preserve repo-local contract behavior. Without
+`--config`, workspace commands prefer a matching global workspace and then fall
+back to `.gira/config.yaml`.

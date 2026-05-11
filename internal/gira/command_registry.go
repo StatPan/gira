@@ -139,6 +139,26 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"jira", "doctor"},
+			Summary: "Diagnose Jira-primary provider compatibility without mutating Jira or GitHub.",
+			Usage:   "gira jira doctor --repo OWNER/REPO [--project KEY] [--api-base URL] [--sample-key JIRA-123] [--config-root PATH] [--json]",
+			Since:   "v1.13.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--project", Summary: "Override the configured Jira project key for diagnostics."},
+				{Name: "--api-base", Summary: "Override the configured Jira API base URL."},
+				{Name: "--sample-key", Summary: "Representative Jira issue key for transition and required-field diagnostics."},
+				{Name: "--config-root", Summary: "Override the global Gira config root."},
+				{Name: "--json", Summary: "Emit stable JSON."},
+			},
+			Docs:        []string{"README.md", "docs/jira-primary-provider.md", "docs-site/jira-primary-provider.md"},
+			GuideTopics: []string{"jira"},
+			GuideOrder:  15,
+			Examples: []CommandExample{
+				{Summary: "Diagnose a configured Jira-primary repo", Command: "gira jira doctor --repo OWNER/app --sample-key ABC-123"},
+			},
+		},
+		{
 			Path:    []string{"jira", "mirror"},
 			Summary: "Create or reuse a GitHub mirror issue for one Jira key.",
 			Usage:   "gira jira mirror JIRA-123 --repo OWNER/REPO --dry-run|--apply [--api-base URL] [--config-root PATH] [--json]",

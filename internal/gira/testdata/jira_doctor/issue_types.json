@@ -1,0 +1,5 @@
+[
+  {"id":"10001","name":"Task","subtask":false,"hierarchyLevel":0},
+  {"id":"10002","name":"Bug","subtask":false,"hierarchyLevel":0},
+  {"id":"10003","name":"Story","subtask":false,"hierarchyLevel":0}
+]

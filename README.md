@@ -114,6 +114,7 @@ GitHub-native mode remains the default. Jira-primary mode is explicit and keeps 
 ```bash
 gira jira init --repo OWNER/REPO --api-base https://example.atlassian.net --project ABC --dry-run
 gira jira init --repo OWNER/REPO --api-base https://example.atlassian.net --project ABC --apply
+gira jira doctor --repo OWNER/REPO --sample-key ABC-123
 gira jira mirror ABC-123 --repo OWNER/REPO --dry-run
 gira jira mirror ABC-123 --repo OWNER/REPO --apply
 gira ticket start ABC-123 --repo OWNER/REPO --apply
@@ -121,7 +122,7 @@ gira ticket finish --repo OWNER/REPO --dry-run
 gira ticket finish --repo OWNER/REPO --apply
 ```
 
-Provider config is non-secret and lives in the user-global repo registry. Jira credentials come from `JIRA_EMAIL` and `JIRA_API_TOKEN`. `ticket finish` refuses Jira Done while GitHub evidence is incomplete, including missing mirror issue, missing linked PR, draft PR, review blocker, failing or pending checks, or unmerged PR. Jira workflow mutation, background sync, full bidirectional sync, hosted dashboards, and Jira-only completion are outside the OSS CLI slices. See [docs/jira-primary-provider.md](docs/jira-primary-provider.md) and `gira guide jira`.
+Provider config is non-secret and lives in the user-global repo registry. Jira credentials come from `JIRA_EMAIL` and `JIRA_API_TOKEN`. `gira jira doctor` is read-only and reports whether a Jira-primary repo is `supported`, `partially_supported`, or `blocked` before heavier operation. `ticket finish` refuses Jira Done while GitHub evidence is incomplete, including missing mirror issue, missing linked PR, draft PR, review blocker, failing or pending checks, or unmerged PR. Jira workflow mutation, background sync, full bidirectional sync, hosted dashboards, and Jira-only completion are outside the OSS CLI slices. See [docs/jira-primary-provider.md](docs/jira-primary-provider.md) and `gira guide jira`.
 
 ## Ticket Flow Cases
 

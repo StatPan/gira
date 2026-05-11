@@ -642,6 +642,7 @@ const jiraHelp = `Jira provider, import, and export command family.
 Usage:
   gira jira init --repo OWNER/REPO --api-base URL --project KEY --dry-run|--apply [--config-root PATH] [--overwrite] [--json]
   gira jira mirror JIRA-123 --repo OWNER/REPO --dry-run|--apply [--api-base URL] [--config-root PATH] [--json]
+  gira jira transition JIRA-123 --repo OWNER/REPO --to ready|in_progress|review|done --dry-run [--api-base URL] [--config-root PATH] [--json]
   gira jira import --repo OWNER/REPO --source PATH --dry-run|--apply [--json]
   gira jira import --repo OWNER/REPO --api-base URL --project KEY --dry-run|--apply [--json]
   gira jira export --repo OWNER/REPO --output PATH [--json]
@@ -649,6 +650,7 @@ Usage:
 Commands:
   init        Discover a Jira project and write reviewed non-secret provider config
   mirror      Create or reuse a GitHub mirror issue for one Jira key
+  transition  Plan one Jira status transition without mutation
   import      Import Jira CSV/JSON or read-only Jira API issues into GitHub issues
   export      Export GitHub issue state into Jira-friendly JSON and CSV artifacts
 
@@ -657,6 +659,7 @@ Flags:
   --source string    CSV or JSON import source path
   --api-base string  Jira API base URL, for example https://example.atlassian.net
   --project string   Jira project key
+  --to string        Target Gira status for Jira transition planning
   --config-root PATH Override the global Gira config root
   --overwrite        Replace an existing providers.jira block after review
   --output string    Output directory for export artifacts
@@ -1195,6 +1198,10 @@ var newJiraProviderInitReport = func(input gira.JiraProviderInitInput) (gira.Jir
 
 var newJiraMirrorReport = func(input gira.JiraMirrorInput) (gira.JiraMirrorReport, error) {
 	return gira.MirrorJiraIssue(input, jiraCommandRunner)
+}
+
+var newJiraTransitionPlanReport = func(input gira.JiraTransitionPlanInput) (gira.JiraTransitionPlanReport, error) {
+	return gira.BuildJiraTransitionPlan(input)
 }
 
 var newJiraExportReport = func(repo gira.RepoRef, outputRoot string) (gira.JiraExportReport, error) {
@@ -2201,6 +2208,8 @@ func runJira(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runJiraInit(args[1:], stdout, stderr)
 	case "mirror":
 		return runJiraMirror(args[1:], stdout, stderr)
+	case "transition":
+		return runJiraTransition(args[1:], stdout, stderr)
 	case "import":
 		return runJiraImport(args[1:], stdout, stderr)
 	case "export":
@@ -2349,7 +2358,7 @@ func extractJiraMirrorKeyPositional(args []string, stderr io.Writer) ([]string, 
 	cleaned := make([]string, 0, len(args))
 	key := ""
 	seen := false
-	valueFlags := map[string]struct{}{"--repo": {}, "--api-base": {}, "--config-root": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--api-base": {}, "--config-root": {}, "--to": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)
@@ -2372,6 +2381,76 @@ func extractJiraMirrorKeyPositional(args []string, stderr io.Writer) ([]string, 
 		cleaned = cleaned[:len(cleaned)-1]
 	}
 	return cleaned, key, true
+}
+
+func runJiraTransition(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, jiraKey, keyOK := extractJiraMirrorKeyPositional(args, stderr)
+	if !keyOK {
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("jira transition", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	target := fs.String("to", "", "Target Gira status")
+	apiBase := fs.String("api-base", "", "Jira API base URL")
+	configRoot := fs.String("config-root", "", "Override Gira global config root")
+	dryRun := fs.Bool("dry-run", false, "Preview transition plan")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, jiraHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if jiraKey == "" {
+		fmt.Fprint(stderr, "jira transition requires exactly one Jira key\n\n")
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newJiraTransitionPlanReport(gira.JiraTransitionPlanInput{
+		Repo:       repo,
+		Key:        jiraKey,
+		Target:     *target,
+		APIBase:    *apiBase,
+		ConfigRoot: *configRoot,
+		DryRun:     *dryRun,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode jira transition JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatJiraTransitionPlan(report))
+	return 0
 }
 
 func runJiraImport(args []string, stdout io.Writer, stderr io.Writer) int {

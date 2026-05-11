@@ -812,6 +812,42 @@ func TestJiraMirrorRejectsDuplicatePositionalKeys(t *testing.T) {
 	}
 }
 
+func TestJiraTransitionJSON(t *testing.T) {
+	restore := newJiraTransitionPlanReport
+	t.Cleanup(func() { newJiraTransitionPlanReport = restore })
+	newJiraTransitionPlanReport = func(input gira.JiraTransitionPlanInput) (gira.JiraTransitionPlanReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Key != "ABC-123" || input.Target != "in_progress" || input.APIBase != "https://jira.example" || input.ConfigRoot != "/tmp/gira" || !input.DryRun {
+			t.Fatalf("unexpected jira transition input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.JiraTransitionPlanReport{
+			Command:       "jira transition",
+			Repo:          input.Repo.FullName(),
+			Key:           input.Key,
+			APIBase:       input.APIBase,
+			CurrentStatus: "To Do",
+			Target:        input.Target,
+			TargetStatuses: []string{
+				"In Progress",
+			},
+			Candidate: gira.JiraTransitionCandidate{ID: "21", Name: "Start Progress", ToStatus: "In Progress"},
+			Decision:  "direct_transition",
+			DryRun:    true,
+			ReadOnly:  true,
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"jira", "transition", "ABC-123", "--repo", "StatPan/gira", "--to", "in_progress", "--api-base", "https://jira.example", "--config-root", "/tmp/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "jira transition"`, `"decision": "direct_transition"`, `"key": "ABC-123"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("jira transition JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestJiraImportJSON(t *testing.T) {
 	restore := newJiraImportReport
 	t.Cleanup(func() { newJiraImportReport = restore })

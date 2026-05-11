@@ -55,6 +55,15 @@ gira ticket start TICKET --apply
 
 If an issue was opened by a user or contributor without enough structure, normalize it first. A dogfood ticket is executable only when the goal, scope, acceptance criteria, type label, and ready status are clear.
 
+If an issue should be replaced by a more accurate work packet, supersede it
+through Gira instead of manually sequencing comments, close, and replacement
+creation:
+
+```bash
+gira ticket supersede TICKET --replacement-title "TITLE" --body-file replacement.md --dry-run
+gira ticket supersede TICKET --replacement-title "TITLE" --body-file replacement.md --apply
+```
+
 Open or validate the linked pull request:
 
 ```bash

@@ -2232,6 +2232,43 @@ func TestTicketNoteParsesBodyAndDryRunJSON(t *testing.T) {
 	}
 }
 
+func TestTicketSupersedeParsesReplacementBodyAndJSON(t *testing.T) {
+	restore := newTicketSupersedeReport
+	t.Cleanup(func() { newTicketSupersedeReport = restore })
+	newTicketSupersedeReport = func(input gira.TicketSupersedeInput) (gira.TicketSupersedeReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 64 || input.ReplacementTitle != "New gate" || input.Body != "## Goal\nBody" || !input.DryRun || input.CloseDraftPR {
+			t.Fatalf("unexpected input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.TicketSupersedeReport{
+			Command:  "ticket supersede",
+			Repo:     input.Repo.FullName(),
+			DryRun:   true,
+			Original: gira.TicketSupersedeIssue{Number: input.Ticket, Title: "Old gate"},
+			Replacement: gira.TicketSupersedeIssue{
+				Title: input.ReplacementTitle,
+				Body:  input.Body + "\n\n## Supersedes\n- Supersedes #64\n",
+			},
+			Actions:  []gira.TicketSupersedeAction{{Action: "replacement:create", Status: "planned"}},
+			NextStep: "gira ticket supersede --apply",
+		}, nil
+	}
+
+	tmp := t.TempDir()
+	bodyPath := filepath.Join(tmp, "replacement.md")
+	if err := os.WriteFile(bodyPath, []byte("## Goal\nBody\n"), 0o644); err != nil {
+		t.Fatalf("write body file: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "supersede", "64", "--repo", "StatPan/gira", "--replacement-title", "New gate", "--body-file", bodyPath, "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"command": "ticket supersede"`) || !strings.Contains(stdout.String(), `"replacement"`) {
+		t.Fatalf("ticket supersede JSON missing fields:\n%s", stdout.String())
+	}
+}
+
 func TestTicketWaitUsesTimeoutAndInterval(t *testing.T) {
 	restoreChecks := newTicketChecksReport
 	t.Cleanup(func() { newTicketChecksReport = restoreChecks })

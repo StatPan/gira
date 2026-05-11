@@ -1,0 +1,102 @@
+package gira
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+type ticketSupersedeRunner struct {
+	calls []string
+}
+
+func (r *ticketSupersedeRunner) Run(name string, args ...string) ([]byte, error) {
+	call := name + " " + strings.Join(args, " ")
+	r.calls = append(r.calls, call)
+	switch {
+	case call == "gh api repos/StatPan/gira/issues/64":
+		return []byte(`{"number":64,"title":"Old gate","state":"open","html_url":"https://github.com/StatPan/gira/issues/64","labels":[{"name":"type:task"},{"name":"status:ready"},{"name":"priority:p1"},{"name":"area:docs"}],"milestone":{"title":"MVP"}}`), nil
+	case strings.HasPrefix(call, "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 64 "):
+		return []byte(`[{"number":65,"title":"draft","body":"Closes #64","state":"OPEN","url":"https://github.com/StatPan/gira/pull/65","reviewDecision":"","isDraft":true,"mergeStateStatus":"UNKNOWN","statusCheckRollup":[]}]`), nil
+	case strings.HasPrefix(call, "gh issue create --repo StatPan/gira --title New gate --body "):
+		if !strings.Contains(call, "Supersedes #64") || !strings.Contains(call, "--label status:ready") || strings.Contains(call, "--label status:done") {
+			return nil, fmt.Errorf("unexpected create call: %s", call)
+		}
+		return []byte("https://github.com/StatPan/gira/issues/94\n"), nil
+	case strings.HasPrefix(call, "gh issue comment 64 --repo StatPan/gira --body ## Superseded"):
+		return nil, nil
+	case strings.HasPrefix(call, "gh issue comment 94 --repo StatPan/gira --body ## Replacement"):
+		return nil, nil
+	case call == "gh api repos/StatPan/gira/issues/64/labels/status:ready -X DELETE":
+		return nil, nil
+	case call == "gh api repos/StatPan/gira/issues/64/labels -X POST -f labels[]=status:done":
+		return nil, nil
+	case call == "gh issue close 64 --repo StatPan/gira":
+		return nil, nil
+	case call == "gh pr close 65 --repo StatPan/gira --comment Superseded by #94.":
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unexpected call: %s", call)
+	}
+}
+
+func TestBuildTicketSupersedeReportDryRunPlansReplacement(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &ticketSupersedeRunner{}
+
+	report, err := BuildTicketSupersedeReport(TicketSupersedeInput{
+		Repo:             repo,
+		Ticket:           64,
+		ReplacementTitle: "New gate",
+		Body:             "## Goal\nDefine release gate.",
+		DryRun:           true,
+	}, runner)
+	if err != nil {
+		t.Fatalf("BuildTicketSupersedeReport error: %v", err)
+	}
+	if report.Replacement.Number != 0 || !report.DryRun || report.Replacement.Milestone != "MVP" {
+		t.Fatalf("unexpected dry-run report: %+v", report)
+	}
+	if !containsString(report.Replacement.Labels, "status:ready") || containsString(report.Replacement.Labels, "status:done") {
+		t.Fatalf("replacement labels not normalized: %+v", report.Replacement.Labels)
+	}
+	if !strings.Contains(report.Replacement.Body, "Supersedes #64") {
+		t.Fatalf("replacement body missing original link:\n%s", report.Replacement.Body)
+	}
+	for _, call := range runner.calls {
+		if strings.Contains(call, "issue create") || strings.Contains(call, "issue close") || strings.Contains(call, "issue comment") {
+			t.Fatalf("dry-run mutated GitHub: %v", runner.calls)
+		}
+	}
+}
+
+func TestBuildTicketSupersedeReportApplyCreatesLinksAndCloses(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &ticketSupersedeRunner{}
+
+	report, err := BuildTicketSupersedeReport(TicketSupersedeInput{
+		Repo:             repo,
+		Ticket:           64,
+		ReplacementTitle: "New gate",
+		Body:             "## Goal\nDefine release gate.",
+		CloseDraftPR:     true,
+		Apply:            true,
+	}, runner)
+	if err != nil {
+		t.Fatalf("BuildTicketSupersedeReport error: %v", err)
+	}
+	if report.Replacement.Number != 94 || report.Original.State != "closed" || report.DraftPR.Action != "close" {
+		t.Fatalf("unexpected apply report: %+v", report)
+	}
+	for _, want := range []string{
+		"gh issue close 64 --repo StatPan/gira",
+		"gh pr close 65 --repo StatPan/gira --comment Superseded by #94.",
+	} {
+		if !containsCall(runner.calls, want) {
+			t.Fatalf("missing call %q in %v", want, runner.calls)
+		}
+	}
+	if !strings.Contains(FormatTicketSupersede(report), "replacement=#94") {
+		t.Fatalf("format missing replacement:\n%s", FormatTicketSupersede(report))
+	}
+}

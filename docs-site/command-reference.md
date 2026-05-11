@@ -213,6 +213,39 @@ gira ticket status
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
+## `ticket supersede`
+
+Close a ticket as superseded and create a linked replacement ticket.
+
+Usage:
+
+```bash
+gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr]
+```
+
+Since: `v1.12.0`
+
+Flags:
+
+- `--replacement-title`: Title for the replacement issue.
+- `--body`: Replacement issue body.
+- `--body-file`: Read replacement issue body from file or stdin with -.
+- `--label`: Additional replacement issue label.
+- `--milestone`: Override replacement issue milestone.
+- `--close-draft-pr`: Close a linked draft PR when superseding.
+- `--dry-run`: Preview all planned mutations.
+- `--apply`: Create the replacement, cross-link notes, status update, and close the original.
+
+Examples:
+
+- Preview a replacement ticket
+
+```bash
+gira ticket supersede 64 --replacement-title "Define release gate" --body-file replacement.md --dry-run
+```
+
+Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
+
 ## `ticket view`
 
 Show a Gira operating card for the ticket, linked PR, blockers, and next action.

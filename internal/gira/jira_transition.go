@@ -94,6 +94,16 @@ func BuildJiraTransitionPlan(input JiraTransitionPlanInput) (JiraTransitionPlanR
 		DryRun:         true,
 		ReadOnly:       true,
 	}
+	if len(targetStatuses) == 0 {
+		report.Decision = "unmapped_status"
+		report.Reason = "providers.jira.status_map has no target Jira statuses for " + target
+		return report, nil
+	}
+	if containsJiraTargetStatus(targetStatuses, item.Status) {
+		report.Decision = "already_at_target"
+		report.Reason = "Jira issue is already in a configured target status"
+		return report, nil
+	}
 	transitions, err := fetchJiraIssueTransitions(apiBase, key, email, token)
 	if err != nil {
 		if isJiraTransitionPermissionDiagnostic(err) {
@@ -104,11 +114,6 @@ func BuildJiraTransitionPlan(input JiraTransitionPlanInput) (JiraTransitionPlanR
 		return JiraTransitionPlanReport{}, err
 	}
 	report.AllowedTransitions = transitions
-	if len(targetStatuses) == 0 {
-		report.Decision = "unmapped_status"
-		report.Reason = "providers.jira.status_map has no target Jira statuses for " + target
-		return report, nil
-	}
 	if len(transitions) == 0 {
 		report.Decision = "manual_admin_required"
 		report.Reason = "Jira returned no allowed transitions for this issue"
@@ -128,6 +133,33 @@ func BuildJiraTransitionPlan(input JiraTransitionPlanInput) (JiraTransitionPlanR
 	}
 	report.Decision = "direct_transition"
 	return report, nil
+}
+
+func ApplyJiraTransition(apiBase string, key string, transitionID string, email string, token string) error {
+	key, err := normalizeJiraKey(key)
+	if err != nil {
+		return err
+	}
+	apiBase, err = normalizeJiraAPIBase(apiBase)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(transitionID) == "" {
+		return fmt.Errorf("Jira transition id is required")
+	}
+	if strings.TrimSpace(email) == "" || strings.TrimSpace(token) == "" {
+		return fmt.Errorf("JIRA_EMAIL and JIRA_API_TOKEN are required for jira transition apply")
+	}
+	payload, err := json.Marshal(map[string]any{
+		"transition": map[string]string{"id": strings.TrimSpace(transitionID)},
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := jiraAPIPost(apiBase, "/rest/api/3/issue/"+url.PathEscape(key)+"/transitions", payload, email, token); err != nil {
+		return fmt.Errorf("apply Jira transition for %s: %w", key, err)
+	}
+	return nil
 }
 
 func FormatJiraTransitionPlan(report JiraTransitionPlanReport) string {
@@ -225,6 +257,16 @@ func findJiraTransitionCandidate(transitions []JiraTransitionCandidate, targets 
 		}
 	}
 	return fallback, found
+}
+
+func containsJiraTargetStatus(targets []string, status string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(status))
+	for _, target := range targets {
+		if strings.ToLower(strings.TrimSpace(target)) == normalized {
+			return true
+		}
+	}
+	return false
 }
 
 func isJiraTransitionPermissionDiagnostic(err error) bool {

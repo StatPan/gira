@@ -25,6 +25,7 @@ type devStartIssue struct {
 	Number int      `json:"number"`
 	Title  string   `json:"title"`
 	State  string   `json:"state"`
+	Body   string   `json:"body"`
 	Labels []string `json:"labels"`
 	IsPR   bool     `json:"is_pr"`
 }
@@ -102,10 +103,11 @@ func fetchDevIssue(repo RepoRef, issueNumber int, runner CommandRunner) (devStar
 		return devStartIssue{}, fmt.Errorf("fetch issue: %w", err)
 	}
 	var raw struct {
-		Number      int    `json:"number"`
-		Title       string `json:"title"`
-		State       string `json:"state"`
-		PullRequest *any   `json:"pull_request"`
+		Number      int     `json:"number"`
+		Title       string  `json:"title"`
+		State       string  `json:"state"`
+		Body        *string `json:"body"`
+		PullRequest *any    `json:"pull_request"`
 		Labels      []struct {
 			Name string `json:"name"`
 		} `json:"labels"`
@@ -123,7 +125,11 @@ func fetchDevIssue(repo RepoRef, issueNumber int, runner CommandRunner) (devStar
 	for _, label := range raw.Labels {
 		labels = append(labels, label.Name)
 	}
-	return devStartIssue{Number: raw.Number, Title: raw.Title, State: raw.State, Labels: labels, IsPR: raw.PullRequest != nil}, nil
+	body := ""
+	if raw.Body != nil {
+		body = *raw.Body
+	}
+	return devStartIssue{Number: raw.Number, Title: raw.Title, State: raw.State, Body: body, Labels: labels, IsPR: raw.PullRequest != nil}, nil
 }
 
 func hasReadyLabel(labels []string) bool {

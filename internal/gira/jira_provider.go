@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 )
 
 var jiraAPIGet = fetchJiraAPIGetHTTP
+var jiraAPIPost = fetchJiraAPIPostHTTP
 
 type JiraProviderInitInput struct {
 	Repo       RepoRef `json:"-"`
@@ -551,6 +553,29 @@ func fetchJiraAPIGetHTTP(apiBase string, path string, query map[string]string, e
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("Jira API GET %s failed: %s", path, resp.Status)
+	}
+	return content, nil
+}
+
+func fetchJiraAPIPostHTTP(apiBase string, path string, body []byte, email string, token string) ([]byte, error) {
+	endpoint := strings.TrimRight(apiBase, "/") + path
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(email, token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	content, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("Jira API POST %s failed: %s", path, resp.Status)
 	}
 	return content, nil
 }

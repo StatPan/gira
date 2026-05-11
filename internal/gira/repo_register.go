@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -194,5 +195,27 @@ func marshalRepoRegistryEntry(entry GlobalRepoRegistryEntry) ([]byte, error) {
 }
 
 func repoRegistryEntriesEqual(a GlobalRepoRegistryEntry, b GlobalRepoRegistryEntry) bool {
-	return strings.EqualFold(a.Repo, b.Repo) && filepath.Clean(a.Path) == filepath.Clean(b.Path) && a.Contract == b.Contract && strings.EqualFold(a.Workspace.Name, b.Workspace.Name)
+	return strings.EqualFold(a.Repo, b.Repo) &&
+		filepath.Clean(a.Path) == filepath.Clean(b.Path) &&
+		a.Contract == b.Contract &&
+		strings.EqualFold(a.Workspace.Name, b.Workspace.Name) &&
+		stringSlicesEqual(a.Aliases, b.Aliases) &&
+		globalDefaultsEqual(a.Defaults, b.Defaults) &&
+		reflect.DeepEqual(a.Providers, b.Providers)
+}
+
+func globalDefaultsEqual(a GlobalDefaults, b GlobalDefaults) bool {
+	return a.Agent == b.Agent && a.Assignee == b.Assignee && stringSlicesEqual(a.AgentLabels, b.AgentLabels)
+}
+
+func stringSlicesEqual(a []string, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

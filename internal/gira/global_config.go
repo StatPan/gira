@@ -47,6 +47,11 @@ type GlobalRepoRegistryEntry struct {
 	Contract  string                 `yaml:"contract" toml:"contract" json:"contract,omitempty"`
 	Defaults  GlobalDefaults         `yaml:"defaults" toml:"defaults" json:"defaults,omitempty"`
 	Workspace GlobalRepoWorkspaceRef `yaml:"workspace" toml:"workspace" json:"workspace,omitempty"`
+	Providers *GlobalProvidersConfig `yaml:"providers,omitempty" toml:"providers,omitempty" json:"providers,omitempty"`
+}
+
+type GlobalProvidersConfig struct {
+	Jira *JiraProviderConfig `yaml:"jira,omitempty" toml:"jira,omitempty" json:"jira,omitempty"`
 }
 
 type GlobalRepoWorkspaceRef struct {
@@ -209,6 +214,11 @@ func ValidateGlobalRepoRegistryEntry(entry GlobalRepoRegistryEntry, expected Rep
 	}
 	if strings.TrimSpace(entry.Workspace.Name) != "" && !isSafeRegistryName(entry.Workspace.Name) {
 		return fmt.Errorf("invalid global repo registry %q: workspace.name must not contain path separators", source)
+	}
+	if entry.Providers != nil && entry.Providers.Jira != nil {
+		if err := validateJiraProviderConfig(source, "providers.jira", *entry.Providers.Jira); err != nil {
+			return err
+		}
 	}
 	return nil
 }

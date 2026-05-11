@@ -22,6 +22,8 @@ features:
     details: Map Jira concepts onto GitHub without creating a separate planning database or forcing Projects v2 automation into v1.
   - title: Optional Jira-primary mode
     details: Let Jira own planning and status while Gira keeps GitHub PR, review, checks, merge, and close evidence authoritative.
+  - title: Hosted control-plane direction
+    details: Keep the CLI as the execution core while a future hosted layer focuses on provider health, closure readiness, audit, and agent queue visibility.
 ---
 
 ## Daily Loop
@@ -40,3 +42,5 @@ gira ticket finish --apply
 Gira is a Go-built CLI. Package managers are distribution channels for the same official binary, not alternate product runtimes.
 
 Use [Jira-primary provider mode](/jira-primary-provider) only when Jira already owns planning and status for a repo. GitHub-native mode remains the default.
+
+The future hosted direction is documented as a bounded [control-plane roadmap](/hosted-control-plane), not as a replacement for the CLI.

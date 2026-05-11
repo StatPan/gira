@@ -32,6 +32,7 @@ Daily commands:
   sprint      Sprint iteration planning/start/close workflow
   release     Release readiness gate report
   status      Show a compact read-only GitHub status summary
+  stats       Read-only workflow closure statistics
   config      Inspect global and repo-local Gira config sources
   upgrade     Check latest release and print upgrade instructions
   cache       Manage local Gira caches
@@ -55,12 +56,13 @@ Flags:
 const guideHelp = `Built-in Gira guides for installed CLI users.
 
 Usage:
-  gira guide [quickstart|ticket|agent|skill|concepts]
-  gira docs [quickstart|ticket|agent|skill|concepts]
+  gira guide [quickstart|ticket|stats|agent|skill|concepts]
+  gira docs [quickstart|ticket|stats|agent|skill|concepts]
 
 Topics:
   quickstart  First successful flow from auth to merged PR
   ticket      Daily ticket lifecycle commands
+  stats       Closure funnel and workflow health metrics
   agent       Minimal rules for AI/coding agents
   skill       Alias for the canonical agent operator summary
   concepts    Jira terms mapped to Gira and GitHub
@@ -124,6 +126,47 @@ Safety:
   PR bodies must contain Closes #N, Fixes #N, or Resolves #N.
 
 Registry-backed commands:
+`
+
+const guideStats = `Gira stats guide
+
+Purpose:
+  Closure Funnel reports answer whether GitHub work actually moves from issue to PR to checks to merge and closed issue.
+
+Start with a single repo:
+  gira stats repo --repo OWNER/REPO --since 90d
+  gira stats repo --repo OWNER/REPO --since 90d --json
+
+Workspace direction:
+  gira stats workspace --since 90d is the planned multi-repo rollup. It should reuse the same metrics, bounded repo selection, cache TTLs, and rate-limit reporting used by workspace status.
+
+Rules:
+  Text is the default output for humans.
+  --json is for automation and downstream dashboards.
+  Reports are GitHub read-only and can inspect non-Gira repos with lower confidence.
+  Gira labels, closing links, and lifecycle commands raise confidence.
+
+Non-goals:
+  No personal productivity score, full DORA suite, AI spend/token analytics, dashboard UI, or precise agent attribution in the first slice.
+`
+
+const statsHelp = `Read-only workflow closure statistics.
+
+Usage:
+  gira stats repo [OWNER/REPO] [--repo OWNER/REPO] [--since 90d] [--stale-days 14] [--limit 100] [--json]
+  gira stats workspace [--since 90d]
+
+Commands:
+  repo       Show a Closure Funnel report for one GitHub repo
+  workspace  Planned multi-repo Closure Funnel rollup
+
+Flags:
+  --repo string       Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
+  --since string      Reporting window such as 90d or YYYY-MM-DD. Default: 90d
+  --stale-days int    Count open issues/PRs stale after this many days. Default: 14
+  --limit int         Max GitHub rows per query. Default: 100
+  --json              Emit stable JSON output
+  -h, --help          Show help
 `
 
 const guideConcepts = `Gira concepts: Jira terms on GitHub
@@ -1252,6 +1295,11 @@ var newAdoptRepoReport = func(input gira.AdoptRepoInput) (gira.AdoptRepoReport, 
 	return gira.BuildAdoptRepoReport(input, gira.ExecCommandRunner{})
 }
 
+var newStatsRepoReport = func(input gira.StatsRepoOptions) (gira.StatsRepoReport, error) {
+	input.Now = reportNow()
+	return gira.BuildStatsRepoReport(input, gira.ExecCommandRunner{})
+}
+
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(stdout, rootHelp)
@@ -1300,6 +1348,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runDetach(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
+	case "stats":
+		return runStats(args[1:], stdout, stderr)
 	case "config":
 		return runConfig(args[1:], stdout, stderr)
 	case "upgrade", "update":
@@ -1364,6 +1414,8 @@ func runGuide(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stdout, guideQuickstart)
 	case "ticket":
 		fmt.Fprint(stdout, renderTicketGuide())
+	case "stats":
+		fmt.Fprint(stdout, guideStats)
 	case "agent", "skill":
 		fmt.Fprint(stdout, renderAgentGuide())
 	case "concepts":
@@ -6643,5 +6695,91 @@ func runReport(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stdout, gira.FormatWeeklyReportMarkdown(report))
 		return 0
 	}
+	return 0
+}
+
+func runStats(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, statsHelp)
+		return 0
+	}
+	switch args[0] {
+	case "repo":
+		return runStatsRepo(args[1:], stdout, stderr)
+	case "workspace":
+		fmt.Fprint(stdout, "gira stats workspace is planned; use gira stats repo --repo OWNER/REPO --since 90d for the first Closure Funnel report.\n")
+		return 0
+	default:
+		fmt.Fprintf(stderr, "unknown stats command: %s\n\n", args[0])
+		fmt.Fprint(stderr, statsHelp)
+		return 2
+	}
+}
+
+func runStatsRepo(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("stats repo", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	since := fs.String("since", "90d", "Reporting window such as 90d or YYYY-MM-DD")
+	staleDays := fs.Int("stale-days", 14, "Count open issues/PRs stale after this many days")
+	limit := fs.Int("limit", 100, "Max GitHub rows per query")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	positionalRepo := ""
+	parseArgs := args
+	if len(parseArgs) > 0 && !strings.HasPrefix(parseArgs[0], "-") {
+		positionalRepo = parseArgs[0]
+		parseArgs = parseArgs[1:]
+	}
+	if err := fs.Parse(parseArgs); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, statsHelp)
+		return 2
+	}
+	remaining := fs.Args()
+	if len(remaining) > 1 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", remaining[1])
+		fmt.Fprint(stderr, statsHelp)
+		return 2
+	}
+	if len(remaining) == 1 {
+		if positionalRepo != "" {
+			fmt.Fprintf(stderr, "repo specified more than once\n\n")
+			fmt.Fprint(stderr, statsHelp)
+			return 2
+		}
+		positionalRepo = remaining[0]
+	}
+	if positionalRepo != "" {
+		if strings.TrimSpace(*repoValue) != "" {
+			fmt.Fprintf(stderr, "repo specified both positionally and with --repo\n\n")
+			fmt.Fprint(stderr, statsHelp)
+			return 2
+		}
+		*repoValue = positionalRepo
+	}
+	repo, ok := resolveRepoContext(*repoValue, stderr, statsHelp)
+	if !ok {
+		return 2
+	}
+	report, err := newStatsRepoReport(gira.StatsRepoOptions{
+		Repo:      repo,
+		Since:     *since,
+		StaleDays: *staleDays,
+		Limit:     *limit,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode stats JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatStatsRepoReport(report))
 	return 0
 }

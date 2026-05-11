@@ -30,6 +30,62 @@ gira setup global --repo OWNER/app --path . --workspace personal --inbox-repo OW
 
 Documented in: `README.md`, `docs/global-config-registry.md`, `docs-site/global-config.md`, `docs/workspace.md`
 
+## `stats repo`
+
+Show a read-only Closure Funnel report for one GitHub repo.
+
+Usage:
+
+```bash
+gira stats repo [OWNER/REPO] [--repo OWNER/REPO] [--since 90d] [--stale-days 14] [--limit 100] [--json]
+```
+
+Since: `v1.12.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo. May also be positional.
+- `--since`: Reporting window such as 90d or YYYY-MM-DD. Default: 90d.
+- `--stale-days`: Count open issues and PRs stale after this many days. Default: 14.
+- `--limit`: Max GitHub rows per query. Default: 100.
+- `--json`: Emit stable JSON for automation.
+
+Examples:
+
+- Render the default repo report
+
+```bash
+gira stats repo --repo OWNER/app --since 90d
+```
+
+Documented in: `README.md`, `docs/closure-funnel-stats.md`, `docs-site/closure-funnel-stats.md`
+
+## `stats workspace`
+
+Planned multi-repo Closure Funnel rollup for a configured workspace.
+
+Usage:
+
+```bash
+gira stats workspace [--since 90d]
+```
+
+Since: `planned`
+
+Flags:
+
+- `--since`: Reporting window such as 90d or YYYY-MM-DD.
+
+Examples:
+
+- Planned workspace rollup
+
+```bash
+gira stats workspace --since 90d
+```
+
+Documented in: `docs/closure-funnel-stats.md`, `docs-site/closure-funnel-stats.md`
+
 ## `ticket checks`
 
 Show linked PR checks, review blockers, and next action.

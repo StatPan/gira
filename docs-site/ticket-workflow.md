@@ -32,6 +32,8 @@ Use `gira ticket view` instead of composing `gh issue view` and `gh pr view` whe
 Use `gira ticket supersede TICKET --replacement-title "TITLE" --body-file replacement.md --dry-run` when an issue should be replaced instead of manually closing the old issue and creating cross-links. Superseded tickets are closed with `resolution:superseded`, not `status:done`, so lifecycle reports can separate replaced work from completed work.
 Use `gira epic list` for the same discovery pattern scoped to `type:epic` issues.
 
+When [Jira-primary provider mode](/jira-primary-provider) is enabled, `gira ticket finish` also gates Jira Done on GitHub execution evidence. It refuses Done while the mirror issue, linked PR, review, checks, merge, or close evidence is incomplete.
+
 ## Agent Rules
 
 - Start from a GitHub issue.

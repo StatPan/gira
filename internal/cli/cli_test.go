@@ -443,6 +443,7 @@ func TestDocsAliasAndGuideTopics(t *testing.T) {
 		{[]string{"guide", "skill"}, "Use --dry-run before --apply"},
 		{[]string{"guide", "ticket"}, "Registry-backed commands:"},
 		{[]string{"guide", "stats"}, "Closure Funnel reports"},
+		{[]string{"guide", "jira"}, "gira jira export"},
 		{[]string{"guide", "concepts"}, "Jira terms on GitHub"},
 		{[]string{"guide", "--help"}, "Topics:"},
 	}
@@ -481,7 +482,7 @@ func TestGuideUnknownTopic(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
-	if !strings.Contains(stderr.String(), "unknown guide topic: missing") || !strings.Contains(stderr.String(), "gira guide [quickstart|ticket|stats|agent|skill|concepts]") {
+	if !strings.Contains(stderr.String(), "unknown guide topic: missing") || !strings.Contains(stderr.String(), "gira guide [quickstart|ticket|stats|jira|agent|skill|concepts]") {
 		t.Fatalf("stderr missing guide remediation:\n%s", stderr.String())
 	}
 }

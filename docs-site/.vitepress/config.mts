@@ -15,6 +15,7 @@ export default defineConfig({
     nav: [
       { text: 'Guide', link: '/quickstart' },
       { text: 'Mapping', link: '/jira-mapping' },
+      { text: 'Jira Provider', link: '/jira-primary-provider' },
       { text: 'Workflow', link: '/ticket-workflow' },
       { text: 'Config', link: '/global-config' },
       { text: 'Distribution', link: '/distribution' },
@@ -27,6 +28,7 @@ export default defineConfig({
           { text: 'Install', link: '/install' },
           { text: 'Quick Start', link: '/quickstart' },
           { text: 'Global Config', link: '/global-config' },
+          { text: 'Jira-Primary Provider', link: '/jira-primary-provider' },
           { text: 'Ticket Workflow', link: '/ticket-workflow' },
           { text: 'Closure Funnel Stats', link: '/closure-funnel-stats' },
           { text: 'Command Reference', link: '/command-reference' },
@@ -39,6 +41,7 @@ export default defineConfig({
         items: [
           { text: 'Sprint And Release', link: '/sprint-release' },
           { text: 'Jira To GitHub Mapping', link: '/jira-mapping' },
+          { text: 'Jira-Primary Provider', link: '/jira-primary-provider' },
           { text: 'Distribution', link: '/distribution' },
           { text: 'Troubleshooting', link: '/troubleshooting' }
         ]

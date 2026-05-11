@@ -21,6 +21,8 @@ Docs source lives in `docs-site/` and is built with VitePress. The docs toolchai
 
 Gira is not a Jira clone or a separate planning database. It is a GitHub-native workflow control plane for the issue -> branch -> PR loop, with optional workspace and Project sync commands that make backlog and roadmap state visible without replacing repository issue state.
 
+Jira-primary provider mode is optional. In that mode Jira owns planning and status while GitHub still owns execution evidence. See [docs/jira-primary-provider.md](docs/jira-primary-provider.md).
+
 The core flow is:
 
 ```text
@@ -104,6 +106,22 @@ You can still call `gh` directly for low-level GitHub operations, but lifecycle 
 `gira epic list`, `gira epic status`, and `gira epic finish` close the larger planning loop without requiring raw `gh issue list` or `gh issue close`. `epic list` is a `type:epic` view over GitHub issues with the same compact list filters as ticket list. Gira can resolve an epic from the current `issue-N-*` branch, `--title`, `--slug`, `--milestone`, or a sole open `type:epic`; `--ticket N` remains the explicit fallback. `epic finish --apply` refuses to close while child issues are still open, then normalizes active status labels and closes the epic through GitHub.
 
 `gira stats repo --repo OWNER/REPO --since 90d` renders the first Closure Funnel report. It is GitHub read-only, defaults to human text output, and uses `--json` only for automation. The report counts opened/closed issues, superseded issues, opened/merged PRs, closing-link hygiene, check friction, stale open work, and closure rate. `gira stats workspace --since 90d` is the planned multi-repo rollup; see [docs/closure-funnel-stats.md](docs/closure-funnel-stats.md).
+
+## Jira-Primary Provider Mode
+
+GitHub-native mode remains the default. Jira-primary mode is explicit and keeps a split source of truth: Jira owns planning and status, while GitHub owns branch, PR, review, checks, merge, and close evidence.
+
+```bash
+gira jira init --repo OWNER/REPO --api-base https://example.atlassian.net --project ABC --dry-run
+gira jira init --repo OWNER/REPO --api-base https://example.atlassian.net --project ABC --apply
+gira jira mirror ABC-123 --repo OWNER/REPO --dry-run
+gira jira mirror ABC-123 --repo OWNER/REPO --apply
+gira ticket start ABC-123 --repo OWNER/REPO --apply
+gira ticket finish --repo OWNER/REPO --dry-run
+gira ticket finish --repo OWNER/REPO --apply
+```
+
+Provider config is non-secret and lives in the user-global repo registry. Jira credentials come from `JIRA_EMAIL` and `JIRA_API_TOKEN`. `ticket finish` refuses Jira Done while GitHub evidence is incomplete, including missing mirror issue, missing linked PR, draft PR, review blocker, failing or pending checks, or unmerged PR. Jira workflow mutation, background sync, full bidirectional sync, hosted dashboards, and Jira-only completion are outside the OSS CLI slices. See [docs/jira-primary-provider.md](docs/jira-primary-provider.md) and `gira guide jira`.
 
 ## Ticket Flow Cases
 
@@ -222,14 +240,14 @@ Gira keeps the user-facing workflow close to Jira while storing canonical state 
 | Epic | Parent or top-level issue | A milestone-sized outcome. `gira epic status` and `gira epic finish` inspect and close epics without requiring the issue number when branch, title, slug, milestone, or repo context is enough. |
 | Story / Task / Bug | Issue | The main work packet. Type, priority, blocked, and status are represented with managed labels and issue metadata. |
 | Sprint | Milestone | `gira sprint` plans, starts, closes, and rolls over milestone-scoped work. |
-| Status | Labels plus PR evidence | Gira reads and updates status labels, then cross-checks branch, PR, review, and check state. |
+| Status | Labels plus PR evidence | Gira reads and updates status labels, then cross-checks branch, PR, review, and check state. In Jira-primary mode, Jira owns planning/status and GitHub status labels are mirrors or execution hints. |
 | Assignee | GitHub assignee | Ownership stays visible in GitHub and can be supplemented with owner or worker labels. |
 | Branch | Issue execution context | `gira ticket start` verifies the ticket, creates or reuses a branch, and moves work to in-progress on apply. |
 | Pull request | Change unit | `gira ticket pr` creates or validates a linked PR with a closing keyword such as `Closes #12`. |
-| Done | Merged PR plus closed issue | Completion is proven by GitHub merge and close evidence, not by hidden local state. |
+| Done | Merged PR plus closed issue | Completion is proven by GitHub merge and close evidence, not by hidden local state. Jira Done transitions are gated on this evidence when Jira-primary mode is enabled. |
 | Release | GitHub Release plus readiness report | `gira release readiness` checks whether issue, PR, review, and milestone evidence are ready for delivery. |
 
-Full GitHub Projects v2 view automation, Web UI/TUI, chat bots, LLM decomposition, and Jira import/export are not v1 product workflows. Projects sync links and mirrors repository issue state into Projects; it does not make Project items the execution source of truth.
+Full GitHub Projects v2 view automation, Web UI/TUI, chat bots, LLM decomposition, background Jira sync, and full bidirectional Jira sync are not v1 product workflows. Jira import/export commands are explicit migration helpers. Projects sync links and mirrors repository issue state into Projects; it does not make Project items the execution source of truth.
 
 ## Workspace Backlog
 
@@ -610,8 +628,8 @@ GIRA_INSTALL_DIR="${tmpdir}" GIRA_VERSION=v1.0.0 sh install.sh
 
 The release policy and package-manager channel details are documented in [docs/release-distribution.md](docs/release-distribution.md). Developer experience conventions for first-run onboarding, dry-run/apply output, JSON, recovery, and the issue-to-PR loop are documented in [docs/dx.md](docs/dx.md).
 
-The GitHub-native Product OS schema for future Projects v2 planning, roadmap date semantics, permission/secret model, and dry-run-first automation is documented in [docs/product-os-schema.md](docs/product-os-schema.md). The execution roadmap for that phase is tracked in [docs/product-os-roadmap.md](docs/product-os-roadmap.md). The Jira-vs-Gira operating boundary, work decomposition contract, and assistant/dev-agent split are documented in [docs/jira-gira-operating-boundary.md](docs/jira-gira-operating-boundary.md). Closure Funnel stats are documented in [docs/closure-funnel-stats.md](docs/closure-funnel-stats.md). Agent delegation lanes, approval policy, and Delegation Quality metrics are documented in [docs/agent-delegation-lanes.md](docs/agent-delegation-lanes.md). The workspace backlog layer is documented in [docs/workspace.md](docs/workspace.md), and the older portfolio intake compatibility layer is documented in [docs/portfolio-intake.md](docs/portfolio-intake.md). The vendor-neutral dashboard/export boundary for Notion and other consumers is documented in [docs/dashboard-consumer-contract.md](docs/dashboard-consumer-contract.md), and the first concrete export bundle layout is documented in [docs/dashboard-export-artifacts.md](docs/dashboard-export-artifacts.md). The MVP CRUD support contract is documented in [docs/crud-capability-matrix.md](docs/crud-capability-matrix.md). Adoption on pre-configured repositories is documented in [docs/adoption-migration-playbook.md](docs/adoption-migration-playbook.md).
+The GitHub-native Product OS schema for future Projects v2 planning, roadmap date semantics, permission/secret model, and dry-run-first automation is documented in [docs/product-os-schema.md](docs/product-os-schema.md). The execution roadmap for that phase is tracked in [docs/product-os-roadmap.md](docs/product-os-roadmap.md). The Jira-vs-Gira operating boundary, work decomposition contract, and assistant/dev-agent split are documented in [docs/jira-gira-operating-boundary.md](docs/jira-gira-operating-boundary.md). Jira-primary provider mode and workflow safety are documented in [docs/jira-primary-provider.md](docs/jira-primary-provider.md). Closure Funnel stats are documented in [docs/closure-funnel-stats.md](docs/closure-funnel-stats.md). Agent delegation lanes, approval policy, and Delegation Quality metrics are documented in [docs/agent-delegation-lanes.md](docs/agent-delegation-lanes.md). The workspace backlog layer is documented in [docs/workspace.md](docs/workspace.md), and the older portfolio intake compatibility layer is documented in [docs/portfolio-intake.md](docs/portfolio-intake.md). The vendor-neutral dashboard/export boundary for Notion and other consumers is documented in [docs/dashboard-consumer-contract.md](docs/dashboard-consumer-contract.md), and the first concrete export bundle layout is documented in [docs/dashboard-export-artifacts.md](docs/dashboard-export-artifacts.md). The MVP CRUD support contract is documented in [docs/crud-capability-matrix.md](docs/crud-capability-matrix.md). Adoption on pre-configured repositories is documented in [docs/adoption-migration-playbook.md](docs/adoption-migration-playbook.md).
 
 This repository dogfoods Gira for its own work. The active operating loop, sprint commands, and maintainer handoff are documented in [docs/dogfood.md](docs/dogfood.md).
 
-Explicit non-goals for v1: full GitHub Projects v2 view automation, LLM PRD-to-issue decomposition, Web UI/TUI, chat-bot integration, and Jira import/export. Gira may keep compatibility or migration inspection commands behind `gira ops`, but the v1 source of truth is the GitHub execution loop.
+Explicit non-goals for v1: full GitHub Projects v2 view automation, LLM PRD-to-issue decomposition, Web UI/TUI, chat-bot integration, background Jira sync, full bidirectional Jira sync, and Jira workflow mutation. Gira may keep explicit migration helpers, but the v1 source of truth is the GitHub execution loop unless a repo explicitly enables Jira-primary planning/status.

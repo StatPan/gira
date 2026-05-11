@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+const supersededResolutionLabel = "resolution:superseded"
+
 type TicketSupersedeInput struct {
 	Repo             RepoRef  `json:"-"`
 	Ticket           int      `json:"ticket"`
@@ -112,7 +114,7 @@ func BuildTicketSupersedeReport(input TicketSupersedeInput, runner CommandRunner
 		plannedSupersedeAction("replacement:create", input.DryRun, "create replacement issue"),
 		plannedSupersedeAction("original:comment", input.DryRun, "add superseded note to original issue"),
 		plannedSupersedeAction("replacement:comment", input.DryRun, "add origin note to replacement issue"),
-		plannedSupersedeAction("original:status", input.DryRun, "move original issue to status:done"),
+		plannedSupersedeAction("original:resolution", input.DryRun, "remove active status labels and add resolution:superseded"),
 		plannedSupersedeAction("original:close", input.DryRun, "close original issue"),
 	)
 	prStatus, prErr := DevPRStatus(input.Repo, input.Ticket, runner)
@@ -158,10 +160,10 @@ func BuildTicketSupersedeReport(input TicketSupersedeInput, runner CommandRunner
 	}
 	markSupersedeActionApplied(report.Actions, "replacement:comment")
 
-	if err := setIssueStatus(input.Repo, input.Ticket, original.Labels, "status:done", runner); err != nil {
-		return report, fmt.Errorf("set original status: %w", err)
+	if err := setIssueSupersededResolution(input.Repo, input.Ticket, original.Labels, runner); err != nil {
+		return report, fmt.Errorf("set original resolution: %w", err)
 	}
-	markSupersedeActionApplied(report.Actions, "original:status")
+	markSupersedeActionApplied(report.Actions, "original:resolution")
 
 	if _, err := runner.Run("gh", "issue", "close", strconv.Itoa(input.Ticket), "--repo", input.Repo.FullName()); err != nil {
 		return report, fmt.Errorf("close original issue: %w", err)
@@ -224,7 +226,8 @@ func ticketSupersedeReplacementLabels(original []string, extra []string) []strin
 	labels := make([]string, 0, len(original)+len(extra)+1)
 	for _, label := range original {
 		trimmed := strings.TrimSpace(label)
-		if trimmed == "" || strings.HasPrefix(strings.ToLower(trimmed), "status:") {
+		lower := strings.ToLower(trimmed)
+		if trimmed == "" || strings.HasPrefix(lower, "status:") || strings.HasPrefix(lower, "resolution:") {
 			continue
 		}
 		labels = append(labels, trimmed)
@@ -250,6 +253,30 @@ func dedupeSupersedeLabels(labels []string) []string {
 		result = append(result, trimmed)
 	}
 	return result
+}
+
+func setIssueSupersededResolution(repo RepoRef, issueNumber int, labels []string, runner CommandRunner) error {
+	for _, label := range managedStatusLabels(labels) {
+		if _, err := runner.Run("gh", "api", "repos/"+repo.FullName()+"/issues/"+strconv.Itoa(issueNumber)+"/labels/"+label, "-X", "DELETE"); err != nil {
+			return err
+		}
+	}
+	if containsSupersedeLabel(labels, supersededResolutionLabel) {
+		return nil
+	}
+	if _, err := runner.Run("gh", "api", "repos/"+repo.FullName()+"/issues/"+strconv.Itoa(issueNumber)+"/labels", "-X", "POST", "-f", "labels[]="+supersededResolutionLabel); err != nil {
+		return err
+	}
+	return nil
+}
+
+func containsSupersedeLabel(labels []string, want string) bool {
+	for _, label := range labels {
+		if strings.EqualFold(strings.TrimSpace(label), want) {
+			return true
+		}
+	}
+	return false
 }
 
 func ticketSupersedeReplacementBody(body string, originalIssue int) string {

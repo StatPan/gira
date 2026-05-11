@@ -97,6 +97,28 @@ type JiraMirrorIssue struct {
 	URL    string `json:"url,omitempty"`
 }
 
+func ResolveJiraMirrorIssue(repo RepoRef, key string, runner CommandRunner) (JiraMirrorIssue, error) {
+	if runner == nil {
+		runner = ExecCommandRunner{}
+	}
+	normalized, err := normalizeJiraKey(key)
+	if err != nil {
+		return JiraMirrorIssue{}, err
+	}
+	matches, err := findJiraMirrorIssues(repo, normalized, runner)
+	if err != nil {
+		return JiraMirrorIssue{}, err
+	}
+	switch len(matches) {
+	case 0:
+		return JiraMirrorIssue{}, fmt.Errorf("no GitHub mirror issue found for Jira key %s; run `gira jira mirror %s --repo %s --apply` first", normalized, normalized, repo.FullName())
+	case 1:
+		return matches[0], nil
+	default:
+		return JiraMirrorIssue{}, fmt.Errorf("multiple GitHub mirror issues found for Jira key %s; resolve duplicate mirrors before continuing", normalized)
+	}
+}
+
 type JiraExportIssue struct {
 	Number   int      `json:"number"`
 	Title    string   `json:"title"`

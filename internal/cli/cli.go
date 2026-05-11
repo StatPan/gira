@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/StatPan/gira/internal/gira"
 )
+
+var jiraKeyPositionalPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
 
 const rootHelp = `Gira: Jira-style project flow on GitHub.
 
@@ -706,8 +709,8 @@ const ticketHelp = `Jira-style ticket lifecycle commands.
 Usage:
   gira ticket new "Title" --dry-run|--apply [--body TEXT|--body-file PATH|-] [--start] [--json]
   gira ticket list [--repo OWNER/REPO] [--state open|closed|all] [--label LABEL] [--assignee LOGIN] [--milestone TITLE] [--limit N] [--json]
-  gira ticket view [TICKET] [--repo OWNER/REPO] [--json]
-  gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--json]
+  gira ticket view [TICKET|JIRA-KEY] [--repo OWNER/REPO] [--json]
+  gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
   gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both] [--body TEXT|--body-file PATH|-] [--json]
   gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr] [--json]
@@ -731,7 +734,7 @@ Commands:
 
 Flags:
   --repo string    Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
-  --ticket int     Ticket number. GitHub issue number in v1. Can also be positional
+  --ticket int     Ticket number. GitHub issue number in v1. Can also be numeric positional
   --issue int      Compatibility alias for --ticket
   --state string   Ticket list state filter: open, closed, or all. Default: open
   --label string   Ticket list label filter. Repeatable or comma-separated
@@ -1247,6 +1250,10 @@ var newTicketChecksReport = func(repo gira.RepoRef, issue int, wait time.Duratio
 
 var newTicketViewReport = func(repo gira.RepoRef, issue int) (gira.TicketViewReport, error) {
 	return gira.BuildTicketViewReport(repo, issue, devCommandRunner)
+}
+
+var newJiraMirrorIssueResolver = func(repo gira.RepoRef, key string) (gira.JiraMirrorIssue, error) {
+	return gira.ResolveJiraMirrorIssue(repo, key, devCommandRunner)
 }
 
 var newTicketNoteReport = func(input gira.TicketNoteInput) (gira.TicketNoteReport, error) {
@@ -2722,7 +2729,7 @@ func runTicketList(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runTicketView(args []string, stdout io.Writer, stderr io.Writer) int {
-	args, positionalTicket, positionalOK := extractTicketPositional(args, stderr)
+	args, positionalIdentifier, positionalOK := extractTicketIdentifierPositional(args, stderr)
 	if !positionalOK {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
@@ -2749,12 +2756,20 @@ func runTicketView(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	ticketNumber, ok := resolveTicketContext(repo, *ticket, *issue, positionalTicket, true, stderr)
-	if !ok {
+	ticketNumber, jiraKey, resolved, resolveErr := resolveTicketIdentifierContext(repo, *ticket, *issue, positionalIdentifier, true, stderr)
+	if resolveErr != nil {
+		fmt.Fprintf(stderr, "%v\n", resolveErr)
+		return 1
+	}
+	if !resolved {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
 	}
 	result, err := newTicketViewReport(repo, ticketNumber)
+	if jiraKey != "" {
+		result.JiraKey = jiraKey
+		result.MirrorIssue = ticketNumber
+	}
 	result.Status.NextStep = shortenTicketNextStep(result.Status.NextStep, result.Repo, result.Ticket)
 	if err != nil {
 		if *jsonOutput {
@@ -3061,7 +3076,7 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
-	args, positionalTicket, positionalOK := extractTicketPositional(args, stderr)
+	args, positionalIdentifier, positionalOK := extractTicketIdentifierPositional(args, stderr)
 	if !positionalOK {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
@@ -3085,17 +3100,41 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stdout, ticketHelp)
 		return 0
 	}
-	ticketNumber, ok := resolveExplicitTicket(*ticket, *issue, positionalTicket, stderr)
+	explicitNumber, ok := resolveExplicitTicket(*ticket, *issue, positionalIdentifier.Number, stderr)
 	if !ok {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
 	}
-	repo, ok := parseTicketRequiredFlags(*repoValue, ticketNumber, *dryRun, *apply, false, stderr)
+	if explicitNumber > 0 && positionalIdentifier.JiraKey != "" {
+		fmt.Fprint(stderr, "--ticket/--issue and Jira key positional cannot be combined\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	requiredTicket := explicitNumber
+	if positionalIdentifier.JiraKey != "" {
+		requiredTicket = 1
+	}
+	repo, ok := parseTicketRequiredFlags(*repoValue, requiredTicket, *dryRun, *apply, false, stderr)
 	if !ok {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
+	}
+	ticketNumber := explicitNumber
+	jiraKey := ""
+	if positionalIdentifier.JiraKey != "" {
+		mirror, err := newJiraMirrorIssueResolver(repo, positionalIdentifier.JiraKey)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		ticketNumber = mirror.Number
+		jiraKey = strings.ToUpper(strings.TrimSpace(positionalIdentifier.JiraKey))
 	}
 	result, err := newWorkStartResult(repo, ticketNumber, *dryRun)
+	if jiraKey != "" {
+		result.JiraKey = jiraKey
+		result.MirrorIssue = ticketNumber
+	}
 	if err != nil {
 		if *jsonOutput {
 			result.NextStep = ticketWorkStartNextStep(result)
@@ -3679,6 +3718,58 @@ func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bo
 	return cleaned, positional, true
 }
 
+type ticketIdentifier struct {
+	Number  int
+	JiraKey string
+	Seen    bool
+}
+
+func extractTicketIdentifierPositional(args []string, stderr io.Writer) ([]string, ticketIdentifier, bool) {
+	cleaned := make([]string, 0, len(args))
+	var identifier ticketIdentifier
+	seen := false
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		cleaned = append(cleaned, arg)
+		if _, ok := valueFlags[arg]; ok {
+			if i+1 < len(args) {
+				i++
+				cleaned = append(cleaned, args[i])
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		if n, err := strconv.Atoi(arg); err == nil && n > 0 {
+			if seen && identifier.Number != n {
+				fmt.Fprint(stderr, "only one positional ticket or Jira key can be provided\n\n")
+				return nil, ticketIdentifier{}, false
+			}
+			if seen && identifier.JiraKey != "" {
+				fmt.Fprint(stderr, "only one positional ticket or Jira key can be provided\n\n")
+				return nil, ticketIdentifier{}, false
+			}
+			identifier.Number = n
+		} else if jiraKeyPositionalPattern.MatchString(strings.ToUpper(strings.TrimSpace(arg))) {
+			key := strings.ToUpper(strings.TrimSpace(arg))
+			if seen {
+				fmt.Fprint(stderr, "only one positional ticket or Jira key can be provided\n\n")
+				return nil, ticketIdentifier{}, false
+			}
+			identifier.JiraKey = key
+		} else {
+			fmt.Fprintf(stderr, "unexpected positional argument %q; use a numeric ticket, Jira key, or --ticket N\n\n", arg)
+			return nil, ticketIdentifier{}, false
+		}
+		seen = true
+		identifier.Seen = true
+		cleaned = cleaned[:len(cleaned)-1]
+	}
+	return cleaned, identifier, true
+}
+
 func extractTicketNotePositionals(args []string, stderr io.Writer) ([]string, int, string, bool) {
 	cleaned := make([]string, 0, len(args))
 	positionalTicket := 0
@@ -3869,6 +3960,37 @@ func resolveTicketContext(repo gira.RepoRef, ticket int, issue int, positional i
 	return inferred, true
 }
 
+func resolveTicketIdentifierContext(repo gira.RepoRef, ticket int, issue int, positional ticketIdentifier, allowInference bool, stderr io.Writer) (int, string, bool, error) {
+	explicit, ok := resolveExplicitTicket(ticket, issue, positional.Number, stderr)
+	if !ok {
+		return 0, "", false, nil
+	}
+	if explicit > 0 && positional.JiraKey != "" {
+		fmt.Fprint(stderr, "--ticket/--issue and Jira key positional cannot be combined\n\n")
+		return 0, "", false, nil
+	}
+	if explicit > 0 {
+		return explicit, "", true, nil
+	}
+	if positional.JiraKey != "" {
+		mirror, err := newJiraMirrorIssueResolver(repo, positional.JiraKey)
+		if err != nil {
+			return 0, "", false, err
+		}
+		return mirror.Number, strings.ToUpper(strings.TrimSpace(positional.JiraKey)), true, nil
+	}
+	if !allowInference {
+		fmt.Fprint(stderr, "--ticket or positional ticket is required for ticket start\n\n")
+		return 0, "", false, nil
+	}
+	inferred, err := inferTicketFromCurrentContext(repo, devCommandRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		return 0, "", false, nil
+	}
+	return inferred, "", true, nil
+}
+
 func parseTicketRequiredFlags(repoValue string, ticket int, dryRun bool, apply bool, allowTicketInference bool, stderr io.Writer) (gira.RepoRef, bool) {
 	if dryRun == apply {
 		fmt.Fprint(stderr, "exactly one of --dry-run/--apply is required\n\n")
@@ -3956,13 +4078,14 @@ func formatTicketStart(result gira.WorkStartResult) string {
 			next = "gira ticket pr --dry-run"
 		}
 	}
-	return fmt.Sprintf(
-		"ticket start: ticket #%d branch=%s status=%s\nnext step: %s\n",
-		result.Issue,
-		result.Branch,
-		result.NextStatus,
-		next,
-	)
+	var b strings.Builder
+	fmt.Fprintf(&b, "ticket start: ticket #%d branch=%s status=%s\n", result.Issue, result.Branch, result.NextStatus)
+	if strings.TrimSpace(result.JiraKey) != "" {
+		fmt.Fprintf(&b, "jira key: %s\n", result.JiraKey)
+		fmt.Fprintf(&b, "mirror issue: #%d\n", result.MirrorIssue)
+	}
+	fmt.Fprintf(&b, "next step: %s\n", next)
+	return b.String()
 }
 
 func formatTicketPR(result gira.WorkPRResult) string {

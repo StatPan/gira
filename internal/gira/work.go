@@ -9,6 +9,8 @@ import (
 type WorkStartResult struct {
 	Repo          string          `json:"repo"`
 	Issue         int             `json:"issue"`
+	JiraKey       string          `json:"jira_key,omitempty"`
+	MirrorIssue   int             `json:"mirror_issue,omitempty"`
 	Title         string          `json:"title"`
 	Branch        string          `json:"branch"`
 	DryRun        bool            `json:"dry_run"`

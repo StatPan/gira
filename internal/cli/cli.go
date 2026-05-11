@@ -637,13 +637,13 @@ Flags:
 const jiraHelp = `Jira provider, import, and export command family.
 
 Usage:
-  gira jira init --repo OWNER/REPO --api-base URL --project KEY --dry-run [--json]
+  gira jira init --repo OWNER/REPO --api-base URL --project KEY --dry-run|--apply [--config-root PATH] [--overwrite] [--json]
   gira jira import --repo OWNER/REPO --source PATH --dry-run|--apply [--json]
   gira jira import --repo OWNER/REPO --api-base URL --project KEY --dry-run|--apply [--json]
   gira jira export --repo OWNER/REPO --output PATH [--json]
 
 Commands:
-  init        Discover a Jira project and render a provider config dry-run plan
+  init        Discover a Jira project and write reviewed non-secret provider config
   import      Import Jira CSV/JSON or read-only Jira API issues into GitHub issues
   export      Export GitHub issue state into Jira-friendly JSON and CSV artifacts
 
@@ -652,6 +652,8 @@ Flags:
   --source string    CSV or JSON import source path
   --api-base string  Jira API base URL, for example https://example.atlassian.net
   --project string   Jira project key
+  --config-root PATH Override the global Gira config root
+  --overwrite        Replace an existing providers.jira block after review
   --output string    Output directory for export artifacts
   --dry-run          Preview without mutation
   --apply            Apply supported Jira command mutations after review
@@ -2201,6 +2203,8 @@ func runJiraInit(args []string, stdout io.Writer, stderr io.Writer) int {
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	apiBase := fs.String("api-base", "", "Jira API base URL")
 	project := fs.String("project", "", "Jira project key")
+	configRoot := fs.String("config-root", "", "Override Gira global config root")
+	overwrite := fs.Bool("overwrite", false, "Replace existing providers.jira config")
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
 	apply := fs.Bool("apply", false, "Apply reviewed provider config")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
@@ -2231,11 +2235,13 @@ func runJiraInit(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 	report, err := newJiraProviderInitReport(gira.JiraProviderInitInput{
-		Repo:    repo,
-		APIBase: *apiBase,
-		Project: *project,
-		DryRun:  *dryRun,
-		Apply:   *apply,
+		Repo:       repo,
+		APIBase:    *apiBase,
+		Project:    *project,
+		ConfigRoot: *configRoot,
+		Overwrite:  *overwrite,
+		DryRun:     *dryRun,
+		Apply:      *apply,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)

@@ -702,17 +702,19 @@ func TestJiraInitJSON(t *testing.T) {
 	restore := newJiraProviderInitReport
 	t.Cleanup(func() { newJiraProviderInitReport = restore })
 	newJiraProviderInitReport = func(input gira.JiraProviderInitInput) (gira.JiraProviderInitReport, error) {
-		if input.Repo.FullName() != "StatPan/gira" || input.APIBase != "https://jira.example" || input.Project != "ABC" || !input.DryRun || input.Apply {
+		if input.Repo.FullName() != "StatPan/gira" || input.APIBase != "https://jira.example" || input.Project != "ABC" || input.ConfigRoot != "/tmp/gira" || !input.Overwrite || !input.DryRun || input.Apply {
 			t.Fatalf("unexpected jira init input: %+v repo=%s", input, input.Repo.FullName())
 		}
 		return gira.JiraProviderInitReport{
-			Command:  "jira init",
-			Repo:     input.Repo.FullName(),
-			APIBase:  input.APIBase,
-			DryRun:   true,
-			ReadOnly: true,
-			Project:  gira.JiraProviderProject{ID: "10000", Key: "ABC", Name: "Alpha"},
-			Statuses: []gira.JiraProviderStatus{{ID: "1", Name: "To Do"}},
+			Command:    "jira init",
+			Repo:       input.Repo.FullName(),
+			APIBase:    input.APIBase,
+			ConfigRoot: input.ConfigRoot,
+			DryRun:     true,
+			Status:     "planned",
+			ReadOnly:   true,
+			Project:    gira.JiraProviderProject{ID: "10000", Key: "ABC", Name: "Alpha"},
+			Statuses:   []gira.JiraProviderStatus{{ID: "1", Name: "To Do"}},
 			ConfigProposal: gira.JiraProviderConfigProposal{
 				Provider: gira.JiraProviderConfig{Enabled: true, Mode: "primary", ProjectKey: "ABC"},
 				GitHub:   gira.JiraProviderGitHub{Repo: input.Repo.FullName(), MirrorIssue: true, MirrorLabels: true},
@@ -721,7 +723,7 @@ func TestJiraInitJSON(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"jira", "init", "--repo", "StatPan/gira", "--api-base", "https://jira.example", "--project", "ABC", "--dry-run", "--json"}, &stdout, &stderr)
+	code := Run([]string{"jira", "init", "--repo", "StatPan/gira", "--api-base", "https://jira.example", "--project", "ABC", "--config-root", "/tmp/gira", "--overwrite", "--dry-run", "--json"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -732,20 +734,38 @@ func TestJiraInitJSON(t *testing.T) {
 	}
 }
 
-func TestJiraInitApplyReturnsDeferredError(t *testing.T) {
+func TestJiraInitApplyText(t *testing.T) {
 	restore := newJiraProviderInitReport
 	t.Cleanup(func() { newJiraProviderInitReport = restore })
 	newJiraProviderInitReport = func(input gira.JiraProviderInitInput) (gira.JiraProviderInitReport, error) {
-		return gira.JiraProviderInitReport{}, fmt.Errorf("jira init --apply is not supported in this slice")
+		if input.Repo.FullName() != "StatPan/gira" || input.ConfigRoot != "/tmp/gira" || !input.Apply || input.DryRun {
+			t.Fatalf("unexpected jira init input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.JiraProviderInitReport{
+			Command:    "jira init",
+			Repo:       input.Repo.FullName(),
+			APIBase:    input.APIBase,
+			ConfigRoot: input.ConfigRoot,
+			Apply:      true,
+			Applied:    true,
+			Status:     "applied",
+			File:       gira.SetupGlobalFilePlan{Path: "/tmp/gira/repos/StatPan/gira.yaml", Action: "create"},
+			ReadOnly:   true,
+			Project:    gira.JiraProviderProject{ID: "10000", Key: "ABC", Name: "Alpha"},
+			ConfigProposal: gira.JiraProviderConfigProposal{
+				Provider: gira.JiraProviderConfig{Enabled: true, Mode: "primary", ProjectKey: "ABC"},
+				GitHub:   gira.JiraProviderGitHub{Repo: input.Repo.FullName(), MirrorIssue: true, MirrorLabels: true},
+			},
+		}, nil
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"jira", "init", "--repo", "StatPan/gira", "--api-base", "https://jira.example", "--project", "ABC", "--apply"}, &stdout, &stderr)
-	if code != 2 {
-		t.Fatalf("exit code = %d, want 2", code)
+	code := Run([]string{"jira", "init", "--repo", "StatPan/gira", "--api-base", "https://jira.example", "--project", "ABC", "--config-root", "/tmp/gira", "--apply"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "jira init --apply is not supported") {
-		t.Fatalf("stderr missing deferred apply message:\n%s", stderr.String())
+	if !strings.Contains(stdout.String(), "jira init: applied provider discovery") || !strings.Contains(stdout.String(), "config_action: create") {
+		t.Fatalf("stdout missing apply report:\n%s", stdout.String())
 	}
 }
 

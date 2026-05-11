@@ -6,11 +6,13 @@ import (
 )
 
 type TicketViewReport struct {
-	Command string           `json:"command"`
-	Repo    string           `json:"repo"`
-	Ticket  int              `json:"ticket"`
-	Status  WorkStatusResult `json:"status"`
-	Summary []TicketViewRow  `json:"summary"`
+	Command     string           `json:"command"`
+	Repo        string           `json:"repo"`
+	Ticket      int              `json:"ticket"`
+	JiraKey     string           `json:"jira_key,omitempty"`
+	MirrorIssue int              `json:"mirror_issue,omitempty"`
+	Status      WorkStatusResult `json:"status"`
+	Summary     []TicketViewRow  `json:"summary"`
 }
 
 type TicketViewRow struct {
@@ -79,6 +81,10 @@ func FormatTicketView(report TicketViewReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "ticket view: #%d %s\n", report.Ticket, status.Title)
 	fmt.Fprintf(&b, "repo: %s\n", report.Repo)
+	if strings.TrimSpace(report.JiraKey) != "" {
+		fmt.Fprintf(&b, "jira key: %s\n", report.JiraKey)
+		fmt.Fprintf(&b, "mirror issue: #%d\n", report.MirrorIssue)
+	}
 	fmt.Fprintf(&b, "issue: state=%s status=%s\n", status.State, status.Status)
 	fmt.Fprintf(&b, "linked pr: %s\n", pr)
 	fmt.Fprintf(&b, "blockers: %s\n", blockers)

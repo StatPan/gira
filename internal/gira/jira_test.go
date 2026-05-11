@@ -281,6 +281,37 @@ func TestMirrorJiraIssueReportsDuplicateMirrors(t *testing.T) {
 	}
 }
 
+func TestResolveJiraMirrorIssue(t *testing.T) {
+	repo := ParseRepoRefMust("StatPan/gira")
+	runner := &jiraRunner{outputs: map[string][]byte{
+		"gh issue list --repo StatPan/gira --state all --search ABC-123 in:body --limit 1000 --json number,title,body,url": []byte(`[{"number":77,"title":"Mirror","body":"Jira-Key: ABC-123\n","url":"https://github.com/StatPan/gira/issues/77"}]`),
+	}}
+	issue, err := ResolveJiraMirrorIssue(repo, "abc-123", runner)
+	if err != nil {
+		t.Fatalf("ResolveJiraMirrorIssue error: %v", err)
+	}
+	if issue.Number != 77 || issue.Title != "Mirror" {
+		t.Fatalf("unexpected mirror issue: %+v", issue)
+	}
+}
+
+func TestResolveJiraMirrorIssueMissingAndDuplicate(t *testing.T) {
+	repo := ParseRepoRefMust("StatPan/gira")
+	missingRunner := &jiraRunner{outputs: map[string][]byte{
+		"gh issue list --repo StatPan/gira --state all --search ABC-123 in:body --limit 1000 --json number,title,body,url": []byte(`[]`),
+	}}
+	if _, err := ResolveJiraMirrorIssue(repo, "ABC-123", missingRunner); err == nil || !strings.Contains(err.Error(), "no GitHub mirror issue found") {
+		t.Fatalf("expected missing mirror error, got %v", err)
+	}
+
+	duplicateRunner := &jiraRunner{outputs: map[string][]byte{
+		"gh issue list --repo StatPan/gira --state all --search ABC-123 in:body --limit 1000 --json number,title,body,url": []byte(`[{"number":77,"title":"One","body":"Jira-Key: ABC-123\n"},{"number":78,"title":"Two","body":"Jira-Key: ABC-123\n"}]`),
+	}}
+	if _, err := ResolveJiraMirrorIssue(repo, "ABC-123", duplicateRunner); err == nil || !strings.Contains(err.Error(), "multiple GitHub mirror issues") {
+		t.Fatalf("expected duplicate mirror error, got %v", err)
+	}
+}
+
 func TestExportJiraIssuesWritesStableJSONAndCSV(t *testing.T) {
 	repo := ParseRepoRefMust("StatPan/gira")
 	runner := &jiraRunner{outputs: map[string][]byte{

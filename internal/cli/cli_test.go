@@ -1709,6 +1709,55 @@ func TestTicketStartDryRunJSONPreservesApplyTicketNumber(t *testing.T) {
 	}
 }
 
+func TestTicketStartResolvesJiraKey(t *testing.T) {
+	restoreStart := newWorkStartResult
+	restoreResolve := newJiraMirrorIssueResolver
+	t.Cleanup(func() {
+		newWorkStartResult = restoreStart
+		newJiraMirrorIssueResolver = restoreResolve
+	})
+	newJiraMirrorIssueResolver = func(repo gira.RepoRef, key string) (gira.JiraMirrorIssue, error) {
+		if repo.FullName() != "StatPan/gira" || key != "ABC-123" {
+			t.Fatalf("unexpected mirror resolve repo=%s key=%s", repo.FullName(), key)
+		}
+		return gira.JiraMirrorIssue{Number: 77, Title: "Mirror"}, nil
+	}
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 77 || !dryRun {
+			t.Fatalf("unexpected start args repo=%s issue=%d dryRun=%t", repo.FullName(), issue, dryRun)
+		}
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-77-mirror", DryRun: true, NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "ABC-123", "--repo", "StatPan/gira", "--dry-run"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"ticket #77", "jira key: ABC-123", "mirror issue: #77"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket start output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestTicketStartJiraKeyMissingMirror(t *testing.T) {
+	restoreResolve := newJiraMirrorIssueResolver
+	t.Cleanup(func() { newJiraMirrorIssueResolver = restoreResolve })
+	newJiraMirrorIssueResolver = func(repo gira.RepoRef, key string) (gira.JiraMirrorIssue, error) {
+		return gira.JiraMirrorIssue{}, fmt.Errorf("multiple GitHub mirror issues found for Jira key %s", key)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "ABC-123", "--repo", "StatPan/gira", "--dry-run"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "multiple GitHub mirror issues") || strings.Contains(stderr.String(), "Usage:") {
+		t.Fatalf("stderr should contain runtime mirror error without help:\n%s", stderr.String())
+	}
+}
+
 func TestTicketNewDryRunJSON(t *testing.T) {
 	restore := newTicketNewReport
 	restoreRepo := repoContextRunner
@@ -2384,6 +2433,75 @@ func TestTicketViewInfersTicketAndPrintsCard(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "ticket view: #126 Work command") || !strings.Contains(stdout.String(), "next step: gira ticket wait") {
 		t.Fatalf("ticket view output missing context:\n%s", stdout.String())
+	}
+}
+
+func TestTicketViewResolvesJiraKey(t *testing.T) {
+	restoreView := newTicketViewReport
+	restoreResolve := newJiraMirrorIssueResolver
+	t.Cleanup(func() {
+		newTicketViewReport = restoreView
+		newJiraMirrorIssueResolver = restoreResolve
+	})
+	newJiraMirrorIssueResolver = func(repo gira.RepoRef, key string) (gira.JiraMirrorIssue, error) {
+		if repo.FullName() != "StatPan/gira" || key != "ABC-123" {
+			t.Fatalf("unexpected mirror resolve repo=%s key=%s", repo.FullName(), key)
+		}
+		return gira.JiraMirrorIssue{Number: 77, Title: "Mirror"}, nil
+	}
+	newTicketViewReport = func(repo gira.RepoRef, issue int) (gira.TicketViewReport, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 77 {
+			t.Fatalf("unexpected ticket view args repo=%s issue=%d", repo.FullName(), issue)
+		}
+		return gira.TicketViewReport{Command: "ticket view", Repo: repo.FullName(), Ticket: issue, Status: gira.WorkStatusResult{Repo: repo.FullName(), Issue: issue, Title: "Mirror", State: "open", Status: "Ready", NextAction: "start_work", NextStep: "gira ticket start --repo StatPan/gira --ticket 77 --dry-run"}}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "view", "ABC-123", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"ticket view: #77 Mirror", "jira key: ABC-123", "mirror issue: #77"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket view output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestTicketViewJiraKeyMissingMirror(t *testing.T) {
+	restoreResolve := newJiraMirrorIssueResolver
+	t.Cleanup(func() { newJiraMirrorIssueResolver = restoreResolve })
+	newJiraMirrorIssueResolver = func(repo gira.RepoRef, key string) (gira.JiraMirrorIssue, error) {
+		return gira.JiraMirrorIssue{}, fmt.Errorf("no GitHub mirror issue found for Jira key %s", key)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "view", "ABC-123", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "no GitHub mirror issue found") || strings.Contains(stderr.String(), "Usage:") {
+		t.Fatalf("stderr should contain runtime mirror error without help:\n%s", stderr.String())
+	}
+}
+
+func TestTicketStartRepeatedSameNumericPositionalRemainsCompatible(t *testing.T) {
+	restoreStart := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restoreStart })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		if issue != 33 {
+			t.Fatalf("unexpected issue: %d", issue)
+		}
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-33-task", DryRun: true, NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "33", "33", "--repo", "StatPan/gira", "--dry-run"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "ticket #33") {
+		t.Fatalf("stdout missing ticket number:\n%s", stdout.String())
 	}
 }
 

@@ -634,14 +634,16 @@ Flags:
   -h, --help     Show help
 `
 
-const jiraHelp = `Jira import/export command family.
+const jiraHelp = `Jira provider, import, and export command family.
 
 Usage:
+  gira jira init --repo OWNER/REPO --api-base URL --project KEY --dry-run [--json]
   gira jira import --repo OWNER/REPO --source PATH --dry-run|--apply [--json]
   gira jira import --repo OWNER/REPO --api-base URL --project KEY --dry-run|--apply [--json]
   gira jira export --repo OWNER/REPO --output PATH [--json]
 
 Commands:
+  init        Discover a Jira project and render a provider config dry-run plan
   import      Import Jira CSV/JSON or read-only Jira API issues into GitHub issues
   export      Export GitHub issue state into Jira-friendly JSON and CSV artifacts
 
@@ -649,10 +651,10 @@ Flags:
   --repo string      Target GitHub repo in OWNER/REPO format
   --source string    CSV or JSON import source path
   --api-base string  Jira API base URL, for example https://example.atlassian.net
-  --project string   Jira project key for API import
+  --project string   Jira project key
   --output string    Output directory for export artifacts
-  --dry-run          Preview import without creating GitHub issues
-  --apply            Create GitHub issues for non-duplicate Jira items
+  --dry-run          Preview without mutation
+  --apply            Apply supported Jira command mutations after review
   --json             Emit stable JSON output
   -h, --help         Show help
 `
@@ -1178,6 +1180,10 @@ var newJiraImportReport = func(repo gira.RepoRef, source string, apiBase string,
 		return gira.ImportJiraItems(repo, source, items, dryRun, apply, jiraCommandRunner)
 	}
 	return gira.ImportJiraFromAPI(repo, apiBase, project, dryRun, apply, jiraCommandRunner)
+}
+
+var newJiraProviderInitReport = func(input gira.JiraProviderInitInput) (gira.JiraProviderInitReport, error) {
+	return gira.BuildJiraProviderInitReport(input)
 }
 
 var newJiraExportReport = func(repo gira.RepoRef, outputRoot string) (gira.JiraExportReport, error) {
@@ -2176,6 +2182,8 @@ func runJira(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	switch args[0] {
+	case "init":
+		return runJiraInit(args[1:], stdout, stderr)
 	case "import":
 		return runJiraImport(args[1:], stdout, stderr)
 	case "export":
@@ -2185,6 +2193,65 @@ func runJira(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, jiraHelp)
 		return 2
 	}
+}
+
+func runJiraInit(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("jira init", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	apiBase := fs.String("api-base", "", "Jira API base URL")
+	project := fs.String("project", "", "Jira project key")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply reviewed provider config")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, jiraHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newJiraProviderInitReport(gira.JiraProviderInitInput{
+		Repo:    repo,
+		APIBase: *apiBase,
+		Project: *project,
+		DryRun:  *dryRun,
+		Apply:   *apply,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode jira init JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatJiraProviderInitReport(report))
+	return 0
 }
 
 func runJiraImport(args []string, stdout io.Writer, stderr io.Writer) int {

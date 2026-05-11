@@ -769,6 +769,49 @@ func TestJiraInitApplyText(t *testing.T) {
 	}
 }
 
+func TestJiraMirrorJSON(t *testing.T) {
+	restore := newJiraMirrorReport
+	t.Cleanup(func() { newJiraMirrorReport = restore })
+	newJiraMirrorReport = func(input gira.JiraMirrorInput) (gira.JiraMirrorReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Key != "ABC-123" || input.APIBase != "https://jira.example" || input.ConfigRoot != "/tmp/gira" || !input.DryRun || input.Apply {
+			t.Fatalf("unexpected jira mirror input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.JiraMirrorReport{
+			Command:  "jira mirror",
+			Repo:     input.Repo.FullName(),
+			Key:      input.Key,
+			APIBase:  input.APIBase,
+			DryRun:   true,
+			Status:   "planned",
+			Action:   "create",
+			Labels:   []string{"jira:ABC-123", "status:ready"},
+			NextStep: "gira jira mirror ABC-123 --repo StatPan/gira --apply",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"jira", "mirror", "ABC-123", "--repo", "StatPan/gira", "--api-base", "https://jira.example", "--config-root", "/tmp/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "jira mirror"`, `"action": "create"`, `"key": "ABC-123"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("jira mirror JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestJiraMirrorRejectsDuplicatePositionalKeys(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"jira", "mirror", "ABC-123", "abc-123", "--repo", "StatPan/gira", "--api-base", "https://jira.example", "--dry-run"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "only one Jira key can be provided") {
+		t.Fatalf("stderr missing duplicate key guidance:\n%s", stderr.String())
+	}
+}
+
 func TestJiraImportJSON(t *testing.T) {
 	restore := newJiraImportReport
 	t.Cleanup(func() { newJiraImportReport = restore })

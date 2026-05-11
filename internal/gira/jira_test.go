@@ -103,6 +103,20 @@ func TestFetchJiraAPIItemsUsesReadOnlyHTTPTransport(t *testing.T) {
 	}
 }
 
+func TestFetchJiraAPIItemsRejectsCredentialBearingAPIBase(t *testing.T) {
+	restore := jiraAPISearch
+	t.Cleanup(func() { jiraAPISearch = restore })
+	jiraAPISearch = func(apiBase string, project string, email string, token string, startAt int, maxResults int) ([]byte, error) {
+		t.Fatalf("Jira API search should not be called for credential-bearing API base")
+		return nil, nil
+	}
+
+	_, err := FetchJiraAPIItems("https://alice:secret-token@jira.example", "GIRA", "alice@example.com", "secret-token", nil)
+	if err == nil || !strings.Contains(err.Error(), "must not contain credentials") {
+		t.Fatalf("expected credential-bearing api-base error, got %v", err)
+	}
+}
+
 func TestFetchJiraAPIItemsPaginates(t *testing.T) {
 	restore := jiraAPISearch
 	t.Cleanup(func() { jiraAPISearch = restore })
@@ -129,21 +143,141 @@ func TestFetchJiraAPIItemsPaginates(t *testing.T) {
 
 func TestImportJiraItemsApplyCreatesGitHubIssue(t *testing.T) {
 	repo := ParseRepoRefMust("StatPan/gira")
+	item := JiraWorkItem{Key: "GIRA-11", Summary: "Create me", Status: "To Do", Priority: "High", Assignee: "alice"}
+	labels := JiraGitHubLabels(item)
 	runner := &jiraRunner{outputs: map[string][]byte{
-		"gh issue list --repo StatPan/gira --state all --limit 1000 --json number,title,body":                                                                                    []byte(`[]`),
-		"gh issue create --repo StatPan/gira --title Create me --body Imported from Jira.\n\nJira-Key: GIRA-11\nJira-Status: To Do\nJira-Priority: High\nJira-Assignee: alice\n": []byte("https://github.com/StatPan/gira/issues/42\n"),
+		"gh issue list --repo StatPan/gira --state all --limit 1000 --json number,title,body":                             []byte(`[]`),
+		"gh label list --repo StatPan/gira --json name --limit 1000":                                                      []byte(`[{"name":"status:to-do"}]`),
+		"gh label create jira:GIRA-11 --repo StatPan/gira --color 5319E7 --description Mirrored Jira issue key.":          []byte(""),
+		"gh label create priority:high --repo StatPan/gira --color D93F0B --description Mirrored Jira priority evidence.": []byte(""),
+		jiraIssueCreateCommand(repo, item, labels):                                                                        []byte("https://github.com/StatPan/gira/issues/42\n"),
 	}}
-	report, err := ImportJiraItems(repo, "jira.json", []JiraWorkItem{{Key: "GIRA-11", Summary: "Create me", Status: "To Do", Priority: "High", Assignee: "alice"}}, false, true, runner)
+	report, err := ImportJiraItems(repo, "jira.json", []JiraWorkItem{item}, false, true, runner)
 	if err != nil {
 		t.Fatalf("ImportJiraItems apply error: %v", err)
 	}
 	if report.Counts.Create != 1 || report.Counts.Applied != 1 || report.Actions[0].IssueNumber != 42 {
 		t.Fatalf("unexpected apply report: %+v", report)
 	}
-	for _, call := range runner.calls {
-		if strings.Contains(call, "--label") || strings.Contains(call, "--assignee") {
-			t.Fatalf("Jira import apply should not require pre-existing GitHub labels or assignee mapping, calls=%v", runner.calls)
+	joinedCalls := strings.Join(runner.calls, "\n")
+	if !strings.Contains(joinedCalls, "--label jira:GIRA-11") || !strings.Contains(joinedCalls, "--label status:to-do") || !strings.Contains(joinedCalls, "--label priority:high") {
+		t.Fatalf("Jira import apply did not pass computed labels: %v", runner.calls)
+	}
+}
+
+func TestMirrorJiraIssueDryRunCreatesWhenMissing(t *testing.T) {
+	fakeJiraIssueByKey(t, "ABC-123")
+	repo := ParseRepoRefMust("StatPan/gira")
+	runner := &jiraRunner{outputs: map[string][]byte{
+		"gh issue list --repo StatPan/gira --state all --search ABC-123 in:body --limit 1000 --json number,title,body,url": []byte(`[]`),
+	}}
+
+	report, err := MirrorJiraIssue(JiraMirrorInput{
+		Repo:    repo,
+		Key:     "abc-123",
+		APIBase: "https://jira.example",
+		Email:   "alice@example.com",
+		Token:   "secret-token",
+		DryRun:  true,
+	}, runner)
+	if err != nil {
+		t.Fatalf("MirrorJiraIssue dry-run error: %v", err)
+	}
+	if report.Action != "create" || report.Status != "planned" || report.Item.URL != "https://jira.example/browse/ABC-123" {
+		t.Fatalf("unexpected mirror dry-run report: %+v", report)
+	}
+	if !strings.Contains(report.NextStep, "--api-base https://jira.example") {
+		t.Fatalf("next step should preserve api-base: %+v", report)
+	}
+	for _, want := range []string{"jira:ABC-123", "status:to-do", "priority:high"} {
+		if !containsCall(report.Labels, want) {
+			t.Fatalf("mirror labels missing %q: %+v", want, report.Labels)
 		}
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("dry-run should only inspect GitHub mirrors, calls=%v", runner.calls)
+	}
+}
+
+func TestMirrorJiraIssueApplyCreatesLabeledGitHubIssue(t *testing.T) {
+	fakeJiraIssueByKey(t, "ABC-123")
+	repo := ParseRepoRefMust("StatPan/gira")
+	item := JiraWorkItem{Key: "ABC-123", Summary: "Mirror me", Description: "Body", Status: "To Do", Priority: "High", Assignee: "Alice", Labels: []string{"team-a"}, URL: "https://jira.example/browse/ABC-123"}
+	labels := JiraGitHubLabels(item)
+	runner := &jiraRunner{outputs: map[string][]byte{
+		"gh issue list --repo StatPan/gira --state all --search ABC-123 in:body --limit 1000 --json number,title,body,url": []byte(`[]`),
+		"gh label list --repo StatPan/gira --json name --limit 1000":                                                       []byte(`[{"name":"jira:ABC-123"},{"name":"status:to-do"}]`),
+		"gh label create priority:high --repo StatPan/gira --color D93F0B --description Mirrored Jira priority evidence.":  []byte(""),
+		"gh label create team-a --repo StatPan/gira --color C5DEF5 --description Mirrored Jira label evidence.":            []byte(""),
+		jiraIssueCreateCommand(repo, item, labels):                                                                         []byte("https://github.com/StatPan/gira/issues/77\n"),
+	}}
+
+	report, err := MirrorJiraIssue(JiraMirrorInput{
+		Repo:    repo,
+		Key:     "ABC-123",
+		APIBase: "https://jira.example",
+		Email:   "alice@example.com",
+		Token:   "secret-token",
+		Apply:   true,
+	}, runner)
+	if err != nil {
+		t.Fatalf("MirrorJiraIssue apply error: %v", err)
+	}
+	if report.Action != "create" || report.Status != "applied" || report.Issue.Number != 77 {
+		t.Fatalf("unexpected mirror apply report: %+v", report)
+	}
+	joinedCalls := strings.Join(runner.calls, "\n")
+	if !strings.Contains(joinedCalls, "--label jira:ABC-123") || !strings.Contains(joinedCalls, "--label team-a") {
+		t.Fatalf("mirror apply did not pass labels: %v", runner.calls)
+	}
+}
+
+func TestMirrorJiraIssueReusesExistingMirror(t *testing.T) {
+	fakeJiraIssueByKey(t, "ABC-123")
+	repo := ParseRepoRefMust("StatPan/gira")
+	runner := &jiraRunner{outputs: map[string][]byte{
+		"gh issue list --repo StatPan/gira --state all --search ABC-123 in:body --limit 1000 --json number,title,body,url": []byte(`[{"number":12,"title":"Existing mirror","body":"Jira-Key: ABC-123\n","url":"https://github.com/StatPan/gira/issues/12"}]`),
+	}}
+
+	report, err := MirrorJiraIssue(JiraMirrorInput{
+		Repo:    repo,
+		Key:     "ABC-123",
+		APIBase: "https://jira.example",
+		Email:   "alice@example.com",
+		Token:   "secret-token",
+		Apply:   true,
+	}, runner)
+	if err != nil {
+		t.Fatalf("MirrorJiraIssue reuse error: %v", err)
+	}
+	if report.Action != "reuse" || report.Status != "skipped" || report.Issue.Number != 12 {
+		t.Fatalf("unexpected reuse report: %+v", report)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("reuse should not create issue, calls=%v", runner.calls)
+	}
+}
+
+func TestMirrorJiraIssueReportsDuplicateMirrors(t *testing.T) {
+	fakeJiraIssueByKey(t, "ABC-123")
+	repo := ParseRepoRefMust("StatPan/gira")
+	runner := &jiraRunner{outputs: map[string][]byte{
+		"gh issue list --repo StatPan/gira --state all --search ABC-123 in:body --limit 1000 --json number,title,body,url": []byte(`[{"number":12,"title":"One","body":"Jira-Key: ABC-123\n"},{"number":13,"title":"Two","body":"Jira-Key: ABC-123\n"}]`),
+	}}
+
+	report, err := MirrorJiraIssue(JiraMirrorInput{
+		Repo:    repo,
+		Key:     "ABC-123",
+		APIBase: "https://jira.example",
+		Email:   "alice@example.com",
+		Token:   "secret-token",
+		DryRun:  true,
+	}, runner)
+	if err != nil {
+		t.Fatalf("MirrorJiraIssue duplicate error: %v", err)
+	}
+	if report.Action != "conflict" || report.Status != "blocked" || len(report.Duplicates) != 2 {
+		t.Fatalf("unexpected duplicate report: %+v", report)
 	}
 }
 
@@ -174,4 +308,24 @@ func TestExportJiraIssuesWritesStableJSONAndCSV(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(outputRoot, "issues.json")); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func fakeJiraIssueByKey(t *testing.T, key string) {
+	t.Helper()
+	restore := jiraAPIGet
+	t.Cleanup(func() { jiraAPIGet = restore })
+	jiraAPIGet = func(apiBase string, path string, query map[string]string, email string, token string) ([]byte, error) {
+		if apiBase != "https://jira.example" || path != "/rest/api/3/issue/"+key || query["fields"] == "" || email != "alice@example.com" || token != "secret-token" {
+			t.Fatalf("unexpected Jira issue fetch apiBase=%s path=%s query=%v email=%s token=%s", apiBase, path, query, email, token)
+		}
+		return []byte(`{"key":"` + key + `","fields":{"summary":"Mirror me","description":"Body","status":{"name":"To Do"},"priority":{"name":"High"},"assignee":{"name":"Alice"},"labels":["team-a"]}}`), nil
+	}
+}
+
+func jiraIssueCreateCommand(repo RepoRef, item JiraWorkItem, labels []string) string {
+	args := []string{"issue", "create", "--repo", repo.FullName(), "--title", item.Summary, "--body", JiraIssueBody(item)}
+	for _, label := range labels {
+		args = append(args, "--label", label)
+	}
+	return "gh " + strings.Join(args, " ")
 }

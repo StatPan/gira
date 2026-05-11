@@ -32,6 +32,7 @@ type JiraWorkItem struct {
 	Priority    string   `json:"priority"`
 	Assignee    string   `json:"assignee,omitempty"`
 	Labels      []string `json:"labels"`
+	URL         string   `json:"url,omitempty"`
 }
 
 type JiraImportCounts struct {
@@ -60,6 +61,40 @@ type JiraImportReport struct {
 	Apply   bool               `json:"apply"`
 	Counts  JiraImportCounts   `json:"counts"`
 	Actions []JiraImportAction `json:"actions"`
+}
+
+type JiraMirrorInput struct {
+	Repo       RepoRef `json:"-"`
+	Key        string  `json:"key"`
+	APIBase    string  `json:"api_base,omitempty"`
+	ConfigRoot string  `json:"config_root,omitempty"`
+	Email      string  `json:"-"`
+	Token      string  `json:"-"`
+	DryRun     bool    `json:"dry_run"`
+	Apply      bool    `json:"apply"`
+}
+
+type JiraMirrorReport struct {
+	Command    string            `json:"command"`
+	Repo       string            `json:"repo"`
+	Key        string            `json:"key"`
+	APIBase    string            `json:"api_base"`
+	DryRun     bool              `json:"dry_run"`
+	Apply      bool              `json:"apply"`
+	Status     string            `json:"status"`
+	Action     string            `json:"action"`
+	Reason     string            `json:"reason,omitempty"`
+	Issue      JiraMirrorIssue   `json:"issue,omitempty"`
+	Duplicates []JiraMirrorIssue `json:"duplicates,omitempty"`
+	Item       JiraWorkItem      `json:"item"`
+	Labels     []string          `json:"labels"`
+	NextStep   string            `json:"next_step,omitempty"`
+}
+
+type JiraMirrorIssue struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	URL    string `json:"url,omitempty"`
 }
 
 type JiraExportIssue struct {
@@ -162,6 +197,7 @@ func NormalizeJiraWorkItem(item JiraWorkItem) (JiraWorkItem, error) {
 	item.Priority = strings.TrimSpace(item.Priority)
 	item.Assignee = strings.TrimSpace(item.Assignee)
 	item.Labels = normalizeJiraLabels(item.Labels)
+	item.URL = strings.TrimSpace(item.URL)
 	if item.Key == "" {
 		return JiraWorkItem{}, fmt.Errorf("Jira item key is required")
 	}
@@ -237,21 +273,103 @@ func ImportJiraItems(repo RepoRef, source string, items []JiraWorkItem, dryRun b
 	return report, nil
 }
 
+func MirrorJiraIssue(input JiraMirrorInput, runner CommandRunner) (JiraMirrorReport, error) {
+	if runner == nil {
+		runner = ExecCommandRunner{}
+	}
+	if input.DryRun == input.Apply {
+		return JiraMirrorReport{}, fmt.Errorf("exactly one of --dry-run or --apply is required")
+	}
+	key, err := normalizeJiraKey(input.Key)
+	if err != nil {
+		return JiraMirrorReport{}, err
+	}
+	apiBase, err := resolveJiraMirrorAPIBase(input)
+	if err != nil {
+		return JiraMirrorReport{}, err
+	}
+	email := strings.TrimSpace(input.Email)
+	if email == "" {
+		email = strings.TrimSpace(os.Getenv("JIRA_EMAIL"))
+	}
+	token := strings.TrimSpace(input.Token)
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("JIRA_API_TOKEN"))
+	}
+	if email == "" || token == "" {
+		return JiraMirrorReport{}, fmt.Errorf("JIRA_EMAIL and JIRA_API_TOKEN are required for jira mirror")
+	}
+	item, err := FetchJiraIssueByKey(apiBase, key, email, token)
+	if err != nil {
+		return JiraMirrorReport{}, err
+	}
+	matches, err := findJiraMirrorIssues(input.Repo, key, runner)
+	if err != nil {
+		return JiraMirrorReport{}, err
+	}
+	labels := JiraGitHubLabels(item)
+	report := JiraMirrorReport{
+		Command: "jira mirror",
+		Repo:    input.Repo.FullName(),
+		Key:     key,
+		APIBase: apiBase,
+		DryRun:  input.DryRun,
+		Apply:   input.Apply,
+		Item:    item,
+		Labels:  labels,
+	}
+	switch len(matches) {
+	case 0:
+		report.Action = "create"
+		report.Status = actionStatus(input.DryRun)
+		report.NextStep = jiraMirrorNextStep(input, key)
+		if input.Apply {
+			number, err := createJiraGitHubIssue(input.Repo, item, labels, runner)
+			if err != nil {
+				return report, err
+			}
+			report.Issue = JiraMirrorIssue{Number: number, Title: item.Summary}
+			report.Status = "applied"
+			report.NextStep = fmt.Sprintf("gira ticket view %d --repo %s", number, input.Repo.FullName())
+		}
+	case 1:
+		report.Action = "reuse"
+		report.Status = "skipped"
+		report.Issue = matches[0]
+		report.Reason = "jira_key_exists"
+		report.NextStep = fmt.Sprintf("gira ticket view %d --repo %s", matches[0].Number, input.Repo.FullName())
+	default:
+		report.Action = "conflict"
+		report.Status = "blocked"
+		report.Reason = "duplicate_jira_key"
+		report.Duplicates = matches
+	}
+	return report, nil
+}
+
 func ImportJiraFromAPI(repo RepoRef, apiBase string, project string, dryRun bool, apply bool, runner CommandRunner) (JiraImportReport, error) {
-	items, err := FetchJiraAPIItems(apiBase, project, os.Getenv("JIRA_EMAIL"), os.Getenv("JIRA_API_TOKEN"), runner)
+	normalizedAPIBase, err := normalizeJiraAPIBase(apiBase)
+	if err != nil {
+		return JiraImportReport{}, err
+	}
+	items, err := FetchJiraAPIItems(normalizedAPIBase, project, os.Getenv("JIRA_EMAIL"), os.Getenv("JIRA_API_TOKEN"), runner)
 	if err != nil {
 		return JiraImportReport{}, err
 	}
 	report, err := ImportJiraItems(repo, "", items, dryRun, apply, runner)
-	report.APIBase = strings.TrimRight(strings.TrimSpace(apiBase), "/")
+	report.APIBase = normalizedAPIBase
 	report.Project = strings.ToUpper(strings.TrimSpace(project))
 	return report, err
 }
 
 func FetchJiraAPIItems(apiBase string, project string, email string, token string, runner CommandRunner) ([]JiraWorkItem, error) {
-	apiBase = strings.TrimRight(strings.TrimSpace(apiBase), "/")
+	var err error
+	apiBase, err = normalizeJiraAPIBase(apiBase)
+	if err != nil {
+		return nil, err
+	}
 	project = strings.ToUpper(strings.TrimSpace(project))
-	if apiBase == "" || project == "" {
+	if project == "" {
 		return nil, fmt.Errorf("--api-base and --project are required for Jira API import")
 	}
 	if strings.TrimSpace(email) == "" || strings.TrimSpace(token) == "" {
@@ -279,6 +397,34 @@ func FetchJiraAPIItems(apiBase string, project string, email string, token strin
 	return normalizeJiraItems(items)
 }
 
+func FetchJiraIssueByKey(apiBase string, key string, email string, token string) (JiraWorkItem, error) {
+	apiBase, err := normalizeJiraAPIBase(apiBase)
+	if err != nil {
+		return JiraWorkItem{}, err
+	}
+	key, err = normalizeJiraKey(key)
+	if err != nil {
+		return JiraWorkItem{}, err
+	}
+	if strings.TrimSpace(email) == "" || strings.TrimSpace(token) == "" {
+		return JiraWorkItem{}, fmt.Errorf("JIRA_EMAIL and JIRA_API_TOKEN are required for jira issue fetch")
+	}
+	content, err := jiraAPIGet(apiBase, "/rest/api/3/issue/"+url.PathEscape(key), map[string]string{"fields": "summary,description,status,priority,assignee,labels"}, email, token)
+	if err != nil {
+		return JiraWorkItem{}, fmt.Errorf("fetch Jira issue %s: %w", key, err)
+	}
+	var issue jiraAPIIssue
+	if err := json.Unmarshal(content, &issue); err != nil {
+		return JiraWorkItem{}, fmt.Errorf("parse Jira issue JSON: %w", err)
+	}
+	item, err := jiraWorkItemFromAPIIssue(issue)
+	if err != nil {
+		return JiraWorkItem{}, err
+	}
+	item.URL = apiBase + "/browse/" + item.Key
+	return item, nil
+}
+
 func JiraGitHubLabels(item JiraWorkItem) []string {
 	labels := []string{"jira:" + item.Key}
 	if status := jiraAxisLabel("status", item.Status); status != "" {
@@ -297,8 +443,12 @@ func JiraIssueBody(item JiraWorkItem) string {
 	if strings.TrimSpace(item.Description) != "" {
 		b.WriteString("\n\n")
 	}
-	b.WriteString("Imported from Jira.\n\n")
+	b.WriteString("Imported from Jira.\n")
+	b.WriteString("Jira-owned fields are mirrored/evidence-only in GitHub; Jira remains the planning/status source of truth.\n\n")
 	b.WriteString("Jira-Key: " + item.Key + "\n")
+	if item.URL != "" {
+		b.WriteString("Jira-URL: " + item.URL + "\n")
+	}
 	if item.Status != "" {
 		b.WriteString("Jira-Status: " + item.Status + "\n")
 	}
@@ -397,6 +547,41 @@ func FormatJiraImportReport(report JiraImportReport) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
+func FormatJiraMirrorReport(report JiraMirrorReport) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "jira mirror: %s %s\n", report.Status, report.Key)
+	fmt.Fprintf(&b, "repo: %s\n", report.Repo)
+	fmt.Fprintf(&b, "action: %s\n", report.Action)
+	if report.Issue.Number > 0 {
+		fmt.Fprintf(&b, "issue: #%d %s\n", report.Issue.Number, report.Issue.Title)
+	}
+	if len(report.Duplicates) > 0 {
+		b.WriteString("duplicates:\n")
+		for _, issue := range report.Duplicates {
+			fmt.Fprintf(&b, "  - #%d %s\n", issue.Number, issue.Title)
+		}
+	}
+	if len(report.Labels) > 0 {
+		fmt.Fprintf(&b, "labels: %s\n", strings.Join(report.Labels, ","))
+	}
+	if strings.TrimSpace(report.NextStep) != "" {
+		fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
+	}
+	return b.String()
+}
+
+func jiraMirrorNextStep(input JiraMirrorInput, key string) string {
+	parts := []string{"gira", "jira", "mirror", key, "--repo", input.Repo.FullName()}
+	if strings.TrimSpace(input.APIBase) != "" {
+		parts = append(parts, "--api-base", strings.TrimRight(strings.TrimSpace(input.APIBase), "/"))
+	}
+	if strings.TrimSpace(input.ConfigRoot) != "" {
+		parts = append(parts, "--config-root", strings.TrimSpace(input.ConfigRoot))
+	}
+	parts = append(parts, "--apply")
+	return strings.Join(parts, " ")
+}
+
 func FormatJiraExportReport(report JiraExportReport) string {
 	return fmt.Sprintf("jira export artifacts written to %s\nissues: %d\n", report.OutputRoot, report.Counts.Issues)
 }
@@ -404,6 +589,30 @@ func FormatJiraExportReport(report JiraExportReport) string {
 type jiraExistingIssue struct {
 	Number int
 	Title  string
+}
+
+func findJiraMirrorIssues(repo RepoRef, key string, runner CommandRunner) ([]JiraMirrorIssue, error) {
+	output, err := runner.Run("gh", "issue", "list", "--repo", repo.FullName(), "--state", "all", "--search", key+" in:body", "--limit", "1000", "--json", "number,title,body,url")
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		Body   string `json:"body"`
+		URL    string `json:"url"`
+	}
+	if err := json.Unmarshal(output, &rows); err != nil {
+		return nil, fmt.Errorf("parse GitHub issues: %w", err)
+	}
+	var matches []JiraMirrorIssue
+	for _, row := range rows {
+		if JiraKeyFromBody(row.Body) == key {
+			matches = append(matches, JiraMirrorIssue{Number: row.Number, Title: row.Title, URL: row.URL})
+		}
+	}
+	sort.Slice(matches, func(i, j int) bool { return matches[i].Number < matches[j].Number })
+	return matches, nil
 }
 
 func fetchJiraExistingIssues(repo RepoRef, runner CommandRunner) (map[string]jiraExistingIssue, error) {
@@ -431,12 +640,78 @@ func fetchJiraExistingIssues(repo RepoRef, runner CommandRunner) (map[string]jir
 }
 
 func createJiraGitHubIssue(repo RepoRef, item JiraWorkItem, labels []string, runner CommandRunner) (int, error) {
+	if err := ensureJiraGitHubLabels(repo, labels, runner); err != nil {
+		return 0, err
+	}
 	args := []string{"issue", "create", "--repo", repo.FullName(), "--title", item.Summary, "--body", JiraIssueBody(item)}
+	for _, label := range labels {
+		args = append(args, "--label", label)
+	}
 	output, err := runner.Run("gh", args...)
 	if err != nil {
 		return 0, err
 	}
 	return issueNumberFromURL(strings.TrimSpace(string(output))), nil
+}
+
+func ensureJiraGitHubLabels(repo RepoRef, labels []string, runner CommandRunner) error {
+	if len(labels) == 0 {
+		return nil
+	}
+	output, err := runner.Run("gh", "label", "list", "--repo", repo.FullName(), "--json", "name", "--limit", "1000")
+	if err != nil {
+		return err
+	}
+	var rows []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(output, &rows); err != nil {
+		return fmt.Errorf("parse label list: %w", err)
+	}
+	existing := map[string]struct{}{}
+	for _, row := range rows {
+		existing[strings.ToLower(strings.TrimSpace(row.Name))] = struct{}{}
+	}
+	for _, label := range labels {
+		trimmed := strings.TrimSpace(label)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := existing[strings.ToLower(trimmed)]; ok {
+			continue
+		}
+		if _, err := runner.Run("gh", "label", "create", trimmed, "--repo", repo.FullName(), "--color", jiraGitHubLabelColor(trimmed), "--description", jiraGitHubLabelDescription(trimmed)); err != nil {
+			return err
+		}
+		existing[strings.ToLower(trimmed)] = struct{}{}
+	}
+	return nil
+}
+
+func jiraGitHubLabelColor(label string) string {
+	switch {
+	case strings.HasPrefix(label, "jira:"):
+		return "5319E7"
+	case strings.HasPrefix(label, "status:"):
+		return "0E8A16"
+	case strings.HasPrefix(label, "priority:"):
+		return "D93F0B"
+	default:
+		return "C5DEF5"
+	}
+}
+
+func jiraGitHubLabelDescription(label string) string {
+	switch {
+	case strings.HasPrefix(label, "jira:"):
+		return "Mirrored Jira issue key."
+	case strings.HasPrefix(label, "status:"):
+		return "Mirrored Jira status evidence."
+	case strings.HasPrefix(label, "priority:"):
+		return "Mirrored Jira priority evidence."
+	default:
+		return "Mirrored Jira label evidence."
+	}
 }
 
 func fetchJiraExportIssues(repo RepoRef, runner CommandRunner) ([]JiraExportIssue, error) {
@@ -496,6 +771,26 @@ type jiraAPIPage struct {
 	Total      int
 }
 
+type jiraAPIIssue struct {
+	Key    string `json:"key"`
+	Fields struct {
+		Summary     string          `json:"summary"`
+		Description json.RawMessage `json:"description"`
+		Status      *struct {
+			Name string `json:"name"`
+		} `json:"status"`
+		Priority *struct {
+			Name string `json:"name"`
+		} `json:"priority"`
+		Assignee *struct {
+			Name         string `json:"name"`
+			AccountID    string `json:"accountId"`
+			EmailAddress string `json:"emailAddress"`
+		} `json:"assignee"`
+		Labels []string `json:"labels"`
+	} `json:"fields"`
+}
+
 func parseJiraAPISearch(content []byte) ([]JiraWorkItem, error) {
 	items, _, err := parseJiraAPISearchPage(content)
 	return items, err
@@ -508,61 +803,21 @@ func parseJiraAPISearchPage(content []byte) ([]JiraWorkItem, jiraAPIPage, error)
 	}
 	items := make([]JiraWorkItem, 0, len(payload.Issues))
 	for _, issue := range payload.Issues {
-		status := ""
-		if issue.Fields.Status != nil {
-			status = issue.Fields.Status.Name
+		item, err := jiraWorkItemFromAPIIssue(issue)
+		if err != nil {
+			return nil, jiraAPIPage{}, err
 		}
-		priority := ""
-		if issue.Fields.Priority != nil {
-			priority = issue.Fields.Priority.Name
-		}
-		assignee := ""
-		if issue.Fields.Assignee != nil {
-			assignee = issue.Fields.Assignee.Name
-			if assignee == "" {
-				assignee = issue.Fields.Assignee.EmailAddress
-			}
-			if assignee == "" {
-				assignee = issue.Fields.Assignee.AccountID
-			}
-		}
-		items = append(items, JiraWorkItem{
-			Key:         issue.Key,
-			Summary:     issue.Fields.Summary,
-			Description: jiraDescriptionText(issue.Fields.Description),
-			Status:      status,
-			Priority:    priority,
-			Assignee:    assignee,
-			Labels:      issue.Fields.Labels,
-		})
+		items = append(items, item)
 	}
 	normalized, err := normalizeJiraItems(items)
 	return normalized, jiraAPIPage{StartAt: payload.StartAt, MaxResults: payload.MaxResults, Total: payload.Total}, err
 }
 
 type jiraAPISearchPayload struct {
-	StartAt    int `json:"startAt"`
-	MaxResults int `json:"maxResults"`
-	Total      int `json:"total"`
-	Issues     []struct {
-		Key    string `json:"key"`
-		Fields struct {
-			Summary     string          `json:"summary"`
-			Description json.RawMessage `json:"description"`
-			Status      *struct {
-				Name string `json:"name"`
-			} `json:"status"`
-			Priority *struct {
-				Name string `json:"name"`
-			} `json:"priority"`
-			Assignee *struct {
-				Name         string `json:"name"`
-				AccountID    string `json:"accountId"`
-				EmailAddress string `json:"emailAddress"`
-			} `json:"assignee"`
-			Labels []string `json:"labels"`
-		} `json:"fields"`
-	} `json:"issues"`
+	StartAt    int            `json:"startAt"`
+	MaxResults int            `json:"maxResults"`
+	Total      int            `json:"total"`
+	Issues     []jiraAPIIssue `json:"issues"`
 }
 
 func fetchJiraAPISearchHTTP(apiBase string, project string, email string, token string, startAt int, maxResults int) ([]byte, error) {
@@ -639,6 +894,58 @@ func normalizeJiraItems(items []JiraWorkItem) ([]JiraWorkItem, error) {
 	}
 	sort.SliceStable(normalized, func(i, j int) bool { return normalized[i].Key < normalized[j].Key })
 	return normalized, nil
+}
+
+func jiraWorkItemFromAPIIssue(issue jiraAPIIssue) (JiraWorkItem, error) {
+	status := ""
+	if issue.Fields.Status != nil {
+		status = issue.Fields.Status.Name
+	}
+	priority := ""
+	if issue.Fields.Priority != nil {
+		priority = issue.Fields.Priority.Name
+	}
+	assignee := ""
+	if issue.Fields.Assignee != nil {
+		assignee = issue.Fields.Assignee.Name
+		if assignee == "" {
+			assignee = issue.Fields.Assignee.EmailAddress
+		}
+		if assignee == "" {
+			assignee = issue.Fields.Assignee.AccountID
+		}
+	}
+	return NormalizeJiraWorkItem(JiraWorkItem{
+		Key:         issue.Key,
+		Summary:     issue.Fields.Summary,
+		Description: jiraDescriptionText(issue.Fields.Description),
+		Status:      status,
+		Priority:    priority,
+		Assignee:    assignee,
+		Labels:      issue.Fields.Labels,
+	})
+}
+
+func normalizeJiraKey(value string) (string, error) {
+	key := strings.ToUpper(strings.TrimSpace(value))
+	if !jiraKeyLinePattern.MatchString("Jira-Key: " + key) {
+		return "", fmt.Errorf("Jira key must look like ABC-123")
+	}
+	return key, nil
+}
+
+func resolveJiraMirrorAPIBase(input JiraMirrorInput) (string, error) {
+	if strings.TrimSpace(input.APIBase) != "" {
+		return normalizeJiraAPIBase(input.APIBase)
+	}
+	entry, err := LoadGlobalRepoRegistryEntry(input.ConfigRoot, input.Repo)
+	if err != nil {
+		return "", fmt.Errorf("--api-base is required when no Jira provider config is registered: %w", err)
+	}
+	if entry.Providers == nil || entry.Providers.Jira == nil || strings.TrimSpace(entry.Providers.Jira.BaseURL) == "" {
+		return "", fmt.Errorf("--api-base is required when repo registry has no providers.jira.base_url")
+	}
+	return normalizeJiraAPIBase(entry.Providers.Jira.BaseURL)
 }
 
 func csvValue(row []string, headers map[string]int, name string) string {

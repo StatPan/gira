@@ -698,6 +698,57 @@ func TestJiraImportRequiresMode(t *testing.T) {
 	}
 }
 
+func TestJiraInitJSON(t *testing.T) {
+	restore := newJiraProviderInitReport
+	t.Cleanup(func() { newJiraProviderInitReport = restore })
+	newJiraProviderInitReport = func(input gira.JiraProviderInitInput) (gira.JiraProviderInitReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.APIBase != "https://jira.example" || input.Project != "ABC" || !input.DryRun || input.Apply {
+			t.Fatalf("unexpected jira init input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.JiraProviderInitReport{
+			Command:  "jira init",
+			Repo:     input.Repo.FullName(),
+			APIBase:  input.APIBase,
+			DryRun:   true,
+			ReadOnly: true,
+			Project:  gira.JiraProviderProject{ID: "10000", Key: "ABC", Name: "Alpha"},
+			Statuses: []gira.JiraProviderStatus{{ID: "1", Name: "To Do"}},
+			ConfigProposal: gira.JiraProviderConfigProposal{
+				Provider: gira.JiraProviderConfig{Enabled: true, Mode: "primary", ProjectKey: "ABC"},
+				GitHub:   gira.JiraProviderGitHub{Repo: input.Repo.FullName(), MirrorIssue: true, MirrorLabels: true},
+			},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"jira", "init", "--repo", "StatPan/gira", "--api-base", "https://jira.example", "--project", "ABC", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "jira init"`, `"read_only": true`, `"project_key": "ABC"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("jira init JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestJiraInitApplyReturnsDeferredError(t *testing.T) {
+	restore := newJiraProviderInitReport
+	t.Cleanup(func() { newJiraProviderInitReport = restore })
+	newJiraProviderInitReport = func(input gira.JiraProviderInitInput) (gira.JiraProviderInitReport, error) {
+		return gira.JiraProviderInitReport{}, fmt.Errorf("jira init --apply is not supported in this slice")
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"jira", "init", "--repo", "StatPan/gira", "--api-base", "https://jira.example", "--project", "ABC", "--apply"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "jira init --apply is not supported") {
+		t.Fatalf("stderr missing deferred apply message:\n%s", stderr.String())
+	}
+}
+
 func TestJiraImportJSON(t *testing.T) {
 	restore := newJiraImportReport
 	t.Cleanup(func() { newJiraImportReport = restore })

@@ -168,7 +168,7 @@ The next implementation slice is portfolio lowering. It should land in this orde
 
 The lowering command is the first apply slice for the portfolio layer. The remaining work is to make valid ticket creation easier and make post-lowering summaries more operator-friendly.
 
-Apply must remain bounded to GitHub issues and labels. Projects v2, Web UI/TUI, chat integrations, LLM decomposition, and Jira import/export remain out of scope for v1.
+Apply must remain bounded to GitHub issues and labels. Projects v2, Web UI/TUI, chat integrations, LLM decomposition, Jira workflow mutation, background Jira sync, and full bidirectional Jira sync remain out of scope for v1. Jira import/export commands are explicit migration helpers, not a sync subsystem.
 
 ## Non-goals during this roadmap
 

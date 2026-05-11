@@ -2,6 +2,162 @@
 
 This page is generated from Gira's command metadata registry. Update `internal/gira/command_registry.go` first, then refresh this page.
 
+## `jira export`
+
+Export GitHub issue state into Jira-friendly JSON and CSV artifacts.
+
+Usage:
+
+```bash
+gira jira export --repo OWNER/REPO --output PATH [--json]
+```
+
+Since: `v1.13.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--output`: Output directory for export artifacts.
+- `--json`: Emit stable JSON.
+
+Examples:
+
+- Export GitHub issue state
+
+```bash
+gira jira export --repo OWNER/app --output out/jira
+```
+
+Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-primary-provider.md`
+
+## `jira import`
+
+Import Jira CSV/JSON or read-only Jira API issues into GitHub issues.
+
+Usage:
+
+```bash
+gira jira import --repo OWNER/REPO --source PATH --dry-run|--apply [--json]
+gira jira import --repo OWNER/REPO --api-base URL --project KEY --dry-run|--apply [--json]
+```
+
+Since: `v1.13.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--source`: CSV or JSON import source path.
+- `--api-base`: Jira API base URL for read-only API import.
+- `--project`: Jira project key for read-only API import.
+- `--dry-run`: Preview issue creates without mutation.
+- `--apply`: Create GitHub issues for non-duplicate Jira items.
+- `--json`: Emit stable JSON.
+
+Examples:
+
+- Preview a Jira CSV import
+
+```bash
+gira jira import --repo OWNER/app --source jira.csv --dry-run
+```
+
+Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-primary-provider.md`
+
+## `jira init`
+
+Discover a Jira project and write reviewed non-secret provider config.
+
+Usage:
+
+```bash
+gira jira init --repo OWNER/REPO --api-base URL --project KEY --dry-run|--apply [--config-root PATH] [--overwrite] [--json]
+```
+
+Since: `v1.13.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--api-base`: Jira site base URL, such as https://example.atlassian.net.
+- `--project`: Jira project key to discover.
+- `--config-root`: Override the global Gira config root.
+- `--overwrite`: Replace an existing providers.jira block after review.
+- `--dry-run`: Preview provider discovery and config payload without writing files.
+- `--apply`: Write the reviewed non-secret provider config.
+- `--json`: Emit stable JSON.
+
+Examples:
+
+- Preview Jira provider setup
+
+```bash
+gira jira init --repo OWNER/app --api-base https://example.atlassian.net --project ABC --dry-run
+```
+
+Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-primary-provider.md`
+
+## `jira mirror`
+
+Create or reuse a GitHub mirror issue for one Jira key.
+
+Usage:
+
+```bash
+gira jira mirror JIRA-123 --repo OWNER/REPO --dry-run|--apply [--api-base URL] [--config-root PATH] [--json]
+```
+
+Since: `v1.13.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--api-base`: Override the configured Jira API base URL.
+- `--config-root`: Override the global Gira config root.
+- `--dry-run`: Preview mirror issue creation or reuse.
+- `--apply`: Create the GitHub mirror issue when missing.
+- `--json`: Emit stable JSON.
+
+Examples:
+
+- Preview one Jira mirror
+
+```bash
+gira jira mirror ABC-123 --repo OWNER/app --dry-run
+```
+
+Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-primary-provider.md`
+
+## `jira transition`
+
+Plan one Jira status transition without mutation.
+
+Usage:
+
+```bash
+gira jira transition JIRA-123 --repo OWNER/REPO --to ready|in_progress|review|done --dry-run [--api-base URL] [--config-root PATH] [--json]
+```
+
+Since: `v1.13.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--to`: Target Gira status mapped through providers.jira.status_map.
+- `--api-base`: Override the configured Jira API base URL.
+- `--config-root`: Override the global Gira config root.
+- `--dry-run`: Required; transition planning is read-only.
+- `--json`: Emit stable JSON.
+
+Examples:
+
+- Inspect whether Done is reachable
+
+```bash
+gira jira transition ABC-123 --repo OWNER/app --to done --dry-run
+```
+
+Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-primary-provider.md`
+
 ## `setup global`
 
 Create or update the OS-user global config, workspace registry, and repo registry.

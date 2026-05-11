@@ -18,7 +18,7 @@ if [ ! -f "${out}/index.html" ]; then
 	exit 1
 fi
 
-for page in install quickstart jira-mapping ticket-workflow sprint-release distribution troubleshooting; do
+for page in install quickstart jira-mapping jira-primary-provider ticket-workflow sprint-release distribution troubleshooting; do
 	if [ ! -f "${out}/${page}/index.html" ] && [ ! -f "${out}/${page}.html" ]; then
 		echo "docs build failed: ${out}/${page} missing" >&2
 		exit 1

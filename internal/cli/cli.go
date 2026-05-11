@@ -59,13 +59,14 @@ Flags:
 const guideHelp = `Built-in Gira guides for installed CLI users.
 
 Usage:
-  gira guide [quickstart|ticket|stats|agent|skill|concepts]
-  gira docs [quickstart|ticket|stats|agent|skill|concepts]
+  gira guide [quickstart|ticket|stats|jira|agent|skill|concepts]
+  gira docs [quickstart|ticket|stats|jira|agent|skill|concepts]
 
 Topics:
   quickstart  First successful flow from auth to merged PR
   ticket      Daily ticket lifecycle commands
   stats       Closure funnel and workflow health metrics
+  jira        Jira-primary provider mode and workflow safety
   agent       Minimal rules for AI/coding agents
   skill       Alias for the canonical agent operator summary
   concepts    Jira terms mapped to Gira and GitHub
@@ -151,6 +152,38 @@ Rules:
 
 Non-goals:
   No personal productivity score, full DORA suite, AI spend/token analytics, dashboard UI, or precise agent attribution in the first slice.
+`
+
+const guideJira = `Gira Jira-primary provider guide
+
+Default mode:
+  GitHub-native remains the default. GitHub issues are work packets, PRs are change units, and merged PR plus closed issue is completion evidence.
+
+Jira-primary mode:
+  Jira owns planning and status. GitHub owns execution evidence. Gira mirrors Jira keys into GitHub issues, then refuses Jira Done until the linked PR, review, checks, merge, and mirror evidence are clean.
+
+Setup and mirror:
+  gira jira init --repo OWNER/REPO --api-base https://example.atlassian.net --project ABC --dry-run
+  gira jira init --repo OWNER/REPO --api-base https://example.atlassian.net --project ABC --apply
+  gira jira mirror ABC-123 --repo OWNER/REPO --dry-run
+  gira jira mirror ABC-123 --repo OWNER/REPO --apply
+  gira ticket view ABC-123 --repo OWNER/REPO
+  gira ticket start ABC-123 --repo OWNER/REPO --apply
+
+Transition safety:
+  gira jira transition ABC-123 --repo OWNER/REPO --to done --dry-run
+  gira ticket finish --dry-run
+  gira ticket finish --apply
+
+Migration helpers:
+  gira jira import --repo OWNER/REPO --source jira.csv --dry-run
+  gira jira import --repo OWNER/REPO --api-base https://example.atlassian.net --project ABC --dry-run
+  gira jira export --repo OWNER/REPO --output out/jira
+
+Boundaries:
+  Provider config stores non-secret base URL, project key, source-of-truth policy, and status map in the global repo registry.
+  Credentials come from JIRA_EMAIL and JIRA_API_TOKEN; Gira does not write Jira tokens to repo or global config.
+  Workflow status creation, workflow mutation, background sync, full bidirectional sync, and hosted dashboards are outside the OSS CLI slices.
 `
 
 const statsHelp = `Read-only workflow closure statistics.
@@ -1444,6 +1477,8 @@ func runGuide(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stdout, renderTicketGuide())
 	case "stats":
 		fmt.Fprint(stdout, guideStats)
+	case "jira":
+		fmt.Fprint(stdout, guideJira)
 	case "agent", "skill":
 		fmt.Fprint(stdout, renderAgentGuide())
 	case "concepts":

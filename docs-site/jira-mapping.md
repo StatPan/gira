@@ -13,3 +13,5 @@ Gira keeps Jira-style language while storing canonical state in GitHub.
 | Done | Merged PR plus closed issue | Completion is proven by GitHub evidence. |
 
 Project-only items are intake, portfolio, or visibility context until they are routed or lowered to repository issues.
+
+Jira-primary provider mode is the exception to the default status ownership rule: Jira owns planning and status, while GitHub still owns execution evidence. See [Jira-Primary Provider Mode](/jira-primary-provider).

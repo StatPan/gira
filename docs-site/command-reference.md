@@ -2,6 +2,37 @@
 
 This page is generated from Gira's command metadata registry. Update `internal/gira/command_registry.go` first, then refresh this page.
 
+## `jira doctor`
+
+Diagnose Jira-primary provider compatibility without mutating Jira or GitHub.
+
+Usage:
+
+```bash
+gira jira doctor --repo OWNER/REPO [--project KEY] [--api-base URL] [--sample-key JIRA-123] [--config-root PATH] [--json]
+```
+
+Since: `v1.13.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--project`: Override the configured Jira project key for diagnostics.
+- `--api-base`: Override the configured Jira API base URL.
+- `--sample-key`: Representative Jira issue key for transition and required-field diagnostics.
+- `--config-root`: Override the global Gira config root.
+- `--json`: Emit stable JSON.
+
+Examples:
+
+- Diagnose a configured Jira-primary repo
+
+```bash
+gira jira doctor --repo OWNER/app --sample-key ABC-123
+```
+
+Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-primary-provider.md`
+
 ## `jira export`
 
 Export GitHub issue state into Jira-friendly JSON and CSV artifacts.

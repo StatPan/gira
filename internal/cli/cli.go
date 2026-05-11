@@ -165,6 +165,7 @@ Jira-primary mode:
 Setup and mirror:
   gira jira init --repo OWNER/REPO --api-base https://example.atlassian.net --project ABC --dry-run
   gira jira init --repo OWNER/REPO --api-base https://example.atlassian.net --project ABC --apply
+  gira jira doctor --repo OWNER/REPO --sample-key ABC-123
   gira jira mirror ABC-123 --repo OWNER/REPO --dry-run
   gira jira mirror ABC-123 --repo OWNER/REPO --apply
   gira ticket view ABC-123 --repo OWNER/REPO
@@ -674,6 +675,7 @@ const jiraHelp = `Jira provider, import, and export command family.
 
 Usage:
   gira jira init --repo OWNER/REPO --api-base URL --project KEY --dry-run|--apply [--config-root PATH] [--overwrite] [--json]
+  gira jira doctor --repo OWNER/REPO [--project KEY] [--api-base URL] [--sample-key JIRA-123] [--config-root PATH] [--json]
   gira jira mirror JIRA-123 --repo OWNER/REPO --dry-run|--apply [--api-base URL] [--config-root PATH] [--json]
   gira jira transition JIRA-123 --repo OWNER/REPO --to ready|in_progress|review|done --dry-run [--api-base URL] [--config-root PATH] [--json]
   gira jira import --repo OWNER/REPO --source PATH --dry-run|--apply [--json]
@@ -682,6 +684,7 @@ Usage:
 
 Commands:
   init        Discover a Jira project and write reviewed non-secret provider config
+  doctor      Diagnose Jira-primary compatibility without mutating Jira or GitHub
   mirror      Create or reuse a GitHub mirror issue for one Jira key
   transition  Plan one Jira status transition without mutation
   import      Import Jira CSV/JSON or read-only Jira API issues into GitHub issues
@@ -692,6 +695,7 @@ Flags:
   --source string    CSV or JSON import source path
   --api-base string  Jira API base URL, for example https://example.atlassian.net
   --project string   Jira project key
+  --sample-key string Representative Jira issue key for transition diagnostics
   --to string        Target Gira status for Jira transition planning
   --config-root PATH Override the global Gira config root
   --overwrite        Replace an existing providers.jira block after review
@@ -1231,6 +1235,10 @@ var newJiraProviderInitReport = func(input gira.JiraProviderInitInput) (gira.Jir
 
 var newJiraMirrorReport = func(input gira.JiraMirrorInput) (gira.JiraMirrorReport, error) {
 	return gira.MirrorJiraIssue(input, jiraCommandRunner)
+}
+
+var newJiraDoctorReport = func(input gira.JiraDoctorInput) (gira.JiraDoctorReport, error) {
+	return gira.BuildJiraDoctorReport(input, jiraCommandRunner)
 }
 
 var newJiraTransitionPlanReport = func(input gira.JiraTransitionPlanInput) (gira.JiraTransitionPlanReport, error) {
@@ -2241,6 +2249,8 @@ func runJira(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "init":
 		return runJiraInit(args[1:], stdout, stderr)
+	case "doctor":
+		return runJiraDoctor(args[1:], stdout, stderr)
 	case "mirror":
 		return runJiraMirror(args[1:], stdout, stderr)
 	case "transition":
@@ -2316,6 +2326,65 @@ func runJiraInit(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatJiraProviderInitReport(report))
+	return 0
+}
+
+func runJiraDoctor(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("jira doctor", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	apiBase := fs.String("api-base", "", "Jira API base URL")
+	project := fs.String("project", "", "Jira project key")
+	sampleKey := fs.String("sample-key", "", "Representative Jira issue key")
+	configRoot := fs.String("config-root", "", "Override Gira global config root")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, jiraHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	if *repoValue == "" {
+		fmt.Fprint(stderr, "--repo is required\n\n")
+		_, _ = io.WriteString(stderr, jiraHelp)
+		return 2
+	}
+	repo, err := gira.ParseRepoRef(*repoValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newJiraDoctorReport(gira.JiraDoctorInput{
+		Repo:       repo,
+		APIBase:    *apiBase,
+		Project:    *project,
+		SampleKey:  *sampleKey,
+		ConfigRoot: *configRoot,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		output, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode jira doctor JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", output)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatJiraDoctorReport(report))
 	return 0
 }
 

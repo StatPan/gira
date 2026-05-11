@@ -1,0 +1,3 @@
+{"transitions":[
+  {"id":"31","name":"Resolve","to":{"name":"Done"},"fields":{"resolution":{"required":true},"comment":{"required":false}}}
+]}

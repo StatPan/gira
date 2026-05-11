@@ -20,6 +20,16 @@ gira jira init --repo OWNER/REPO --api-base https://example.atlassian.net --proj
 
 Provider config is written to the user-global repo registry, for example `~/.config/gira/repos/OWNER/REPO.yaml`. It stores non-secret configuration only. Use `JIRA_EMAIL` and `JIRA_API_TOKEN` for credentials.
 
+## Compatibility Doctor
+
+```bash
+gira jira doctor --repo OWNER/REPO
+gira jira doctor --repo OWNER/REPO --sample-key ABC-123
+gira jira doctor --repo OWNER/REPO --sample-key ABC-123 --json
+```
+
+The doctor is read-only. It reports `supported`, `partially_supported`, or `blocked` based on provider config, Jira metadata reachability, status-map coverage, GitHub mirror issue health, permissions, and optional sampled transition diagnostics. Use `--sample-key` to inspect issue-specific Done transition reachability and required fields.
+
 ## Mirror And Execute
 
 ```bash

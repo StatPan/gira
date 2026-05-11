@@ -770,6 +770,69 @@ func TestJiraInitApplyText(t *testing.T) {
 	}
 }
 
+func TestJiraDoctorJSON(t *testing.T) {
+	restore := newJiraDoctorReport
+	t.Cleanup(func() { newJiraDoctorReport = restore })
+	newJiraDoctorReport = func(input gira.JiraDoctorInput) (gira.JiraDoctorReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.APIBase != "https://jira.example" || input.Project != "ABC" || input.SampleKey != "ABC-123" || input.ConfigRoot != "/tmp/gira" {
+			t.Fatalf("unexpected jira doctor input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.JiraDoctorReport{
+			Command:       "jira doctor",
+			Repo:          input.Repo.FullName(),
+			APIBase:       input.APIBase,
+			ProjectKey:    input.Project,
+			ConfigRoot:    input.ConfigRoot,
+			Status:        "warning",
+			Compatibility: "partially_supported",
+			ReadOnly:      true,
+			Checks: []gira.JiraDoctorCheck{
+				{Name: "transition_reachability", Status: "warning", Detail: "sample issue required"},
+			},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"jira", "doctor", "--repo", "StatPan/gira", "--api-base", "https://jira.example", "--project", "ABC", "--sample-key", "ABC-123", "--config-root", "/tmp/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "jira doctor"`, `"read_only": true`, `"id": "transition_reachability"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("jira doctor JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestJiraDoctorText(t *testing.T) {
+	restore := newJiraDoctorReport
+	t.Cleanup(func() { newJiraDoctorReport = restore })
+	newJiraDoctorReport = func(input gira.JiraDoctorInput) (gira.JiraDoctorReport, error) {
+		return gira.JiraDoctorReport{
+			Command:       "jira doctor",
+			Repo:          input.Repo.FullName(),
+			ProjectKey:    "ABC",
+			Status:        "ready",
+			Compatibility: "supported",
+			ReadOnly:      true,
+			Checks:        []gira.JiraDoctorCheck{{Name: "provider_config", Status: "ready", Detail: "loaded"}},
+			Mirror:        gira.JiraDoctorMirrorDiagnostic{Status: "ready", IssueCount: 1, MirrorCount: 1},
+			Transitions:   gira.JiraDoctorTransitionCheck{Status: "ready", SampleKey: "ABC-123", Detail: "direct transition"},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"jira", "doctor", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"jira doctor: ready (supported)", "provider_config: ready", "transition_sample: ready ABC-123"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("jira doctor text missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestJiraMirrorJSON(t *testing.T) {
 	restore := newJiraMirrorReport
 	t.Cleanup(func() { newJiraMirrorReport = restore })

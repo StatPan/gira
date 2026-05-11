@@ -46,6 +46,28 @@ export JIRA_EMAIL=you@example.com
 export JIRA_API_TOKEN=...
 ```
 
+## Compatibility Doctor
+
+Run the read-only doctor before relying on a real Jira project shape:
+
+```bash
+gira jira doctor --repo OWNER/REPO
+gira jira doctor --repo OWNER/REPO --sample-key ABC-123
+gira jira doctor --repo OWNER/REPO --sample-key ABC-123 --json
+```
+
+`jira doctor` loads `providers.jira` from the user-global repo registry, then checks Jira project reachability, issue types, statuses, priorities, status-map coverage, GitHub mirror issue health, and permission/API blockers. It never mutates Jira or GitHub.
+
+Transition reachability is issue-specific in Jira. Without `--sample-key`, the doctor reports a warning and asks for a representative issue. With `--sample-key`, it inspects allowed transitions and required fields for the configured `done` target statuses.
+
+Compatibility levels:
+
+| Level | Meaning |
+| --- | --- |
+| `supported` | Config, Jira metadata, mirror issue health, and sampled transition diagnostics are ready. |
+| `partially_supported` | Core reads work, but warnings remain, such as unmapped statuses, no mirror issues yet, or missing sample transition diagnostics. |
+| `blocked` | Provider config, credentials, permissions, duplicate mirror issues, status-map conflicts, or required transition fields prevent safe automation. |
+
 ## Mirror And Work
 
 Create or reuse a GitHub mirror issue for one Jira key:

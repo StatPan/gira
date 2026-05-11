@@ -50,6 +50,9 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "repo") {
 		t.Fatalf("help output missing repo command:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "stats") {
+		t.Fatalf("help output missing stats command:\n%s", stdout.String())
+	}
 	if strings.Contains(stdout.String(), "portfolio   ") || strings.Contains(stdout.String(), "jira        ") {
 		t.Fatalf("help output should not frontload advanced commands:\n%s", stdout.String())
 	}
@@ -439,6 +442,7 @@ func TestDocsAliasAndGuideTopics(t *testing.T) {
 		{[]string{"docs", "agent"}, "docs/skills/gira-agent-operator.md"},
 		{[]string{"guide", "skill"}, "Use --dry-run before --apply"},
 		{[]string{"guide", "ticket"}, "Registry-backed commands:"},
+		{[]string{"guide", "stats"}, "Closure Funnel reports"},
 		{[]string{"guide", "concepts"}, "Jira terms on GitHub"},
 		{[]string{"guide", "--help"}, "Topics:"},
 	}
@@ -477,8 +481,65 @@ func TestGuideUnknownTopic(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
-	if !strings.Contains(stderr.String(), "unknown guide topic: missing") || !strings.Contains(stderr.String(), "gira guide [quickstart|ticket|agent|skill|concepts]") {
+	if !strings.Contains(stderr.String(), "unknown guide topic: missing") || !strings.Contains(stderr.String(), "gira guide [quickstart|ticket|stats|agent|skill|concepts]") {
 		t.Fatalf("stderr missing guide remediation:\n%s", stderr.String())
+	}
+}
+
+func TestStatsRepoCommandText(t *testing.T) {
+	restore := newStatsRepoReport
+	t.Cleanup(func() { newStatsRepoReport = restore })
+	newStatsRepoReport = func(input gira.StatsRepoOptions) (gira.StatsRepoReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Since != "30d" || input.StaleDays != 10 || input.Limit != 50 {
+			t.Fatalf("unexpected stats input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.StatsRepoReport{
+			Command:    "stats repo",
+			Repo:       input.Repo.FullName(),
+			Window:     gira.StatsWindow{Since: input.Since, StaleDays: input.StaleDays, Limit: input.Limit},
+			Source:     gira.StatsSource{Backend: "github", ReadOnly: true},
+			Metrics:    gira.StatsRepoMetrics{OpenedIssues: 4, MergedPRsWithLinkedIssues: 2, ClosureRate: 0.5},
+			Confidence: gira.StatsConfidence{Level: "medium", Signals: []string{"status labels"}},
+			NonGoals:   []string{"personal productivity score"},
+			NextSteps:  []string{"Improve closing links."},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"stats", "repo", "--repo", "StatPan/gira", "--since", "30d", "--stale-days", "10", "--limit", "50"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"Gira Closure Funnel", "opened issues: 4", "closure rate: 50.0%"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stats output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestStatsRepoCommandJSON(t *testing.T) {
+	restore := newStatsRepoReport
+	t.Cleanup(func() { newStatsRepoReport = restore })
+	newStatsRepoReport = func(input gira.StatsRepoOptions) (gira.StatsRepoReport, error) {
+		return gira.StatsRepoReport{
+			Command: "stats repo",
+			Repo:    input.Repo.FullName(),
+			Window:  gira.StatsWindow{Since: input.Since},
+			Metrics: gira.StatsRepoMetrics{ClosureRate: 1},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"stats", "repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.StatsRepoReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode stats JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Command != "stats repo" || report.Repo != "StatPan/gira" {
+		t.Fatalf("unexpected stats report: %+v", report)
 	}
 }
 

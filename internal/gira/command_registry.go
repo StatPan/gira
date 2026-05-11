@@ -85,6 +85,38 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"stats", "repo"},
+			Summary: "Show a read-only Closure Funnel report for one GitHub repo.",
+			Usage:   "gira stats repo [OWNER/REPO] [--repo OWNER/REPO] [--since 90d] [--stale-days 14] [--limit 100] [--json]",
+			Since:   "v1.12.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo. May also be positional."},
+				{Name: "--since", Summary: "Reporting window such as 90d or YYYY-MM-DD. Default: 90d."},
+				{Name: "--stale-days", Summary: "Count open issues and PRs stale after this many days. Default: 14."},
+				{Name: "--limit", Summary: "Max GitHub rows per query. Default: 100."},
+				{Name: "--json", Summary: "Emit stable JSON for automation."},
+			},
+			Docs:        []string{"README.md", "docs/closure-funnel-stats.md", "docs-site/closure-funnel-stats.md"},
+			GuideTopics: []string{"stats"},
+			Examples: []CommandExample{
+				{Summary: "Render the default repo report", Command: "gira stats repo --repo OWNER/app --since 90d"},
+			},
+		},
+		{
+			Path:    []string{"stats", "workspace"},
+			Summary: "Planned multi-repo Closure Funnel rollup for a configured workspace.",
+			Usage:   "gira stats workspace [--since 90d]",
+			Since:   "planned",
+			Flags: []FlagSpec{
+				{Name: "--since", Summary: "Reporting window such as 90d or YYYY-MM-DD."},
+			},
+			Docs:        []string{"docs/closure-funnel-stats.md", "docs-site/closure-funnel-stats.md"},
+			GuideTopics: []string{"stats"},
+			Examples: []CommandExample{
+				{Summary: "Planned workspace rollup", Command: "gira stats workspace --since 90d"},
+			},
+		},
+		{
 			Path:    []string{"ticket", "new"},
 			Summary: "Create a repo-bound executable GitHub issue with structured or full Markdown body input.",
 			Usage:   "gira ticket new \"Title\" --dry-run|--apply [--body TEXT|--body-file PATH|-] [--start]",

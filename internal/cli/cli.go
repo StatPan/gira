@@ -661,6 +661,7 @@ Usage:
   gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
   gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both] [--body TEXT|--body-file PATH|-] [--json]
+  gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr] [--json]
   gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]
   gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--json]
   gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--wait 0s] [--json]
@@ -673,6 +674,7 @@ Commands:
   start   Verify a ready ticket, create/reuse its branch, and move to in-progress on apply. Alias: gira start
   pr      Validate or create a linked PR with Closes #N and update review status on apply
   note    Post a structured context note to the issue, linked PR, or both
+  supersede Close a ticket as superseded and create a linked replacement ticket
   checks  Show linked PR checks, review blockers, and next action
   wait    Wait for pending linked PR checks without merging
   finish  Mark the linked PR ready when needed, merge safely, and report convergence
@@ -688,6 +690,8 @@ Flags:
   --body-file string Read full issue body from file, or "-" for stdin
   --kind string    Ticket note kind: progress, blocker, decision, handoff, summary, or check. Default: progress
   --target string  Ticket note target: auto, issue, pr, or both. Default: auto
+  --replacement-title string Replacement ticket title for ticket supersede
+  --close-draft-pr   Close a linked draft PR when superseding
   --assignee string Ticket list assignee login
   --milestone string Ticket list milestone title
   --limit int      Ticket list item limit. Default: 30
@@ -1190,6 +1194,10 @@ var newTicketViewReport = func(repo gira.RepoRef, issue int) (gira.TicketViewRep
 
 var newTicketNoteReport = func(input gira.TicketNoteInput) (gira.TicketNoteReport, error) {
 	return gira.BuildTicketNoteReport(input, devCommandRunner)
+}
+
+var newTicketSupersedeReport = func(input gira.TicketSupersedeInput) (gira.TicketSupersedeReport, error) {
+	return gira.BuildTicketSupersedeReport(input, devCommandRunner)
 }
 
 var newEpicStatusReport = func(input gira.EpicInput) (gira.EpicReport, error) {
@@ -2403,6 +2411,8 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTicketPR(args[1:], stdout, stderr)
 	case "note":
 		return runTicketNote(args[1:], stdout, stderr)
+	case "supersede":
+		return runTicketSupersede(args[1:], stdout, stderr)
 	case "checks":
 		return runTicketChecks(args[1:], stdout, stderr)
 	case "wait":
@@ -3007,6 +3017,87 @@ func runTicketNote(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
+func runTicketSupersede(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalTicket, positionalOK := extractTicketPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("ticket supersede", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	replacementTitle := fs.String("replacement-title", "", "Replacement ticket title")
+	body := fs.String("body", "", "Replacement issue body")
+	bodyFile := fs.String("body-file", "", "Read replacement issue body from file")
+	milestone := fs.String("milestone", "", "Override replacement milestone")
+	closeDraftPR := fs.Bool("close-draft-pr", false, "Close linked draft PR")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply changes")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	var labels repeatedStringFlag
+	fs.Var(&labels, "label", "Additional replacement GitHub label")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run/--apply is required\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	resolvedBody, err := readTicketNewBody(*body, *bodyFile, os.Stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	ticketNumber, ok := resolveTicketContext(repo, *ticket, *issue, positionalTicket, true, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	result, err := newTicketSupersedeReport(gira.TicketSupersedeInput{
+		Repo:             repo,
+		Ticket:           ticketNumber,
+		ReplacementTitle: *replacementTitle,
+		Body:             resolvedBody,
+		Labels:           labels,
+		Milestone:        *milestone,
+		CloseDraftPR:     *closeDraftPR,
+		DryRun:           *dryRun,
+		Apply:            *apply,
+	})
+	result.NextStep = shortenTicketNextStep(result.NextStep, result.Repo, result.Replacement.Number)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatTicketSupersede(result))
+	return 0
+}
+
 func runTicketChecks(args []string, stdout io.Writer, stderr io.Writer) int {
 	return runTicketChecksLike(args, stdout, stderr, false)
 }
@@ -3327,7 +3418,7 @@ func parseWorkRequiredFlags(repoValue string, issue int, dryRun bool, apply bool
 func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bool) {
 	cleaned := make([]string, 0, len(args))
 	positional := 0
-	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}, "--timeout": {}, "--interval": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}, "--timeout": {}, "--interval": {}, "--replacement-title": {}, "--body": {}, "--body-file": {}, "--milestone": {}, "--label": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)

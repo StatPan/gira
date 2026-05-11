@@ -162,6 +162,28 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"ticket", "supersede"},
+			Summary: "Close a ticket as superseded and create a linked replacement ticket.",
+			Usage:   "gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr]",
+			Since:   "v1.12.0",
+			Flags: []FlagSpec{
+				{Name: "--replacement-title", Summary: "Title for the replacement issue."},
+				{Name: "--body", Summary: "Replacement issue body."},
+				{Name: "--body-file", Summary: "Read replacement issue body from file or stdin with -."},
+				{Name: "--label", Summary: "Additional replacement issue label."},
+				{Name: "--milestone", Summary: "Override replacement issue milestone."},
+				{Name: "--close-draft-pr", Summary: "Close a linked draft PR when superseding."},
+				{Name: "--dry-run", Summary: "Preview all planned mutations."},
+				{Name: "--apply", Summary: "Create the replacement, cross-link notes, status update, and close the original."},
+			},
+			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  38,
+			Examples: []CommandExample{
+				{Summary: "Preview a replacement ticket", Command: "gira ticket supersede 64 --replacement-title \"Define release gate\" --body-file replacement.md --dry-run"},
+			},
+		},
+		{
 			Path:        []string{"ticket", "checks"},
 			Summary:     "Show linked PR checks, review blockers, and next action.",
 			Usage:       "gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]",

@@ -108,6 +108,21 @@ func TestStartDevBranchFailsOnIssueNumberMismatch(t *testing.T) {
 	}
 }
 
+func TestFetchDevIssueAcceptsNullBody(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &devStartRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/59": []byte(`{"number":59,"title":"No body","body":null,"state":"open","labels":[{"name":"status:ready"}]}`),
+	}}
+
+	issue, err := fetchDevIssue(repo, 59, runner)
+	if err != nil {
+		t.Fatalf("fetchDevIssue error: %v", err)
+	}
+	if issue.Body != "" {
+		t.Fatalf("body = %q, want empty string", issue.Body)
+	}
+}
+
 func containsCall(calls []string, target string) bool {
 	for _, call := range calls {
 		if call == target {

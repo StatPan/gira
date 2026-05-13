@@ -6,10 +6,57 @@ title: "[Bug] "
 labels: ["type:bug"]
 body:
   - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who is affected, how often, and how severe is it?
+      placeholder: "Affected users/workflows, frequency, and severity."
+    validations:
+      required: true
+  - type: textarea
     id: actual
     attributes:
       label: Actual Behavior
+      description: What happened?
+    validations:
+      required: true
   - type: textarea
     id: expected
     attributes:
       label: Expected Behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Minimal steps, commands, inputs, or environment details.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - p0
+        - p1
+        - p2
+        - p3
+    validations:
+      required: true
+  - type: input
+    id: source_ticket
+    attributes:
+      label: Source Ticket
+      description: Optional external source such as Jira, Linear, Notion, or support case.
+  - type: textarea
+    id: verification
+    attributes:
+      label: Fix Verification
+      description: How should the PR prove the bug is fixed?
+      placeholder: "Regression test, manual command, or observed behavior."

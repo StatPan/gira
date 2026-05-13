@@ -9,7 +9,32 @@ body:
     id: question
     attributes:
       label: Question
+      description: What decision or unknown should this spike resolve?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What should be investigated, and what is explicitly out of scope?
+      placeholder: |
+        Investigate:
+        - ...
+
+        Do not implement:
+        - ...
+    validations:
+      required: true
   - type: textarea
     id: output
     attributes:
       label: Expected Output
+      description: Decision, recommendation, prototype notes, or follow-up issues.
+      placeholder: "- [ ] Recommendation recorded\n- [ ] Follow-up tickets created if needed"
+    validations:
+      required: true
+  - type: input
+    id: source_ticket
+    attributes:
+      label: Source Ticket
+      description: Optional external source such as Jira, Linear, Notion, or customer request.

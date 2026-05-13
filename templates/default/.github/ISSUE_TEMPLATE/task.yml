@@ -9,8 +9,65 @@ body:
     id: goal
     attributes:
       label: Goal
+      description: What should be true when this task is complete?
+      placeholder: "Implement a bounded change that can be verified in one PR."
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is included and excluded?
+      placeholder: |
+        In:
+        - ...
+
+        Out:
+        - ...
+    validations:
+      required: true
   - type: textarea
     id: acceptance
     attributes:
       label: Acceptance Criteria
-      placeholder: "- [ ] ..."
+      description: Conditions required before this can move to done.
+      placeholder: |
+        - [ ] Behavior is implemented
+        - [ ] Tests or manual verification are recorded
+        - [ ] Docs or runbooks are updated when needed
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - p1
+        - p2
+        - p3
+    validations:
+      required: true
+  - type: input
+    id: source_ticket
+    attributes:
+      label: Source Ticket
+      description: Optional external source such as Jira, Linear, Notion, or support case.
+      placeholder: "Jira ABC-123, Linear ENG-123, Notion URL"
+  - type: textarea
+    id: rollout
+    attributes:
+      label: Rollout / Migration Notes
+      description: Deployment, data, migration, or rollback considerations.
+      placeholder: "No rollout risk / migration required."
+  - type: textarea
+    id: observability_security
+    attributes:
+      label: Observability / Security
+      description: Logging, metrics, alerts, permissions, secrets, or abuse-risk changes.
+      placeholder: "No observability or security impact."
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: Commands, tests, screenshots, or manual checks expected for the PR.
+      placeholder: "go test ./..."

@@ -6,10 +6,54 @@ title: "[Story] "
 labels: ["type:story"]
 body:
   - type: textarea
-    id: story
+    id: problem
     attributes:
-      label: User Story
+      label: Problem / User Need
+      description: Who needs this, what do they need, and why now?
+      placeholder: "As a ..., I need ..., so that ..."
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What should this story change, and what should it leave alone?
+      placeholder: |
+        In:
+        - ...
+
+        Out:
+        - ...
+    validations:
+      required: true
   - type: textarea
     id: acceptance
     attributes:
       label: Acceptance Criteria
+      placeholder: |
+        - [ ] User-visible behavior is complete
+        - [ ] Edge cases are handled
+        - [ ] Verification is recorded
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - p1
+        - p2
+        - p3
+    validations:
+      required: true
+  - type: input
+    id: source_ticket
+    attributes:
+      label: Source Ticket
+      description: Optional external source such as Jira, Linear, Notion, or customer request.
+  - type: textarea
+    id: rollout
+    attributes:
+      label: Rollout / Docs Notes
+      description: Release, migration, documentation, or runbook considerations.
+      placeholder: "No rollout or docs impact."

@@ -290,6 +290,17 @@ five minutes by default, and supports `--repo`, `--limit`, `--active-only`, and
 
 `workspace project adopt` registers an existing profile or org GitHub Project in `workspace.project`; it never creates Projects and fails instead of replacing a different configured Project. `projects sync` then keeps that existing GitHub Projects v2 board visible by linking configured repos, adding missing open issues as project items, mirroring Gira status labels to the board's standard Status field, keeping closed issues as `Done`, creating supported planning fields, mirroring `priority:*`, `area:*`, and `agent:*` labels into Project planning fields, and copying milestone due dates into `Target date`. A Project may live under `users/OWNER/projects/N` or `orgs/OWNER/projects/N`; when it is linked to the repo and its items are repo issues, it is still a normal repo board surface. Repo issues remain the execution source of truth. Add `--archive-closed` only when closed issue items should leave the active Project item set. GitHub does not expose supported Project view creation APIs, so Gira reports the manual Board/Schedule view setup step instead of hiding it behind raw Project numbers.
 
+## GitHub Workflow Templates
+
+The default bootstrap template includes GitHub issue forms and a pull request template under `.github/`. These templates are part of the Gira repository contract: they help downstream repos collect the context needed before an issue becomes `status:ready`, then keep PRs tied to the issue -> branch -> checks -> finish loop.
+
+```bash
+gira ops bootstrap --repo OWNER/REPO --template default --dry-run
+gira ops bootstrap --repo OWNER/REPO --path /path/to/repo
+```
+
+Issue forms collect goal, scope, acceptance criteria, priority, optional source ticket, rollout or migration notes, observability/security impact, and expected verification. They do not ask for a Gira ticket ID before issue creation because the GitHub issue number becomes the ticket ID after submission. The PR template requires a closing issue reference, records the expected `gira ticket start` and `gira ticket finish` lifecycle commands, and includes production-readiness checks for tests, migrations, rollout, observability, security, and docs.
+
 ## Install, Upgrade, and Remove
 
 Gira is implemented as a Go-built CLI. Normal users should install the release binary through `install.sh`, npm/bun, PyPI via uv/pipx/pip, or Homebrew. These channels do not require Go, do not build from source, and do not mutate any repository.

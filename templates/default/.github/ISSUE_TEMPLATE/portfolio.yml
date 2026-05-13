@@ -51,10 +51,21 @@ body:
       description: Execution issues linked to this top-level ticket.
       placeholder: "OWNER/REPO#123"
   - type: input
+    id: source_ticket
+    attributes:
+      label: Source Ticket
+      description: Optional external source such as Jira, Linear, Notion, or customer request.
+  - type: dropdown
     id: priority
     attributes:
       label: Priority
-      placeholder: "p1 | p2 | p3"
+      options:
+        - p0
+        - p1
+        - p2
+        - p3
+    validations:
+      required: true
   - type: input
     id: target_date
     attributes:

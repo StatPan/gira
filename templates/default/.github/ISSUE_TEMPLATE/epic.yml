@@ -9,7 +9,44 @@ body:
     id: goal
     attributes:
       label: Goal
+      description: What outcome should exist after the child issues are done?
+    validations:
+      required: true
   - type: textarea
     id: scope
     attributes:
       label: Scope
+      description: What is included and excluded from this epic?
+      placeholder: |
+        In:
+        - ...
+
+        Out:
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: Observable completion conditions for the epic.
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
+  - type: textarea
+    id: child_issues
+    attributes:
+      label: Child Issues
+      description: Repo issue links that lower this epic into executable work.
+      placeholder: "OWNER/REPO#123"
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - p0
+        - p1
+        - p2
+        - p3
+    validations:
+      required: true

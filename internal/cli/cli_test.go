@@ -3089,7 +3089,7 @@ func TestBootstrapDryRunIsDeterministic(t *testing.T) {
 		t.Fatal("dry-run output differed between identical runs")
 	}
 	output := firstOut.String()
-	for _, want := range []string{"--- AGENTS.md", "StatPan/example", "example", "2026-04-26", "--- .github/PULL_REQUEST_TEMPLATE.md", "--- .github/ISSUE_TEMPLATE/portfolio.yml"} {
+	for _, want := range []string{"--- AGENTS.md", "StatPan/example", "example", "2026-04-26", "--- .github/PULL_REQUEST_TEMPLATE.md", "--- .github/ISSUE_TEMPLATE/config.yml", "--- .github/ISSUE_TEMPLATE/portfolio.yml"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("dry-run output missing %q:\n%s", want, output)
 		}

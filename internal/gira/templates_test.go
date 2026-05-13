@@ -5,7 +5,33 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
+
+type githubIssueForm struct {
+	Name        string             `yaml:"name"`
+	Description string             `yaml:"description"`
+	Title       string             `yaml:"title"`
+	Labels      []string           `yaml:"labels"`
+	Body        []githubIssueField `yaml:"body"`
+}
+
+type githubIssueField struct {
+	Type        string                    `yaml:"type"`
+	ID          string                    `yaml:"id"`
+	Attributes  githubIssueFieldAttribute `yaml:"attributes"`
+	Validations githubIssueValidations    `yaml:"validations"`
+}
+
+type githubIssueFieldAttribute struct {
+	Label   string   `yaml:"label"`
+	Options []string `yaml:"options"`
+}
+
+type githubIssueValidations struct {
+	Required bool `yaml:"required"`
+}
 
 func TestRenderTemplateTreeIncludesPortfolioIssueTemplate(t *testing.T) {
 	rendered, err := RenderTemplateTree("default", mustRepoRefForPortfolio("StatPan/example"), "2026-04-26")
@@ -72,6 +98,99 @@ func TestRenderTemplateTreeIncludesGiraWorkflowIssueTemplates(t *testing.T) {
 	config := byPath[".github/ISSUE_TEMPLATE/config.yml"]
 	if config == "" || !strings.Contains(config, "blank_issues_enabled") {
 		t.Fatalf("issue template config missing expected GitHub form config:\n%s", config)
+	}
+}
+
+func TestDefaultGitHubIssueFormsHaveStructuredWorkflowContract(t *testing.T) {
+	rendered, err := RenderTemplateTree("default", mustRepoRefForPortfolio("StatPan/example"), "2026-05-13")
+	if err != nil {
+		t.Fatalf("RenderTemplateTree error: %v", err)
+	}
+
+	forms := map[string]githubIssueForm{}
+	for _, item := range rendered {
+		if !strings.HasPrefix(item.Path, ".github/ISSUE_TEMPLATE/") || !strings.HasSuffix(item.Path, ".yml") || strings.HasSuffix(item.Path, "/config.yml") {
+			continue
+		}
+		var form githubIssueForm
+		if err := yaml.Unmarshal([]byte(item.Content), &form); err != nil {
+			t.Fatalf("parse %s: %v\n%s", item.Path, err, item.Content)
+		}
+		if strings.TrimSpace(form.Name) == "" || strings.TrimSpace(form.Description) == "" || strings.TrimSpace(form.Title) == "" {
+			t.Fatalf("%s missing name, description, or title: %+v", item.Path, form)
+		}
+		if len(form.Labels) == 0 || len(form.Body) == 0 {
+			t.Fatalf("%s missing labels or body: %+v", item.Path, form)
+		}
+		forms[item.Path] = form
+	}
+
+	requiredFields := map[string][]string{
+		".github/ISSUE_TEMPLATE/bug.yml":       {"impact", "actual", "expected", "reproduction", "priority"},
+		".github/ISSUE_TEMPLATE/epic.yml":      {"goal", "scope", "acceptance", "priority"},
+		".github/ISSUE_TEMPLATE/portfolio.yml": {"goal", "scope", "routing", "acceptance_criteria", "priority"},
+		".github/ISSUE_TEMPLATE/spike.yml":     {"question", "scope", "output"},
+		".github/ISSUE_TEMPLATE/story.yml":     {"problem", "scope", "acceptance", "priority"},
+		".github/ISSUE_TEMPLATE/task.yml":      {"goal", "scope", "acceptance", "priority"},
+	}
+	for path, ids := range requiredFields {
+		form, ok := forms[path]
+		if !ok {
+			t.Fatalf("expected rendered issue form %s; got paths=%v", path, mapKeys(forms))
+		}
+		fields := issueFieldsByID(form)
+		for _, id := range ids {
+			field, ok := fields[id]
+			if !ok {
+				t.Fatalf("%s missing field id %q; fields=%v", path, id, mapKeys(fields))
+			}
+			if !field.Validations.Required {
+				t.Fatalf("%s field %q should be required: %+v", path, id, field)
+			}
+			if strings.TrimSpace(field.Attributes.Label) == "" {
+				t.Fatalf("%s field %q missing label: %+v", path, id, field)
+			}
+		}
+		if path != ".github/ISSUE_TEMPLATE/epic.yml" {
+			if _, ok := fields["source_ticket"]; !ok {
+				t.Fatalf("%s should expose optional source_ticket instead of a pre-created Gira ID", path)
+			}
+		}
+		if _, ok := fields["gira_ticket_id"]; ok {
+			t.Fatalf("%s should not ask for a Gira ticket ID before issue creation", path)
+		}
+	}
+}
+
+func TestDefaultGitHubIssueTemplateConfigIsParseable(t *testing.T) {
+	rendered, err := RenderTemplateTree("default", mustRepoRefForPortfolio("StatPan/example"), "2026-05-13")
+	if err != nil {
+		t.Fatalf("RenderTemplateTree error: %v", err)
+	}
+
+	var content string
+	for _, item := range rendered {
+		if item.Path == ".github/ISSUE_TEMPLATE/config.yml" {
+			content = item.Content
+			break
+		}
+	}
+	if content == "" {
+		t.Fatal("issue template config was not rendered")
+	}
+	var config struct {
+		BlankIssuesEnabled bool `yaml:"blank_issues_enabled"`
+		ContactLinks       []struct {
+			Name  string `yaml:"name"`
+			URL   string `yaml:"url"`
+			About string `yaml:"about"`
+		} `yaml:"contact_links"`
+	}
+	if err := yaml.Unmarshal([]byte(content), &config); err != nil {
+		t.Fatalf("parse issue template config: %v\n%s", err, content)
+	}
+	if !config.BlankIssuesEnabled || len(config.ContactLinks) != 1 || !strings.Contains(config.ContactLinks[0].URL, "gira.statpan.com") {
+		t.Fatalf("unexpected issue template config: %+v", config)
 	}
 }
 
@@ -151,4 +270,23 @@ func TestRenderTemplateTreeIncludesWorkspaceConfig(t *testing.T) {
 	if resolved.Project.Owner != "StatPan" || resolved.Project.Title != "example" {
 		t.Fatalf("resolved project = %+v, want template defaults", resolved.Project)
 	}
+}
+
+func issueFieldsByID(form githubIssueForm) map[string]githubIssueField {
+	fields := map[string]githubIssueField{}
+	for _, field := range form.Body {
+		if strings.TrimSpace(field.ID) == "" {
+			continue
+		}
+		fields[field.ID] = field
+	}
+	return fields
+}
+
+func mapKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	return keys
 }

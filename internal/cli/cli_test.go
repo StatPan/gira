@@ -1352,6 +1352,71 @@ func TestWorkspaceListAliasesBacklog(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCapabilityCommandTextUsesInjectedReport(t *testing.T) {
+	restore := newWorkspaceCapabilityReport
+	t.Cleanup(func() { newWorkspaceCapabilityReport = restore })
+	newWorkspaceCapabilityReport = func(configPath string) (gira.WorkspaceCapabilityReport, error) {
+		if configPath != "testdata/workspace.yaml" {
+			t.Fatalf("unexpected config path: %s", configPath)
+		}
+		return gira.WorkspaceCapabilityReport{
+			Command:   "workspace capability",
+			Workspace: gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			Token:     gira.ProjectCapabilityTokenSummary{Kind: "pat", Identity: "alice"},
+			Repos: []gira.PortfolioRepoCapability{
+				{Repo: "StatPan/backlog", Role: "inbox", Mode: "write", Capabilities: map[string]gira.ProjectCapabilityStatus{"issues:read": gira.ProjectCapabilityAllowed, "issues:write": gira.ProjectCapabilityAllowed}},
+				{Repo: "StatPan/gira", Role: "execution", Mode: "read-only", Capabilities: map[string]gira.ProjectCapabilityStatus{"issues:read": gira.ProjectCapabilityAllowed, "issues:write": gira.ProjectCapabilityDeniedScope}},
+			},
+			BlockedActions: []gira.PortfolioCapabilityBlock{{CheckID: "execution:StatPan/gira:issues:write", Repo: "StatPan/gira", Role: "execution", Required: "issues:write", Reason: "token scope or repository permission is insufficient"}},
+			FetchedAt:      "2026-05-13T00:00:00Z",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "capability", "--config", "testdata/workspace.yaml"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"workspace capability", "workspace: personal (StatPan)", "token: alice (pat)", "StatPan/gira [execution] mode=read-only", "blocked actions:", "requires issues:write"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace capability output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestWorkspaceValidateCommandJSONUsesInjectedReport(t *testing.T) {
+	restore := newWorkspaceValidateReport
+	t.Cleanup(func() { newWorkspaceValidateReport = restore })
+	newWorkspaceValidateReport = func(configPath string) (gira.WorkspaceValidateReport, error) {
+		if configPath != "testdata/workspace.yaml" {
+			t.Fatalf("unexpected config path: %s", configPath)
+		}
+		return gira.WorkspaceValidateReport{
+			Command:   "workspace validate",
+			Workspace: gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			InboxRepo: "StatPan/backlog",
+			Items: []gira.WorkspaceValidateItem{
+				{Ticket: 7, Title: "Route work", State: "open", Status: "routeable", Reason: "ticket can be routed into execution repo", TargetRepos: []string{"StatPan/gira"}, NextStep: "gira workspace ticket route --ticket 7 --repo StatPan/gira --dry-run"},
+			},
+			Counts:    gira.WorkspaceValidateCounts{Total: 1, Routeable: 1},
+			NextSteps: []string{"gira workspace ticket route --ticket 7 --repo StatPan/gira --dry-run"},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "validate", "--config", "testdata/workspace.yaml", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkspaceValidateReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode workspace validate JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Counts.Routeable != 1 || report.Items[0].Status != "routeable" {
+		t.Fatalf("unexpected workspace validate report: %+v", report)
+	}
+}
+
 func TestWorkspaceSyncRequiresMode(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"workspace", "sync"}, &stdout, &stderr)
@@ -4483,6 +4548,66 @@ func TestGuardrailsSyncCommandJSONUsesInjectedBuilder(t *testing.T) {
 	if !strings.Contains(stdout.String(), "\"blocked_count\": 1") {
 		t.Fatalf("missing blocked_count: %s", stdout.String())
 	}
+}
+
+func TestGraphValidateCommandUsesInjectedClient(t *testing.T) {
+	restore := newGraphClient
+	t.Cleanup(func() { newGraphClient = restore })
+	newGraphClient = func(repo gira.RepoRef) gira.GraphClient {
+		if repo.FullName() != "StatPan/gira" {
+			t.Fatalf("unexpected repo: %s", repo.FullName())
+		}
+		return cliFakeGraphClient{
+			repo: repo,
+			issues: []gira.GraphIssue{
+				{Number: 1, State: "open", Labels: []string{"type:epic"}, Body: ""},
+				{Number: 2, State: "open", Labels: []string{"type:task"}, Body: "Parent: #1"},
+			},
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"graph", "validate", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.GraphValidationReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode graph JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Repo != "StatPan/gira" || report.Counts.Issues != 2 || report.Counts.Diagnostics != 0 {
+		t.Fatalf("unexpected graph report: %+v", report)
+	}
+}
+
+func TestParseCSVIntsRejectsInvalidValues(t *testing.T) {
+	got, err := parseCSVInts("1, 2,3")
+	if err != nil {
+		t.Fatalf("parseCSVInts returned error: %v", err)
+	}
+	if fmt.Sprint(got) != "[1 2 3]" {
+		t.Fatalf("parseCSVInts = %v, want [1 2 3]", got)
+	}
+	if _, err := parseCSVInts("1,nope"); err == nil || !strings.Contains(err.Error(), "invalid integer") {
+		t.Fatalf("parseCSVInts invalid error = %v, want invalid integer", err)
+	}
+}
+
+type cliFakeGraphClient struct {
+	repo   gira.RepoRef
+	issues []gira.GraphIssue
+	err    error
+}
+
+func (c cliFakeGraphClient) Repo() gira.RepoRef {
+	return c.repo
+}
+
+func (c cliFakeGraphClient) Issues() ([]gira.GraphIssue, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return c.issues, nil
 }
 
 func TestGuardrailsSyncRequiresMode(t *testing.T) {

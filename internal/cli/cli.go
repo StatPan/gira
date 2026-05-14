@@ -545,7 +545,7 @@ Flags:
   -h, --help      Show help
 `
 
-const doctorHelp = `Diagnose install, auth, repo, drift, and local git readiness.
+const doctorHelp = `Diagnose install, auth, repo, drift, workflow policy, and local git readiness.
 
 Usage:
   gira doctor [--repo OWNER/REPO] [--json]

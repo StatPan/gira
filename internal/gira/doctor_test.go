@@ -13,7 +13,7 @@ func TestBuildDoctorReportReady(t *testing.T) {
 	if !report.Ready {
 		t.Fatalf("ready = false, want true: %+v", report.Checks)
 	}
-	for _, id := range []string{"gira_cli_visible", "gh_available", "repo_context", "gh_auth", "repo_access", "metadata_drift", "onboard_readiness", "local_git_state"} {
+	for _, id := range []string{"gira_cli_visible", "gh_available", "repo_context", "gh_auth", "repo_access", "metadata_drift", "workflow_policy_labels", "closed_issue_status_labels", "onboard_readiness", "companion_doctors", "local_git_state"} {
 		check := doctorCheckByID(report, id)
 		if check == nil {
 			t.Fatalf("missing check %s: %+v", id, report.Checks)
@@ -118,6 +118,51 @@ func TestBuildDoctorReportBootstrapIssueDriftWarnsOnly(t *testing.T) {
 	}
 }
 
+func TestBuildDoctorReportWorkflowPolicyLabelFailure(t *testing.T) {
+	runner := readyDoctorRunner()
+	runner.responses["gh label list --repo StatPan/gira --json name --limit 1000"] = `[{"name":"type:task"},{"name":"status:ready"}]`
+	report := BuildDoctorReport("StatPan/gira", runner, time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC))
+
+	if report.Ready {
+		t.Fatal("ready = true, want false")
+	}
+	check := doctorCheckByID(report, "workflow_policy_labels")
+	if check == nil {
+		t.Fatal("workflow_policy_labels check missing")
+	}
+	if check.Status != DoctorCheckFail {
+		t.Fatalf("workflow_policy_labels status = %s, want fail: %+v", check.Status, *check)
+	}
+	if !strings.Contains(check.Detail, "priority:p1") || !strings.Contains(check.Detail, "area:ai") {
+		t.Fatalf("workflow_policy_labels detail = %q, want missing policy labels", check.Detail)
+	}
+}
+
+func TestBuildDoctorReportClosedIssueStatusLabelsFail(t *testing.T) {
+	runner := readyDoctorRunner()
+	runner.responses["gh issue list --repo StatPan/gira --state closed --limit 1000 --json number,title,labels"] = `[
+		{"number":420,"title":"Template work","labels":[{"name":"status:in-progress"},{"name":"type:story"}]},
+		{"number":422,"title":"Coverage","labels":[{"name":"status:in-review"}]}
+	]`
+	report := BuildDoctorReport("StatPan/gira", runner, time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC))
+
+	if report.Ready {
+		t.Fatal("ready = true, want false")
+	}
+	check := doctorCheckByID(report, "closed_issue_status_labels")
+	if check == nil {
+		t.Fatal("closed_issue_status_labels check missing")
+	}
+	if check.Status != DoctorCheckFail {
+		t.Fatalf("closed_issue_status_labels status = %s, want fail: %+v", check.Status, *check)
+	}
+	for _, want := range []string{"closed issues with active status labels=2", "#420 status:in-progress", "#422 status:in-review", "gira adopt issues --repo StatPan/gira --state all --issues 420,422 --normalize-status --dry-run"} {
+		if !strings.Contains(check.Detail+check.Remediation, want) {
+			t.Fatalf("closed_issue_status_labels missing %q: %+v", want, *check)
+		}
+	}
+}
+
 func TestBuildDoctorReportDetachedHeadFailsReadiness(t *testing.T) {
 	runner := readyDoctorRunner()
 	runner.responses["git branch --show-current"] = ""
@@ -184,9 +229,11 @@ func readyDoctorRunner() onboardFakeRunner {
 			"gh --version":   "gh version 2.0.0",
 			"gh auth status": "Logged in to github.com",
 			"gh repo view StatPan/gira --json nameWithOwner,viewerPermission,defaultBranchRef":                             `{"nameWithOwner":"StatPan/gira","viewerPermission":"WRITE","defaultBranchRef":{"name":"main"}}`,
-			"gh label list --repo StatPan/gira --json name,color,description --limit 1000":                                 desiredLabelsJSON(),
+			"gh label list --repo StatPan/gira --json name,color,description --limit 1000":                                 doctorReadyLabelsJSON(),
+			"gh label list --repo StatPan/gira --json name --limit 1000":                                                   doctorReadyLabelsJSON(),
 			"gh api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                  doctorDesiredMilestonesJSON(),
 			"gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100":                      `[[{"number":129,"title":"Doctor","state":"open","labels":[{"name":"type:task"}],"milestone":{"title":"MVP"},"updated_at":"2026-05-05T12:00:00Z","html_url":"https://github.com/StatPan/gira/issues/129"}]]`,
+			"gh issue list --repo StatPan/gira --state closed --limit 1000 --json number,title,labels":                     `[]`,
 			"gh issue list --repo StatPan/gira --state all --label gira:bootstrap --json number,title,labels --limit 1000": desiredBootstrapIssuesJSON(),
 			"git rev-parse --is-inside-work-tree":                                                                          "true",
 			"git branch --show-current":                                                                                    "main",
@@ -194,6 +241,18 @@ func readyDoctorRunner() onboardFakeRunner {
 		},
 		errors: map[string]error{},
 	}
+}
+
+func doctorReadyLabelsJSON() string {
+	labels := append([]LabelDef{}, DesiredLabels...)
+	for _, name := range []string{"status:in-progress", "status:in-review", "priority:p1", "priority:p2", "area:backend", "area:docs", "area:ai"} {
+		labels = append(labels, LabelDef{Name: name, Color: "ededed", Description: "doctor test label"})
+	}
+	parts := make([]string, 0, len(labels))
+	for _, label := range labels {
+		parts = append(parts, fmt.Sprintf(`{"name":%q,"color":%q,"description":%q}`, label.Name, label.Color, label.Description))
+	}
+	return "[" + strings.Join(parts, ",") + "]"
 }
 
 func doctorDesiredMilestonesJSON() string {

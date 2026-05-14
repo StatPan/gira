@@ -47,6 +47,8 @@ lifecycle, safety, or evidence rules defined here.
    - Use one feature branch per issue.
 3. Implement bounded scope.
    - Keep changes limited to the issue goal and acceptance criteria.
+   - For feature or workflow changes, record the intended doctor impact in the
+     issue or PR: new check, existing check update, or explicit no-op.
    - Do not revert user changes or unrelated local work.
    - Run the relevant local tests and checks.
 4. Open or validate PR.

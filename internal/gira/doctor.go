@@ -74,8 +74,11 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 			skippedDoctorCheck("gh_auth", "GitHub CLI is unavailable", "fix `gh_available`, then run `gh auth status`"),
 			skippedDoctorCheck("repo_access", "GitHub CLI is unavailable", "fix `gh_available`, then run `gh repo view OWNER/REPO`"),
 			skippedDoctorCheck("metadata_drift", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
+			skippedDoctorCheck("workflow_policy_labels", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
+			skippedDoctorCheck("closed_issue_status_labels", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
 			skippedDoctorCheck("onboard_readiness", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
 		)
+		report.Checks = append(report.Checks, companionDoctorsCheck(repo))
 		report.Checks = append(report.Checks, localGitStateCheck(runner))
 		report.Ready = doctorReady(report.Checks)
 		return report
@@ -100,15 +103,20 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 	if repoCheck.Status == DoctorCheckPass {
 		report.Checks = append(report.Checks, repoAccessDoctorCheck(repo, runner))
 		report.Checks = append(report.Checks, metadataDriftDoctorCheck(repo, runner))
+		report.Checks = append(report.Checks, workflowPolicyLabelsDoctorCheck(repo, runner))
+		report.Checks = append(report.Checks, closedIssueStatusLabelsDoctorCheck(repo, runner))
 		report.Checks = append(report.Checks, onboardReadinessDoctorCheck(repo, runner, checkedAt))
 	} else {
 		report.Checks = append(report.Checks,
 			skippedDoctorCheck("repo_access", "repo context is unavailable", "provide `--repo OWNER/REPO` or run from a GitHub repository"),
 			skippedDoctorCheck("metadata_drift", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
+			skippedDoctorCheck("workflow_policy_labels", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
+			skippedDoctorCheck("closed_issue_status_labels", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
 			skippedDoctorCheck("onboard_readiness", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
 		)
 	}
 
+	report.Checks = append(report.Checks, companionDoctorsCheck(repo))
 	report.Checks = append(report.Checks, localGitStateCheck(runner))
 	report.Ready = doctorReady(report.Checks)
 	return report
@@ -309,6 +317,162 @@ func onboardReadinessDoctorCheck(repo RepoRef, runner CommandRunner, checkedAt t
 		ID:          "onboard_readiness",
 		Status:      DoctorCheckPass,
 		Detail:      fmt.Sprintf("open issues=%d; milestones total=%d open=%d", summary.Counts.Issues.Open, summary.Counts.Milestones.Total, summary.Counts.Milestones.Open),
+		Remediation: "",
+	}
+}
+
+func workflowPolicyLabelsDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
+	output, err := runner.Run("gh", "label", "list", "--repo", repo.FullName(), "--json", "name", "--limit", "1000")
+	if err != nil {
+		return DoctorCheck{
+			ID:          "workflow_policy_labels",
+			Status:      DoctorCheckFail,
+			Detail:      err.Error(),
+			Remediation: fmt.Sprintf("run `gh label list --repo %s --json name`; fix label read access before relying on agent workflow policy", repo.FullName()),
+		}
+	}
+	var rows []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(output, &rows); err != nil {
+		return DoctorCheck{
+			ID:          "workflow_policy_labels",
+			Status:      DoctorCheckFail,
+			Detail:      fmt.Sprintf("parse label list: %v", err),
+			Remediation: fmt.Sprintf("rerun `gira doctor --repo %s`; if it repeats, inspect `gh label list --repo %s --json name` output", repo.FullName(), repo.FullName()),
+		}
+	}
+	existing := map[string]struct{}{}
+	for _, row := range rows {
+		label := strings.ToLower(strings.TrimSpace(row.Name))
+		if label != "" {
+			existing[label] = struct{}{}
+		}
+	}
+	missing := []string{}
+	for _, label := range doctorWorkflowPolicyLabels() {
+		if _, ok := existing[strings.ToLower(label)]; !ok {
+			missing = append(missing, label)
+		}
+	}
+	if len(missing) > 0 {
+		return DoctorCheck{
+			ID:          "workflow_policy_labels",
+			Status:      DoctorCheckFail,
+			Detail:      "missing labels: " + strings.Join(missing, ","),
+			Remediation: fmt.Sprintf("create reviewed repo labels or extend the managed taxonomy, then rerun `gira doctor --repo %s`", repo.FullName()),
+		}
+	}
+	return DoctorCheck{
+		ID:          "workflow_policy_labels",
+		Status:      DoctorCheckPass,
+		Detail:      fmt.Sprintf("agent workflow labels present=%d", len(doctorWorkflowPolicyLabels())),
+		Remediation: "",
+	}
+}
+
+func doctorWorkflowPolicyLabels() []string {
+	return []string{
+		"type:epic",
+		"type:story",
+		"type:task",
+		"type:bug",
+		"type:spike",
+		"type:chore",
+		"status:ready",
+		"status:in-progress",
+		"status:in-review",
+		"priority:p1",
+		"priority:p2",
+		"area:backend",
+		"area:docs",
+		"area:ai",
+		"agent:human",
+		"agent:worker",
+	}
+}
+
+type closedIssueStatusProblem struct {
+	Number int
+	Labels []string
+}
+
+func closedIssueStatusLabelsDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
+	output, err := runner.Run("gh", "issue", "list", "--repo", repo.FullName(), "--state", "closed", "--limit", "1000", "--json", "number,title,labels")
+	if err != nil {
+		return DoctorCheck{
+			ID:          "closed_issue_status_labels",
+			Status:      DoctorCheckFail,
+			Detail:      err.Error(),
+			Remediation: fmt.Sprintf("run `gh issue list --repo %s --state closed --limit 1000 --json number,labels`; fix issue read access", repo.FullName()),
+		}
+	}
+	var rows []struct {
+		Number int `json:"number"`
+		Labels []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
+	}
+	if err := json.Unmarshal(output, &rows); err != nil {
+		return DoctorCheck{
+			ID:          "closed_issue_status_labels",
+			Status:      DoctorCheckFail,
+			Detail:      fmt.Sprintf("parse closed issue list: %v", err),
+			Remediation: fmt.Sprintf("rerun `gira doctor --repo %s`; if it repeats, inspect the GitHub issue list JSON", repo.FullName()),
+		}
+	}
+	problems := []closedIssueStatusProblem{}
+	for _, row := range rows {
+		labels := make([]string, 0, len(row.Labels))
+		for _, label := range row.Labels {
+			labels = append(labels, label.Name)
+		}
+		active := activeStatusLabels(labels)
+		if len(active) > 0 {
+			problems = append(problems, closedIssueStatusProblem{Number: row.Number, Labels: active})
+		}
+	}
+	if len(problems) > 0 {
+		numbers := make([]int, 0, len(problems))
+		for _, problem := range problems {
+			numbers = append(numbers, problem.Number)
+		}
+		return DoctorCheck{
+			ID:          "closed_issue_status_labels",
+			Status:      DoctorCheckFail,
+			Detail:      fmt.Sprintf("closed issues with active status labels=%d (%s)", len(problems), formatClosedIssueStatusProblems(problems)),
+			Remediation: fmt.Sprintf("run `gira adopt issues --repo %s --state all --issues %s --normalize-status --dry-run`, then rerun with `--apply`", repo.FullName(), joinIssueNumbers(numbers)),
+		}
+	}
+	return DoctorCheck{
+		ID:          "closed_issue_status_labels",
+		Status:      DoctorCheckPass,
+		Detail:      fmt.Sprintf("closed issues scanned=%d; active status labels=0", len(rows)),
+		Remediation: "",
+	}
+}
+
+func formatClosedIssueStatusProblems(problems []closedIssueStatusProblem) string {
+	parts := []string{}
+	limit := minInt(len(problems), 5)
+	for i := 0; i < limit; i++ {
+		parts = append(parts, fmt.Sprintf("#%d %s", problems[i].Number, strings.Join(problems[i].Labels, ",")))
+	}
+	if len(problems) > limit {
+		parts = append(parts, fmt.Sprintf("... +%d more", len(problems)-limit))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func companionDoctorsCheck(repo RepoRef) DoctorCheck {
+	scope := "run `gira config doctor` for global registry/config source diagnostics; run `gira jira doctor --repo OWNER/REPO` when Jira provider mode is configured"
+	if repo.FullName() != "/" {
+		scope = fmt.Sprintf("run `gira config doctor --repo %s` for global registry/config source diagnostics; run `gira jira doctor --repo %s` when Jira provider mode is configured", repo.FullName(), repo.FullName())
+	}
+	return DoctorCheck{
+		ID:          "companion_doctors",
+		Status:      DoctorCheckPass,
+		Detail:      scope,
 		Remediation: "",
 	}
 }

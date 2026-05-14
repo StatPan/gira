@@ -139,6 +139,7 @@ func ticketNewBody(input TicketNewInput) (string, error) {
 		}
 		b.WriteString("\n")
 	}
+	b.WriteString("## Doctor Impact\n_No response_\n\n")
 	fmt.Fprintf(&b, "## Notes\n%s\n", notes)
 	return b.String(), nil
 }

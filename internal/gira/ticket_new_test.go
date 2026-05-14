@@ -53,7 +53,7 @@ func TestTicketNewDryRunRendersStructuredBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildTicketNewReport error: %v", err)
 	}
-	for _, want := range []string{"## Goal", "Retry transient auth failures", "- retries 3 times", "## Notes", "Keep logs terse"} {
+	for _, want := range []string{"## Goal", "Retry transient auth failures", "- retries 3 times", "## Doctor Impact", "## Notes", "Keep logs terse"} {
 		if !strings.Contains(report.Body, want) {
 			t.Fatalf("body missing %q:\n%s", want, report.Body)
 		}
@@ -68,7 +68,7 @@ func TestTicketNewDryRunRendersStructuredBody(t *testing.T) {
 func TestTicketNewApplyCreatesIssue(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	outputs := ticketNewLabelOutputs("type:task", "status:ready")
-	outputs["gh issue create --repo StatPan/gira --title Add retry --body ## Goal\nAdd retry\n\n## Scope\n_No response_\n\n## Acceptance Criteria\n_No response_\n\n## Notes\n_No response_\n --label type:task --label status:ready --milestone v1.2"] = []byte("https://github.com/StatPan/gira/issues/224\n")
+	outputs["gh issue create --repo StatPan/gira --title Add retry --body "+defaultTicketNewBody("Add retry")+" --label type:task --label status:ready --milestone v1.2"] = []byte("https://github.com/StatPan/gira/issues/224\n")
 	runner := &ticketNewRunner{outputs: outputs}
 
 	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add retry", Type: "task", Milestone: "v1.2"}, runner)
@@ -134,7 +134,7 @@ func TestTicketNewAllowsEpicType(t *testing.T) {
 func TestTicketNewApplyStartRunsStartWork(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	outputs := ticketNewLabelOutputs("type:task", "status:ready")
-	outputs["gh issue create --repo StatPan/gira --title Add retry --body ## Goal\nAdd retry\n\n## Scope\n_No response_\n\n## Acceptance Criteria\n_No response_\n\n## Notes\n_No response_\n --label type:task --label status:ready"] = []byte("https://github.com/StatPan/gira/issues/224\n")
+	outputs["gh issue create --repo StatPan/gira --title Add retry --body "+defaultTicketNewBody("Add retry")+" --label type:task --label status:ready"] = []byte("https://github.com/StatPan/gira/issues/224\n")
 	outputs["gh api repos/StatPan/gira/issues/224"] = []byte(`{"number":224,"title":"Add retry","state":"open","labels":[{"name":"status:ready"}]}`)
 	outputs["git checkout -b issue-224-add-retry"] = nil
 	outputs["gh api repos/StatPan/gira/issues/224/labels/status:ready -X DELETE"] = nil
@@ -154,6 +154,10 @@ func TestTicketNewApplyStartRunsStartWork(t *testing.T) {
 	if !containsCall(runner.calls, "git checkout -b issue-224-add-retry") {
 		t.Fatalf("missing branch start call: %v", runner.calls)
 	}
+}
+
+func defaultTicketNewBody(title string) string {
+	return "## Goal\n" + title + "\n\n## Scope\n_No response_\n\n## Acceptance Criteria\n_No response_\n\n## Doctor Impact\n_No response_\n\n## Notes\n_No response_\n"
 }
 
 func TestTicketNewRejectsInvalidTypeAndPriority(t *testing.T) {

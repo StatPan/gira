@@ -779,7 +779,7 @@ Flags:
   --ticket int     Ticket number. GitHub issue number in v1. Can also be numeric positional
   --issue int      Compatibility alias for --ticket
   --state string   Ticket list state filter: open, closed, or all. Default: open
-  --label string   Ticket list label filter. Repeatable or comma-separated
+  --label string   Ticket list filter, or existing repo label for ticket new. Repeatable or comma-separated
   --body string    Full issue body for ticket new. Overrides structured goal/scope fields
   --body-file string Read full issue body from file, or "-" for stdin
   --kind string    Ticket note kind: progress, blocker, decision, handoff, summary, or check. Default: progress

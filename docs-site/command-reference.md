@@ -412,6 +412,41 @@ gira ticket pr --apply --draft
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
+## `ticket prompt`
+
+Render a stateless planner, implementer, or reviewer prompt from ticket context.
+
+Usage:
+
+```bash
+gira ticket prompt [TICKET] --role planner|implementer|reviewer [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]
+```
+
+Since: `v1.14.0`
+
+Flags:
+
+- `--role`: Prompt role: planner, implementer, or reviewer.
+- `--profile`: Prompt profile: default or python. Default: default.
+- `--pr`: Optional PR number for reviewer prompt context.
+- `--json`: Emit stable JSON including the rendered prompt.
+
+Examples:
+
+- Render an implementation worker prompt
+
+```bash
+gira ticket prompt 42 --role implementer --profile python
+```
+
+- Render a reviewer prompt with PR context
+
+```bash
+gira ticket prompt 42 --role reviewer --pr 77
+```
+
+Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
+
 ## `ticket start`
 
 Verify a ready issue, create or reuse its branch, and move it to in-progress.

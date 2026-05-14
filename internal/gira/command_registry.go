@@ -269,6 +269,25 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"ticket", "prompt"},
+			Summary: "Render a stateless planner, implementer, or reviewer prompt from ticket context.",
+			Usage:   "gira ticket prompt [TICKET] --role planner|implementer|reviewer [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]",
+			Since:   "v1.14.0",
+			Flags: []FlagSpec{
+				{Name: "--role", Summary: "Prompt role: planner, implementer, or reviewer."},
+				{Name: "--profile", Summary: "Prompt profile: default or python. Default: default."},
+				{Name: "--pr", Summary: "Optional PR number for reviewer prompt context."},
+				{Name: "--json", Summary: "Emit stable JSON including the rendered prompt."},
+			},
+			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  18,
+			Examples: []CommandExample{
+				{Summary: "Render an implementation worker prompt", Command: "gira ticket prompt 42 --role implementer --profile python"},
+				{Summary: "Render a reviewer prompt with PR context", Command: "gira ticket prompt 42 --role reviewer --pr 77"},
+			},
+		},
+		{
 			Path:        []string{"ticket", "start"},
 			Summary:     "Verify a ready issue, create or reuse its branch, and move it to in-progress.",
 			Usage:       "gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO]",

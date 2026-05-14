@@ -73,6 +73,15 @@ gira ticket pr --apply --draft
 gira ticket view
 ```
 
+Render a stateless handoff prompt when planning, implementation, or review is
+delegated to an agent without prior chat state:
+
+```bash
+gira ticket prompt --role planner
+gira ticket prompt --role implementer --profile default
+gira ticket prompt --role reviewer --pr PR_NUMBER
+```
+
 Use structured ticket notes instead of raw issue or PR comments when the update
 fits a Gira work-log shape:
 

@@ -3283,6 +3283,66 @@ func TestDoctorHelpFlagPrintsHelpAndExitsZero(t *testing.T) {
 	}
 }
 
+func TestTicketPromptTextUsesInjectedBuilder(t *testing.T) {
+	restore := newTicketPromptReport
+	t.Cleanup(func() { newTicketPromptReport = restore })
+	newTicketPromptReport = func(input gira.AgentPromptInput) (gira.AgentPromptReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 436 || input.Role != "implementer" || input.Profile != "python" {
+			t.Fatalf("unexpected prompt input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.AgentPromptReport{
+			Command:  "ticket prompt",
+			Repo:     input.Repo.FullName(),
+			Ticket:   input.Ticket,
+			Role:     input.Role,
+			Profile:  input.Profile,
+			Prompt:   "# Gira implementer prompt\n\nPython profile: run pytest when configured.\n",
+			NextStep: "gira ticket pr --repo StatPan/gira --ticket 436 --dry-run",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "prompt", "436", "--repo", "StatPan/gira", "--role", "implementer", "--profile", "python"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"# Gira implementer prompt", "pytest"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket prompt output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestTicketPromptJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newTicketPromptReport
+	t.Cleanup(func() { newTicketPromptReport = restore })
+	newTicketPromptReport = func(input gira.AgentPromptInput) (gira.AgentPromptReport, error) {
+		if input.PRNumber != 77 || input.Role != "reviewer" {
+			t.Fatalf("unexpected prompt input: %+v", input)
+		}
+		return gira.AgentPromptReport{
+			Command: "ticket prompt",
+			Repo:    input.Repo.FullName(),
+			Ticket:  input.Ticket,
+			Role:    input.Role,
+			Profile: input.Profile,
+			PR:      &gira.AgentPromptPR{Number: input.PRNumber, Title: "feat: prompts"},
+			Prompt:  "# Gira reviewer prompt\n",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "prompt", "436", "--repo", "StatPan/gira", "--role", "reviewer", "--pr", "77", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "ticket prompt"`, `"role": "reviewer"`, `"number": 77`, `"prompt": "# Gira reviewer prompt\n"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket prompt JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestSyncDryRunUsesInjectedClientWithoutApplying(t *testing.T) {
 	restoreClient := newSyncClient
 	t.Cleanup(func() {

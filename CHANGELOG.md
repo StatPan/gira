@@ -6,6 +6,23 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.12.0 - 2026-05-14
+
+- Added Jira-primary provider workflow support across provider discovery,
+  config apply, GitHub mirror issue resolution, ticket view/start by Jira key,
+  transition dry-run planning, and Done transition gating on GitHub execution
+  evidence.
+- Added Jira provider documentation, compatibility diagnostics, and hosted
+  control-plane roadmap notes for future provider health checks.
+- Added `gira ticket view`, `gira ticket note`, `gira ticket supersede`,
+  closure funnel stats, and stateless planner/implementer/reviewer prompt
+  rendering for ticket workflows.
+- Expanded GitHub issue and PR workflow templates plus canonical agent
+  delegation guidance for Gira-oriented human/AI handoffs.
+- Improved workflow contract test coverage, `ticket new` label preflight and
+  unsupported type guidance, `ticket finish` status label normalization, and
+  doctor checks for workflow policy labels and closed issue status drift.
+
 ## v1.11.0 - 2026-05-10
 
 - Added rate-limit-aware `workspace status` operation with GitHub API budget

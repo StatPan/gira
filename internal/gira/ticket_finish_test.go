@@ -47,7 +47,10 @@ func TestFinishWorkApplyMarksDraftReadyThenMerges(t *testing.T) {
 		"git status --porcelain":                                       {[]byte("")},
 		"git checkout main":                                            {nil},
 		"git pull --ff-only origin main":                               {nil},
-		"gh api repos/StatPan/gira/issues/219":                         {[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`)},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+		},
 	}, errs: map[string]error{}}
 
 	result, err := FinishWork(repo, 219, false, 0, runner)
@@ -69,6 +72,72 @@ func TestFinishWorkApplyMarksDraftReadyThenMerges(t *testing.T) {
 	}
 }
 
+func TestFinishWorkApplyRemovesActiveStatusFromClosedIssue(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": {
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		},
+		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch": {nil},
+		"git remote get-url origin":                                    {[]byte("git@github.com:StatPan/gira.git\n")},
+		"git branch --show-current":                                    {[]byte("issue-219-finish\n")},
+		"git status --porcelain":                                       {[]byte("")},
+		"git checkout main":                                            {nil},
+		"git pull --ff-only origin main":                               {nil},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[{"name":"status:in-review"},{"name":"type:task"}]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[{"name":"type:task"}]}`),
+		},
+		"gh label list --repo StatPan/gira --json name --limit 1000":            {[]byte(`[{"name":"status:ready"}]`)},
+		"gh issue edit 219 --repo StatPan/gira --remove-label status:in-review": {nil},
+	}, errs: map[string]error{}}
+
+	result, err := FinishWork(repo, 219, false, 0, runner)
+	if err != nil {
+		t.Fatalf("FinishWork error: %v", err)
+	}
+	if !containsCall(runner.calls, "gh issue edit 219 --repo StatPan/gira --remove-label status:in-review") {
+		t.Fatalf("missing status normalization call: %v", runner.calls)
+	}
+	if !finishActionStatus(result.Actions, "ticket:normalize-status", "applied") {
+		t.Fatalf("missing normalize action: %+v", result.Actions)
+	}
+}
+
+func TestFinishWorkApplyAddsDoneLabelWhenAvailable(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": {
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		},
+		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch": {nil},
+		"git remote get-url origin":                                    {[]byte("git@github.com:StatPan/gira.git\n")},
+		"git branch --show-current":                                    {[]byte("issue-219-finish\n")},
+		"git status --porcelain":                                       {[]byte("")},
+		"git checkout main":                                            {nil},
+		"git pull --ff-only origin main":                               {nil},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[{"name":"status:in-review"}]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[{"name":"status:done"}]}`),
+		},
+		"gh label list --repo StatPan/gira --json name --limit 1000":                                    {[]byte(`[{"name":"status:done"}]`)},
+		"gh issue edit 219 --repo StatPan/gira --add-label status:done --remove-label status:in-review": {nil},
+	}, errs: map[string]error{}}
+
+	result, err := FinishWork(repo, 219, false, 0, runner)
+	if err != nil {
+		t.Fatalf("FinishWork error: %v", err)
+	}
+	if !containsCall(runner.calls, "gh issue edit 219 --repo StatPan/gira --add-label status:done --remove-label status:in-review") {
+		t.Fatalf("missing done status normalization call: %v", runner.calls)
+	}
+	if !strings.Contains(result.Actions[len(result.Actions)-2].Detail, "add=status:done") {
+		t.Fatalf("normalize action missing done detail: %+v", result.Actions)
+	}
+}
+
 func TestFinishWorkDryRunPendingChecksReportsBlockerWithoutWaiting(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{
@@ -76,7 +145,10 @@ func TestFinishWorkDryRunPendingChecksReportsBlockerWithoutWaiting(t *testing.T)
 			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"","status":"IN_PROGRESS"}]}]`),
 			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"","status":"IN_PROGRESS"}]}]`),
 		},
-		"gh api repos/StatPan/gira/issues/219": {[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`)},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`),
+		},
 	}, errs: map[string]error{}}
 
 	result, err := FinishWork(repo, 219, true, 0, runner)
@@ -101,10 +173,13 @@ func TestFinishWorkDryRunReadySuggestsFinishApply(t *testing.T) {
 			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 		},
-		"git remote get-url origin":            {[]byte("git@github.com:StatPan/gira.git\n")},
-		"git branch --show-current":            {[]byte("issue-219-finish\n")},
-		"git status --porcelain":               {[]byte("")},
-		"gh api repos/StatPan/gira/issues/219": {[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`)},
+		"git remote get-url origin": {[]byte("git@github.com:StatPan/gira.git\n")},
+		"git branch --show-current": {[]byte("issue-219-finish\n")},
+		"git status --porcelain":    {[]byte("")},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`),
+		},
 	}, errs: map[string]error{}}
 
 	result, err := FinishWork(repo, 219, true, 0, runner)
@@ -183,10 +258,13 @@ func TestFinishWorkAlreadyMergedIsIdempotent(t *testing.T) {
 			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 		},
-		"git remote get-url origin":            {[]byte("git@github.com:StatPan/gira.git\n")},
-		"git branch --show-current":            {[]byte("main\n")},
-		"git status --porcelain":               {[]byte("")},
-		"gh api repos/StatPan/gira/issues/219": {[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`)},
+		"git remote get-url origin": {[]byte("git@github.com:StatPan/gira.git\n")},
+		"git branch --show-current": {[]byte("main\n")},
+		"git status --porcelain":    {[]byte("")},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+		},
 	}, errs: map[string]error{}}
 
 	result, err := FinishWork(repo, 219, true, 0, runner)

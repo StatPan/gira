@@ -348,11 +348,77 @@ func finishWithLocalSync(repo RepoRef, issueNumber int, runner CommandRunner, re
 			return result, fmt.Errorf("pull main: %w", err)
 		}
 	}
+	if mergePlanned && len(result.Blockers) == 0 {
+		action, err := normalizeFinishedIssueStatus(repo, issueNumber, result.DryRun, runner)
+		if err != nil {
+			return result, err
+		}
+		if strings.TrimSpace(action.Action) != "" {
+			result.Actions = append(result.Actions, action)
+		}
+	}
 	report, err := finishWithStatus(repo, issueNumber, runner, result, knownPRStatus, nil)
 	if report.DryRun && mergePlanned && !report.AlreadyDone && len(report.Blockers) == 0 {
 		report.NextStep = fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
 	}
 	return report, err
+}
+
+func normalizeFinishedIssueStatus(repo RepoRef, issueNumber int, dryRun bool, runner CommandRunner) (WorkFinishAction, error) {
+	issue, err := fetchDevIssue(repo, issueNumber, runner)
+	if err != nil {
+		return WorkFinishAction{}, fmt.Errorf("normalize finished issue status: %w", err)
+	}
+	if !strings.EqualFold(issue.State, "closed") {
+		return WorkFinishAction{}, nil
+	}
+	removeLabels := activeStatusLabels(issue.Labels)
+	if len(removeLabels) == 0 {
+		return WorkFinishAction{}, nil
+	}
+	addLabels := []string{}
+	statusDoneExists, err := repoHasLabel(repo, "status:done", runner)
+	if err != nil {
+		return WorkFinishAction{}, fmt.Errorf("normalize finished issue status: %w", err)
+	}
+	if statusDoneExists && !hasLabel(issue.Labels, "status:done") {
+		addLabels = append(addLabels, "status:done")
+	}
+	action := WorkFinishAction{
+		Action: "ticket:normalize-status",
+		Status: plannedOrAppliedStatus(dryRun),
+		Detail: finishStatusNormalizeDetail(addLabels, removeLabels),
+	}
+	if dryRun {
+		return action, nil
+	}
+	if err := applyFinishedIssueStatusLabels(repo, issueNumber, addLabels, removeLabels, runner); err != nil {
+		return action, err
+	}
+	return action, nil
+}
+
+func finishStatusNormalizeDetail(addLabels []string, removeLabels []string) string {
+	parts := []string{}
+	if len(addLabels) > 0 {
+		parts = append(parts, "add="+strings.Join(addLabels, ","))
+	}
+	if len(removeLabels) > 0 {
+		parts = append(parts, "remove="+strings.Join(removeLabels, ","))
+	}
+	return strings.Join(parts, " ")
+}
+
+func applyFinishedIssueStatusLabels(repo RepoRef, issueNumber int, addLabels []string, removeLabels []string, runner CommandRunner) error {
+	args := []string{"issue", "edit", fmt.Sprintf("%d", issueNumber), "--repo", repo.FullName()}
+	for _, label := range addLabels {
+		args = append(args, "--add-label", label)
+	}
+	for _, label := range removeLabels {
+		args = append(args, "--remove-label", label)
+	}
+	_, err := runner.Run("gh", args...)
+	return err
 }
 
 func finishWithStatus(repo RepoRef, issueNumber int, runner CommandRunner, result WorkFinishResult, knownPRStatus *DevPRStatusResult, err error) (WorkFinishResult, error) {

@@ -24,8 +24,19 @@ func (r *ticketNewRunner) Run(name string, args ...string) ([]byte, error) {
 	return nil, fmt.Errorf("unexpected call: %s", key)
 }
 
+func ticketNewLabelOutputs(labels ...string) map[string][]byte {
+	rows := make([]string, 0, len(labels))
+	for _, label := range labels {
+		rows = append(rows, fmt.Sprintf(`{"name":%q}`, label))
+	}
+	return map[string][]byte{
+		"gh label list --repo StatPan/gira --json name --limit 1000": []byte("[" + strings.Join(rows, ",") + "]"),
+	}
+}
+
 func TestTicketNewDryRunRendersStructuredBody(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &ticketNewRunner{outputs: ticketNewLabelOutputs("type:bug", "status:ready", "priority:p1", "area:backend")}
 
 	report, err := BuildTicketNewReport(TicketNewInput{
 		Repo:       repo,
@@ -38,7 +49,7 @@ func TestTicketNewDryRunRendersStructuredBody(t *testing.T) {
 		Priority:   "p1",
 		Labels:     []string{"area:backend"},
 		DryRun:     true,
-	}, &ticketNewRunner{})
+	}, runner)
 	if err != nil {
 		t.Fatalf("BuildTicketNewReport error: %v", err)
 	}
@@ -56,9 +67,9 @@ func TestTicketNewDryRunRendersStructuredBody(t *testing.T) {
 
 func TestTicketNewApplyCreatesIssue(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := &ticketNewRunner{outputs: map[string][]byte{
-		"gh issue create --repo StatPan/gira --title Add retry --body ## Goal\nAdd retry\n\n## Scope\n_No response_\n\n## Acceptance Criteria\n_No response_\n\n## Notes\n_No response_\n --label type:task --label status:ready --milestone v1.2": []byte("https://github.com/StatPan/gira/issues/224\n"),
-	}}
+	outputs := ticketNewLabelOutputs("type:task", "status:ready")
+	outputs["gh issue create --repo StatPan/gira --title Add retry --body ## Goal\nAdd retry\n\n## Scope\n_No response_\n\n## Acceptance Criteria\n_No response_\n\n## Notes\n_No response_\n --label type:task --label status:ready --milestone v1.2"] = []byte("https://github.com/StatPan/gira/issues/224\n")
+	runner := &ticketNewRunner{outputs: outputs}
 
 	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add retry", Type: "task", Milestone: "v1.2"}, runner)
 	if err != nil {
@@ -72,9 +83,9 @@ func TestTicketNewApplyCreatesIssue(t *testing.T) {
 func TestTicketNewApplyCreatesIssueWithFullBody(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	body := "## Goal\nUse exact packet\n\n## Acceptance Criteria\n- preserved"
-	runner := &ticketNewRunner{outputs: map[string][]byte{
-		"gh issue create --repo StatPan/gira --title Add packet --body " + body + " --label type:task --label status:ready": []byte("https://github.com/StatPan/gira/issues/225\n"),
-	}}
+	outputs := ticketNewLabelOutputs("type:task", "status:ready")
+	outputs["gh issue create --repo StatPan/gira --title Add packet --body "+body+" --label type:task --label status:ready"] = []byte("https://github.com/StatPan/gira/issues/225\n")
+	runner := &ticketNewRunner{outputs: outputs}
 
 	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add packet", Body: body, Type: "task"}, runner)
 	if err != nil {
@@ -88,8 +99,9 @@ func TestTicketNewApplyCreatesIssueWithFullBody(t *testing.T) {
 func TestTicketNewUsesFullBody(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	body := "## Goal\nUse exact packet\n\n## Acceptance Criteria\n- preserved"
+	runner := &ticketNewRunner{outputs: ticketNewLabelOutputs("type:task", "status:ready")}
 
-	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add packet", Body: body, Type: "task", DryRun: true}, &ticketNewRunner{})
+	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add packet", Body: body, Type: "task", DryRun: true}, runner)
 	if err != nil {
 		t.Fatalf("BuildTicketNewReport error: %v", err)
 	}
@@ -108,8 +120,9 @@ func TestTicketNewRejectsBodyAndBodyFile(t *testing.T) {
 
 func TestTicketNewAllowsEpicType(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &ticketNewRunner{outputs: ticketNewLabelOutputs("type:epic", "status:ready")}
 
-	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Native adoption flow", Type: "epic", DryRun: true}, &ticketNewRunner{})
+	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Native adoption flow", Type: "epic", DryRun: true}, runner)
 	if err != nil {
 		t.Fatalf("BuildTicketNewReport error: %v", err)
 	}
@@ -120,13 +133,13 @@ func TestTicketNewAllowsEpicType(t *testing.T) {
 
 func TestTicketNewApplyStartRunsStartWork(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := &ticketNewRunner{outputs: map[string][]byte{
-		"gh issue create --repo StatPan/gira --title Add retry --body ## Goal\nAdd retry\n\n## Scope\n_No response_\n\n## Acceptance Criteria\n_No response_\n\n## Notes\n_No response_\n --label type:task --label status:ready": []byte("https://github.com/StatPan/gira/issues/224\n"),
-		"gh api repos/StatPan/gira/issues/224":                                               []byte(`{"number":224,"title":"Add retry","state":"open","labels":[{"name":"status:ready"}]}`),
-		"git checkout -b issue-224-add-retry":                                                nil,
-		"gh api repos/StatPan/gira/issues/224/labels/status:ready -X DELETE":                 nil,
-		"gh api repos/StatPan/gira/issues/224/labels -X POST -f labels[]=status:in-progress": nil,
-	}, errs: map[string]error{
+	outputs := ticketNewLabelOutputs("type:task", "status:ready")
+	outputs["gh issue create --repo StatPan/gira --title Add retry --body ## Goal\nAdd retry\n\n## Scope\n_No response_\n\n## Acceptance Criteria\n_No response_\n\n## Notes\n_No response_\n --label type:task --label status:ready"] = []byte("https://github.com/StatPan/gira/issues/224\n")
+	outputs["gh api repos/StatPan/gira/issues/224"] = []byte(`{"number":224,"title":"Add retry","state":"open","labels":[{"name":"status:ready"}]}`)
+	outputs["git checkout -b issue-224-add-retry"] = nil
+	outputs["gh api repos/StatPan/gira/issues/224/labels/status:ready -X DELETE"] = nil
+	outputs["gh api repos/StatPan/gira/issues/224/labels -X POST -f labels[]=status:in-progress"] = nil
+	runner := &ticketNewRunner{outputs: outputs, errs: map[string]error{
 		"git show-ref --verify --quiet refs/heads/issue-224-add-retry": fmt.Errorf("exit status 1"),
 		"git ls-remote --exit-code --heads origin issue-224-add-retry": fmt.Errorf("exit status 2"),
 	}}
@@ -150,5 +163,48 @@ func TestTicketNewRejectsInvalidTypeAndPriority(t *testing.T) {
 	}
 	if _, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "x", Type: "task", Priority: "high", DryRun: true}, &ticketNewRunner{}); err == nil || !strings.Contains(err.Error(), "--priority") {
 		t.Fatalf("expected priority error, got %v", err)
+	}
+}
+
+func TestTicketNewRejectsFeatureTypeWithGuidance(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+
+	_, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "x", Type: "feature", DryRun: true}, &ticketNewRunner{})
+	if err == nil {
+		t.Fatal("expected feature type error")
+	}
+	for _, want := range []string{"unsupported --type feature", "--type story --label enhancement"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+}
+
+func TestTicketNewDryRunPreflightsMissingLabels(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &ticketNewRunner{outputs: ticketNewLabelOutputs("type:task", "status:ready")}
+
+	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add CLI", Type: "task", Labels: []string{"area:cli"}, DryRun: true}, runner)
+	if err == nil {
+		t.Fatal("expected missing label error")
+	}
+	if report.Title != "Add CLI" || !containsString(report.Labels, "area:cli") {
+		t.Fatalf("expected partial report with labels, got %+v", report)
+	}
+	if !strings.Contains(err.Error(), "missing repo labels: area:cli") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTicketNewApplyPreflightStopsBeforeIssueCreate(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &ticketNewRunner{outputs: ticketNewLabelOutputs("type:task")}
+
+	_, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add CLI", Type: "task"}, runner)
+	if err == nil {
+		t.Fatal("expected missing status label error")
+	}
+	if containsCall(runner.calls, "gh issue create") {
+		t.Fatalf("issue create should not run on missing labels: %v", runner.calls)
 	}
 }

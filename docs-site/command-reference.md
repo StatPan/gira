@@ -333,6 +333,9 @@ Flags:
 
 - `--goal`: Structured issue goal.
 - `--acceptance`: Semicolon-separated acceptance criteria.
+- `--type`: Ticket type: epic, story, task, bug, spike, or chore.
+- `--priority`: Priority: p0, p1, p2, or p3.
+- `--label`: Additional repo label that must already exist.
 - `--body`: Full issue body.
 - `--body-file`: Read full issue body from file or stdin with -.
 - `--start`: Start the created ticket after apply.

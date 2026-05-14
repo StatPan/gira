@@ -3283,6 +3283,56 @@ func TestDoctorHelpFlagPrintsHelpAndExitsZero(t *testing.T) {
 	}
 }
 
+func TestTicketNewDryRunReportsMissingRepoLabel(t *testing.T) {
+	restoreBuilder := newTicketNewReport
+	restoreRunner := devCommandRunner
+	t.Cleanup(func() {
+		newTicketNewReport = restoreBuilder
+		devCommandRunner = restoreRunner
+	})
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"gh label list --repo StatPan/gira --json name --limit 1000": []byte(`[{"name":"type:task"},{"name":"status:ready"}]`),
+	}}
+	newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
+		return gira.BuildTicketNewReport(input, devCommandRunner)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "new", "Add CLI", "--repo", "StatPan/gira", "--label", "area:cli", "--dry-run"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stdout: %s stderr: %s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "missing repo labels: area:cli") {
+		t.Fatalf("stderr missing label preflight error:\n%s", stderr.String())
+	}
+}
+
+func TestTicketNewJSONIncludesPartialReportOnMissingRepoLabel(t *testing.T) {
+	restoreBuilder := newTicketNewReport
+	restoreRunner := devCommandRunner
+	t.Cleanup(func() {
+		newTicketNewReport = restoreBuilder
+		devCommandRunner = restoreRunner
+	})
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"gh label list --repo StatPan/gira --json name --limit 1000": []byte(`[{"name":"type:task"},{"name":"status:ready"}]`),
+	}}
+	newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
+		return gira.BuildTicketNewReport(input, devCommandRunner)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "new", "Add CLI", "--repo", "StatPan/gira", "--label", "area:cli", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stdout: %s stderr: %s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{`"title": "Add CLI"`, `"area:cli"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestTicketPromptTextUsesInjectedBuilder(t *testing.T) {
 	restore := newTicketPromptReport
 	t.Cleanup(func() { newTicketPromptReport = restore })

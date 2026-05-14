@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -55,7 +56,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		ticketType = "task"
 	}
 	if !validTicketType(ticketType) {
-		return TicketNewReport{}, fmt.Errorf("--type must be one of epic, story, task, bug, spike, chore")
+		return TicketNewReport{}, ticketNewTypeError(ticketType)
 	}
 	priority := strings.TrimSpace(input.Priority)
 	if priority != "" && !validTicketPriority(priority) {
@@ -75,6 +76,9 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		Milestone: strings.TrimSpace(input.Milestone),
 		Body:      body,
 		NextStep:  "gira ticket new --apply",
+	}
+	if err := preflightTicketNewLabels(input.Repo, labels, runner); err != nil {
+		return report, err
 	}
 	if input.DryRun {
 		return report, nil
@@ -156,6 +160,44 @@ func createRepoTicket(repo RepoRef, title string, body string, labels []string, 
 	return TicketCreatedIssue{Repo: repo.FullName(), Number: number, URL: url}, nil
 }
 
+func preflightTicketNewLabels(repo RepoRef, labels []string, runner CommandRunner) error {
+	if len(labels) == 0 {
+		return nil
+	}
+	output, err := runner.Run("gh", "label", "list", "--repo", repo.FullName(), "--json", "name", "--limit", "1000")
+	if err != nil {
+		return fmt.Errorf("preflight labels: %w", err)
+	}
+	var rows []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(output, &rows); err != nil {
+		return fmt.Errorf("parse label list: %w", err)
+	}
+	existing := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		name := strings.ToLower(strings.TrimSpace(row.Name))
+		if name != "" {
+			existing[name] = struct{}{}
+		}
+	}
+	missing := make([]string, 0)
+	for _, label := range labels {
+		trimmed := strings.TrimSpace(label)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := existing[strings.ToLower(trimmed)]; ok {
+			continue
+		}
+		missing = append(missing, trimmed)
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing repo labels: %s; run `gira ops sync --repo %s --dry-run` for managed labels or create reviewed repo labels before ticket new", strings.Join(missing, ","), repo.FullName())
+	}
+	return nil
+}
+
 func ticketNewLabels(ticketType string, priority string, extra []string) []string {
 	labels := []string{"type:" + ticketType, "status:ready"}
 	if priority != "" {
@@ -184,6 +226,14 @@ func validTicketType(value string) bool {
 	default:
 		return false
 	}
+}
+
+func ticketNewTypeError(value string) error {
+	base := "--type must be one of epic, story, task, bug, spike, chore"
+	if strings.EqualFold(strings.TrimSpace(value), "feature") {
+		return fmt.Errorf("unsupported --type feature; %s; for feature requests, use --type story --label enhancement when that label exists in the repo taxonomy", base)
+	}
+	return fmt.Errorf("%s", base)
 }
 
 func validTicketPriority(value string) bool {

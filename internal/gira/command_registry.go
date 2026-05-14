@@ -244,6 +244,9 @@ func CoreCommandSpecs() []CommandSpec {
 			Flags: []FlagSpec{
 				{Name: "--goal", Summary: "Structured issue goal."},
 				{Name: "--acceptance", Summary: "Semicolon-separated acceptance criteria."},
+				{Name: "--type", Summary: "Ticket type: epic, story, task, bug, spike, or chore."},
+				{Name: "--priority", Summary: "Priority: p0, p1, p2, or p3."},
+				{Name: "--label", Summary: "Additional repo label that must already exist."},
 				{Name: "--body", Summary: "Full issue body."},
 				{Name: "--body-file", Summary: "Read full issue body from file or stdin with -."},
 				{Name: "--start", Summary: "Start the created ticket after apply."},

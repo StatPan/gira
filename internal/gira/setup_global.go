@@ -204,7 +204,7 @@ func BuildSetupGlobalReport(input SetupGlobalInput, runner CommandRunner) (Setup
 		DryRun:          input.DryRun,
 		Status:          setupGlobalStatus(input.DryRun, plans),
 		Notes:           setupGlobalNotes(mode, contractStatus, inboxExplicit, sameRepoRef(inbox, repo)),
-		NextStep:        fmt.Sprintf("gira workspace status --config %s", workspaceFile),
+		NextStep:        fmt.Sprintf("gira workspace status --config %s", QuoteShellArg(workspaceFile)),
 	}
 	if input.DryRun {
 		if setupPlansHaveConflict(plans) {

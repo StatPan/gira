@@ -122,7 +122,7 @@ func BuildWorkspaceInitReport(input WorkspaceInitInput) (WorkspaceInitReport, er
 		InboxRepo:  inbox.FullName(),
 		Repos:      normalizedRepos,
 		Content:    content,
-		NextStep:   "gira workspace status --config " + configPath,
+		NextStep:   "gira workspace status --config " + QuoteShellArg(configPath),
 	}
 	if input.DryRun {
 		return report, nil

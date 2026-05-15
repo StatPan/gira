@@ -126,7 +126,7 @@ func BuildWorkspaceRepoSyncReport(input WorkspaceRepoSyncInput, runner CommandRu
 			"owner repo discovery is opt-in; global workspaces do not automatically scan every GitHub repo",
 			"workspace inbox repo is treated as backlog/intake and is not added as an execution repo",
 		},
-		NextStep:        "gira workspace status --config " + path,
+		NextStep:        "gira workspace status --config " + QuoteShellArg(path),
 		GlobalWorkspace: nextEntry,
 	}
 	if input.DryRun {

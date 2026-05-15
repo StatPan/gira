@@ -585,7 +585,7 @@ func BuildWorkspaceTicketNewRouteReport(config WorkspaceConfigResolved, client W
 		},
 	}
 	if dryRun {
-		report.NextSteps = []string{fmt.Sprintf("gira workspace ticket new %q --repo %s --apply", title, targetRepo.FullName())}
+		report.NextSteps = []string{fmt.Sprintf("gira workspace ticket new %s --repo %s --apply", QuoteShellArg(title), QuoteShellArg(targetRepo.FullName()))}
 		return report, nil
 	}
 	created, err := client.CreateInboxTicket(config.InboxRepo, title, body)
@@ -611,7 +611,7 @@ func BuildWorkspaceTicketNewRouteReport(config WorkspaceConfigResolved, client W
 		return WorkspaceTicketNewReport{}, err
 	}
 	report.Actions = append(report.Actions, WorkspaceRouteAction{Action: "inbox_ticket:update_child_issues", Repo: config.InboxRepo.FullName(), Reason: "link created execution issue"})
-	report.NextSteps = []string{fmt.Sprintf("gira ticket start --repo %s --ticket %d --apply", targetRepo.FullName(), executionIssue.Number)}
+	report.NextSteps = []string{fmt.Sprintf("gira ticket start --repo %s --ticket %d --apply", QuoteShellArg(targetRepo.FullName()), executionIssue.Number)}
 	return report, nil
 }
 
@@ -651,11 +651,11 @@ func BuildWorkspaceTicketRouteReport(config WorkspaceConfigResolved, client Work
 	if existing, ok := childIssueRefs(ticket.ChildIssues)[targetRepo.FullName()]; ok {
 		report.Actions = []WorkspaceRouteAction{{Action: "execution_issue:reuse", Repo: targetRepo.FullName(), Issue: existing.Number, Reason: "inbox ticket already links this execution repo"}}
 		report.Created = &PortfolioLoweredIssue{Repo: targetRepo.FullName(), Number: existing.Number, URL: fmt.Sprintf("https://github.com/%s/issues/%d", targetRepo.FullName(), existing.Number)}
-		report.NextSteps = []string{fmt.Sprintf("gira ticket start --repo %s --ticket %d --dry-run", targetRepo.FullName(), existing.Number)}
+		report.NextSteps = []string{fmt.Sprintf("gira ticket start --repo %s --ticket %d --dry-run", QuoteShellArg(targetRepo.FullName()), existing.Number)}
 		return report, nil
 	}
 	if dryRun {
-		report.NextSteps = []string{fmt.Sprintf("gira workspace ticket route --ticket %d --repo %s --apply", ticketNumber, targetRepo.FullName())}
+		report.NextSteps = []string{fmt.Sprintf("gira workspace ticket route --ticket %d --repo %s --apply", ticketNumber, QuoteShellArg(targetRepo.FullName()))}
 		return report, nil
 	}
 	created, err := client.CreateExecutionIssue(targetRepo, ticket, config.InboxRepo)
@@ -668,7 +668,7 @@ func BuildWorkspaceTicketRouteReport(config WorkspaceConfigResolved, client Work
 		return WorkspaceTicketRouteReport{}, err
 	}
 	report.Actions = append(report.Actions, WorkspaceRouteAction{Action: "inbox_ticket:update_child_issues", Repo: config.InboxRepo.FullName(), Reason: "link created execution issue"})
-	report.NextSteps = []string{fmt.Sprintf("gira ticket start --repo %s --ticket %d --dry-run", targetRepo.FullName(), created.Number)}
+	report.NextSteps = []string{fmt.Sprintf("gira ticket start --repo %s --ticket %d --dry-run", QuoteShellArg(targetRepo.FullName()), created.Number)}
 	return report, nil
 }
 
@@ -868,7 +868,7 @@ func workspaceNextSteps(report WorkspaceReport, configPath string) []string {
 	}
 	for _, item := range report.Backlog {
 		if item.Source == "repo" && item.Status == "ready" {
-			return []string{fmt.Sprintf("gira ticket start --repo %s --ticket %d --apply", item.Repo, item.Number)}
+			return []string{fmt.Sprintf("gira ticket start --repo %s --ticket %d --apply", QuoteShellArg(item.Repo), item.Number)}
 		}
 	}
 	return []string{"gira workspace status --config " + configArg}
@@ -876,9 +876,9 @@ func workspaceNextSteps(report WorkspaceReport, configPath string) []string {
 
 func workspaceNextStepConfigPath(path string) string {
 	if strings.TrimSpace(path) == "" {
-		return DefaultInitConfigPath(".")
+		return QuoteShellArg(DefaultInitConfigPath("."))
 	}
-	return path
+	return QuoteShellArg(path)
 }
 
 func renderWorkspaceInboxBody(title string) string {

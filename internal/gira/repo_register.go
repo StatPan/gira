@@ -81,7 +81,7 @@ func BuildRepoRegisterReport(input RepoRegisterInput, runner CommandRunner) (Rep
 		Status:     actionStatus(input.DryRun),
 		Action:     "create",
 		Entry:      entry,
-		NextStep:   fmt.Sprintf("gira repo register %s --apply", input.Repo.FullName()),
+		NextStep:   fmt.Sprintf("gira repo register %s --apply", QuoteShellArg(input.Repo.FullName())),
 	}
 	existing, err := os.ReadFile(file)
 	if err == nil {
@@ -123,7 +123,7 @@ func BuildRepoRegisterReport(input RepoRegisterInput, runner CommandRunner) (Rep
 	}
 	report.Applied = true
 	report.Status = "applied"
-	report.NextStep = fmt.Sprintf("gira config repo --repo %s --config-root %s", input.Repo.FullName(), root)
+	report.NextStep = fmt.Sprintf("gira config repo --repo %s --config-root %s", QuoteShellArg(input.Repo.FullName()), QuoteShellArg(root))
 	return report, nil
 }
 

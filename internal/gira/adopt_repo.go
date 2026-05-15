@@ -369,12 +369,12 @@ func upsertAgentsManagedBlock(path string) error {
 
 func adoptRepoNextStep(report AdoptRepoReport) string {
 	if report.DryRun {
-		return fmt.Sprintf("gira adopt repo --repo %s --path %s --strategy %s --apply", report.Repo, shellQuote(report.Path), report.Strategy)
+		return fmt.Sprintf("gira adopt repo --repo %s --path %s --strategy %s --apply", QuoteShellArg(report.Repo), QuoteShellArg(report.Path), QuoteShellArg(report.Strategy))
 	}
 	if report.Counts.UnmappedIssues > 0 {
-		return fmt.Sprintf("gira adopt issues --repo %s --dry-run", report.Repo)
+		return fmt.Sprintf("gira adopt issues --repo %s --dry-run", QuoteShellArg(report.Repo))
 	}
-	return fmt.Sprintf("gira ops sync --repo %s --dry-run", report.Repo)
+	return fmt.Sprintf("gira ops sync --repo %s --dry-run", QuoteShellArg(report.Repo))
 }
 
 func FormatAdoptRepoReport(report AdoptRepoReport) string {

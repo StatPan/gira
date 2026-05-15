@@ -2,11 +2,18 @@ package gira
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func runGitCommand(dir string, args ...string) error {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	return cmd.Run()
+}
 
 func TestResolveWorkspaceConfigValidAndPortfolioAlias(t *testing.T) {
 	dir := t.TempDir()
@@ -82,6 +89,24 @@ func TestResolveWorkspaceConfigGlobalWinsUnlessConfigExplicit(t *testing.T) {
 	}
 	if explicit.Source != "explicit_config" || explicit.InboxRepo.FullName() != "Local/backlog" {
 		t.Fatalf("explicit config should preserve repo-local behavior, got %+v", explicit)
+	}
+}
+
+func TestResolveWorkspaceConfigRejectsGlobalWorkspaceForDifferentCheckout(t *testing.T) {
+	dir := chdirTemp(t)
+	root := defaultGlobalConfigRootForTest(t)
+	writeTestFile(t, filepath.Join(root, "config.yaml"), "default_workspace: personal\n")
+	writeTestFile(t, filepath.Join(root, "workspaces", "personal.yaml"), "workspace:\n  name: personal\n  owner: StatPan\n  inbox_repo: StatPan/backlog\n  repos:\n    - StatPan/gira\n")
+	if err := runGitCommand(dir, "init"); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+	if err := runGitCommand(dir, "remote", "add", "origin", "git@github.com:Other/repo.git"); err != nil {
+		t.Fatalf("git remote add: %v", err)
+	}
+
+	_, err := ResolveWorkspaceConfig("")
+	if err == nil || !strings.Contains(err.Error(), "does not contain checkout repo Other/repo") {
+		t.Fatalf("error = %v, want checkout mismatch", err)
 	}
 }
 

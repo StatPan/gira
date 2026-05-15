@@ -225,6 +225,8 @@ func isRelaxation(field string, from, to any) bool {
 		return ti < fi
 	case "require_code_owner_reviews", "required_status_checks_strict":
 		return from.(bool) && !to.(bool)
+	case "allow_force_pushes", "allow_deletions":
+		return !from.(bool) && to.(bool)
 	}
 	return false
 }

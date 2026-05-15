@@ -5,8 +5,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -613,19 +611,10 @@ func FormatDashboardExportPlan(plan DashboardExportPlan) string {
 }
 
 func WriteDashboardExportBundle(outputRoot string, bundle DashboardExportBundle) error {
-	if err := os.MkdirAll(outputRoot, 0o755); err != nil {
+	scope, err := newLocalWriteScope(outputRoot)
+	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Join(outputRoot, "raw"), 0o755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Join(outputRoot, "derived"), 0o755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Join(outputRoot, "csv"), 0o755); err != nil {
-		return err
-	}
-
 	executionCSV, err := renderDashboardExecutionCSV(bundle.ExecutionBoard.Items)
 	if err != nil {
 		return err
@@ -635,43 +624,43 @@ func WriteDashboardExportBundle(outputRoot string, bundle DashboardExportBundle)
 		return err
 	}
 
-	if err := writeDashboardExportJSON(filepath.Join(outputRoot, "manifest.json"), bundle.Manifest); err != nil {
+	if err := writeDashboardExportJSON(scope, "manifest.json", bundle.Manifest); err != nil {
 		return err
 	}
-	if err := writeDashboardExportJSON(filepath.Join(outputRoot, "raw", "github.json"), bundle.RawGitHub); err != nil {
+	if err := writeDashboardExportJSON(scope, "raw/github.json", bundle.RawGitHub); err != nil {
 		return err
 	}
-	if err := writeDashboardExportJSON(filepath.Join(outputRoot, "raw", "transitions.json"), bundle.RawTransitions); err != nil {
+	if err := writeDashboardExportJSON(scope, "raw/transitions.json", bundle.RawTransitions); err != nil {
 		return err
 	}
-	if err := writeDashboardExportJSON(filepath.Join(outputRoot, "raw", "capabilities.json"), bundle.RawCapabilities); err != nil {
+	if err := writeDashboardExportJSON(scope, "raw/capabilities.json", bundle.RawCapabilities); err != nil {
 		return err
 	}
-	if err := writeDashboardExportJSON(filepath.Join(outputRoot, "derived", "execution_board.json"), bundle.ExecutionBoard); err != nil {
+	if err := writeDashboardExportJSON(scope, "derived/execution_board.json", bundle.ExecutionBoard); err != nil {
 		return err
 	}
-	if err := writeDashboardExportJSON(filepath.Join(outputRoot, "derived", "roadmap_timeline.json"), bundle.RoadmapTimeline); err != nil {
+	if err := writeDashboardExportJSON(scope, "derived/roadmap_timeline.json", bundle.RoadmapTimeline); err != nil {
 		return err
 	}
-	if err := writeDashboardExportJSON(filepath.Join(outputRoot, "derived", "warnings.json"), bundle.Warnings); err != nil {
+	if err := writeDashboardExportJSON(scope, "derived/warnings.json", bundle.Warnings); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(outputRoot, "csv", "execution_items.csv"), executionCSV, 0o644); err != nil {
+	if err := scope.WriteFile("csv/execution_items.csv", executionCSV, 0o644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(outputRoot, "csv", "roadmap_items.csv"), roadmapCSV, 0o644); err != nil {
+	if err := scope.WriteFile("csv/roadmap_items.csv", roadmapCSV, 0o644); err != nil {
 		return err
 	}
 	return nil
 }
 
-func writeDashboardExportJSON(path string, value any) error {
+func writeDashboardExportJSON(scope localWriteScope, relPath string, value any) error {
 	encoded, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
 	encoded = append(encoded, '\n')
-	return os.WriteFile(path, encoded, 0o644)
+	return scope.WriteFile(relPath, encoded, 0o644)
 }
 
 func renderDashboardExecutionCSV(items []DashboardExecutionBoardItem) ([]byte, error) {

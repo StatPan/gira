@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -123,9 +124,8 @@ func validateJiraProviderConfig(source string, field string, cfg JiraProviderCon
 	if strings.TrimSpace(cfg.Mode) != "primary" {
 		return fmt.Errorf("invalid Jira provider config %q: %s.mode must be primary", source, field)
 	}
-	parsed, err := url.Parse(strings.TrimSpace(cfg.BaseURL))
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
-		return fmt.Errorf("invalid Jira provider config %q: %s.base_url must be an absolute http(s) URL", source, field)
+	if _, err := normalizeJiraAPIBase(cfg.BaseURL); err != nil {
+		return fmt.Errorf("invalid Jira provider config %q: %s.base_url %v", source, field, err)
 	}
 	if strings.TrimSpace(cfg.ProjectKey) == "" {
 		return fmt.Errorf("invalid Jira provider config %q: %s.project_key is required", source, field)
@@ -156,13 +156,37 @@ func validateJiraProviderConfig(source string, field string, cfg JiraProviderCon
 func normalizeJiraAPIBase(value string) (string, error) {
 	apiBase := strings.TrimRight(strings.TrimSpace(value), "/")
 	parsed, err := url.Parse(apiBase)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
-		return "", fmt.Errorf("--api-base must be an absolute http(s) URL")
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.Hostname() == "" {
+		return "", fmt.Errorf("--api-base must be an absolute HTTPS URL")
 	}
 	if parsed.User != nil {
 		return "", fmt.Errorf("--api-base must not contain credentials")
 	}
-	return apiBase, nil
+	if parsed.Scheme != "https" {
+		return "", fmt.Errorf("--api-base must use https")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("--api-base must not contain query strings or fragments")
+	}
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return "", fmt.Errorf("--api-base must not target localhost")
+	}
+	if ip := net.ParseIP(host); ip != nil && !isPublicJiraAPIBaseIP(ip) {
+		return "", fmt.Errorf("--api-base must not target local or private network addresses")
+	}
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	return parsed.String(), nil
+}
+
+func isPublicJiraAPIBaseIP(ip net.IP) bool {
+	return !(ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast())
 }
 
 func validateJiraProviderSourceOfTruth(source string, field string, truth JiraProviderSourceTruth) error {

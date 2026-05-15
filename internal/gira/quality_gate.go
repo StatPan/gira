@@ -13,9 +13,23 @@ type QualityCheckResult struct {
 }
 
 type QualityGateReport struct {
-	Ready    bool                 `json:"ready"`
-	Checks   []QualityCheckResult `json:"checks"`
-	Blockers []string             `json:"blockers"`
+	Ready          bool                 `json:"ready"`
+	EvidenceSource string               `json:"evidence_source"`
+	ExecutionMode  string               `json:"execution_mode"`
+	Checks         []QualityCheckResult `json:"checks"`
+	Blockers       []string             `json:"blockers"`
+}
+
+func RunStaticQualityGate() QualityGateReport {
+	return QualityGateReport{
+		Ready:          false,
+		EvidenceSource: "static_policy",
+		ExecutionMode:  "no_local_execution",
+		Checks: []QualityCheckResult{
+			{Name: "local-exec", Command: "gira review gate --local-exec", Status: "blocked", Hint: "Default review gate does not execute repository code. Use --local-exec only in a trusted checkout, or rely on ticket checks for CI evidence."},
+		},
+		Blockers: []string{"local execution not enabled"},
+	}
 }
 
 func RunQualityGate(runner CommandRunner) QualityGateReport {
@@ -36,7 +50,7 @@ func RunQualityGate(runner CommandRunner) QualityGateReport {
 			blockers = append(blockers, fmt.Sprintf("%s failed", c.Name))
 		}
 	}
-	return QualityGateReport{Ready: ready, Checks: checks, Blockers: blockers}
+	return QualityGateReport{Ready: ready, EvidenceSource: "local_execution", ExecutionMode: "local_exec", Checks: checks, Blockers: blockers}
 }
 
 func runGofmtCheck(runner CommandRunner) QualityCheckResult {

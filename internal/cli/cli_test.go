@@ -5123,12 +5123,36 @@ func TestReviewGateFailsWhenChecksFail(t *testing.T) {
 	}, errs: map[string]error{"go vet ./...": fmt.Errorf("vet failed")}}
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"review", "gate", "--json"}, &stdout, &stderr)
+	code := Run([]string{"review", "gate", "--json", "--local-exec"}, &stdout, &stderr)
 	if code == 0 {
 		t.Fatalf("expected non-zero when checks fail")
 	}
 	if !strings.Contains(stdout.String(), `"ready": false`) {
 		t.Fatalf("expected readiness false output: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), `"evidence_source": "local_execution"`) {
+		t.Fatalf("expected local execution evidence source: %s", stdout.String())
+	}
+}
+
+func TestReviewGateDefaultDoesNotRunLocalChecks(t *testing.T) {
+	original := reviewGateRunner
+	t.Cleanup(func() { reviewGateRunner = original })
+	reviewGateRunner = devCLIRunner{errs: map[string]error{
+		"gofmt -l .":    fmt.Errorf("should not run"),
+		"go vet ./...":  fmt.Errorf("should not run"),
+		"go test ./...": fmt.Errorf("should not run"),
+	}}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"review", "gate", "--json"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("expected blocked default review gate")
+	}
+	for _, want := range []string{`"ready": false`, `"evidence_source": "static_policy"`, `"execution_mode": "no_local_execution"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("review gate output missing %q: %s", want, stdout.String())
+		}
 	}
 }
 

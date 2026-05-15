@@ -855,7 +855,7 @@ const reviewHelp = `Review/approval routing queue.
 
 Usage:
   gira review queue [--repo OWNER/REPO] [--json]
-  gira review gate [--json]
+  gira review gate [--json] [--local-exec]
 `
 
 const mergeHelp = `Merge queue with policy checks.
@@ -7047,12 +7047,16 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) int {
 		fs := flag.NewFlagSet("review gate", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
 		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		localExec := fs.Bool("local-exec", false, "Run local repository checks in the current trusted checkout")
 		if err := fs.Parse(args[1:]); err != nil {
 			fmt.Fprintf(stderr, "%v\n\n", err)
 			fmt.Fprint(stderr, reviewHelp)
 			return 2
 		}
-		report := gira.RunQualityGate(reviewGateRunner)
+		report := gira.RunStaticQualityGate()
+		if *localExec {
+			report = gira.RunQualityGate(reviewGateRunner)
+		}
 		out, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			fmt.Fprintf(stderr, "encode review gate JSON: %v\n", err)

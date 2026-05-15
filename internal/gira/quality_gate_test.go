@@ -27,8 +27,24 @@ func TestRunQualityGateReady(t *testing.T) {
 	if !report.Ready {
 		t.Fatalf("expected ready report: %+v", report)
 	}
+	if report.EvidenceSource != "local_execution" || report.ExecutionMode != "local_exec" {
+		t.Fatalf("expected local execution evidence metadata: %+v", report)
+	}
 	if len(report.Blockers) != 0 {
 		t.Fatalf("expected no blockers: %+v", report.Blockers)
+	}
+}
+
+func TestRunStaticQualityGateBlocksWithoutLocalExecution(t *testing.T) {
+	report := RunStaticQualityGate()
+	if report.Ready {
+		t.Fatalf("static quality gate should block without execution evidence: %+v", report)
+	}
+	if report.EvidenceSource != "static_policy" || report.ExecutionMode != "no_local_execution" {
+		t.Fatalf("unexpected static gate metadata: %+v", report)
+	}
+	if len(report.Blockers) == 0 || !strings.Contains(report.Blockers[0], "local execution") {
+		t.Fatalf("expected local execution blocker: %+v", report.Blockers)
 	}
 }
 

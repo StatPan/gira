@@ -33,6 +33,8 @@ type WorkPRResult struct {
 	NextStatus string `json:"next_status"`
 	Branch     string `json:"branch,omitempty"`
 	BranchPush string `json:"branch_push,omitempty"`
+	PushRemote string `json:"push_remote,omitempty"`
+	LocalGit   string `json:"local_git,omitempty"`
 
 	Blockers    []string `json:"blockers"`
 	ClosingBody string   `json:"closing_body"`
@@ -149,6 +151,8 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 		}
 		result.Branch = push.Branch
 		result.BranchPush = push.Status
+		result.PushRemote = push.Remote
+		result.LocalGit = push.LocalGit
 		if push.Status == "planned" {
 			result.Blockers = appendMissingWorkBlocker(result.Blockers, "branch_push_required")
 		}
@@ -161,6 +165,8 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 	}
 	result.Branch = push.Branch
 	result.BranchPush = push.Status
+	result.PushRemote = push.Remote
+	result.LocalGit = push.LocalGit
 
 	opened, err := OpenDevPRWithOptions(repo, issueNumber, draft, runner)
 	if err != nil {
@@ -301,8 +307,10 @@ func hasWorkBlocker(blockers []string, target string) bool {
 }
 
 type workPRBranchPush struct {
-	Branch string
-	Status string
+	Branch   string
+	Remote   string
+	Status   string
+	LocalGit string
 }
 
 func prepareWorkPRBranchPush(issue devStartIssue, issueNumber int, dryRun bool, runner CommandRunner) (workPRBranchPush, error) {
@@ -321,16 +329,21 @@ func prepareWorkPRBranchPush(issue devStartIssue, issueNumber int, dryRun bool, 
 	if !isTicketBranchForIssue(currentBranch, issueNumber, expectedBranch) {
 		return workPRBranchPush{}, fmt.Errorf("current branch %q is not the ticket branch for #%d; run `gira ticket start %d --apply` first", currentBranch, issueNumber, issueNumber)
 	}
+	const remote = "origin"
+	if err := validateGitPushTarget(remote, currentBranch); err != nil {
+		return workPRBranchPush{}, err
+	}
+	localGit := fmt.Sprintf("git push -u %s <validated-ticket-branch>", remote)
 	if _, err := runner.Run("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err == nil {
-		return workPRBranchPush{Branch: currentBranch, Status: "skipped"}, nil
+		return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "skipped", LocalGit: localGit}, nil
 	}
 	if dryRun {
-		return workPRBranchPush{Branch: currentBranch, Status: "planned"}, nil
+		return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "planned", LocalGit: localGit}, nil
 	}
-	if _, err := runner.Run("git", "push", "-u", "origin", currentBranch); err != nil {
-		return workPRBranchPush{Branch: currentBranch, Status: "failed"}, fmt.Errorf("push ticket branch before PR create: %w", err)
+	if _, err := runner.Run("git", "push", "-u", remote, currentBranch); err != nil {
+		return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "failed", LocalGit: localGit}, fmt.Errorf("push ticket branch before PR create failed; inspect local git output and credentials outside Gira logs")
 	}
-	return workPRBranchPush{Branch: currentBranch, Status: "applied"}, nil
+	return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "applied", LocalGit: localGit}, nil
 }
 
 func isTicketBranchForIssue(branch string, issueNumber int, expectedBranch string) bool {
@@ -338,6 +351,61 @@ func isTicketBranchForIssue(branch string, issueNumber int, expectedBranch strin
 		return true
 	}
 	return strings.HasPrefix(branch, fmt.Sprintf("issue-%d-", issueNumber))
+}
+
+func validateGitPushTarget(remote string, branch string) error {
+	if err := validateGitRemoteName(remote); err != nil {
+		return err
+	}
+	if err := validateGitBranchPushName(branch); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateGitRemoteName(remote string) error {
+	if strings.TrimSpace(remote) != remote || remote == "" {
+		return fmt.Errorf("invalid git push remote: expected a configured remote name")
+	}
+	if strings.HasPrefix(remote, "-") {
+		return fmt.Errorf("invalid git push remote: remote names cannot start with '-'")
+	}
+	for _, r := range remote {
+		if r <= 0x20 || r == 0x7f || r == ':' || r == '/' || r == '\\' {
+			return fmt.Errorf("invalid git push remote: expected a configured remote name")
+		}
+	}
+	return nil
+}
+
+func validateGitBranchPushName(branch string) error {
+	if strings.TrimSpace(branch) != branch || branch == "" {
+		return fmt.Errorf("invalid git push branch: expected a local ticket branch")
+	}
+	if strings.HasPrefix(branch, "-") {
+		return fmt.Errorf("invalid git push branch: branch names cannot start with '-'")
+	}
+	if strings.Contains(branch, "..") ||
+		strings.Contains(branch, "@{") ||
+		strings.Contains(branch, "\\") ||
+		strings.Contains(branch, ":") ||
+		strings.Contains(branch, "//") ||
+		strings.HasPrefix(branch, "/") ||
+		strings.HasSuffix(branch, "/") ||
+		strings.HasSuffix(branch, ".lock") {
+		return fmt.Errorf("invalid git push branch: expected a plain local branch name")
+	}
+	for _, part := range strings.Split(branch, "/") {
+		if part == "" || part == "." || strings.HasSuffix(part, ".") {
+			return fmt.Errorf("invalid git push branch: expected a plain local branch name")
+		}
+	}
+	for _, r := range branch {
+		if r <= 0x20 || r == 0x7f || r == '~' || r == '^' || r == '?' || r == '*' || r == '[' {
+			return fmt.Errorf("invalid git push branch: expected a plain local branch name")
+		}
+	}
+	return nil
 }
 
 func appendMissingWorkBlocker(blockers []string, blocker string) []string {
@@ -384,6 +452,9 @@ func FormatWorkPR(result WorkPRResult) string {
 	branchPush := ""
 	if result.BranchPush != "" && result.BranchPush != "skipped" {
 		branchPush = fmt.Sprintf(" branch_push=%s", result.BranchPush)
+		if result.LocalGit != "" {
+			branchPush += fmt.Sprintf(" local_git=%q", result.LocalGit)
+		}
 	}
 	return fmt.Sprintf("work pr: issue #%d pr=%s status=%s %s%s\nnext step: %s\n", result.Issue, url, result.NextStatus, created, branchPush, next)
 }

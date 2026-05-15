@@ -95,6 +95,34 @@ func TestBuildJiraProviderInitRejectsCredentialBearingAPIBase(t *testing.T) {
 	}
 }
 
+func TestNormalizeJiraAPIBaseRejectsUnsafeDestinations(t *testing.T) {
+	cases := map[string]string{
+		"http://jira.example":              "must use https",
+		"https://alice:token@jira.example": "must not contain credentials",
+		"https://jira.example?token=x":     "must not contain query strings or fragments",
+		"https://jira.example/#setup":      "must not contain query strings or fragments",
+		"https://localhost":                "must not target localhost",
+		"https://127.0.0.1":                "must not target local or private network addresses",
+		"https://10.0.0.5":                 "must not target local or private network addresses",
+		"jira.example":                     "absolute HTTPS URL",
+	}
+	for input, want := range cases {
+		if _, err := normalizeJiraAPIBase(input); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("normalizeJiraAPIBase(%q) error = %v, want %q", input, err, want)
+		}
+	}
+}
+
+func TestNormalizeJiraAPIBasePreservesSafeHTTPSBase(t *testing.T) {
+	got, err := normalizeJiraAPIBase("https://JIRA.example/team/")
+	if err != nil {
+		t.Fatalf("normalizeJiraAPIBase error: %v", err)
+	}
+	if got != "https://jira.example/team" {
+		t.Fatalf("normalized api base = %q", got)
+	}
+}
+
 func TestBuildJiraProviderInitApplyWritesNonSecretRepoRegistry(t *testing.T) {
 	fakeJiraProviderDiscovery(t)
 	root := t.TempDir()

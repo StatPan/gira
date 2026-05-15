@@ -186,6 +186,13 @@ func TestOpenWorkPRDryRunReportsMissingLinkedPR(t *testing.T) {
 	if !containsCall(result.Blockers, "branch_push_required") || result.BranchPush != "planned" {
 		t.Fatalf("expected planned branch push blocker, got %+v", result)
 	}
+	if result.PushRemote != "origin" || result.LocalGit != "git push -u origin <validated-ticket-branch>" {
+		t.Fatalf("expected explicit local git boundary, got %+v", result)
+	}
+	formatted := FormatWorkPR(result)
+	if !strings.Contains(formatted, `local_git="git push -u origin <validated-ticket-branch>"`) {
+		t.Fatalf("formatted output missing local git boundary:\n%s", formatted)
+	}
 	if containsCall(runner.calls, "gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126") {
 		t.Fatalf("dry-run should not create PR, calls=%v", runner.calls)
 	}
@@ -217,6 +224,56 @@ func TestOpenWorkPRApplyPushesUnpushedTicketBranch(t *testing.T) {
 	createIndex := callIndex(runner.calls, "gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126 --draft")
 	if pushIndex < 0 || createIndex < 0 || pushIndex > createIndex {
 		t.Fatalf("expected push before PR create, calls=%v", runner.calls)
+	}
+}
+
+func TestOpenWorkPRApplyRejectsUnsafeTicketBranchBeforePush(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": []byte(`[]`),
+		"git branch --show-current": []byte("issue-126-work-command:refs/heads/main\n"),
+	}}
+
+	_, err := OpenWorkPR(repo, 126, false, false, runner)
+	if err == nil || !strings.Contains(err.Error(), "invalid git push branch") {
+		t.Fatalf("expected unsafe branch error, got %v", err)
+	}
+	if containsCall(runner.calls, "git push -u origin issue-126-work-command:refs/heads/main") {
+		t.Fatalf("unsafe branch should not be pushed, calls=%v", runner.calls)
+	}
+}
+
+func TestOpenWorkPRApplySanitizesPushFailure(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": []byte(`[]`),
+		"git branch --show-current": []byte("issue-126-work-command\n"),
+	}, errs: map[string]error{
+		"git rev-parse --abbrev-ref --symbolic-full-name @{u}": fmt.Errorf("fatal: no upstream configured: exit status 128"),
+		"git push -u origin issue-126-work-command":            fmt.Errorf("remote https://token@example.invalid/repo denied"),
+	}}
+
+	_, err := OpenWorkPR(repo, 126, false, false, runner)
+	if err == nil {
+		t.Fatalf("expected push failure")
+	}
+	if strings.Contains(err.Error(), "token@example") || strings.Contains(err.Error(), "https://") {
+		t.Fatalf("push error leaked credential material: %v", err)
+	}
+	if !strings.Contains(err.Error(), "inspect local git output") {
+		t.Fatalf("push error missing operator guidance: %v", err)
+	}
+}
+
+func TestValidateGitPushTargetRejectsRemoteURLWithoutEchoingCredentials(t *testing.T) {
+	err := validateGitPushTarget("https://token@example.invalid/repo", "issue-126-work-command")
+	if err == nil {
+		t.Fatalf("expected invalid remote")
+	}
+	if strings.Contains(err.Error(), "token") || strings.Contains(err.Error(), "https://") {
+		t.Fatalf("remote validation leaked credential material: %v", err)
 	}
 }
 

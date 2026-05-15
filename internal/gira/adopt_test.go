@@ -64,6 +64,33 @@ func TestBuildAdoptIssuesReportAppliesSelectedMapping(t *testing.T) {
 	}
 }
 
+func TestBuildAdoptIssuesReportQuotesDynamicNextStepArgs(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &adoptRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=open -f per_page=100": []byte(`[[{"number":1,"title":"No mapping","state":"open","labels":[],"milestone":null,"html_url":"u1"}]]`),
+	}}
+
+	report, err := BuildAdoptIssuesReport(AdoptIssueInput{
+		Repo:      repo,
+		Issues:    []int{1},
+		Milestone: "MVP; touch marker",
+		Labels:    []string{"type:task$(touch marker)", "status:ready"},
+		DryRun:    true,
+	}, runner)
+	if err != nil {
+		t.Fatalf("BuildAdoptIssuesReport error: %v", err)
+	}
+	for _, want := range []string{
+		"--milestone 'MVP; touch marker'",
+		"--label status:ready",
+		"--label 'type:task$(touch marker)'",
+	} {
+		if !strings.Contains(report.NextStep, want) {
+			t.Fatalf("next step missing quoted arg %q:\n%s", want, report.NextStep)
+		}
+	}
+}
+
 func TestBuildAdoptIssuesReportNormalizesClosedIssueStatus(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &adoptRunner{outputs: map[string][]byte{
@@ -130,6 +157,23 @@ func TestBuildAdoptRepoReportPlansMergeWithoutOverwritingExistingAgents(t *testi
 	}
 	if got := readText(t, filepath.Join(dir, "AGENTS.md")); got != "# Custom\n\nKeep this.\n" {
 		t.Fatalf("dry-run changed AGENTS.md: %q", got)
+	}
+}
+
+func TestBuildAdoptRepoReportQuotesDynamicNextStepPath(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	root := t.TempDir()
+	dir := filepath.Join(root, "repo; touch marker")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("mkdir unsafe path fixture: %v", err)
+	}
+
+	report, err := BuildAdoptRepoReport(AdoptRepoInput{Repo: repo, Path: dir, Strategy: "merge", DryRun: true}, adoptRepoRunner())
+	if err != nil {
+		t.Fatalf("BuildAdoptRepoReport error: %v", err)
+	}
+	if !strings.Contains(report.NextStep, "--path '"+dir+"'") {
+		t.Fatalf("next step did not quote path:\n%s", report.NextStep)
 	}
 }
 

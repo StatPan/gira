@@ -110,7 +110,7 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 	}
 	if len(selected) == 0 {
 		if !input.NormalizeStatus {
-			report.NextStep = fmt.Sprintf("gira adopt issues --repo %s --issues 1-3 --milestone TITLE --label type:task --dry-run", input.Repo.FullName())
+			report.NextStep = fmt.Sprintf("gira adopt issues --repo %s --issues 1-3 --milestone TITLE --label type:task --dry-run", QuoteShellArg(input.Repo.FullName()))
 			return report, nil
 		}
 		for _, issue := range issues {
@@ -171,7 +171,7 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 	sort.Slice(report.Actions, func(i, j int) bool { return report.Actions[i].Issue < report.Actions[j].Issue })
 	report.Counts.Selected = len(report.Actions)
 	if input.DryRun {
-		report.NextStep = fmt.Sprintf("gira adopt issues --repo %s", input.Repo.FullName())
+		report.NextStep = fmt.Sprintf("gira adopt issues --repo %s", QuoteShellArg(input.Repo.FullName()))
 		if len(input.Issues) > 0 {
 			report.NextStep += " --issues " + joinIssueNumbers(input.Issues)
 		}
@@ -179,17 +179,17 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 			report.NextStep += " --state " + state
 		}
 		if strings.TrimSpace(input.Milestone) != "" {
-			report.NextStep += " --milestone " + shellQuote(input.Milestone)
+			report.NextStep += " --milestone " + QuoteShellArg(input.Milestone)
 		}
 		for _, label := range labels {
-			report.NextStep += " --label " + shellQuote(label)
+			report.NextStep += " --label " + QuoteShellArg(label)
 		}
 		if input.NormalizeStatus {
 			report.NextStep += " --normalize-status"
 		}
 		report.NextStep += " --apply"
 	} else {
-		report.NextStep = fmt.Sprintf("gira status --repo %s", input.Repo.FullName())
+		report.NextStep = fmt.Sprintf("gira status --repo %s", QuoteShellArg(input.Repo.FullName()))
 	}
 	return report, nil
 }
@@ -335,13 +335,6 @@ func joinIssueNumbers(values []int) string {
 		parts = append(parts, strconv.Itoa(value))
 	}
 	return strings.Join(parts, ",")
-}
-
-func shellQuote(value string) string {
-	if strings.ContainsAny(value, " \t\n\"'") {
-		return strconv.Quote(value)
-	}
-	return value
 }
 
 func FormatAdoptIssuesReport(report AdoptIssuesReport) string {

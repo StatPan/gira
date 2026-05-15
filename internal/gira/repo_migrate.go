@@ -105,7 +105,7 @@ func BuildRepoMigrateReport(input RepoMigrateInput, runner CommandRunner) (RepoM
 		report.NextStep = register.NextStep
 		report.Applied = register.Applied
 		if input.DryRun && (register.Action == "create" || register.Action == "overwrite") {
-			next := fmt.Sprintf("gira repo migrate --repo %s --path %s --config-root %s --apply", repo.FullName(), checkoutPath, root)
+			next := fmt.Sprintf("gira repo migrate --repo %s --path %s --config-root %s --apply", QuoteShellArg(repo.FullName()), QuoteShellArg(checkoutPath), QuoteShellArg(root))
 			if input.Overwrite || register.Action == "overwrite" {
 				next += " --overwrite"
 			}
@@ -123,7 +123,7 @@ func BuildRepoMigrateReport(input RepoMigrateInput, runner CommandRunner) (RepoM
 	}
 	if input.Apply && register.Applied {
 		report.Status = "applied"
-		report.NextStep = fmt.Sprintf("gira config repo --repo %s --config-root %s", repo.FullName(), root)
+		report.NextStep = fmt.Sprintf("gira config repo --repo %s --config-root %s", QuoteShellArg(repo.FullName()), QuoteShellArg(root))
 	}
 	return report, nil
 }

@@ -77,7 +77,7 @@ func BuildWorkspaceProjectAdoptReport(input WorkspaceProjectAdoptInput, client P
 		ConfigPath: input.ConfigPath,
 		Project:    project,
 		Action:     WorkspaceAdoptAction{Action: "workspace.project:set", Status: actionStatus(input.DryRun), Reason: "register existing GitHub Project in workspace config"},
-		NextSteps:  []string{fmt.Sprintf("gira projects sync --config %s --dry-run", input.ConfigPath), "Repo issues remain the execution source of truth; the Project is a visibility surface."},
+		NextSteps:  []string{fmt.Sprintf("gira projects sync --config %s --dry-run", QuoteShellArg(input.ConfigPath)), "Repo issues remain the execution source of truth; the Project is a visibility surface."},
 	}
 	if projectConfigSet(existing) {
 		if workspaceProjectConfigEquivalent(existing, desired, project) {

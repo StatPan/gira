@@ -150,6 +150,22 @@ jobs:
       contents: write
 
     steps:
+      - name: Validate release tag
+        run: |
+          set -euo pipefail
+          case "${GITHUB_REF_NAME}" in
+            v[0-9]*.[0-9]*.[0-9]*)
+              ;;
+            *)
+              echo "release tag must match vMAJOR.MINOR.PATCH" >&2
+              exit 1
+              ;;
+          esac
+          if ! printf '%s\n' "${GITHUB_REF_NAME}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "release tag must match vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+
       - name: Check out repository
         uses: actions/checkout@v6.0.2
 
@@ -195,12 +211,14 @@ jobs:
     needs: release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    permissions:
+      contents: read
 
     steps:
       - name: Check npm token
         id: npm-token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "${NPM_TOKEN}" ]; then
             echo "publish=false" >>"${GITHUB_OUTPUT}"
@@ -243,12 +261,14 @@ jobs:
     needs: release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    env:
-      PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+    permissions:
+      contents: read
 
     steps:
       - name: Check PyPI token
         id: pypi-token
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           if [ -z "${PYPI_API_TOKEN}" ]; then
             echo "publish=false" >>"${GITHUB_OUTPUT}"
@@ -269,13 +289,16 @@ jobs:
         run: PYTHONPATH=packages/pypi/src python -m unittest discover -s packages/pypi/tests
 
       - name: Build PyPI wrapper
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           python - <<'PY'
+          import os
           from pathlib import Path
 
           path = Path("packages/pypi/pyproject.toml")
-          version = "${{ github.ref_name }}".removeprefix("v")
+          version = os.environ["RELEASE_TAG"].removeprefix("v")
           text = path.read_text()
           path.write_text(text.replace('version = "0.0.0.dev0"', f'version = "{version}"'))
           PY
@@ -293,6 +316,8 @@ jobs:
 
       - name: Publish PyPI wrapper
         if: steps.pypi-token.outputs.publish == 'true'
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: python -m twine upload packages/pypi/dist/* -u __token__ -p "${PYPI_API_TOKEN}"
 
   homebrew:
@@ -300,12 +325,14 @@ jobs:
     needs: release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    env:
-      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    permissions:
+      contents: read
 
     steps:
       - name: Check Homebrew tap token
         id: brew-token
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           if [ -z "${HOMEBREW_TAP_TOKEN}" ]; then
             echo "publish=false" >>"${GITHUB_OUTPUT}"

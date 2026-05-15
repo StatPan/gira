@@ -8,7 +8,7 @@ import (
 func TestBuildTicketChecksReportShowsPendingChecks(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 227 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": {
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 227 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
 			[]byte(`[{"number":228,"title":"x","body":"Closes #227","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNSTABLE","statusCheckRollup":[{"name":"Build linux","workflowName":"Go release","conclusion":"","status":"IN_PROGRESS","detailsUrl":"https://example.test/check"}]}]`),
 		},
 	}}
@@ -28,7 +28,7 @@ func TestBuildTicketChecksReportShowsPendingChecks(t *testing.T) {
 func TestBuildTicketChecksReportWaitsUntilChecksPass(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 227 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup --limit 20": {
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 227 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
 			[]byte(`[{"number":228,"title":"x","body":"Closes #227","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNSTABLE","statusCheckRollup":[{"name":"Build linux","workflowName":"Go release","conclusion":"","status":"IN_PROGRESS"}]}]`),
 			[]byte(`[{"number":228,"title":"x","body":"Closes #227","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"name":"Build linux","workflowName":"Go release","conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 		},

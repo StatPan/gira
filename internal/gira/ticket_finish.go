@@ -489,7 +489,7 @@ func mergeBlockers(blockers []string) []string {
 	result := make([]string, 0)
 	for _, blocker := range blockers {
 		switch blocker {
-		case "missing_linked_pr", "draft", "review", "checks", "checks_pending":
+		case "missing_linked_pr", "draft", "review", "checks", "checks_pending", "pr_binding":
 			result = append(result, blocker)
 		}
 	}

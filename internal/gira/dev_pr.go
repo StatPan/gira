@@ -24,9 +24,19 @@ type DevPRStatusResult struct {
 	PRURL     string       `json:"pr_url,omitempty"`
 	State     string       `json:"state,omitempty"`
 	Mergeable string       `json:"mergeable,omitempty"`
+	Binding   DevPRBinding `json:"binding,omitempty"`
 	Blockers  []string     `json:"blockers"`
 	Checks    []DevPRCheck `json:"checks,omitempty"`
 	Ready     bool         `json:"ready"`
+}
+
+type DevPRBinding struct {
+	Trusted              bool     `json:"trusted"`
+	Source               string   `json:"source"`
+	HeadRef              string   `json:"head_ref,omitempty"`
+	BaseRef              string   `json:"base_ref,omitempty"`
+	ExpectedHeadPrefixes []string `json:"expected_head_prefixes,omitempty"`
+	Blockers             []string `json:"blockers,omitempty"`
 }
 
 type DevPRCheck struct {
@@ -47,6 +57,8 @@ type prSummary struct {
 	ReviewDecision string `json:"reviewDecision"`
 	IsDraft        bool   `json:"isDraft"`
 	MergeState     string `json:"mergeStateStatus"`
+	HeadRefName    string `json:"headRefName"`
+	BaseRefName    string `json:"baseRefName"`
 	StatusRollup   []struct {
 		Name       string `json:"name"`
 		Workflow   string `json:"workflowName"`
@@ -88,7 +100,7 @@ func DevPRStatus(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStat
 		runner = ExecCommandRunner{}
 	}
 	search := fmt.Sprintf("repo:%s is:pr %d", repo.FullName(), issueNumber)
-	out, err := runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--state", "all", "--search", search, "--json", "number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup", "--limit", "20")
+	out, err := runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--state", "all", "--search", search, "--json", "number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName", "--limit", "20")
 	if err != nil {
 		return DevPRStatusResult{}, err
 	}
@@ -103,6 +115,8 @@ func DevPRStatus(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStat
 			result.PRURL = pr.URL
 			result.State = pr.State
 			result.Mergeable = pr.MergeState
+			result.Binding = validateDevPRBinding(issueNumber, pr)
+			result.Blockers = append(result.Blockers, result.Binding.Blockers...)
 			if pr.IsDraft {
 				result.Blockers = append(result.Blockers, "draft")
 			}
@@ -128,6 +142,31 @@ func DevPRStatus(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStat
 	}
 	result.Ready = len(result.Blockers) == 0
 	return result, nil
+}
+
+func validateDevPRBinding(issueNumber int, pr prSummary) DevPRBinding {
+	expected := []string{fmt.Sprintf("issue-%d-", issueNumber), fmt.Sprintf("issue-%d", issueNumber)}
+	binding := DevPRBinding{
+		Source:               "closing_keyword_and_branch",
+		HeadRef:              strings.TrimSpace(pr.HeadRefName),
+		BaseRef:              strings.TrimSpace(pr.BaseRefName),
+		ExpectedHeadPrefixes: expected,
+	}
+	if strings.EqualFold(pr.State, "MERGED") {
+		binding.Trusted = true
+		return binding
+	}
+	if binding.HeadRef == "" {
+		return binding
+	}
+	for _, prefix := range expected {
+		if binding.HeadRef == prefix || strings.HasPrefix(binding.HeadRef, prefix) {
+			binding.Trusted = true
+			return binding
+		}
+	}
+	binding.Blockers = append(binding.Blockers, "pr_binding")
+	return binding
 }
 
 func classifyDevPRCheck(status string, conclusion string) string {

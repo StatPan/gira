@@ -5,6 +5,9 @@ Gira ships as one Go-built binary. Package-manager channels are wrappers around 
 ## Version Policy
 
 - Stable releases are created from `v*` tags only.
+- Publishing workflows accept only `vMAJOR.MINOR.PATCH` release tags. Treat tag
+  names, refs, and PR content as untrusted input until the workflow has
+  validated the tag shape.
 - Published release assets are immutable. Reusing a tag or replacing assets for the same version is a release defect; publish a new patch version instead.
 - Pull requests and `main` pushes run validation builds but do not publish stable package-manager releases.
 - During `v0.x`, user-facing feature work increments the minor version and fixes increment the patch version.
@@ -53,6 +56,18 @@ Publishing requires `PYPI_API_TOKEN`. If the secret is missing, the release work
 Homebrew publishing targets `StatPan/homebrew-tap`. The release workflow updates `Formula/gira.rb` with the tagged archive URLs and checksums.
 
 Publishing requires `HOMEBREW_TAP_TOKEN`. If the secret is missing, the release workflow skips the tap update without blocking the GitHub Release.
+
+## Workflow Trust Boundary
+
+Pull requests and `main` pushes run build and documentation validation without
+package-manager publish authority. GitHub Pages deploy permissions are granted
+only to the deploy job on `push`, not to the pull-request docs build. Package
+publish tokens are scoped to the token check and publish steps instead of the
+entire job.
+
+Before publishing, the release workflow validates the tag name and passes release
+metadata to scripts as data through environment variables. Do not interpolate
+unchecked refs into generated package metadata or release scripts.
 
 ## Required Release Checks
 

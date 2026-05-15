@@ -260,7 +260,13 @@ func resolveWorkspaceConfigFromGlobalRegistry(configRoot string) (WorkspaceConfi
 	}
 	if cfg, err := LoadGlobalConfig(root); err == nil && strings.TrimSpace(cfg.DefaultWorkspace) != "" {
 		resolved, err := resolveGlobalWorkspaceConfig(root, cfg.DefaultWorkspace)
-		return resolved, err == nil, err
+		if err != nil {
+			return resolved, false, err
+		}
+		if err := verifyGlobalWorkspaceMatchesCheckout(resolved, root); err != nil {
+			return WorkspaceConfigResolved{}, false, err
+		}
+		return resolved, true, nil
 	}
 	if ctx, ok, err := repoContextFromGlobalPath(root, "."); err != nil {
 		return WorkspaceConfigResolved{}, false, err
@@ -284,6 +290,34 @@ func resolveWorkspaceConfigFromGlobalRegistry(configRoot string) (WorkspaceConfi
 		return WorkspaceConfigResolved{}, false, nil
 	}
 	return resolveGlobalWorkspaceContainingRepo(root, repo)
+}
+
+func verifyGlobalWorkspaceMatchesCheckout(workspace WorkspaceConfigResolved, configRoot string) error {
+	repo, ok, err := repoContextFromGitOrigin(".", ExecCommandRunner{})
+	if err != nil {
+		return err
+	}
+	if !ok {
+		repo, ok, err = repoContextFromConfig(DefaultInitConfigPath("."))
+		if err != nil {
+			return err
+		}
+	}
+	if !ok {
+		if ctx, ctxOK, err := repoContextFromGlobalPath(configRoot, "."); err != nil {
+			return err
+		} else if ctxOK {
+			repo = ctx.Repo
+			ok = true
+		}
+	}
+	if !ok {
+		return nil
+	}
+	if sameRepoRef(workspace.InboxRepo, repo) || workspaceContainsRepo(workspace.Repos, repo) {
+		return nil
+	}
+	return fmt.Errorf("workspace config unavailable: global workspace %q does not contain checkout repo %s", workspace.Name, repo.FullName())
 }
 
 func resolveGlobalWorkspaceConfig(configRoot string, name string) (WorkspaceConfigResolved, error) {

@@ -41,3 +41,38 @@ func TestLoadGuardrailsPolicyInvalidPattern(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestGuardrailsBlocksForcePushAndDeletionRelaxation(t *testing.T) {
+	policy := GuardrailsPolicy{BranchProtection: map[string]GuardrailsBranchProtection{
+		"main": {
+			RequiredApprovingReviewCount: 1,
+			RequireCodeOwnerReviews:      true,
+			RequiredStatusChecksStrict:   true,
+			AllowForcePushes:             true,
+			AllowDeletions:               true,
+		},
+	}}
+	current := GuardrailsState{BranchProtection: map[string]GuardrailsBranchProtection{
+		"main": {
+			RequiredApprovingReviewCount: 1,
+			RequireCodeOwnerReviews:      true,
+			RequiredStatusChecksStrict:   true,
+			AllowForcePushes:             false,
+			AllowDeletions:               false,
+		},
+	}}
+
+	report := BuildGuardrailsReport(policy, current, false, false)
+	if !guardrailDiffBlocked(report, "allow_force_pushes") || !guardrailDiffBlocked(report, "allow_deletions") {
+		t.Fatalf("expected force-push/deletion relaxation to be blocked: %+v", report.Diff)
+	}
+}
+
+func guardrailDiffBlocked(report GuardrailsSyncReport, field string) bool {
+	for _, item := range report.Diff {
+		if item.Field == field && item.Blocked {
+			return true
+		}
+	}
+	return false
+}

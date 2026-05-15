@@ -314,9 +314,6 @@ func writeAdoptRepoConfig(path string, repo string) error {
 	if fileExists(configPath) {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return err
-	}
 	content := fmt.Sprintf(`repo: %s
 profiles:
   default:
@@ -338,15 +335,18 @@ profiles:
       required_approvals: 0
       require_code_owners: false
 `, repo)
-	return os.WriteFile(configPath, []byte(content), 0o644)
+	return writeSafeLocalFile(configPath, []byte(content), 0o644)
 }
 
 func upsertAgentsManagedBlock(path string) error {
+	if err := prepareSafeLocalFile(path); err != nil {
+		return err
+	}
 	block := RenderAgentsManagedBlock(CoreAgentGuidanceSpec(), CoreCommandSpecs())
 	existing, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return os.WriteFile(path, []byte("# Repository Instructions\n\n"+block), 0o644)
+			return writeSafeLocalFile(path, []byte("# Repository Instructions\n\n"+block), 0o644)
 		}
 		return err
 	}
@@ -356,7 +356,7 @@ func upsertAgentsManagedBlock(path string) error {
 	if startAt >= 0 && endAt > startAt {
 		endAt += len(AgentsManagedBlockEnd)
 		updated := strings.TrimRight(text[:startAt], "\n") + "\n\n" + strings.TrimRight(block, "\n") + "\n" + text[endAt:]
-		return os.WriteFile(path, []byte(updated), 0o644)
+		return writeSafeLocalFile(path, []byte(updated), 0o644)
 	}
 	separator := "\n\n"
 	if strings.HasSuffix(text, "\n\n") {
@@ -364,7 +364,7 @@ func upsertAgentsManagedBlock(path string) error {
 	} else if strings.HasSuffix(text, "\n") {
 		separator = "\n"
 	}
-	return os.WriteFile(path, []byte(text+separator+block), 0o644)
+	return writeSafeLocalFile(path, []byte(text+separator+block), 0o644)
 }
 
 func adoptRepoNextStep(report AdoptRepoReport) string {

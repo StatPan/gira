@@ -37,6 +37,28 @@ func TestAuditVerifyPassesAndTamperFails(t *testing.T) {
 	}
 }
 
+func TestAppendAuditRecordsRejectsSymlinkLedger(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := os.WriteFile(outside, []byte("seed\n"), 0o644); err != nil {
+		t.Fatalf("write outside ledger: %v", err)
+	}
+	path := filepath.Join(dir, "audit.jsonl")
+	if err := os.Symlink(outside, path); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	err := AppendAuditRecords(path, []AuditRecord{
+		NewAuditRecord("sync", "sha256:abc", "label:create", "issue#1", "ok", "", "allowed", time.Now()),
+	})
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink rejection, got %v", err)
+	}
+	if got := readText(t, outside); got != "seed\n" {
+		t.Fatalf("outside ledger changed through symlink: %q", got)
+	}
+}
+
 func TestAuditVerifyForRepoScopesToRequestedRepo(t *testing.T) {
 	dir := t.TempDir()
 	repoA := mustParseRepoRef(t, "StatPan/gira")

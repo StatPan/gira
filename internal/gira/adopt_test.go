@@ -202,6 +202,26 @@ func TestBuildAdoptRepoReportApplyMergeWritesConfigAndManagedBlock(t *testing.T)
 	}
 }
 
+func TestBuildAdoptRepoReportRejectsSymlinkedAgentsWrite(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "AGENTS.md")
+	if err := os.WriteFile(outside, []byte("# Outside\n"), 0o644); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "AGENTS.md")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	_, err := BuildAdoptRepoReport(AdoptRepoInput{Repo: repo, Path: dir, Strategy: "merge", Apply: true}, adoptRepoRunner())
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink rejection, got %v", err)
+	}
+	if got := readText(t, outside); got != "# Outside\n" {
+		t.Fatalf("outside file changed through symlink: %q", got)
+	}
+}
+
 func TestBuildAdoptRepoReportApplyRequiresStrategyOrYes(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	_, err := BuildAdoptRepoReport(AdoptRepoInput{Repo: repo, Path: t.TempDir(), Apply: true}, adoptRepoRunner())

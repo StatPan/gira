@@ -2,6 +2,7 @@ package gira
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -65,7 +66,10 @@ func AppendAuditRecords(path string, records []AuditRecord) error {
 	if len(records) == 0 {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := prepareSafeLocalFile(path); err != nil {
+		return err
+	}
+	if err := prepareSafeLocalFile(path + ".lasthash"); err != nil {
 		return err
 	}
 	unlock, err := acquireAuditLock(path)
@@ -78,13 +82,9 @@ func AppendAuditRecords(path string, records []AuditRecord) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
 
-	enc := json.NewEncoder(f)
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
 	for i := range records {
 		rec := records[i]
 		if err := validateAuditRecord(rec, true); err != nil {
@@ -96,6 +96,9 @@ func AppendAuditRecords(path string, records []AuditRecord) error {
 			return err
 		}
 		prevHash = rec.Hash
+	}
+	if err := appendSafeLocalFile(path, out.Bytes(), 0o644); err != nil {
+		return err
 	}
 	if err := writeLastAuditHash(path, prevHash); err != nil {
 		return err
@@ -343,11 +346,14 @@ func writeLastAuditHash(path, hash string) error {
 	if strings.TrimSpace(hash) == "" {
 		return nil
 	}
-	return os.WriteFile(path+".lasthash", []byte(hash+"\n"), 0o644)
+	return writeSafeLocalFile(path+".lasthash", []byte(hash+"\n"), 0o644)
 }
 
 func acquireAuditLock(path string) (func(), error) {
 	lockPath := path + ".lock"
+	if err := prepareSafeLocalFile(lockPath); err != nil {
+		return nil, err
+	}
 	for i := 0; i < 50; i++ {
 		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {

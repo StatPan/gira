@@ -3,6 +3,8 @@ package gira
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -183,6 +185,44 @@ func TestDashboardExportBundleMetadataAndSnapshotReuse(t *testing.T) {
 		bundle.ExecutionBoard.SnapshotAt != plan.SnapshotAt ||
 		bundle.RoadmapTimeline.SnapshotAt != plan.SnapshotAt {
 		t.Fatalf("snapshot_at mismatch across bundle artifacts")
+	}
+}
+
+func TestWriteDashboardExportBundleWritesSafeOutputRoot(t *testing.T) {
+	outputRoot := filepath.Join(t.TempDir(), "dashboard")
+	bundle := DashboardExportBundle{
+		Manifest: DashboardExportManifest{
+			SchemaVersion: DashboardExportSchemaVersion,
+			Repo:          "StatPan/gira",
+		},
+	}
+	if err := WriteDashboardExportBundle(outputRoot, bundle); err != nil {
+		t.Fatalf("WriteDashboardExportBundle returned error: %v", err)
+	}
+	for _, rel := range []string{"manifest.json", "raw/github.json", "derived/warnings.json", "csv/execution_items.csv", "csv/roadmap_items.csv"} {
+		if _, err := os.Stat(filepath.Join(outputRoot, rel)); err != nil {
+			t.Fatalf("expected artifact %s: %v", rel, err)
+		}
+	}
+}
+
+func TestWriteDashboardExportBundleRejectsSymlinkOutputRoot(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.Mkdir(outside, 0o755); err != nil {
+		t.Fatalf("mkdir outside: %v", err)
+	}
+	outputRoot := filepath.Join(dir, "dashboard")
+	if err := os.Symlink(outside, outputRoot); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	err := WriteDashboardExportBundle(outputRoot, DashboardExportBundle{})
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink rejection, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "manifest.json")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected write through symlink, stat err=%v", err)
 	}
 }
 

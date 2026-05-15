@@ -1,25 +1,44 @@
 # Gira
 
-Gira is a GitHub-native Jira-style workflow CLI for humans and coding agents.
+Gira is a GitHub-native control plane for AI-assisted software work.
 
-I built Gira because I wanted GitHub to stay the source of truth, but I still wanted a Jira-like workflow that coding agents could follow safely.
-
-Gira maps tickets to GitHub Issues, work-start evidence to branches, change units to PRs, sprint and release boundaries to milestones, and completion to merged PRs plus closed issues. Repository issues are the executable work packets. Repo-linked Projects, including user or org Projects, are board views over those issues; Project-only items are intake, planning, roadmap, and visibility until routed to a repo issue. The main design choice is Terraform-like `--dry-run` / `--apply`, so humans and agents can preview workflow mutations before touching GitHub.
+It turns the GitHub issue-to-PR loop into a predictable workflow that humans and
+coding agents can both follow:
 
 ```text
-ticket -> branch -> PR -> checks -> merge -> done
+issue -> branch -> PR -> checks -> evidence -> finish
 ```
 
-Every mutating workflow follows the same safety contract:
+AI coding agents can generate code and open pull requests, but real engineering
+work is not finished until the repository state converges: the PR is linked,
+checks are green, review blockers are clear, the issue is closed, active status
+labels are normalized, and the next command is obvious. Gira makes that finish
+step explicit.
 
-- `--dry-run` previews the GitHub or repository changes.
-- `--apply` executes only after review.
+Use Gira when you want GitHub to remain the source of truth, while still having
+a Jira-like lifecycle that coding agents can operate safely:
+
+- Issues are executable task packets.
+- Branches prove work has started.
+- PRs are change units.
+- Checks and reviews are validation evidence.
+- Milestones group sprint/release boundaries.
+- `ticket finish` merges only when policy allows, then converges issue state.
+- `doctor` detects repo, workflow, label, and closed-issue status drift.
+
+The core safety model is Terraform-like:
+
+- `--dry-run` previews GitHub or repository mutations.
+- `--apply` executes only after the plan is understood.
 
 Documentation: <https://gira.statpan.com>
 
 Docs source lives in `docs-site/` and is built with VitePress. The docs toolchain is separate from the product runtime; the shipped product remains the Go-built `gira` binary.
 
-Gira is not a Jira clone or a separate planning database. It is a GitHub-native workflow control plane for the issue -> branch -> PR loop, with optional workspace and Project sync commands that make backlog and roadmap state visible without replacing repository issue state.
+Gira is not a Jira clone or a separate planning database. It is a workflow
+control layer over GitHub Issues, branches, PRs, checks, labels, and milestones.
+Repo-linked Projects are visibility surfaces; Project-only items stay intake or
+planning until routed to a repository issue.
 
 Jira-primary provider mode is optional. In that mode Jira owns planning and status while GitHub still owns execution evidence. See [docs/jira-primary-provider.md](docs/jira-primary-provider.md).
 
@@ -29,7 +48,7 @@ The core flow is:
 install -> auth -> init/readiness -> ticket -> PR -> checks -> finish
 ```
 
-## Quick Start
+## 3-Minute Quick Start
 
 Install Gira:
 

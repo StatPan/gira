@@ -75,7 +75,7 @@ func RenderAgentsManagedBlock(spec AgentGuidanceSpec, commands []CommandSpec) st
 	sortGuideSpecs(agentCommands)
 	b.WriteString(AgentsManagedBlockStart)
 	b.WriteString("\nGira workflow:\n")
-	fmt.Fprintf(&b, "- Canonical rules: `%s`.\n", spec.CanonicalSource)
+	b.WriteString("- Canonical rules: run `gira guide agent` from the installed Gira CLI.\n")
 	for _, command := range agentCommands {
 		fmt.Fprintf(&b, "- `%s`: %s\n", command.Usage, command.Summary)
 	}

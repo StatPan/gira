@@ -47,6 +47,12 @@ func TestRenderAgentsManagedBlockUsesRegistry(t *testing.T) {
 			t.Fatalf("managed block missing %q:\n%s", want, block)
 		}
 	}
+	if !strings.Contains(block, "gira guide agent") {
+		t.Fatalf("managed block should point adopted repos at CLI guidance:\n%s", block)
+	}
+	if strings.Contains(block, "docs/skills/gira-agent-operator.md") {
+		t.Fatalf("managed block should not point adopted repos at missing repo-local docs:\n%s", block)
+	}
 }
 
 func TestRenderAgentSkillManagedBlockUsesRegistry(t *testing.T) {

@@ -30,6 +30,18 @@ func TestPlanLabelsCreatesUpdatesAndSkipsManagedLabels(t *testing.T) {
 	}
 }
 
+func TestDesiredLabelsCoverDoctorWorkflowPolicyLabels(t *testing.T) {
+	desired := map[string]struct{}{}
+	for _, label := range DesiredLabels {
+		desired[label.Name] = struct{}{}
+	}
+	for _, label := range doctorWorkflowPolicyLabels() {
+		if _, ok := desired[label]; !ok {
+			t.Fatalf("doctor workflow policy label %q is not created by ops sync", label)
+		}
+	}
+}
+
 func TestPlanMilestonesCreatesUpdatesAndSkipsByTitle(t *testing.T) {
 	plan := PlanMilestones(
 		[]MilestoneDef{

@@ -245,9 +245,6 @@ func readyDoctorRunner() onboardFakeRunner {
 
 func doctorReadyLabelsJSON() string {
 	labels := append([]LabelDef{}, DesiredLabels...)
-	for _, name := range []string{"status:in-progress", "status:in-review", "priority:p1", "priority:p2", "area:backend", "area:docs", "area:ai"} {
-		labels = append(labels, LabelDef{Name: name, Color: "ededed", Description: "doctor test label"})
-	}
 	parts := make([]string, 0, len(labels))
 	for _, label := range labels {
 		parts = append(parts, fmt.Sprintf(`{"name":%q,"color":%q,"description":%q}`, label.Name, label.Color, label.Description))

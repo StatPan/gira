@@ -360,7 +360,14 @@ var DesiredLabels = []LabelDef{
 	{Name: "agent:human", Color: "FBCA04", Description: "Owned by a human project lead."},
 	{Name: "agent:worker", Color: "BFDADC", Description: "Ready for an implementation worker."},
 	{Name: "status:ready", Color: "C2E0C6", Description: "Ready to start."},
+	{Name: "status:in-progress", Color: "1D76DB", Description: "Work has started on a branch or active implementation."},
+	{Name: "status:in-review", Color: "7057FF", Description: "A linked PR or review surface is active."},
 	{Name: "status:blocked", Color: "E99695", Description: "Blocked by an external dependency or decision."},
+	{Name: "priority:p1", Color: "D93F0B", Description: "High priority work."},
+	{Name: "priority:p2", Color: "FBCA04", Description: "Medium priority work."},
+	{Name: "area:backend", Color: "0052CC", Description: "Backend, CLI, and core workflow implementation."},
+	{Name: "area:docs", Color: "0075CA", Description: "Documentation and process guidance."},
+	{Name: "area:ai", Color: "7057FF", Description: "AI and agent workflow behavior."},
 }
 
 var DesiredMilestones = []MilestoneDef{

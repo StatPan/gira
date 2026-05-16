@@ -62,6 +62,21 @@ func TestPlanMilestonesCreatesUpdatesAndSkipsByTitle(t *testing.T) {
 	}
 }
 
+func TestPlanMilestonesPreservesExistingDescriptionWhenDesiredIsNeutral(t *testing.T) {
+	plan := PlanMilestones(
+		[]MilestoneDef{
+			{Title: "MVP"},
+		},
+		[]ExistingMilestone{
+			{Number: 1, Title: "MVP", Description: "User-owned product milestone."},
+		},
+	)
+
+	if len(plan) != 1 || plan[0].Action != PlanSkip {
+		t.Fatalf("neutral milestone description should preserve existing description, got %+v", plan)
+	}
+}
+
 func TestPlanBootstrapIssuesDeduplicatesOnlyBootstrapLabeledMatches(t *testing.T) {
 	plan := PlanBootstrapIssues(
 		[]BootstrapIssueDef{

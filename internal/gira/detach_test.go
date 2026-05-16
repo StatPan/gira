@@ -18,7 +18,7 @@ func TestBuildDetachReportPlansDeterministicSafeActions(t *testing.T) {
 		},
 		labelUseCounts: map[string]int{"type:task": 1},
 		milestones: []DetachMilestone{
-			{Number: 1, Title: "MVP", Description: "CLI-first Gira bootstrapper with templates and GitHub metadata sync."},
+			{Number: 1, Title: "MVP"},
 			{Number: 2, Title: "Beta", Description: "User changed."},
 			{Number: 3, Title: "v1", Description: "Stable daily-use command surface for real repositories.", OpenIssues: 1},
 		},

@@ -371,9 +371,9 @@ var DesiredLabels = []LabelDef{
 }
 
 var DesiredMilestones = []MilestoneDef{
-	{Title: "MVP", Description: "CLI-first Gira bootstrapper with templates and GitHub metadata sync."},
-	{Title: "Beta", Description: "Broader validation and hardening after the MVP workflow is usable."},
-	{Title: "v1", Description: "Stable first release of the GitHub-native project OS workflow."},
+	{Title: "MVP"},
+	{Title: "Beta"},
+	{Title: "v1"},
 }
 
 var DesiredBootstrapIssues = []BootstrapIssueDef{
@@ -536,7 +536,8 @@ func PlanMilestones(desired []MilestoneDef, existing []ExistingMilestone) []Mile
 			plan = append(plan, MilestonePlan{Action: PlanCreate, Desired: milestone})
 			continue
 		}
-		if current.Description != milestone.Description || !stringPtrEqual(current.DueOn, milestone.DueOn) {
+		descriptionDrift := milestone.Description != "" && current.Description != milestone.Description
+		if descriptionDrift || !stringPtrEqual(current.DueOn, milestone.DueOn) {
 			existingCopy := current
 			plan = append(plan, MilestonePlan{Action: PlanUpdate, Desired: milestone, Existing: &existingCopy})
 			continue

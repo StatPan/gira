@@ -90,15 +90,17 @@ type ProjectsSyncItem struct {
 }
 
 type ProjectsSyncReport struct {
-	Command   string               `json:"command"`
-	DryRun    bool                 `json:"dry_run"`
-	Workspace WorkspaceSummary     `json:"workspace"`
-	Project   ProjectsSyncProject  `json:"project"`
-	Repos     []string             `json:"repos"`
-	Counts    ProjectsSyncCounts   `json:"counts"`
-	Actions   []ProjectsSyncAction `json:"actions"`
-	FetchedAt string               `json:"fetched_at"`
-	NextSteps []string             `json:"next_steps"`
+	Command              string               `json:"command"`
+	DryRun               bool                 `json:"dry_run"`
+	Workspace            WorkspaceSummary     `json:"workspace"`
+	Project              ProjectsSyncProject  `json:"project"`
+	Repos                []string             `json:"repos"`
+	Counts               ProjectsSyncCounts   `json:"counts"`
+	Actions              []ProjectsSyncAction `json:"actions"`
+	ManualActionRequired bool                 `json:"manual_action_required"`
+	ManualActions        []string             `json:"manual_actions,omitempty"`
+	FetchedAt            string               `json:"fetched_at"`
+	NextSteps            []string             `json:"next_steps"`
 }
 
 type ProjectsSyncCounts struct {
@@ -711,10 +713,15 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 	}
 	report.Counts.Repos = len(report.Repos)
 	report.Counts.ViewSetupRequired = true
-	if dryRun {
-		report.NextSteps = []string{"gira projects sync --config .gira/config.yaml --apply", "In GitHub Project, create Board grouped by Status and Schedule using Start date / Target date"}
+	manualViewStep := "In GitHub Project, create Board grouped by Status and Schedule using Start date / Target date"
+	report.ManualActionRequired = true
+	report.ManualActions = []string{manualViewStep}
+	if len(report.Actions) == 0 {
+		report.NextSteps = []string{manualViewStep}
+	} else if dryRun {
+		report.NextSteps = []string{"gira projects sync --config .gira/config.yaml --apply", manualViewStep}
 	} else {
-		report.NextSteps = []string{"gira projects sync --config .gira/config.yaml --dry-run", "In GitHub Project, create Board grouped by Status and Schedule using Start date / Target date"}
+		report.NextSteps = []string{"gira projects sync --config .gira/config.yaml --dry-run", manualViewStep}
 	}
 	return report, nil
 }
@@ -1015,6 +1022,9 @@ func FormatProjectsSyncReport(report ProjectsSyncReport) string {
 	fmt.Fprintf(&b, "projects sync: %s\n", mode)
 	fmt.Fprintf(&b, "project: %s #%d\n", report.Project.Title, report.Project.Number)
 	fmt.Fprintf(&b, "repos: %d issues: %d fields-create: %d add-items: %d archive-items: %d status-updates: %d field-updates: %d date-updates: %d\n", report.Counts.Repos, report.Counts.Issues, report.Counts.FieldsCreate, report.Counts.ProjectItemsAdd, report.Counts.ProjectItemsArchive, report.Counts.StatusUpdates, report.Counts.FieldUpdates, report.Counts.DateUpdates)
+	if report.ManualActionRequired && len(report.Actions) == 0 {
+		b.WriteString("data sync: complete; manual action required for GitHub Project view setup\n")
+	}
 	for _, action := range report.Actions {
 		target := action.Repo
 		if action.Issue > 0 {
@@ -1038,7 +1048,7 @@ func FormatProjectsSyncReport(report ProjectsSyncReport) string {
 		}
 		b.WriteString("\n")
 	}
-	if report.Counts.ViewSetupRequired {
+	if report.ManualActionRequired || report.Counts.ViewSetupRequired {
 		b.WriteString("view setup: create Board grouped by Status and Schedule using Start date / Target date in GitHub Project UI\n")
 	}
 	if len(report.NextSteps) > 0 {

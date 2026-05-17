@@ -598,6 +598,7 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 			report.Counts.FieldsSkip++
 			if existing.Type != "" && !strings.EqualFold(existing.Type, desired.Type) {
 				report.Actions = append(report.Actions, ProjectsSyncAction{Action: "project_field:skip", FieldID: existing.ID, FieldName: desired.Name, FieldType: existing.Type, Status: "skipped", Reason: fmt.Sprintf("field exists with type %s; expected %s", existing.Type, desired.Type)})
+				delete(fieldsByName, desired.Name)
 			}
 			continue
 		}

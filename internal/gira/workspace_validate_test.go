@@ -32,7 +32,35 @@ func TestBuildWorkspaceValidateReportClassifiesRoutingStates(t *testing.T) {
 		t.Fatalf("next steps = %+v", report.NextSteps)
 	}
 	text := FormatWorkspaceValidateReport(report)
-	if !strings.Contains(text, "routeable=1") || !strings.Contains(text, "#2 Ready status=routeable") {
+	if !strings.Contains(text, "scope=inbox-routing") || !strings.Contains(text, "routeable=1") || !strings.Contains(text, "#2 Ready scope=inbox-routing status=routeable") {
 		t.Fatalf("formatted report missing routeable evidence:\n%s", text)
+	}
+}
+
+func TestBuildWorkspaceValidateReportScopesExecutionRepoInboxToStatus(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	client := fakeWorkspaceClient{
+		inbox: []PortfolioRawTicket{
+			{Number: 10, Title: "Repo ready issue", State: "open", Body: "ordinary repo issue body", Labels: []string{"status:ready"}},
+		},
+	}
+
+	report, err := BuildWorkspaceValidateReport(config, client)
+	if err != nil {
+		t.Fatalf("BuildWorkspaceValidateReport error: %v", err)
+	}
+	if report.Scope != "repo-execution" || report.Counts.Blocked != 0 || len(report.Items) != 0 {
+		t.Fatalf("execution repo inbox should not be parsed as routing contract: %+v", report)
+	}
+	text := FormatWorkspaceValidateReport(report)
+	for _, want := range []string{"scope=repo-execution", "blocked=0", "use workspace status for repo execution readiness"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("formatted report missing %q:\n%s", want, text)
+		}
 	}
 }

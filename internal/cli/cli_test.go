@@ -1454,13 +1454,81 @@ func TestWorkspaceValidateCommandJSONUsesInjectedReport(t *testing.T) {
 }
 
 func TestWorkspaceSyncRequiresMode(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"workspace", "sync"}, &stdout, &stderr)
-	if code != 2 {
-		t.Fatalf("exit code = %d, want 2", code)
+	for _, args := range [][]string{
+		{"workspace", "sync"},
+		{"workspace", "sync", "--dry-run", "--apply"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := Run(args, &stdout, &stderr)
+		if code != 2 {
+			t.Fatalf("Run(%v) exit code = %d, want 2", args, code)
+		}
+		if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required for workspace sync") {
+			t.Fatalf("Run(%v) stderr missing mode guidance:\n%s", args, stderr.String())
+		}
 	}
-	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required for workspace sync") {
-		t.Fatalf("stderr missing mode guidance:\n%s", stderr.String())
+}
+
+func TestWorkspaceSyncJSON(t *testing.T) {
+	restore := newWorkspaceSyncReport
+	t.Cleanup(func() { newWorkspaceSyncReport = restore })
+	newWorkspaceSyncReport = func(configPath string, dryRun bool, bootstrapIssues bool) (gira.WorkspaceSyncReport, error) {
+		if configPath != "testdata/workspace.yaml" || !dryRun || !bootstrapIssues {
+			t.Fatalf("unexpected workspace sync args config=%s dryRun=%t bootstrapIssues=%t", configPath, dryRun, bootstrapIssues)
+		}
+		return gira.WorkspaceSyncReport{
+			Command:   "workspace sync",
+			Workspace: gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			DryRun:    true,
+			Repos: []gira.WorkspaceSyncRepoReport{
+				{Repo: "StatPan/backlog", Role: "inbox", LabelsCreate: 1, MilestonesUpdate: 2},
+				{Repo: "StatPan/gira", Role: "execution", LabelsUpdate: 3, BootstrapIssuesCreate: 4},
+			},
+			Counts:    gira.WorkspaceSyncCounts{Repos: 2, LabelsCreate: 1, LabelsUpdate: 3, MilestonesUpdate: 2, BootstrapIssuesCreate: 4},
+			NextSteps: []string{"gira workspace sync --apply --config testdata/workspace.yaml"},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "sync", "--config", "testdata/workspace.yaml", "--dry-run", "--bootstrap-issues", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkspaceSyncReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode workspace sync JSON: %v\n%s", err, stdout.String())
+	}
+	if !report.DryRun || report.Counts.Repos != 2 || report.Repos[1].BootstrapIssuesCreate != 4 || report.NextSteps[0] == "" {
+		t.Fatalf("unexpected workspace sync report: %+v", report)
+	}
+}
+
+func TestWorkspaceSyncTextIncludesNextStep(t *testing.T) {
+	restore := newWorkspaceSyncReport
+	t.Cleanup(func() { newWorkspaceSyncReport = restore })
+	newWorkspaceSyncReport = func(configPath string, dryRun bool, bootstrapIssues bool) (gira.WorkspaceSyncReport, error) {
+		if configPath != "" || dryRun || bootstrapIssues {
+			t.Fatalf("unexpected workspace sync args config=%s dryRun=%t bootstrapIssues=%t", configPath, dryRun, bootstrapIssues)
+		}
+		return gira.WorkspaceSyncReport{
+			Command:   "workspace sync",
+			Workspace: gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			DryRun:    false,
+			Repos:     []gira.WorkspaceSyncRepoReport{{Repo: "StatPan/gira", Role: "execution", LabelsCreate: 2}},
+			Counts:    gira.WorkspaceSyncCounts{Repos: 1, LabelsCreate: 2},
+			NextSteps: []string{"gira workspace status --config .gira/config.yaml"},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "sync", "--apply"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"workspace sync: apply", "execution StatPan/gira labels create=2", "next step: gira workspace status --config .gira/config.yaml"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace sync text missing %q:\n%s", want, stdout.String())
+		}
 	}
 }
 
@@ -1660,6 +1728,7 @@ func TestWorkspaceTicketRouteJSON(t *testing.T) {
 			TargetRepo: "StatPan/gira",
 			DryRun:     true,
 			Actions:    []gira.WorkspaceRouteAction{{Action: "execution_issue:create", Repo: "StatPan/gira", Reason: "ticket needs repository routing"}},
+			NextSteps:  []string{"gira workspace ticket route --ticket 8 --repo StatPan/gira --apply"},
 		}, nil
 	}
 
@@ -1668,9 +1737,70 @@ func TestWorkspaceTicketRouteJSON(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"command": "workspace ticket route"`, `"dry_run": true`, `"action": "execution_issue:create"`} {
+	for _, want := range []string{`"command": "workspace ticket route"`, `"dry_run": true`, `"action": "execution_issue:create"`, `"gira workspace ticket route --ticket 8 --repo StatPan/gira --apply"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("workspace ticket route JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestWorkspaceTicketNewRouteTextIncludesNextStep(t *testing.T) {
+	restore := newWorkspaceTicketNewReport
+	t.Cleanup(func() { newWorkspaceTicketNewReport = restore })
+	newWorkspaceTicketNewReport = func(configPath string, title string, body string, targetRepo gira.RepoRef, route bool, dryRun bool) (gira.WorkspaceTicketNewReport, error) {
+		if configPath != "testdata/workspace.yaml" || title != "Capture product idea" || body != "Needs route" || targetRepo.FullName() != "StatPan/gira" || !route || dryRun {
+			t.Fatalf("unexpected ticket new route args config=%s title=%s body=%s repo=%s route=%t dryRun=%t", configPath, title, body, targetRepo.FullName(), route, dryRun)
+		}
+		return gira.WorkspaceTicketNewReport{
+			Command:    "workspace ticket new",
+			Workspace:  gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			InboxRepo:  "StatPan/backlog",
+			Title:      title,
+			TargetRepo: "StatPan/gira",
+			Actions:    []gira.WorkspaceRouteAction{{Action: "execution_issue:create", Repo: "StatPan/gira", Reason: "route directly"}},
+			NextSteps:  []string{"gira workspace status --config testdata/workspace.yaml"},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "ticket", "new", "--config", "testdata/workspace.yaml", "--title", "Capture product idea", "--body", "Needs route", "--repo", "StatPan/gira", "--apply"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"workspace ticket new: apply Capture product idea -> StatPan/gira", "execution_issue:create StatPan/gira", "next step: gira workspace status --config testdata/workspace.yaml"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace ticket new route text missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestWorkspaceTicketRouteTextIncludesNextStep(t *testing.T) {
+	restore := newWorkspaceTicketRouteReport
+	t.Cleanup(func() { newWorkspaceTicketRouteReport = restore })
+	newWorkspaceTicketRouteReport = func(configPath string, ticketValue string, repo gira.RepoRef, dryRun bool) (gira.WorkspaceTicketRouteReport, error) {
+		if configPath != "testdata/workspace.yaml" || ticketValue != "8" || repo.FullName() != "StatPan/gira" || dryRun {
+			t.Fatalf("unexpected route args config=%s ticket=%s repo=%s dryRun=%t", configPath, ticketValue, repo.FullName(), dryRun)
+		}
+		return gira.WorkspaceTicketRouteReport{
+			Command:    "workspace ticket route",
+			Workspace:  gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			InboxRepo:  "StatPan/backlog",
+			Ticket:     8,
+			TargetRepo: "StatPan/gira",
+			Actions:    []gira.WorkspaceRouteAction{{Action: "execution_issue:create", Repo: "StatPan/gira", Reason: "ticket needs repository routing", Issue: 44}},
+			Created:    &gira.PortfolioLoweredIssue{Repo: "StatPan/gira", Number: 44, URL: "https://github.com/StatPan/gira/issues/44"},
+			NextSteps:  []string{"gira ticket start 44 --repo StatPan/gira --dry-run"},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "ticket", "route", "--config", "testdata/workspace.yaml", "--ticket", "8", "--repo", "StatPan/gira", "--apply"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"workspace ticket route: apply inbox#8 -> StatPan/gira", "execution_issue:create StatPan/gira #44", "created: StatPan/gira#44", "next step: gira ticket start 44 --repo StatPan/gira --dry-run"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace ticket route text missing %q:\n%s", want, stdout.String())
 		}
 	}
 }

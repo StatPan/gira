@@ -163,6 +163,22 @@ func TestBuildJiraTransitionPlanPermissionLimitationNeedsManualAdmin(t *testing.
 	}
 }
 
+func TestFetchJiraIssueTransitionsRejectsMalformedJSON(t *testing.T) {
+	restore := jiraAPIGet
+	t.Cleanup(func() { jiraAPIGet = restore })
+	jiraAPIGet = func(apiBase string, path string, query map[string]string, email string, token string) ([]byte, error) {
+		if path != "/rest/api/3/issue/ABC-123/transitions" || query["expand"] != "transitions.fields" {
+			t.Fatalf("unexpected transition fetch path=%s query=%v", path, query)
+		}
+		return []byte(`{"transitions":[`), nil
+	}
+
+	_, err := fetchJiraIssueTransitions("https://jira.example", "ABC-123", "alice@example.com", "secret-token")
+	if err == nil || !strings.Contains(err.Error(), "parse Jira transitions JSON") {
+		t.Fatalf("expected malformed transitions JSON error, got %v", err)
+	}
+}
+
 func TestBuildJiraTransitionPlanRequiresDryRun(t *testing.T) {
 	_, err := BuildJiraTransitionPlan(JiraTransitionPlanInput{
 		Repo:   ParseRepoRefMust("StatPan/gira"),

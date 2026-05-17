@@ -86,6 +86,35 @@ func TestBuildEpicStatusAmbiguousEpicsReturnsCandidates(t *testing.T) {
 	}
 }
 
+func TestBuildEpicStatusNoOpenEpicSuggestsClosedCandidate(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &epicRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=open -f per_page=100": []byte(`[[` +
+			`{"number":11,"title":"Closed task","state":"open","labels":[{"name":"type:task"}],"milestone":{"title":"v1.4"},"html_url":"u11"}` +
+			`]]`),
+		"gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=closed -f per_page=100": []byte(`[[` +
+			`{"number":10,"title":"[Epic] Public docs","state":"closed","body":"Tracks #11","labels":[{"name":"type:epic"},{"name":"status:done"}],"milestone":{"title":"v1.4"},"html_url":"u10"}` +
+			`]]`),
+	}}
+
+	report, err := BuildEpicStatusReport(EpicInput{Repo: repo, Milestone: "v1.4"}, runner)
+	if err == nil || !strings.Contains(err.Error(), "verify a closed epic") {
+		t.Fatalf("expected closed epic guidance, got report=%+v err=%v", report, err)
+	}
+	if len(report.Candidates) != 1 || report.Candidates[0].Number != 10 || report.Candidates[0].State != "closed" {
+		t.Fatalf("expected closed candidate, got %+v", report.Candidates)
+	}
+	if report.NextStep != "gira epic status --repo StatPan/gira --ticket 10" {
+		t.Fatalf("unexpected next step: %s", report.NextStep)
+	}
+	text := FormatEpicReport(report)
+	for _, want := range []string{"epic status: unresolved", "#10 [Epic] Public docs", "state=closed", "next step: gira epic status --repo StatPan/gira --ticket 10"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("formatted report missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestFinishEpicBlocksOpenChildren(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &epicRunner{outputs: map[string][]byte{

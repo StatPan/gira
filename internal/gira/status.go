@@ -70,12 +70,13 @@ func (c GHStatusClient) JSON(args []string, target any) error {
 }
 
 type StatusSummary struct {
-	Counts     StatusCounts     `json:"counts"`
-	FetchedAt  string           `json:"fetched_at"`
-	Issues     StatusIssueLists `json:"issues"`
-	Milestones []MilestoneStats `json:"milestones"`
-	Repo       string           `json:"repo"`
-	StaleDays  int              `json:"stale_days"`
+	Counts     StatusCounts           `json:"counts"`
+	FetchedAt  string                 `json:"fetched_at"`
+	Issues     StatusIssueLists       `json:"issues"`
+	Milestones []MilestoneStats       `json:"milestones"`
+	Provenance StatusProvenanceCounts `json:"provenance"`
+	Repo       string                 `json:"repo"`
+	StaleDays  int                    `json:"stale_days"`
 }
 
 type GlobalStatusReport struct {
@@ -168,6 +169,7 @@ type normalizedIssue struct {
 	Milestone *string
 	UpdatedAt string
 	URL       string
+	Body      string
 }
 
 type normalizedMilestone struct {
@@ -354,7 +356,7 @@ func FetchIssues(client StatusClient) ([]normalizedIssue, error) {
 		"--limit",
 		"1000",
 		"--json",
-		"number,title,state,labels,milestone,updatedAt,url",
+		"number,title,state,labels,milestone,updatedAt,url,body",
 	}, &rows)
 	if err != nil {
 		return fetchIssuesREST(client)
@@ -401,6 +403,7 @@ func normalizeIssueRows(rows []json.RawMessage) ([]normalizedIssue, error) {
 			} `json:"milestone"`
 			UpdatedAt       string           `json:"updatedAt"`
 			UpdatedAtREST   string           `json:"updated_at"`
+			Body            string           `json:"body"`
 			HTMLURL         string           `json:"html_url"`
 			URL             string           `json:"url"`
 			PullRequestREST *json.RawMessage `json:"pull_request"`
@@ -437,6 +440,7 @@ func normalizeIssueRows(rows []json.RawMessage) ([]normalizedIssue, error) {
 			Milestone: milestone,
 			UpdatedAt: updatedAt,
 			URL:       url,
+			Body:      raw.Body,
 		})
 	}
 	return issues, nil
@@ -574,6 +578,7 @@ func SummarizeStatus(repo string, milestones []normalizedMilestone, issues []nor
 			BlockedOpen: blockedRows,
 		},
 		Milestones: milestoneRows,
+		Provenance: summarizeIssueProvenance(issues),
 		Repo:       repo,
 		StaleDays:  staleDays,
 	}, nil
@@ -598,6 +603,16 @@ func FormatStatusText(summary StatusSummary) string {
 		summary.Counts.Milestones.Open,
 		summary.Counts.Milestones.Closed,
 		summary.Counts.Milestones.Total,
+	)
+	fmt.Fprintf(
+		&builder,
+		"provenance: agent-executed=%d human-executed=%d human-reviewed=%d ai-reviewed=%d mixed=%d unknown=%d\n",
+		summary.Provenance.AgentExecuted,
+		summary.Provenance.HumanExecuted,
+		summary.Provenance.HumanReviewed,
+		summary.Provenance.AIReviewed,
+		summary.Provenance.MixedHumanAI,
+		summary.Provenance.Unknown,
 	)
 
 	if len(summary.Milestones) == 0 {

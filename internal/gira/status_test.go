@@ -57,7 +57,7 @@ func TestFormatStatusTextIsCompact(t *testing.T) {
 	}
 
 	text := FormatStatusText(summary)
-	for _, want := range []string{"status: StatPan/gira", "issues:", "milestone progress:", "stale open issues:", "blocked issues:", "open issues:"} {
+	for _, want := range []string{"status: StatPan/gira", "issues:", "provenance:", "milestone progress:", "stale open issues:", "blocked issues:", "open issues:"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("status text missing %q:\n%s", want, text)
 		}
@@ -74,9 +74,9 @@ func TestBuildStatusSummaryFetchesWithGhShape(t *testing.T) {
 	client := fakeStatusClient{
 		repo: mustRepo(t, "StatPan/gira"),
 		responses: map[string]string{
-			"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                         `[[{"number":1,"title":"MVP","state":"open","description":null,"due_on":null,"open_issues":2,"closed_issues":3}]]`,
-			"issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url": `[{"number":1,"title":"Issue 1","state":"OPEN","labels":[{"name":"status:blocked"}],"milestone":{"title":"MVP"},"updatedAt":"2026-04-25T12:00:00Z","url":"https://github.com/StatPan/gira/issues/1"}]`,
-			"api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=open -f per_page=100":                             `[[{"body":"Implements changes","draft":false},{"body":"Fixes #1","draft":false}]]`,
+			"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                              `[[{"number":1,"title":"MVP","state":"open","description":null,"due_on":null,"open_issues":2,"closed_issues":3}]]`,
+			"issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url,body": `[{"number":1,"title":"Issue 1","state":"OPEN","labels":[{"name":"status:blocked"}],"milestone":{"title":"MVP"},"updatedAt":"2026-04-25T12:00:00Z","url":"https://github.com/StatPan/gira/issues/1"}]`,
+			"api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=open -f per_page=100":                                  `[[{"body":"Implements changes","draft":false},{"body":"Fixes #1","draft":false}]]`,
 		},
 	}
 
@@ -115,10 +115,42 @@ func TestStatusJSONShapeMatchesAutomationContract(t *testing.T) {
 	if err := json.Unmarshal(output, &payload); err != nil {
 		t.Fatalf("status JSON did not parse: %v\n%s", err, output)
 	}
-	for _, key := range []string{"repo", "fetched_at", "stale_days", "counts", "milestones", "issues"} {
+	for _, key := range []string{"repo", "fetched_at", "stale_days", "counts", "milestones", "issues", "provenance"} {
 		if _, ok := payload[key]; !ok {
 			t.Fatalf("status JSON missing key %q:\n%s", key, output)
 		}
+	}
+}
+
+func TestSummarizeStatusIncludesProvenanceCounts(t *testing.T) {
+	summary, err := SummarizeStatus(
+		"StatPan/gira",
+		nil,
+		[]normalizedIssue{
+			issueFixture(1, "open", "2026-04-25T12:00:00Z", []string{"agent:codex"}, nil),
+			{
+				Number:    2,
+				Title:     "Mixed",
+				State:     "closed",
+				UpdatedAt: "2026-04-25T12:00:00Z",
+				Body: `<!-- gira:provenance:start -->
+planning: human
+implementation: ai
+review: human
+<!-- gira:provenance:end -->`,
+			},
+		},
+		statusNowFixture,
+		14,
+	)
+	if err != nil {
+		t.Fatalf("SummarizeStatus returned error: %v", err)
+	}
+	if summary.Provenance.AgentExecuted != 2 || summary.Provenance.HumanReviewed != 1 || summary.Provenance.MixedHumanAI != 1 {
+		t.Fatalf("provenance = %+v", summary.Provenance)
+	}
+	if !strings.Contains(FormatStatusText(summary), "agent-executed=2") {
+		t.Fatalf("status text missing provenance summary:\n%s", FormatStatusText(summary))
 	}
 }
 
@@ -149,14 +181,14 @@ func TestBuildStatusSummaryFetchesIndependentReadsConcurrently(t *testing.T) {
 	client := fakeStatusClient{
 		repo: mustRepo(t, "StatPan/gira"),
 		responses: map[string]string{
-			"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                         `[[{"number":1,"title":"MVP","state":"open","description":null,"due_on":null,"open_issues":1,"closed_issues":0}]]`,
-			"issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url": `[{"number":1,"title":"Issue 1","state":"OPEN","labels":[],"updatedAt":"2026-04-25T12:00:00Z","url":"https://github.com/StatPan/gira/issues/1"}]`,
-			"api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=open -f per_page=100":                             `[[{"body":"Closes #1","draft":false}]]`,
+			"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                              `[[{"number":1,"title":"MVP","state":"open","description":null,"due_on":null,"open_issues":1,"closed_issues":0}]]`,
+			"issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url,body": `[{"number":1,"title":"Issue 1","state":"OPEN","labels":[],"updatedAt":"2026-04-25T12:00:00Z","url":"https://github.com/StatPan/gira/issues/1"}]`,
+			"api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=open -f per_page=100":                                  `[[{"body":"Closes #1","draft":false}]]`,
 		},
 		delays: map[string]time.Duration{
-			"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                         80 * time.Millisecond,
-			"issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url": 80 * time.Millisecond,
-			"api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=open -f per_page=100":                             80 * time.Millisecond,
+			"api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                              80 * time.Millisecond,
+			"issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url,body": 80 * time.Millisecond,
+			"api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=open -f per_page=100":                                  80 * time.Millisecond,
 		},
 	}
 
@@ -188,8 +220,8 @@ func TestBuildGlobalStatusReportKeepsRepoFailuresInRows(t *testing.T) {
 		return fakeStatusClient{
 			repo: repo,
 			responses: map[string]string{
-				"api repos/StatPan/app-a/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                         `[[{"number":1,"title":"MVP","state":"open","description":null,"due_on":null,"open_issues":1,"closed_issues":1}]]`,
-				"issue list --repo StatPan/app-a --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url": `[{"number":1,"title":"Blocked","state":"OPEN","labels":[{"name":"status:blocked"}],"milestone":{"title":"MVP"},"updatedAt":"2026-04-01T12:00:00Z","url":"https://github.com/StatPan/app-a/issues/1"}]`,
+				"api repos/StatPan/app-a/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                              `[[{"number":1,"title":"MVP","state":"open","description":null,"due_on":null,"open_issues":1,"closed_issues":1}]]`,
+				"issue list --repo StatPan/app-a --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url,body": `[{"number":1,"title":"Blocked","state":"OPEN","labels":[{"name":"status:blocked"}],"milestone":{"title":"MVP"},"updatedAt":"2026-04-01T12:00:00Z","url":"https://github.com/StatPan/app-a/issues/1"}]`,
 			},
 		}
 	}

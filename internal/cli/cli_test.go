@@ -725,13 +725,35 @@ func TestVersionCommandFallsBackForEmptyBuildValues(t *testing.T) {
 }
 
 func TestJiraImportRequiresMode(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"jira", "import", "--repo", "StatPan/gira", "--source", "jira.csv"}, &stdout, &stderr)
-	if code != 2 {
-		t.Fatalf("exit code = %d, want 2", code)
+	for _, args := range [][]string{
+		{"jira", "import", "--repo", "StatPan/gira", "--source", "jira.csv"},
+		{"jira", "import", "--repo", "StatPan/gira", "--source", "jira.csv", "--dry-run", "--apply"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := Run(args, &stdout, &stderr)
+		if code != 2 {
+			t.Fatalf("Run(%v) exit code = %d, want 2", args, code)
+		}
+		if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required") {
+			t.Fatalf("Run(%v) stderr missing mode guidance:\n%s", args, stderr.String())
+		}
 	}
-	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required") {
-		t.Fatalf("stderr missing mode guidance:\n%s", stderr.String())
+}
+
+func TestJiraImportRejectsMixedSourceAndAPI(t *testing.T) {
+	for _, args := range [][]string{
+		{"jira", "import", "--repo", "StatPan/gira", "--dry-run"},
+		{"jira", "import", "--repo", "StatPan/gira", "--source", "jira.csv", "--api-base", "https://jira.example", "--project", "GIRA", "--dry-run"},
+		{"jira", "import", "--repo", "StatPan/gira", "--api-base", "https://jira.example", "--dry-run"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := Run(args, &stdout, &stderr)
+		if code != 2 {
+			t.Fatalf("Run(%v) exit code = %d, want 2", args, code)
+		}
+		if !strings.Contains(stderr.String(), "--source") && !strings.Contains(stderr.String(), "--api-base and --project") {
+			t.Fatalf("Run(%v) stderr missing source/API guidance:\n%s", args, stderr.String())
+		}
 	}
 }
 
@@ -973,6 +995,36 @@ func TestJiraImportJSON(t *testing.T) {
 	for _, want := range []string{`"command": "jira import"`, `"key": "GIRA-1"`, `"create": 1`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("jira import JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestJiraImportAPIJSON(t *testing.T) {
+	restore := newJiraImportReport
+	t.Cleanup(func() { newJiraImportReport = restore })
+	newJiraImportReport = func(repo gira.RepoRef, source string, apiBase string, project string, dryRun bool, apply bool) (gira.JiraImportReport, error) {
+		if repo.FullName() != "StatPan/gira" || source != "" || apiBase != "https://jira.example" || project != "GIRA" || dryRun || !apply {
+			t.Fatalf("unexpected jira API import args repo=%s source=%s apiBase=%s project=%s dryRun=%t apply=%t", repo.FullName(), source, apiBase, project, dryRun, apply)
+		}
+		return gira.JiraImportReport{
+			Command: "jira import",
+			Repo:    "StatPan/gira",
+			APIBase: "https://jira.example",
+			Project: "GIRA",
+			Apply:   true,
+			Counts:  gira.JiraImportCounts{SourceItems: 1, Create: 1, Applied: 1},
+			Actions: []gira.JiraImportAction{{Key: "GIRA-9", Action: "create", Title: "API import", IssueNumber: 91}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"jira", "import", "--repo", "StatPan/gira", "--api-base", "https://jira.example", "--project", "GIRA", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"api_base": "https://jira.example"`, `"project": "GIRA"`, `"applied": 1`, `"issue_number": 91`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("jira API import JSON missing %q:\n%s", want, stdout.String())
 		}
 	}
 }

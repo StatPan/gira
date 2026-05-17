@@ -3311,7 +3311,7 @@ func TestTicketNewDryRunReportsMissingRepoLabel(t *testing.T) {
 		devCommandRunner = restoreRunner
 	})
 	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
-		"gh label list --repo StatPan/gira --json name --limit 1000": []byte(`[{"name":"type:task"},{"name":"status:ready"}]`),
+		"gh label list --repo StatPan/gira --json name --limit 1000": []byte(`[{"name":"type:task"},{"name":"status:ready"},{"name":"area:backend"},{"name":"area:docs"}]`),
 	}}
 	newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
 		return gira.BuildTicketNewReport(input, devCommandRunner)
@@ -3322,7 +3322,7 @@ func TestTicketNewDryRunReportsMissingRepoLabel(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1; stdout: %s stderr: %s", code, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "missing repo labels: area:cli") {
+	if !strings.Contains(stderr.String(), "missing repo labels: area:cli") || !strings.Contains(stderr.String(), "candidates: area:backend,area:docs") {
 		t.Fatalf("stderr missing label preflight error:\n%s", stderr.String())
 	}
 }

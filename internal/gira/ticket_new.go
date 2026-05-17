@@ -194,9 +194,54 @@ func preflightTicketNewLabels(repo RepoRef, labels []string, runner CommandRunne
 		missing = append(missing, trimmed)
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("missing repo labels: %s; run `gira ops sync --repo %s --dry-run` for managed labels or create reviewed repo labels before ticket new", strings.Join(missing, ","), repo.FullName())
+		suggestions := missingLabelCandidateText(missing, existing)
+		if suggestions != "" {
+			suggestions = "; candidates: " + suggestions
+		}
+		return fmt.Errorf("missing repo labels: %s%s; run `gira ops sync --repo %s --dry-run` for managed labels or create reviewed repo labels before ticket new", strings.Join(missing, ","), suggestions, repo.FullName())
 	}
 	return nil
+}
+
+func missingLabelCandidateText(missing []string, existing map[string]struct{}) string {
+	candidates := []string{}
+	seen := map[string]struct{}{}
+	for _, missingLabel := range missing {
+		axis, ok := labelAxis(missingLabel)
+		if !ok {
+			continue
+		}
+		for _, desired := range DesiredLabels {
+			name := strings.TrimSpace(desired.Name)
+			if name == "" || strings.EqualFold(name, missingLabel) {
+				continue
+			}
+			candidateAxis, ok := labelAxis(name)
+			if !ok || candidateAxis != axis {
+				continue
+			}
+			if _, exists := existing[strings.ToLower(name)]; !exists {
+				continue
+			}
+			if _, duplicate := seen[strings.ToLower(name)]; duplicate {
+				continue
+			}
+			seen[strings.ToLower(name)] = struct{}{}
+			candidates = append(candidates, name)
+			if len(candidates) >= 8 {
+				break
+			}
+		}
+	}
+	return strings.Join(candidates, ",")
+}
+
+func labelAxis(label string) (string, bool) {
+	parts := strings.SplitN(strings.TrimSpace(label), ":", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", false
+	}
+	return strings.ToLower(strings.TrimSpace(parts[0])), true
 }
 
 func ticketNewLabels(ticketType string, priority string, extra []string) []string {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type DevPROpenResult struct {
@@ -18,16 +19,17 @@ type DevPROpenResult struct {
 }
 
 type DevPRStatusResult struct {
-	Repo      string       `json:"repo"`
-	Issue     int          `json:"issue"`
-	PRNumber  int          `json:"pr_number,omitempty"`
-	PRURL     string       `json:"pr_url,omitempty"`
-	State     string       `json:"state,omitempty"`
-	Mergeable string       `json:"mergeable,omitempty"`
-	Binding   DevPRBinding `json:"binding,omitempty"`
-	Blockers  []string     `json:"blockers"`
-	Checks    []DevPRCheck `json:"checks,omitempty"`
-	Ready     bool         `json:"ready"`
+	Repo           string       `json:"repo"`
+	Issue          int          `json:"issue"`
+	PRNumber       int          `json:"pr_number,omitempty"`
+	PRURL          string       `json:"pr_url,omitempty"`
+	State          string       `json:"state,omitempty"`
+	Mergeable      string       `json:"mergeable,omitempty"`
+	Binding        DevPRBinding `json:"binding,omitempty"`
+	Blockers       []string     `json:"blockers"`
+	Checks         []DevPRCheck `json:"checks,omitempty"`
+	Ready          bool         `json:"ready"`
+	LookupAttempts int          `json:"lookup_attempts,omitempty"`
 }
 
 type DevPRBinding struct {
@@ -142,6 +144,31 @@ func DevPRStatus(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStat
 	}
 	result.Ready = len(result.Blockers) == 0
 	return result, nil
+}
+
+func DevPRStatusWithMissingPRRetry(repo RepoRef, issueNumber int, runner CommandRunner, attempts int, delay time.Duration) (DevPRStatusResult, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	status, err := DevPRStatus(repo, issueNumber, runner)
+	if err != nil || !containsString(status.Blockers, "missing_linked_pr") || attempts == 1 {
+		return status, err
+	}
+	for attempt := 2; attempt <= attempts; attempt++ {
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+		next, err := DevPRStatus(repo, issueNumber, runner)
+		if err != nil {
+			return next, err
+		}
+		next.LookupAttempts = attempt
+		if !containsString(next.Blockers, "missing_linked_pr") {
+			return next, nil
+		}
+		status = next
+	}
+	return status, nil
 }
 
 func validateDevPRBinding(issueNumber int, pr prSummary) DevPRBinding {

@@ -1752,11 +1752,13 @@ func TestProjectsSyncJSON(t *testing.T) {
 			t.Fatalf("unexpected projects sync args config=%s dryRun=%t archiveClosed=%t", configPath, dryRun, archiveClosed)
 		}
 		return gira.ProjectsSyncReport{
-			Command: "projects sync",
-			DryRun:  true,
-			Project: gira.ProjectsSyncProject{Owner: "StatPan", Number: 7, Title: "Gira"},
-			Counts:  gira.ProjectsSyncCounts{Issues: 1, ProjectItemsAdd: 1},
-			Actions: []gira.ProjectsSyncAction{{Action: "project_item:add", Repo: "StatPan/gira", Issue: 180, Status: "planned"}},
+			Command:              "projects sync",
+			DryRun:               true,
+			Project:              gira.ProjectsSyncProject{Owner: "StatPan", Number: 7, Title: "Gira"},
+			Counts:               gira.ProjectsSyncCounts{Issues: 1, ProjectItemsAdd: 1, ViewSetupRequired: true},
+			Actions:              []gira.ProjectsSyncAction{{Action: "project_item:add", Repo: "StatPan/gira", Issue: 180, Status: "planned"}},
+			ManualActionRequired: true,
+			ManualActions:        []string{"In GitHub Project, create Board grouped by Status"},
 		}, nil
 	}
 
@@ -1765,7 +1767,7 @@ func TestProjectsSyncJSON(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"command": "projects sync"`, `"project_items_add": 1`, `"action": "project_item:add"`} {
+	for _, want := range []string{`"command": "projects sync"`, `"project_items_add": 1`, `"manual_action_required": true`, `"action": "project_item:add"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("projects sync JSON missing %q:\n%s", want, stdout.String())
 		}

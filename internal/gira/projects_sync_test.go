@@ -120,8 +120,46 @@ func TestBuildProjectsSyncReportApplyIsIdempotentForExistingItems(t *testing.T) 
 	if len(report.Actions) != 0 || report.Counts.ProjectItemsSkip != 1 {
 		t.Fatalf("report = %+v", report)
 	}
+	if !report.ManualActionRequired || len(report.ManualActions) != 1 || !report.Counts.ViewSetupRequired {
+		t.Fatalf("manual view setup should be machine-readable: %+v", report)
+	}
+	if !strings.Contains(FormatProjectsSyncReport(report), "data sync: complete; manual action required") {
+		t.Fatalf("formatted report should separate sync completion from manual view setup:\n%s", FormatProjectsSyncReport(report))
+	}
 	if len(client.linkedApplied) != 0 || len(client.added) != 0 || len(client.updated) != 0 {
 		t.Fatalf("apply should not mutate existing synced item: %+v", client)
+	}
+}
+
+func TestBuildProjectsSyncReportManualViewOnlyNextStepSkipsApply(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "In Progress": "progress", "Done": "done"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues: map[string][]ProjectsSyncIssue{
+			"StatPan/gira": {{Repo: "StatPan/gira", Number: 180, Title: "Ready", URL: "https://github.com/StatPan/gira/issues/180", Labels: []string{"status:ready"}}},
+		},
+		items: []ProjectsSyncItem{{ID: "item-180", Repo: "StatPan/gira", Number: 180, Status: "Todo"}},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, true, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if len(report.Actions) != 0 || len(report.NextSteps) != 1 || strings.Contains(report.NextSteps[0], "projects sync") {
+		t.Fatalf("manual-only sync should not ask for another apply: %+v", report)
+	}
+	if !report.ManualActionRequired || len(report.ManualActions) != 1 {
+		t.Fatalf("manual-only sync should expose manual action fields: %+v", report)
 	}
 }
 

@@ -2828,6 +2828,74 @@ func TestTicketFinishDryRunJSON(t *testing.T) {
 	}
 }
 
+func TestFormatTicketPRCoversPlannedCreatedReusedAndDraft(t *testing.T) {
+	cases := []struct {
+		name   string
+		result gira.WorkPRResult
+		wants  []string
+	}{
+		{
+			name:   "planned draft dry-run",
+			result: gira.WorkPRResult{Issue: 10, DryRun: true, Draft: true, NextStatus: "In review", BranchPush: "planned"},
+			wants:  []string{"ticket #10", "pr=(planned)", "planned", "branch_push=planned", "next step: gira ticket pr --apply --draft"},
+		},
+		{
+			name:   "created",
+			result: gira.WorkPRResult{Issue: 11, PRURL: "https://github.com/StatPan/gira/pull/12", Created: true, NextStatus: "In review", BranchPush: "applied"},
+			wants:  []string{"pr=https://github.com/StatPan/gira/pull/12", "created", "branch_push=applied", "next step: gira ticket status"},
+		},
+		{
+			name:   "reused draft",
+			result: gira.WorkPRResult{Issue: 12, PRURL: "https://github.com/StatPan/gira/pull/13", Draft: true, NextStatus: "In progress", BranchPush: "skipped"},
+			wants:  []string{"reused", "next step: mark the PR ready, then gira ticket status"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			output := formatTicketPR(tc.result)
+			for _, want := range tc.wants {
+				if !strings.Contains(output, want) {
+					t.Fatalf("formatTicketPR missing %q:\n%s", want, output)
+				}
+			}
+			if tc.result.BranchPush == "skipped" && strings.Contains(output, "branch_push=") {
+				t.Fatalf("formatTicketPR should hide skipped branch push:\n%s", output)
+			}
+		})
+	}
+}
+
+func TestFormatTicketFinishCoversBlockersActionsAndFallbacks(t *testing.T) {
+	cases := []struct {
+		name   string
+		result gira.WorkFinishResult
+		wants  []string
+	}{
+		{
+			name:   "blocked with actions",
+			result: gira.WorkFinishResult{Issue: 21, PRNumber: 22, Blockers: []string{"checks", "review"}, Actions: []gira.WorkFinishAction{{Action: "linked_pr:inspect", Status: "done"}, {Action: "pr:merge", Status: "blocked"}}, NextStep: "resolve blockers"},
+			wants:  []string{"ticket #21", "pr=22", "merged=false", "blockers=checks,review", "actions=linked_pr:inspect:done,pr:merge:blocked", "next step: resolve blockers"},
+		},
+		{
+			name:   "done without blockers or actions",
+			result: gira.WorkFinishResult{Issue: 23, PRNumber: 24, Merged: true, NextStep: "ticket is done"},
+			wants:  []string{"merged=true", "blockers=none", "actions=none", "next step: ticket is done"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			output := formatTicketFinish(tc.result)
+			for _, want := range tc.wants {
+				if !strings.Contains(output, want) {
+					t.Fatalf("formatTicketFinish missing %q:\n%s", want, output)
+				}
+			}
+		})
+	}
+}
+
 func TestTicketStatusInfersTicketFromCurrentPR(t *testing.T) {
 	restoreWork := newWorkStatusResult
 	restoreRepo := repoContextRunner
@@ -4343,7 +4411,7 @@ func (c cliFakeStatusClient) JSON(args []string, target any) error {
 
 func cliStatusResponses(repo string) map[string]string {
 	return map[string]string{
-		"api repos/" + repo + "/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                         `[[{"number":1,"title":"MVP","state":"open","description":"","due_on":null,"open_issues":1,"closed_issues":1}]]`,
+		"api repos/" + repo + "/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                              `[[{"number":1,"title":"MVP","state":"open","description":"","due_on":null,"open_issues":1,"closed_issues":1}]]`,
 		"issue list --repo " + repo + " --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url,body": `[{"number":1,"title":"Issue 1","state":"OPEN","labels":[],"milestone":{"title":"MVP"},"updatedAt":"2026-04-25T12:00:00Z","url":"https://github.com/` + repo + `/issues/1"}]`,
 	}
 }

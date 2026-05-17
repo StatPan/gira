@@ -5524,6 +5524,119 @@ func TestReviewGateDefaultDoesNotRunLocalChecks(t *testing.T) {
 	}
 }
 
+func TestReviewQueueJSONUsesInjectedClient(t *testing.T) {
+	restore := newReviewGateClient
+	t.Cleanup(func() { newReviewGateClient = restore })
+	newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
+		if repo.FullName() != "StatPan/gira" {
+			t.Fatalf("review queue repo = %s", repo.FullName())
+		}
+		return weeklyReviewClient{repo: repo, prs: []gira.ReviewPR{
+			{Number: 31, Title: "Needs review", Body: "Fixes #30", ReviewDecision: "", CheckStatus: "passing", RequestedReviewers: []string{"alice"}, UpdatedAt: "2026-04-01T00:00:00Z"},
+		}}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"review", "queue", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{`"repo": "StatPan/gira"`, `"number": 31`, `"route_to": "alice"`, `"missing_approval"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("review queue JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestMergeQueueRequiresMode(t *testing.T) {
+	for _, args := range [][]string{
+		{"merge", "queue", "--repo", "StatPan/gira"},
+		{"merge", "queue", "--repo", "StatPan/gira", "--dry-run", "--apply"},
+		{"merge", "queue", "--dry-run"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := Run(args, &stdout, &stderr)
+		if code != 2 {
+			t.Fatalf("Run(%v) exit code=%d, want 2", args, code)
+		}
+		if !strings.Contains(stderr.String(), "--repo and exactly one of --dry-run/--apply are required") {
+			t.Fatalf("Run(%v) stderr missing mode guidance:\n%s", args, stderr.String())
+		}
+	}
+}
+
+func TestMergeQueueDryRunJSONDoesNotMerge(t *testing.T) {
+	restore := newReviewGateClient
+	t.Cleanup(func() { newReviewGateClient = restore })
+	merged := []int{}
+	newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
+		return weeklyReviewClient{repo: repo, merged: &merged, prs: []gira.ReviewPR{
+			{Number: 40, Title: "Ready", Body: "Closes #40", ReviewDecision: "APPROVED", CheckStatus: "passing", UpdatedAt: "2026-05-01T00:00:00Z"},
+			{Number: 41, Title: "Blocked", Body: "", ReviewDecision: "", CheckStatus: "failing", UpdatedAt: "2026-05-01T00:00:00Z"},
+		}}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"merge", "queue", "--repo", "StatPan/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if len(merged) != 0 {
+		t.Fatalf("dry-run should not merge, got %v", merged)
+	}
+	for _, want := range []string{`"mode": "dry-run"`, `"number": 40`, `"candidates"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("merge queue dry-run JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestMergeQueueApplyJSONMergesCandidates(t *testing.T) {
+	restore := newReviewGateClient
+	t.Cleanup(func() { newReviewGateClient = restore })
+	merged := []int{}
+	newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
+		return weeklyReviewClient{repo: repo, merged: &merged, prs: []gira.ReviewPR{
+			{Number: 42, Title: "Ready", Body: "Resolves #42", ReviewDecision: "APPROVED", CheckStatus: "passing", UpdatedAt: "2026-05-01T00:00:00Z"},
+		}}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"merge", "queue", "--repo", "StatPan/gira", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if len(merged) != 1 || merged[0] != 42 {
+		t.Fatalf("apply should merge PR 42, got %v", merged)
+	}
+	if !strings.Contains(stdout.String(), `"mode": "apply"`) || !strings.Contains(stdout.String(), `"merged"`) || !strings.Contains(stdout.String(), "42") {
+		t.Fatalf("merge queue apply JSON missing merge evidence:\n%s", stdout.String())
+	}
+}
+
+func TestReleaseReadinessJSON(t *testing.T) {
+	restore := newReviewGateClient
+	t.Cleanup(func() { newReviewGateClient = restore })
+	newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
+		return weeklyReviewClient{
+			repo:   repo,
+			prs:    []gira.ReviewPR{{Number: 50, Title: "Needs approval", Body: "Fixes #60", ReviewDecision: "", CheckStatus: "passing", UpdatedAt: "2026-05-01T00:00:00Z"}},
+			issues: []gira.ReviewIssue{{Number: 60, Labels: []string{"blocker"}}, {Number: 61, Labels: []string{"must-fix"}}},
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"release", "readiness", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{`"ready": false`, `"open_blocker_issues"`, `"open_must_fix_issues"`, `"missing_approval"`, `"blocker_taxonomy"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("release readiness JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 type weeklyDashClient struct {
 	repo   gira.RepoRef
 	issues []gira.DashboardRawIssue
@@ -5549,9 +5662,15 @@ type weeklyReviewClient struct {
 	repo   gira.RepoRef
 	prs    []gira.ReviewPR
 	issues []gira.ReviewIssue
+	merged *[]int
 }
 
 func (c weeklyReviewClient) Repo() gira.RepoRef                          { return c.repo }
 func (c weeklyReviewClient) ListOpenPRs() ([]gira.ReviewPR, error)       { return c.prs, nil }
 func (c weeklyReviewClient) ListOpenIssues() ([]gira.ReviewIssue, error) { return c.issues, nil }
-func (c weeklyReviewClient) MergePR(number int) error                    { return nil }
+func (c weeklyReviewClient) MergePR(number int) error {
+	if c.merged != nil {
+		*c.merged = append(*c.merged, number)
+	}
+	return nil
+}

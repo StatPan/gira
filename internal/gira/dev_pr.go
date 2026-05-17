@@ -151,9 +151,17 @@ func DevPRStatusWithMissingPRRetry(repo RepoRef, issueNumber int, runner Command
 		attempts = 1
 	}
 	status, err := DevPRStatus(repo, issueNumber, runner)
+	return retryDevPRStatusAfterMissing(repo, issueNumber, runner, status, attempts, delay, err)
+}
+
+func retryDevPRStatusAfterMissing(repo RepoRef, issueNumber int, runner CommandRunner, status DevPRStatusResult, attempts int, delay time.Duration, err error) (DevPRStatusResult, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
 	if err != nil || !containsString(status.Blockers, "missing_linked_pr") || attempts == 1 {
 		return status, err
 	}
+	status.LookupAttempts = 1
 	for attempt := 2; attempt <= attempts; attempt++ {
 		if delay > 0 {
 			time.Sleep(delay)

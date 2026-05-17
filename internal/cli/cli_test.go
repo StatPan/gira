@@ -2407,6 +2407,36 @@ func TestEpicListAddsTypeEpicFilter(t *testing.T) {
 	}
 }
 
+func TestEpicListJSONUsesEpicCommandAndLabels(t *testing.T) {
+	restore := newTicketListReport
+	t.Cleanup(func() { newTicketListReport = restore })
+	newTicketListReport = func(options gira.TicketListOptions) (gira.TicketListReport, error) {
+		if strings.Join(options.Labels, "|") != "type:epic|area:docs" {
+			t.Fatalf("unexpected epic labels: %+v", options.Labels)
+		}
+		return gira.TicketListReport{
+			Command: "ticket list",
+			Repo:    options.Repo.FullName(),
+			Filters: gira.TicketListFilters{State: options.State, Labels: options.Labels, Limit: options.Limit},
+			Counts:  gira.TicketListCounts{Tickets: 1},
+			Tickets: []gira.TicketListItem{{Number: 88, State: "open", Title: "Platform epic", Labels: []string{"type:epic", "area:docs"}}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"epic", "list", "--repo", "StatPan/gira", "--label", "area:docs", "--limit", "5", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.TicketListReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode epic list JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Command != "epic list" || strings.Join(report.Filters.Labels, "|") != "type:epic|area:docs" || report.Counts.Tickets != 1 {
+		t.Fatalf("unexpected epic list report: %+v", report)
+	}
+}
+
 func TestEpicStatusHumanOutput(t *testing.T) {
 	restore := newEpicStatusReport
 	t.Cleanup(func() { newEpicStatusReport = restore })
@@ -2431,6 +2461,35 @@ func TestEpicStatusHumanOutput(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("epic status output missing %q:\n%s", want, stdout.String())
 		}
+	}
+}
+
+func TestEpicStatusJSONShortensNextStep(t *testing.T) {
+	restore := newEpicStatusReport
+	t.Cleanup(func() { newEpicStatusReport = restore })
+	newEpicStatusReport = func(input gira.EpicInput) (gira.EpicReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 207 {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		return gira.EpicReport{
+			Repo:       input.Repo.FullName(),
+			Epic:       gira.EpicIssue{Number: 207, Title: "[Epic] Public docs", State: "open", Slug: "epic-public-docs"},
+			ChildCount: gira.EpicChildCount{Total: 1, Closed: 1},
+			NextStep:   "gira epic finish --repo StatPan/gira --ticket 207 --dry-run",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"epic", "status", "--ticket", "207", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.EpicReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode epic status JSON: %v\n%s", err, stdout.String())
+	}
+	if report.NextStep != "gira epic finish --dry-run" {
+		t.Fatalf("next step = %q, want shortened epic finish", report.NextStep)
 	}
 }
 
@@ -2459,6 +2518,42 @@ func TestEpicFinishJSON(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"number": 207`) || !strings.Contains(stdout.String(), `"action": "epic:close"`) {
 		t.Fatalf("epic finish JSON missing expected fields:\n%s", stdout.String())
+	}
+}
+
+func TestEpicFinishHumanOutputShortensNextStep(t *testing.T) {
+	restore := newEpicFinishReport
+	t.Cleanup(func() { newEpicFinishReport = restore })
+	newEpicFinishReport = func(input gira.EpicInput) (gira.EpicReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 207 || !input.DryRun {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		return gira.EpicReport{
+			Repo:       input.Repo.FullName(),
+			Epic:       gira.EpicIssue{Number: 207, Title: "[Epic] Public docs", State: "open"},
+			DryRun:     true,
+			ChildCount: gira.EpicChildCount{Total: 2, Closed: 2},
+			Actions: []gira.EpicAction{
+				{Action: "epic:close", Status: "planned", Detail: "close epic #207"},
+			},
+			NextStep: "gira epic finish --repo StatPan/gira --ticket 207 --apply",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"epic", "finish", "--ticket", "207", "--repo", "StatPan/gira", "--dry-run"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"epic status: epic #207",
+		"actions:",
+		"epic:close:planned",
+		"next step: gira epic finish --apply",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("epic finish output missing %q:\n%s", want, stdout.String())
+		}
 	}
 }
 
@@ -2622,6 +2717,33 @@ func TestWorkStartDryRunJSON(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "next step:") {
 		t.Fatalf("JSON stdout contains human prose:\n%s", stdout.String())
+	}
+}
+
+func TestWorkStartDryRunJSONPreservesWorkNextStep(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 || !dryRun {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t", repo.FullName(), issue, dryRun)
+		}
+		return gira.WorkStartResult{
+			Repo:       repo.FullName(),
+			Issue:      issue,
+			Branch:     "issue-126-work-command",
+			DryRun:     true,
+			NextStatus: "In progress",
+			NextStep:   "gira work start --repo StatPan/gira --issue 126 --apply",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"work", "start", "--repo", "StatPan/gira", "--issue", "126", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"next_step": "gira work start --repo StatPan/gira --issue 126 --apply"`) {
+		t.Fatalf("work start JSON should preserve legacy work next step:\n%s", stdout.String())
 	}
 }
 
@@ -3205,6 +3327,31 @@ func TestWorkStatusJSON(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"next_action": "mark_pr_ready"`) {
 		t.Fatalf("stdout missing next action JSON:\n%s", stdout.String())
+	}
+}
+
+func TestWorkStatusHumanOutputUsesWorkNextStep(t *testing.T) {
+	restore := newWorkStatusResult
+	t.Cleanup(func() { newWorkStatusResult = restore })
+	newWorkStatusResult = func(repo gira.RepoRef, issue int) (gira.WorkStatusResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 {
+			t.Fatalf("unexpected args repo=%s issue=%d", repo.FullName(), issue)
+		}
+		return gira.WorkStatusResult{Repo: repo.FullName(), Issue: issue, Status: "Ready", NextAction: "start_work"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"work", "status", "--repo", "StatPan/gira", "--issue", "126"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"work status: issue #126",
+		"next step: gira work start --repo StatPan/gira --issue 126 --apply",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("work status output missing %q:\n%s", want, stdout.String())
+		}
 	}
 }
 

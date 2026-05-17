@@ -5264,6 +5264,7 @@ func TestAuditReadinessJSONUsesInjectedReportAndExitCode(t *testing.T) {
 		return gira.AuditReadinessReport{
 			Repo:      "StatPan/gira",
 			Command:   "audit readiness",
+			Mode:      gira.AuditReadinessModeDailyOperation,
 			Ready:     false,
 			CheckedAt: "2026-05-08T12:00:00Z",
 			Doctor: gira.DoctorReport{
@@ -5292,7 +5293,7 @@ func TestAuditReadinessJSONUsesInjectedReportAndExitCode(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"repo": "StatPan/gira"`, `"command": "audit readiness"`, `"ready": false`, `"checked_at": "2026-05-08T12:00:00Z"`, `"audit": {`, `"next_step": "fix audit ledger corruption`} {
+	for _, want := range []string{`"repo": "StatPan/gira"`, `"command": "audit readiness"`, `"mode": "daily_operation"`, `"ready": false`, `"checked_at": "2026-05-08T12:00:00Z"`, `"audit": {`, `"next_step": "fix audit ledger corruption`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("audit readiness JSON missing %q:\n%s", want, stdout.String())
 		}
@@ -5306,6 +5307,7 @@ func TestAuditReadinessHumanUsesInjectedReport(t *testing.T) {
 		return gira.AuditReadinessReport{
 			Repo:      repo.FullName(),
 			Command:   "audit readiness",
+			Mode:      gira.AuditReadinessModeNoOpenWork,
 			Ready:     true,
 			CheckedAt: "2026-05-08T12:00:00Z",
 			Doctor: gira.DoctorReport{
@@ -5333,7 +5335,7 @@ func TestAuditReadinessHumanUsesInjectedReport(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{"readiness/doctor checks:", "audit ledger health:", "[warn] audit_ledger"} {
+	for _, want := range []string{"mode: no_open_work", "readiness/doctor checks:", "audit ledger health:", "[warn] audit_ledger"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("audit readiness output missing %q:\n%s", want, stdout.String())
 		}

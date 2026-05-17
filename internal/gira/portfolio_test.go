@@ -171,6 +171,39 @@ func TestBuildPortfolioPlanReportJSONShape(t *testing.T) {
 	}
 }
 
+func TestBuildPortfolioValidateReportReportsInvalidRoutingAndMissingTargets(t *testing.T) {
+	client := fakePortfolioClient{
+		repo: mustRepoRefForPortfolio("StatPan/portfolio"),
+		tickets: []PortfolioRawTicket{
+			{Number: 41, Title: "Invalid routing", State: "open", Body: portfolioBody("handoff", "StatPan/gira", "")},
+			{Number: 42, Title: "Missing target", State: "open", Body: portfolioBody("single_repo", "", "")},
+			{Number: 43, Title: "Unknown target", State: "open", Body: portfolioBody("single_repo", "StatPan/missing", "")},
+		},
+	}
+
+	report, err := BuildPortfolioValidateReport(client, []RepoRef{mustRepoRefForPortfolio("StatPan/gira")}, portfolioNowFixture)
+	if err != nil {
+		t.Fatalf("BuildPortfolioValidateReport error: %v", err)
+	}
+	if report.Command != "portfolio validate" || report.Counts.Blocked != 3 || report.Counts.Diagnostics != 3 {
+		t.Fatalf("report = %+v, want three blocked diagnostics", report)
+	}
+	details := []string{}
+	for _, diagnostic := range report.Diagnostics {
+		details = append(details, diagnostic.RuleID+":"+diagnostic.Detail)
+	}
+	joined := strings.Join(details, "\n")
+	for _, want := range []string{
+		"invalid_routing:routing must be one of unrouted, single_repo, multi_repo, deferred",
+		"missing_required_field:target_repos is required for execution routing",
+		"invalid_target_repo:StatPan/missing is not in portfolio.repos",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("diagnostics missing %q:\n%s", want, joined)
+		}
+	}
+}
+
 func TestPortfolioCountsClassifyOperatorFlow(t *testing.T) {
 	repos := []RepoRef{mustRepoRefForPortfolio("StatPan/gira"), mustRepoRefForPortfolio("StatPan/docs")}
 	tickets, diagnostics := ParsePortfolioTickets([]PortfolioRawTicket{

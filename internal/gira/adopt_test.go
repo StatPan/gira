@@ -175,6 +175,9 @@ func TestBuildAdoptRepoReportQuotesDynamicNextStepPath(t *testing.T) {
 	if !strings.Contains(report.NextStep, "--path '"+dir+"'") {
 		t.Fatalf("next step did not quote path:\n%s", report.NextStep)
 	}
+	if !strings.Contains(report.WorkspaceStep, "--path '"+dir+"'") {
+		t.Fatalf("workspace step did not quote path:\n%s", report.WorkspaceStep)
+	}
 }
 
 func TestBuildAdoptRepoReportApplyMergeWritesConfigAndManagedBlock(t *testing.T) {
@@ -192,6 +195,9 @@ func TestBuildAdoptRepoReportApplyMergeWritesConfigAndManagedBlock(t *testing.T)
 	if report.Counts.AppliedActions != 2 {
 		t.Fatalf("applied actions = %d, want 2: %+v", report.Counts.AppliedActions, report.Actions)
 	}
+	if report.ConfigScope != "repo-local" || report.WorkspaceReady {
+		t.Fatalf("adopt repo should report repo-local, not workspace-ready config: %+v", report)
+	}
 	config := readText(t, filepath.Join(dir, ".gira", "config.yaml"))
 	if !strings.Contains(config, "repo: StatPan/gira") || !strings.Contains(config, "profiles:") {
 		t.Fatalf("config missing contract fields:\n%s", config)
@@ -199,6 +205,15 @@ func TestBuildAdoptRepoReportApplyMergeWritesConfigAndManagedBlock(t *testing.T)
 	agents := readText(t, filepath.Join(dir, "AGENTS.md"))
 	if !strings.Contains(agents, "# Custom") || !strings.Contains(agents, "<!-- gira:start -->") || !strings.Contains(agents, "gira ticket finish") {
 		t.Fatalf("AGENTS managed block not inserted safely:\n%s", agents)
+	}
+	output := FormatAdoptRepoReport(report)
+	for _, want := range []string{
+		"config: scope=repo-local workspace_ready=false",
+		"workspace next step: choose an inbox repo, then run: gira workspace init --inbox-repo StatPan/backlog --repo StatPan/gira --path",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("formatted report missing %q:\n%s", want, output)
+		}
 	}
 }
 

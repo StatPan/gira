@@ -33,12 +33,15 @@ type AdoptRepoReport struct {
 	Apply          bool                 `json:"apply"`
 	Strategy       string               `json:"strategy"`
 	Recommendation string               `json:"recommendation"`
+	ConfigScope    string               `json:"config_scope"`
+	WorkspaceReady bool                 `json:"workspace_ready"`
 	Counts         AdoptRepoCounts      `json:"counts"`
 	Local          AdoptRepoLocalState  `json:"local"`
 	GitHub         AdoptRepoGitHubState `json:"github"`
 	Actions        []AdoptRepoAction    `json:"actions,omitempty"`
 	Warnings       []string             `json:"warnings,omitempty"`
 	NextStep       string               `json:"next_step"`
+	WorkspaceStep  string               `json:"workspace_step,omitempty"`
 }
 
 type AdoptRepoCounts struct {
@@ -107,6 +110,8 @@ func BuildAdoptRepoReport(input AdoptRepoInput, runner CommandRunner) (AdoptRepo
 		Apply:          input.Apply,
 		Strategy:       string(strategy),
 		Recommendation: string(AdoptRepoStrategyMerge),
+		ConfigScope:    "repo-local",
+		WorkspaceReady: false,
 		Local:          inspectAdoptRepoLocal(absPath),
 	}
 
@@ -166,6 +171,7 @@ func BuildAdoptRepoReport(input AdoptRepoInput, runner CommandRunner) (AdoptRepo
 		}
 	}
 	report.NextStep = adoptRepoNextStep(report)
+	report.WorkspaceStep = adoptRepoWorkspaceStep(report)
 	return report, nil
 }
 
@@ -377,6 +383,15 @@ func adoptRepoNextStep(report AdoptRepoReport) string {
 	return fmt.Sprintf("gira ops sync --repo %s --dry-run", QuoteShellArg(report.Repo))
 }
 
+func adoptRepoWorkspaceStep(report AdoptRepoReport) string {
+	owner := "OWNER"
+	if repo, err := ParseRepoRef(report.Repo); err == nil {
+		owner = repo.Owner
+	}
+	inboxRepo := owner + "/backlog"
+	return fmt.Sprintf("choose an inbox repo, then run: gira workspace init --inbox-repo %s --repo %s --path %s --dry-run", QuoteShellArg(inboxRepo), QuoteShellArg(report.Repo), QuoteShellArg(report.Path))
+}
+
 func FormatAdoptRepoReport(report AdoptRepoReport) string {
 	var b strings.Builder
 	mode := "dry-run"
@@ -384,6 +399,7 @@ func FormatAdoptRepoReport(report AdoptRepoReport) string {
 		mode = "applied"
 	}
 	fmt.Fprintf(&b, "adopt repo: %s repo=%s strategy=%s recommendation=%s\n", mode, report.Repo, report.Strategy, report.Recommendation)
+	fmt.Fprintf(&b, "config: scope=%s workspace_ready=%t\n", report.ConfigScope, report.WorkspaceReady)
 	fmt.Fprintf(&b, "local: config=%t agents=%t agents_block=%s pr_template=%t issue_templates=%d\n", report.Local.ConfigExists, report.Local.AgentsExists, report.Local.AgentsManagedBlock, report.Local.PRTemplateExists, report.Local.IssueTemplateCount)
 	fmt.Fprintf(&b, "github: labels=%d milestones=%d open_issues=%d unmapped_issues=%d projects=%d\n", report.Counts.Labels, report.Counts.Milestones, report.Counts.OpenIssues, report.Counts.UnmappedIssues, report.Counts.Projects)
 	for _, warning := range report.Warnings {
@@ -403,6 +419,9 @@ func FormatAdoptRepoReport(report AdoptRepoReport) string {
 	}
 	if report.NextStep != "" {
 		fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
+	}
+	if report.WorkspaceStep != "" && !report.WorkspaceReady {
+		fmt.Fprintf(&b, "workspace next step: %s\n", report.WorkspaceStep)
 	}
 	return b.String()
 }

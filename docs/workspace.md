@@ -79,6 +79,14 @@ gira workspace init --scope repo --inbox-repo OWNER/backlog --repo OWNER/app --p
 
 Repo scope writes `.gira/config.yaml` in the checkout. Global scope writes
 `~/.config/gira/workspaces/NAME.yaml` and leaves the repository untouched.
+If `.gira/config.yaml` already exists as a repo-local contract without a
+`workspace:` block, use explicit merge mode to add only workspace fields while
+preserving the existing repo contract:
+
+```bash
+gira workspace init --scope repo --inbox-repo OWNER/backlog --repo OWNER/app --path . --merge --dry-run
+gira workspace init --scope repo --inbox-repo OWNER/backlog --repo OWNER/app --path . --merge --apply
+```
 
 `workspace.project` points to an existing GitHub Projects v2 board by user-facing title or Project number. The Project may be owned by a user profile or org and still act as a repo board when it is linked to configured repos and populated with repo issues. Gira does not create the Project in this slice; it syncs configured repo issues, supported planning fields, status, and milestone target dates into that Project so the GitHub Projects tab stays visible without manual `gh project` commands. `number` is supported as the fallback when titles are ambiguous.
 

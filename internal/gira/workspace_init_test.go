@@ -148,6 +148,89 @@ func TestBuildWorkspaceInitReportApplyWritesConfig(t *testing.T) {
 	}
 }
 
+func TestBuildWorkspaceInitReportMergeDryRunShowsWorkspaceBlock(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".gira", "config.yaml")
+	writeTestFile(t, configPath, "repo: StatPan/gira\nprofiles:\n  default:\n    labels:\n      - type:task\n")
+
+	report, err := BuildWorkspaceInitReport(WorkspaceInitInput{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: "StatPan/backlog",
+		Repos:     []string{"StatPan/gira"},
+		Path:      dir,
+		Merge:     true,
+		DryRun:    true,
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkspaceInitReport error: %v", err)
+	}
+	if !report.Merge || report.Merged || report.Applied {
+		t.Fatalf("unexpected merge dry-run report: %+v", report)
+	}
+	for _, want := range []string{"workspace:", "inbox_repo: StatPan/backlog", "profiles:", "- type:task"} {
+		if !strings.Contains(report.Content, want) {
+			t.Fatalf("merged content missing %q:\n%s", want, report.Content)
+		}
+	}
+	output := FormatWorkspaceInitReport(report)
+	if !strings.Contains(output, "workspace block:\nworkspace:") || !strings.Contains(output, "config:\nrepo: StatPan/gira") {
+		t.Fatalf("formatted merge dry-run missing block/config:\n%s", output)
+	}
+	if got := readText(t, configPath); strings.Contains(got, "workspace:") {
+		t.Fatalf("dry-run changed config:\n%s", got)
+	}
+}
+
+func TestBuildWorkspaceInitReportMergeApplyPreservesRepoContract(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".gira", "config.yaml")
+	writeTestFile(t, configPath, "repo: StatPan/gira\nprofiles:\n  default:\n    labels:\n      - type:task\n")
+
+	report, err := BuildWorkspaceInitReport(WorkspaceInitInput{
+		InboxRepo: "StatPan/backlog",
+		Repos:     []string{"StatPan/gira"},
+		Path:      dir,
+		Merge:     true,
+		Apply:     true,
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkspaceInitReport error: %v", err)
+	}
+	if !report.Merged || !report.Applied || report.Created || report.Overwritten {
+		t.Fatalf("unexpected merge apply report: %+v", report)
+	}
+	config := readText(t, configPath)
+	for _, want := range []string{"repo: StatPan/gira", "workspace:", "inbox_repo: StatPan/backlog", "profiles:", "- type:task"} {
+		if !strings.Contains(config, want) {
+			t.Fatalf("merged config missing %q:\n%s", want, config)
+		}
+	}
+	resolved, err := ResolveWorkspaceConfig(configPath)
+	if err != nil {
+		t.Fatalf("ResolveWorkspaceConfig error: %v", err)
+	}
+	if resolved.InboxRepo.FullName() != "StatPan/backlog" || len(resolved.Repos) != 1 {
+		t.Fatalf("resolved = %+v", resolved)
+	}
+}
+
+func TestBuildWorkspaceInitReportMergeRejectsExistingWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, ".gira", "config.yaml"), "repo: StatPan/gira\nworkspace:\n  inbox_repo: StatPan/backlog\n  repos:\n    - StatPan/gira\nprofiles:\n  default:\n    labels: []\n")
+
+	_, err := BuildWorkspaceInitReport(WorkspaceInitInput{
+		InboxRepo: "StatPan/other",
+		Repos:     []string{"StatPan/other"},
+		Path:      dir,
+		Merge:     true,
+		Apply:     true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "already has workspace fields") {
+		t.Fatalf("expected existing workspace conflict, got %v", err)
+	}
+}
+
 func TestBuildWorkspaceInitReportGlobalDryRun(t *testing.T) {
 	root := t.TempDir()
 	report, err := BuildWorkspaceInitReport(WorkspaceInitInput{

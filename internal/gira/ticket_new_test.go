@@ -200,6 +200,36 @@ func TestTicketNewDryRunPreflightsMissingLabels(t *testing.T) {
 	}
 }
 
+func TestTicketNewMissingTypeLabelSuggestsManagedCandidates(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &ticketNewRunner{outputs: ticketNewLabelOutputs("type:task", "type:story", "type:bug", "status:ready")}
+
+	_, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add feature", Type: "task", Labels: []string{"type:feature"}, DryRun: true}, runner)
+	if err == nil {
+		t.Fatal("expected missing feature label error")
+	}
+	for _, want := range []string{"missing repo labels: type:feature", "candidates:", "type:task", "type:story", "type:bug"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+}
+
+func TestTicketNewMissingAreaLabelSuggestsManagedCandidates(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &ticketNewRunner{outputs: ticketNewLabelOutputs("type:task", "status:ready", "area:backend", "area:docs")}
+
+	_, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add CLI", Type: "task", Labels: []string{"area:cli"}, DryRun: true}, runner)
+	if err == nil {
+		t.Fatal("expected missing area label error")
+	}
+	for _, want := range []string{"missing repo labels: area:cli", "candidates:", "area:backend", "area:docs"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+}
+
 func TestTicketNewApplyPreflightStopsBeforeIssueCreate(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &ticketNewRunner{outputs: ticketNewLabelOutputs("type:task")}

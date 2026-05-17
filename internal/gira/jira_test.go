@@ -1,7 +1,9 @@
 package gira
 
 import (
+	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,6 +48,83 @@ func TestParseJiraImportCSVMapsFieldsAndLabels(t *testing.T) {
 	}
 	if body := JiraIssueBody(item); !strings.Contains(body, "Jira-Key: GIRA-7") || !strings.Contains(body, "Jira-Status: In Progress") {
 		t.Fatalf("body missing Jira metadata:\n%s", body)
+	}
+}
+
+func TestParseJiraImportJSONSupportsDirectAndWrappedPayloads(t *testing.T) {
+	direct, err := ParseJiraImportJSON([]byte(`[{"key":"gira-8","summary":"Direct","description":" Body ","status":"Done","priority":"High","assignee":"alice","labels":["migration","backend","migration"]}]`))
+	if err != nil {
+		t.Fatalf("ParseJiraImportJSON direct error: %v", err)
+	}
+	if len(direct) != 1 || direct[0].Key != "GIRA-8" || direct[0].Description != "Body" || strings.Join(direct[0].Labels, ",") != "backend,migration" {
+		t.Fatalf("unexpected direct JSON items: %+v", direct)
+	}
+
+	wrapped, err := ParseJiraImportJSON([]byte(`{"issues":[{"key":"GIRA-9","summary":"Wrapped","labels":["api"]}]}`))
+	if err != nil {
+		t.Fatalf("ParseJiraImportJSON wrapped error: %v", err)
+	}
+	if len(wrapped) != 1 || wrapped[0].Key != "GIRA-9" || wrapped[0].Summary != "Wrapped" {
+		t.Fatalf("unexpected wrapped JSON items: %+v", wrapped)
+	}
+}
+
+func TestJiraImportParsersRejectMalformedInput(t *testing.T) {
+	if _, err := ParseJiraImportCSV([]byte("key,summary\n\"GIRA-1,Missing quote\n")); err == nil {
+		t.Fatal("expected malformed CSV error")
+	}
+	if _, err := ParseJiraImportJSON([]byte(`{"issues":[`)); err == nil || !strings.Contains(err.Error(), "parse Jira import JSON") {
+		t.Fatalf("expected malformed JSON error, got %v", err)
+	}
+	if _, err := ParseJiraImportJSON([]byte(`[{"key":"GIRA-1"}]`)); err == nil || !strings.Contains(err.Error(), "summary is required") {
+		t.Fatalf("expected missing summary error, got %v", err)
+	}
+}
+
+func TestParseJiraAPISearchExtractsADFTextAndFallbackAssignee(t *testing.T) {
+	items, page, err := parseJiraAPISearchPage([]byte(`{
+		"startAt": 0,
+		"maxResults": 50,
+		"total": 1,
+		"issues": [{
+			"key": "gira-10",
+			"fields": {
+				"summary": "API ADF",
+				"description": {
+					"type": "doc",
+					"content": [
+						{"type": "paragraph", "content": [{"type": "text", "text": "First paragraph"}]},
+						{"type": "bulletList", "content": [{"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Nested item"}]}]}]}
+					]
+				},
+				"status": {"name": "In Progress"},
+				"priority": {"name": "Medium"},
+				"assignee": {"accountId": "acct-1"},
+				"labels": ["api", "migration"]
+			}
+		}]
+	}`))
+	if err != nil {
+		t.Fatalf("parseJiraAPISearchPage error: %v", err)
+	}
+	if page.StartAt != 0 || page.MaxResults != 50 || page.Total != 1 {
+		t.Fatalf("unexpected page: %+v", page)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	item := items[0]
+	if item.Key != "GIRA-10" || item.Description != "First paragraph Nested item" || item.Assignee != "acct-1" {
+		t.Fatalf("unexpected API item: %+v", item)
+	}
+}
+
+func TestParseJiraAPISearchRejectsMalformedPages(t *testing.T) {
+	if _, _, err := parseJiraAPISearchPage([]byte(`{"issues":[`)); err == nil || !strings.Contains(err.Error(), "parse Jira API response") {
+		t.Fatalf("expected malformed API response error, got %v", err)
+	}
+	if _, _, err := parseJiraAPISearchPage([]byte(`{"issues":[{"key":"GIRA-10","fields":{}}]}`)); err == nil || !strings.Contains(err.Error(), "summary is required") {
+		t.Fatalf("expected missing summary error, got %v", err)
 	}
 }
 
@@ -338,6 +417,42 @@ func TestExportJiraIssuesWritesStableJSONAndCSV(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outputRoot, "issues.json")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRenderJiraExportCSVRoundTripsSpecialCharacters(t *testing.T) {
+	content, err := RenderJiraExportCSV([]JiraExportIssue{{
+		Number:   7,
+		Title:    "Needs, quoting",
+		Body:     "Line 1\nLine 2",
+		State:    "OPEN",
+		Status:   "in progress",
+		Priority: "high",
+		Assignee: "alice",
+		Labels:   []string{"jira:GIRA-7", "team,data"},
+		JiraKey:  "GIRA-7",
+		URL:      "https://github.com/StatPan/gira/issues/7",
+	}})
+	if err != nil {
+		t.Fatalf("RenderJiraExportCSV error: %v", err)
+	}
+	reader := csv.NewReader(strings.NewReader(string(content)))
+	header, err := reader.Read()
+	if err != nil {
+		t.Fatalf("read header: %v", err)
+	}
+	if strings.Join(header, ",") != strings.Join(jiraExportCSVHeaders, ",") {
+		t.Fatalf("header = %v", header)
+	}
+	row, err := reader.Read()
+	if err != nil {
+		t.Fatalf("read row: %v", err)
+	}
+	if row[1] != "Needs, quoting" || row[2] != "Line 1\nLine 2" || row[7] != "jira:GIRA-7,team,data" {
+		t.Fatalf("CSV row did not round-trip special characters: %v", row)
+	}
+	if _, err := reader.Read(); err != io.EOF {
+		t.Fatalf("expected EOF after one row, got %v", err)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 
 type workRunner struct {
 	outputs map[string][]byte
+	queues  map[string][][]byte
 	errs    map[string]error
 	delays  map[string]time.Duration
 	mu      sync.Mutex
@@ -22,6 +23,19 @@ func (r *workRunner) Run(name string, args ...string) ([]byte, error) {
 	r.calls = append(r.calls, key)
 	delay := r.delays[key]
 	err, hasErr := r.errs[key]
+	queue := r.queues[key]
+	if len(queue) > 0 {
+		out := queue[0]
+		r.queues[key] = queue[1:]
+		r.mu.Unlock()
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+		if hasErr {
+			return nil, err
+		}
+		return out, nil
+	}
 	out, hasOut := r.outputs[key]
 	r.mu.Unlock()
 	if delay > 0 {
@@ -415,6 +429,71 @@ func TestGetWorkStatusFetchesIssueAndPRConcurrently(t *testing.T) {
 	}
 }
 
+func TestGetWorkStatusRetriesTransientMissingLinkedPRForReviewStatus(t *testing.T) {
+	restoreDelay := workStatusMissingPRRetryDelay
+	workStatusMissingPRRetryDelay = 0
+	t.Cleanup(func() {
+		workStatusMissingPRRetryDelay = restoreDelay
+	})
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	prCall := "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20"
+	runner := &workRunner{
+		outputs: map[string][]byte{
+			"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-review"}]}`),
+		},
+		queues: map[string][][]byte{
+			prCall: {
+				[]byte(`[]`),
+				[]byte(`[{"number":203,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/203","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
+			},
+		},
+	}
+
+	result, err := GetWorkStatus(repo, 126, runner)
+	if err != nil {
+		t.Fatalf("GetWorkStatus error: %v", err)
+	}
+	if result.PRNumber != 203 || result.PRLookupAttempts != 2 || result.NextAction != "merge_when_policy_allows" {
+		t.Fatalf("unexpected retry status: %+v", result)
+	}
+	if got := countWorkCall(runner.calls, prCall); got != 2 {
+		t.Fatalf("expected one retry, got %d calls: %v", got, runner.calls)
+	}
+}
+
+func TestGetWorkStatusStopsRetryingMissingLinkedPR(t *testing.T) {
+	restoreDelay := workStatusMissingPRRetryDelay
+	workStatusMissingPRRetryDelay = 0
+	t.Cleanup(func() {
+		workStatusMissingPRRetryDelay = restoreDelay
+	})
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	prCall := "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20"
+	runner := &workRunner{
+		outputs: map[string][]byte{
+			"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-review"}]}`),
+		},
+		queues: map[string][][]byte{
+			prCall: {
+				[]byte(`[]`),
+				[]byte(`[]`),
+				[]byte(`[]`),
+			},
+		},
+	}
+
+	result, err := GetWorkStatus(repo, 126, runner)
+	if err != nil {
+		t.Fatalf("GetWorkStatus error: %v", err)
+	}
+	if result.PRLookupAttempts != 3 || !containsString(result.Blockers, "missing_linked_pr") {
+		t.Fatalf("expected bounded missing PR status: %+v", result)
+	}
+	if got := countWorkCall(runner.calls, prCall); got != 3 {
+		t.Fatalf("expected bounded retry count, got %d calls: %v", got, runner.calls)
+	}
+}
+
 func TestGetWorkStatusReadyWithoutPRSuggestsStartWork(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
@@ -429,6 +508,16 @@ func TestGetWorkStatusReadyWithoutPRSuggestsStartWork(t *testing.T) {
 	if result.NextAction != "start_work" {
 		t.Fatalf("next action = %q", result.NextAction)
 	}
+}
+
+func countWorkCall(calls []string, target string) int {
+	count := 0
+	for _, call := range calls {
+		if call == target {
+			count++
+		}
+	}
+	return count
 }
 
 func TestGetWorkStatusClosedIssueWithMergedPRReportsDone(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 )
 
 type WorkStartResult struct {
@@ -41,18 +42,22 @@ type WorkPRResult struct {
 }
 
 type WorkStatusResult struct {
-	Repo       string   `json:"repo"`
-	Issue      int      `json:"issue"`
-	Title      string   `json:"title"`
-	State      string   `json:"state"`
-	Status     string   `json:"status"`
-	PRNumber   int      `json:"pr_number,omitempty"`
-	PRURL      string   `json:"pr_url,omitempty"`
-	PRState    string   `json:"pr_state,omitempty"`
-	Blockers   []string `json:"blockers"`
-	NextAction string   `json:"next_action"`
-	NextStep   string   `json:"next_step"`
+	Repo             string   `json:"repo"`
+	Issue            int      `json:"issue"`
+	Title            string   `json:"title"`
+	State            string   `json:"state"`
+	Status           string   `json:"status"`
+	PRNumber         int      `json:"pr_number,omitempty"`
+	PRURL            string   `json:"pr_url,omitempty"`
+	PRState          string   `json:"pr_state,omitempty"`
+	PRLookupAttempts int      `json:"pr_lookup_attempts,omitempty"`
+	Blockers         []string `json:"blockers"`
+	NextAction       string   `json:"next_action"`
+	NextStep         string   `json:"next_step"`
 }
+
+var workStatusMissingPRRetryAttempts = 3
+var workStatusMissingPRRetryDelay = time.Second
 
 func StartWork(repo RepoRef, issueNumber int, dryRun bool, runner CommandRunner) (WorkStartResult, error) {
 	if runner == nil {
@@ -211,6 +216,12 @@ func GetWorkStatus(repo RepoRef, issueNumber int, runner CommandRunner) (WorkSta
 	if prErr != nil {
 		return WorkStatusResult{}, prErr
 	}
+	if shouldRetryWorkStatusMissingPR(issue, prStatus) {
+		prStatus, prErr = retryDevPRStatusAfterMissing(repo, issueNumber, runner, prStatus, workStatusMissingPRRetryAttempts, workStatusMissingPRRetryDelay, nil)
+		if prErr != nil {
+			return WorkStatusResult{}, prErr
+		}
+	}
 	return workStatusFromIssueAndPR(repo, issueNumber, issue, prStatus), nil
 }
 
@@ -235,19 +246,24 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 		prStatus.Blockers = nil
 	}
 	result := WorkStatusResult{
-		Repo:       repo.FullName(),
-		Issue:      issueNumber,
-		Title:      issue.Title,
-		State:      issue.State,
-		Status:     status,
-		PRNumber:   prStatus.PRNumber,
-		PRURL:      prStatus.PRURL,
-		PRState:    prStatus.State,
-		Blockers:   prStatus.Blockers,
-		NextAction: nextAction,
+		Repo:             repo.FullName(),
+		Issue:            issueNumber,
+		Title:            issue.Title,
+		State:            issue.State,
+		Status:           status,
+		PRNumber:         prStatus.PRNumber,
+		PRURL:            prStatus.PRURL,
+		PRState:          prStatus.State,
+		PRLookupAttempts: prStatus.LookupAttempts,
+		Blockers:         prStatus.Blockers,
+		NextAction:       nextAction,
 	}
 	result.NextStep = workStatusNextStep(result)
 	return result
+}
+
+func shouldRetryWorkStatusMissingPR(issue devStartIssue, prStatus DevPRStatusResult) bool {
+	return containsString(prStatus.Blockers, "missing_linked_pr") && strings.EqualFold(managedStatusFromLabels(issue.Labels), "In review")
 }
 
 func setIssueStatus(repo RepoRef, issueNumber int, labels []string, targetLabel string, runner CommandRunner) error {

@@ -20,22 +20,26 @@ type AdoptIssueInput struct {
 }
 
 type AdoptIssuesReport struct {
-	Repo     string              `json:"repo"`
-	DryRun   bool                `json:"dry_run"`
-	Apply    bool                `json:"apply"`
-	State    string              `json:"state"`
-	Counts   AdoptIssuesCounts   `json:"counts"`
-	Unmapped []AdoptIssueItem    `json:"unmapped,omitempty"`
-	Actions  []AdoptIssuesAction `json:"actions,omitempty"`
-	NextStep string              `json:"next_step"`
+	Repo           string              `json:"repo"`
+	DryRun         bool                `json:"dry_run"`
+	Apply          bool                `json:"apply"`
+	State          string              `json:"state"`
+	Counts         AdoptIssuesCounts   `json:"counts"`
+	Unmapped       []AdoptIssueItem    `json:"unmapped,omitempty"`
+	BeforeUnmapped []AdoptIssueItem    `json:"before_unmapped"`
+	AfterUnmapped  []AdoptIssueItem    `json:"after_unmapped"`
+	Actions        []AdoptIssuesAction `json:"actions,omitempty"`
+	NextStep       string              `json:"next_step"`
 }
 
 type AdoptIssuesCounts struct {
-	Scanned       int `json:"scanned"`
-	Unmapped      int `json:"unmapped"`
-	Selected      int `json:"selected"`
-	WouldUpdate   int `json:"would_update"`
-	AppliedUpdate int `json:"applied_update"`
+	Scanned        int `json:"scanned"`
+	Unmapped       int `json:"unmapped"`
+	BeforeUnmapped int `json:"before_unmapped"`
+	AfterUnmapped  int `json:"after_unmapped"`
+	Selected       int `json:"selected"`
+	WouldUpdate    int `json:"would_update"`
+	AppliedUpdate  int `json:"applied_update"`
 }
 
 type AdoptIssueItem struct {
@@ -91,7 +95,7 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 	if err != nil {
 		return AdoptIssuesReport{}, err
 	}
-	report := AdoptIssuesReport{Repo: input.Repo.FullName(), DryRun: input.DryRun, Apply: input.Apply, State: state}
+	report := AdoptIssuesReport{Repo: input.Repo.FullName(), DryRun: input.DryRun, Apply: input.Apply, State: state, BeforeUnmapped: []AdoptIssueItem{}, AfterUnmapped: []AdoptIssueItem{}}
 	report.Counts.Scanned = len(issues)
 	for _, issue := range issues {
 		item, unmapped := adoptIssueItem(issue)
@@ -100,6 +104,8 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 		}
 	}
 	report.Counts.Unmapped = len(report.Unmapped)
+	report.Counts.BeforeUnmapped = len(report.Unmapped)
+	report.BeforeUnmapped = append([]AdoptIssueItem{}, report.Unmapped...)
 
 	selected := map[int]struct{}{}
 	for _, issueNumber := range input.Issues {
@@ -170,6 +176,10 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 	}
 	sort.Slice(report.Actions, func(i, j int) bool { return report.Actions[i].Issue < report.Actions[j].Issue })
 	report.Counts.Selected = len(report.Actions)
+	if input.Apply {
+		report.AfterUnmapped = estimateAdoptIssuesAfterUnmapped(report.BeforeUnmapped, report.Actions)
+		report.Counts.AfterUnmapped = len(report.AfterUnmapped)
+	}
 	if input.DryRun {
 		report.NextStep = fmt.Sprintf("gira adopt issues --repo %s", QuoteShellArg(input.Repo.FullName()))
 		if len(input.Issues) > 0 {
@@ -232,8 +242,14 @@ func adoptIssueItem(issue adoptRawIssue) (AdoptIssueItem, bool) {
 	if issue.Milestone != nil {
 		milestone = issue.Milestone.Title
 	}
+	return classifyAdoptIssueItem(AdoptIssueItem{Number: issue.Number, Title: issue.Title, State: issue.State, Labels: labels, Milestone: milestone, URL: issue.HTMLURL})
+}
+
+func classifyAdoptIssueItem(item AdoptIssueItem) (AdoptIssueItem, bool) {
+	labels := append([]string{}, item.Labels...)
+	sort.Strings(labels)
 	reasons := []string{}
-	if milestone == "" {
+	if strings.TrimSpace(item.Milestone) == "" {
 		reasons = append(reasons, "missing_milestone")
 	}
 	if !hasAnyLabelPrefix(labels, "type:") {
@@ -242,7 +258,71 @@ func adoptIssueItem(issue adoptRawIssue) (AdoptIssueItem, bool) {
 	if !hasAnyLabelPrefix(labels, "status:") {
 		reasons = append(reasons, "missing_status")
 	}
-	return AdoptIssueItem{Number: issue.Number, Title: issue.Title, State: issue.State, Labels: labels, Milestone: milestone, URL: issue.HTMLURL, Reasons: reasons}, len(reasons) > 0
+	item.Labels = labels
+	item.Reasons = reasons
+	return item, len(reasons) > 0
+}
+
+func estimateAdoptIssuesAfterUnmapped(before []AdoptIssueItem, actions []AdoptIssuesAction) []AdoptIssueItem {
+	byIssue := map[int]AdoptIssuesAction{}
+	for _, action := range actions {
+		if action.Status == "applied" {
+			byIssue[action.Issue] = action
+		}
+	}
+	after := []AdoptIssueItem{}
+	for _, item := range before {
+		action, ok := byIssue[item.Number]
+		if ok {
+			item = applyAdoptActionToItem(item, action)
+		}
+		classified, unmapped := classifyAdoptIssueItem(item)
+		if unmapped {
+			after = append(after, classified)
+		}
+	}
+	return after
+}
+
+func applyAdoptActionToItem(item AdoptIssueItem, action AdoptIssuesAction) AdoptIssueItem {
+	if strings.TrimSpace(action.Milestone) != "" {
+		item.Milestone = strings.TrimSpace(action.Milestone)
+	}
+	remove := map[string]struct{}{}
+	for _, label := range action.RemoveLabels {
+		remove[strings.ToLower(strings.TrimSpace(label))] = struct{}{}
+	}
+	seen := map[string]struct{}{}
+	labels := []string{}
+	for _, label := range item.Labels {
+		normalized := strings.ToLower(strings.TrimSpace(label))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := remove[normalized]; ok {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		labels = append(labels, label)
+	}
+	for _, label := range action.Labels {
+		trimmed := strings.TrimSpace(label)
+		normalized := strings.ToLower(trimmed)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		labels = append(labels, trimmed)
+	}
+	sort.Strings(labels)
+	item.Labels = labels
+	return item
 }
 
 func applyAdoptIssue(repo RepoRef, action AdoptIssuesAction, runner CommandRunner) error {
@@ -343,10 +423,28 @@ func FormatAdoptIssuesReport(report AdoptIssuesReport) string {
 	if report.Apply {
 		mode = "applied"
 	}
-	fmt.Fprintf(&b, "adopt issues: %s scanned=%d unmapped=%d selected=%d\n", mode, report.Counts.Scanned, report.Counts.Unmapped, report.Counts.Selected)
+	if report.Apply {
+		fmt.Fprintf(&b, "adopt issues: %s scanned=%d before_unmapped=%d after_unmapped=%d selected=%d applied_update=%d\n", mode, report.Counts.Scanned, report.Counts.BeforeUnmapped, report.Counts.AfterUnmapped, report.Counts.Selected, report.Counts.AppliedUpdate)
+	} else {
+		fmt.Fprintf(&b, "adopt issues: %s scanned=%d unmapped=%d selected=%d\n", mode, report.Counts.Scanned, report.Counts.Unmapped, report.Counts.Selected)
+	}
 	if len(report.Unmapped) > 0 {
-		b.WriteString("unmapped:\n")
+		if report.Apply {
+			b.WriteString("before unmapped:\n")
+		} else {
+			b.WriteString("unmapped:\n")
+		}
 		for _, item := range report.Unmapped {
+			fmt.Fprintf(&b, "  #%d %s reasons=%s", item.Number, item.Title, strings.Join(item.Reasons, ","))
+			if item.Milestone != "" {
+				fmt.Fprintf(&b, " milestone=%s", item.Milestone)
+			}
+			b.WriteString("\n")
+		}
+	}
+	if report.Apply && len(report.AfterUnmapped) > 0 {
+		b.WriteString("after unmapped:\n")
+		for _, item := range report.AfterUnmapped {
 			fmt.Fprintf(&b, "  #%d %s reasons=%s", item.Number, item.Title, strings.Join(item.Reasons, ","))
 			if item.Milestone != "" {
 				fmt.Fprintf(&b, " milestone=%s", item.Milestone)

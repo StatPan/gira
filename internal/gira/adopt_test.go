@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -58,6 +59,24 @@ func TestBuildAdoptIssuesReportAppliesSelectedMapping(t *testing.T) {
 	}
 	if report.Counts.AppliedUpdate != 1 || report.Actions[0].Status != "applied" {
 		t.Fatalf("unexpected report: %+v", report)
+	}
+	if report.Counts.BeforeUnmapped != 1 || report.Counts.AfterUnmapped != 0 || len(report.BeforeUnmapped) != 1 || len(report.AfterUnmapped) != 0 {
+		t.Fatalf("unexpected before/after unmapped state: %+v", report)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal report: %v", err)
+	}
+	for _, want := range []string{`"before_unmapped"`, `"after_unmapped":[]`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("JSON output missing %q:\n%s", want, encoded)
+		}
+	}
+	text := FormatAdoptIssuesReport(report)
+	for _, want := range []string{"before_unmapped=1", "after_unmapped=0", "before unmapped:"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("formatted output missing %q:\n%s", want, text)
+		}
 	}
 	if !containsCall(runner.calls, "gh issue edit 1 --repo StatPan/gira --milestone MVP --add-label status:ready --add-label type:task") {
 		t.Fatalf("missing issue edit call: %v", runner.calls)

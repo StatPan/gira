@@ -1806,13 +1806,18 @@ func TestWorkspaceTicketRouteTextIncludesNextStep(t *testing.T) {
 }
 
 func TestProjectsSyncRequiresMode(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"projects", "sync"}, &stdout, &stderr)
-	if code != 2 {
-		t.Fatalf("exit code = %d, want 2", code)
-	}
-	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required for projects sync") {
-		t.Fatalf("stderr missing mode guidance:\n%s", stderr.String())
+	for _, args := range [][]string{
+		{"projects", "sync"},
+		{"projects", "sync", "--dry-run", "--apply"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := Run(args, &stdout, &stderr)
+		if code != 2 {
+			t.Fatalf("Run(%v) exit code = %d, want 2", args, code)
+		}
+		if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required for projects sync") {
+			t.Fatalf("Run(%v) stderr missing mode guidance:\n%s", args, stderr.String())
+		}
 	}
 }
 

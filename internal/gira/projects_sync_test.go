@@ -480,6 +480,58 @@ func TestBuildProjectsSyncReportSkipsPlanningFieldWhenOptionMissing(t *testing.T
 	}
 }
 
+func TestBuildProjectsSyncReportSkipsBlockedFieldTypes(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	fields := allProjectsSyncCanonicalFields()
+	for i := range fields {
+		switch fields[i].Name {
+		case "Status", "Priority", "Target date":
+			fields[i].Type = "TEXT"
+		}
+	}
+	client := &fakeProjectsSyncClient{
+		project:  ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects: []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:   fields,
+		linked:   map[string]bool{"StatPan/gira": true},
+		issues: map[string][]ProjectsSyncIssue{
+			"StatPan/gira": {{Repo: "StatPan/gira", Number: 208, Title: "Planning", URL: "https://github.com/StatPan/gira/issues/208", Labels: []string{"status:in-progress", "priority:p1"}, Milestone: "v1.2", MilestoneDueDate: "2026-06-01"}},
+		},
+		items: []ProjectsSyncItem{{ID: "item-208", Repo: "StatPan/gira", Number: 208, Status: "Todo"}},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, true, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if report.Counts.StatusUpdates != 0 || report.Counts.StatusUpdateSkips != 1 || report.Counts.FieldUpdates != 0 || report.Counts.FieldUpdateSkips != 1 || report.Counts.DateUpdates != 0 || report.Counts.DateUpdateSkips != 1 {
+		t.Fatalf("blocked fields should skip downstream updates: %+v", report.Counts)
+	}
+	text := FormatProjectsSyncReport(report)
+	for _, want := range []string{
+		"project_field:skip",
+		"Status",
+		"Priority",
+		"Target date",
+		"project Status field or option is unavailable",
+		"project field or item id is unavailable",
+		"project Target date field or item id is unavailable",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("blocked field report missing %q:\n%s", want, text)
+		}
+	}
+	if len(client.updated) != 0 || len(client.updatedFields) != 0 || len(client.updatedDates) != 0 {
+		t.Fatalf("blocked fields should not mutate fake client: status=%v fields=%v dates=%v", client.updated, client.updatedFields, client.updatedDates)
+	}
+}
+
 func TestBuildProjectsSyncReportSkipsMatchingTargetDate(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",

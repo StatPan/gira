@@ -66,6 +66,56 @@ func TestBuildRepoMigrateReportAlreadyRegisteredConflict(t *testing.T) {
 	}
 }
 
+func TestBuildRepoMigrateReportRejectsMismatchedExplicitRepo(t *testing.T) {
+	repo := testRepoWithContract(t, "repo: StatPan/gira\n")
+
+	report, err := BuildRepoMigrateReport(RepoMigrateInput{
+		Repo:       ParseRepoRefMust("StatPan/docs"),
+		Path:       repo,
+		ConfigRoot: t.TempDir(),
+		DryRun:     true,
+	}, fakeRegisterRunner{})
+	if err == nil || !strings.Contains(err.Error(), "does not match repo-local contract") {
+		t.Fatalf("error = %v, want explicit repo mismatch", err)
+	}
+	if report.Status != "blocked" || report.Action != "none" {
+		t.Fatalf("report = %+v, want blocked none", report)
+	}
+}
+
+func TestBuildRepoMigrateReportInfersRepoFromOriginWhenContractOmitsRepo(t *testing.T) {
+	repo := testRepoWithContract(t, "workspace:\n  name: personal\n")
+
+	report, err := BuildRepoMigrateReport(RepoMigrateInput{
+		Path:       repo,
+		ConfigRoot: t.TempDir(),
+		DryRun:     true,
+	}, fakeRegisterRunner{origin: "git@github.com:StatPan/gira.git"})
+	if err != nil {
+		t.Fatalf("BuildRepoMigrateReport error: %v", err)
+	}
+	if report.Repo != "StatPan/gira" || report.Entry.Workspace.Name != "personal" {
+		t.Fatalf("unexpected migrate report: %+v", report)
+	}
+}
+
+func TestFormatRepoMigrateReportTextContract(t *testing.T) {
+	text := FormatRepoMigrateReport(RepoMigrateReport{
+		Repo:         "StatPan/gira",
+		ContractFile: "/repo/.gira/config.yaml",
+		File:         "/tmp/gira/repos/StatPan/gira.yaml",
+		Status:       "planned",
+		Action:       "create",
+		Notes:        []string{"repo-local contract is preserved"},
+		NextStep:     "gira repo migrate --apply",
+	})
+	for _, want := range []string{"repo migrate: planned StatPan/gira", "contract: /repo/.gira/config.yaml", "global repo: /tmp/gira/repos/StatPan/gira.yaml", "note: repo-local contract is preserved", "next step: gira repo migrate --apply"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("text missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func testRepoWithContract(t *testing.T, content string) string {
 	t.Helper()
 	repo := t.TempDir()

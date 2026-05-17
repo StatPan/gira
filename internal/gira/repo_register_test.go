@@ -91,6 +91,51 @@ func TestBuildRepoRegisterReportRejectsMismatchedCheckout(t *testing.T) {
 	}
 }
 
+func TestBuildRepoRegisterReportRejectsUnsafeContractPath(t *testing.T) {
+	_, err := BuildRepoRegisterReport(RepoRegisterInput{
+		Repo:       ParseRepoRefMust("StatPan/gira"),
+		Contract:   "../config.yaml",
+		ConfigRoot: t.TempDir(),
+		DryRun:     true,
+	}, fakeRegisterRunner{})
+	if err == nil || !strings.Contains(err.Error(), "contract must be a relative path inside the repo") {
+		t.Fatalf("error = %v, want unsafe contract path", err)
+	}
+}
+
+func TestBuildRepoRegisterReportInvalidExistingRegistryDeterministic(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "repos", "StatPan", "gira.yaml"), "repo: [")
+
+	report, err := BuildRepoRegisterReport(RepoRegisterInput{
+		Repo:       ParseRepoRefMust("StatPan/gira"),
+		ConfigRoot: root,
+		DryRun:     true,
+	}, fakeRegisterRunner{})
+	if err == nil || !strings.Contains(err.Error(), "parse global config") {
+		t.Fatalf("error = %v, want invalid registry parse error", err)
+	}
+	if report.Action != "conflict" || report.Status != "blocked" {
+		t.Fatalf("report = %+v, want deterministic blocked conflict", report)
+	}
+}
+
+func TestFormatRepoRegisterReportTextContract(t *testing.T) {
+	text := FormatRepoRegisterReport(RepoRegisterReport{
+		Repo:     "StatPan/gira",
+		File:     "/tmp/gira/repos/StatPan/gira.yaml",
+		Status:   "planned",
+		Action:   "create",
+		Path:     "/repo",
+		NextStep: "gira repo register StatPan/gira --apply",
+	})
+	for _, want := range []string{"repo register: planned StatPan/gira", "file: /tmp/gira/repos/StatPan/gira.yaml", "path: /repo", "next step: gira repo register StatPan/gira --apply"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("text missing %q:\n%s", want, text)
+		}
+	}
+}
+
 type fakeRegisterRunner struct {
 	origin string
 }

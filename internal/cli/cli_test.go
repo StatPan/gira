@@ -360,6 +360,38 @@ func TestCachePruneRequiresMode(t *testing.T) {
 	}
 }
 
+func TestCacheHelpAndUnknownCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"cache", "help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "gira cache prune") {
+		t.Fatalf("cache help missing prune command:\n%s", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"cache", "missing"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unknown cache command: missing") || !strings.Contains(stderr.String(), "gira cache prune") {
+		t.Fatalf("stderr missing cache remediation:\n%s", stderr.String())
+	}
+}
+
+func TestCachePruneRejectsUnexpectedArgument(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"cache", "prune", "--dry-run", "extra"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unexpected argument: extra") {
+		t.Fatalf("stderr missing unexpected argument:\n%s", stderr.String())
+	}
+}
+
 func TestCachePruneJSON(t *testing.T) {
 	restore := newCachePruneReport
 	t.Cleanup(func() { newCachePruneReport = restore })
@@ -541,6 +573,54 @@ func TestStatsRepoCommandJSON(t *testing.T) {
 	}
 	if report.Command != "stats repo" || report.Repo != "StatPan/gira" {
 		t.Fatalf("unexpected stats report: %+v", report)
+	}
+}
+
+func TestStatsWorkspacePlannedAndUnknownCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"stats", "workspace", "--since", "30d"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "gira stats workspace is planned") || !strings.Contains(stdout.String(), "gira stats repo --repo OWNER/REPO") {
+		t.Fatalf("workspace planned output missing guidance:\n%s", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"stats", "missing"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unknown stats command: missing") || !strings.Contains(stderr.String(), "gira stats repo") {
+		t.Fatalf("stderr missing stats remediation:\n%s", stderr.String())
+	}
+}
+
+func TestStatsRepoRejectsDuplicateRepoAndReportsBuilderError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"stats", "repo", "StatPan/gira", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "repo specified both positionally and with --repo") {
+		t.Fatalf("stderr missing duplicate repo guidance:\n%s", stderr.String())
+	}
+
+	restore := newStatsRepoReport
+	t.Cleanup(func() { newStatsRepoReport = restore })
+	newStatsRepoReport = func(input gira.StatsRepoOptions) (gira.StatsRepoReport, error) {
+		return gira.StatsRepoReport{}, fmt.Errorf("--limit must be greater than 0")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"stats", "repo", "--repo", "StatPan/gira", "--limit", "-1"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--limit must be greater than 0") {
+		t.Fatalf("stderr missing builder error:\n%s", stderr.String())
 	}
 }
 
@@ -3888,6 +3968,45 @@ func TestDoctorJSONUsesInjectedReportAndExitCode(t *testing.T) {
 	}
 }
 
+func TestDoctorHumanReadyAndUnexpectedArgument(t *testing.T) {
+	restore := newDoctorReport
+	t.Cleanup(func() { newDoctorReport = restore })
+	newDoctorReport = func(repoValue string) gira.DoctorReport {
+		return gira.DoctorReport{
+			Repo:      repoValue,
+			Command:   "doctor",
+			CheckedAt: "2026-05-05T12:00:00Z",
+			Ready:     true,
+			Checks: []gira.DoctorCheck{{
+				ID:     "repo_context",
+				Status: gira.DoctorCheckPass,
+				Detail: "using --repo " + repoValue,
+			}},
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"doctor", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"doctor: READY", "repo: StatPan/gira", "next step: gira status --repo StatPan/gira"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("doctor output missing %q:\n%s", want, stdout.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"doctor", "extra"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unexpected argument: extra") {
+		t.Fatalf("stderr missing unexpected argument:\n%s", stderr.String())
+	}
+}
+
 func TestDoctorHelpFlagPrintsHelpAndExitsZero(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"doctor", "-h"}, &stdout, &stderr)
@@ -5098,6 +5217,37 @@ func TestAuditVerifyScopesToRepoInCLI(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "audit verify: ok (1 records)") {
 		t.Fatalf("unexpected stdout: %s", stdout.String())
+	}
+}
+
+func TestAuditCommandBranchesAndVerifyJSONFailure(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"audit", "missing"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unknown audit command: missing") || !strings.Contains(stderr.String(), "gira audit verify") {
+		t.Fatalf("stderr missing audit remediation:\n%s", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"audit", "readiness"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--repo is required") {
+		t.Fatalf("stderr missing readiness repo requirement:\n%s", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"audit", "verify", "--repo", "StatPan/gira", "--path", filepath.Join(t.TempDir(), "*.jsonl"), "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"valid": false`) || !strings.Contains(stdout.String(), `"failure": "no_audit_files_found"`) {
+		t.Fatalf("audit verify JSON missing failure evidence:\n%s", stdout.String())
 	}
 }
 

@@ -581,6 +581,42 @@ func TestWorkspaceInitProjectFlagsJSON(t *testing.T) {
 	}
 }
 
+func TestWorkspaceInitMergeFlagJSON(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".gira", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	if err := os.WriteFile(configPath, []byte("repo: StatPan/gira\nprofiles:\n  default:\n    labels: []\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"workspace",
+		"init",
+		"--inbox-repo",
+		"StatPan/backlog",
+		"--repo",
+		"StatPan/gira",
+		"--path",
+		dir,
+		"--merge",
+		"--dry-run",
+		"--json",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkspaceInitReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode workspace init JSON: %v\n%s", err, stdout.String())
+	}
+	if !report.Merge || report.MergeBlock == "" || !strings.Contains(report.Content, "workspace:") {
+		t.Fatalf("unexpected merge report: %+v", report)
+	}
+}
+
 func TestWorkspaceInitGlobalScopeJSON(t *testing.T) {
 	root := t.TempDir()
 	var stdout, stderr bytes.Buffer

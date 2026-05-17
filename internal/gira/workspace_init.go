@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 type WorkspaceInitInput struct {
@@ -20,6 +22,7 @@ type WorkspaceInitInput struct {
 	Scope         string   `json:"scope,omitempty"`
 	ConfigRoot    string   `json:"config_root,omitempty"`
 	Path          string   `json:"path"`
+	Merge         bool     `json:"merge"`
 	Overwrite     bool     `json:"overwrite"`
 	DryRun        bool     `json:"dry_run"`
 	Apply         bool     `json:"apply"`
@@ -33,13 +36,16 @@ type WorkspaceInitReport struct {
 	DryRun      bool             `json:"dry_run"`
 	Applied     bool             `json:"applied"`
 	Created     bool             `json:"created"`
+	Merged      bool             `json:"merged"`
 	Overwritten bool             `json:"overwritten"`
 	Skipped     bool             `json:"skipped"`
+	Merge       bool             `json:"merge"`
 	Workspace   WorkspaceSummary `json:"workspace"`
 	Project     ProjectConfig    `json:"project"`
 	InboxRepo   string           `json:"inbox_repo"`
 	Repos       []string         `json:"repos"`
 	Content     string           `json:"content"`
+	MergeBlock  string           `json:"merge_block,omitempty"`
 	NextStep    string           `json:"next_step"`
 }
 
@@ -50,6 +56,12 @@ func BuildWorkspaceInitReport(input WorkspaceInitInput) (WorkspaceInitReport, er
 	scope, err := normalizeWorkspaceInitScope(input.Scope)
 	if err != nil {
 		return WorkspaceInitReport{}, err
+	}
+	if input.Merge && input.Overwrite {
+		return WorkspaceInitReport{}, fmt.Errorf("--merge and --overwrite cannot be used together")
+	}
+	if input.Merge && scope != "repo" {
+		return WorkspaceInitReport{}, fmt.Errorf("--merge is only supported with --scope repo")
 	}
 	if strings.TrimSpace(input.Path) == "" {
 		input.Path = "."
@@ -98,6 +110,7 @@ func BuildWorkspaceInitReport(input WorkspaceInitInput) (WorkspaceInitReport, er
 	project := ProjectConfig{Owner: projectOwner, Title: projectTitle, Number: input.ProjectNumber}
 	configPath := DefaultInitConfigPath(input.Path)
 	configRoot := ""
+	workspaceBlock := renderWorkspaceInitWorkspaceBlock(name, owner, inbox.FullName(), normalizedRepos, project)
 	content := renderWorkspaceInitConfig(name, owner, inbox.FullName(), normalizedRepos, project)
 	if scope == "global" {
 		root, err := globalConfigRoot(input.ConfigRoot)
@@ -117,12 +130,42 @@ func BuildWorkspaceInitReport(input WorkspaceInitInput) (WorkspaceInitReport, er
 		ConfigRoot: configRoot,
 		ConfigPath: configPath,
 		DryRun:     input.DryRun,
+		Merge:      input.Merge,
 		Workspace:  WorkspaceSummary{Name: name, Owner: owner},
 		Project:    project,
 		InboxRepo:  inbox.FullName(),
 		Repos:      normalizedRepos,
 		Content:    content,
 		NextStep:   "gira workspace status --config " + QuoteShellArg(configPath),
+	}
+	if input.Merge {
+		report.MergeBlock = workspaceBlock
+		existing, err := os.ReadFile(configPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return report, fmt.Errorf("%s does not exist; --merge requires an existing repo-local config", configPath)
+			}
+			return report, err
+		}
+		merged, err := mergeWorkspaceInitConfig(existing, workspaceBlock)
+		if err != nil {
+			return report, fmt.Errorf("merge workspace config %q: %w", configPath, err)
+		}
+		report.Content = merged
+		if input.DryRun {
+			return report, nil
+		}
+		if err := os.WriteFile(configPath, []byte(merged), 0o644); err != nil {
+			return report, err
+		}
+		resolved, err := ResolveWorkspaceConfig(configPath)
+		if err != nil {
+			return report, err
+		}
+		report.Project = resolved.Project
+		report.Merged = true
+		report.Applied = true
+		return report, nil
 	}
 	if input.DryRun {
 		return report, nil
@@ -180,20 +223,7 @@ func normalizeWorkspaceInitScope(value string) (string, error) {
 func renderWorkspaceInitConfig(name string, owner string, inboxRepo string, repos []string, project ProjectConfig) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "repo: %s\n\n", inboxRepo)
-	b.WriteString("workspace:\n")
-	fmt.Fprintf(&b, "  name: %s\n", yamlQuotedString(name))
-	fmt.Fprintf(&b, "  owner: %s\n", owner)
-	fmt.Fprintf(&b, "  inbox_repo: %s\n", inboxRepo)
-	b.WriteString("  repos:\n")
-	for _, repo := range repos {
-		fmt.Fprintf(&b, "    - %s\n", repo)
-	}
-	b.WriteString("  project:\n")
-	fmt.Fprintf(&b, "    owner: %s\n", project.Owner)
-	fmt.Fprintf(&b, "    title: %s\n", yamlQuotedString(project.Title))
-	if project.Number > 0 {
-		fmt.Fprintf(&b, "    number: %d\n", project.Number)
-	}
+	b.WriteString(renderWorkspaceInitWorkspaceBlock(name, owner, inboxRepo, repos, project))
 	b.WriteString("\nprofiles:\n")
 	b.WriteString("  default:\n")
 	b.WriteString("    labels: [\"type:epic\", \"type:story\", \"type:task\", \"type:bug\", \"status:ready\", \"status:in-progress\", \"status:done\"]\n")
@@ -205,7 +235,7 @@ func renderWorkspaceInitConfig(name string, owner string, inboxRepo string, repo
 	return b.String()
 }
 
-func renderWorkspaceGlobalConfig(name string, owner string, inboxRepo string, repos []string, project ProjectConfig) string {
+func renderWorkspaceInitWorkspaceBlock(name string, owner string, inboxRepo string, repos []string, project ProjectConfig) string {
 	var b strings.Builder
 	b.WriteString("workspace:\n")
 	fmt.Fprintf(&b, "  name: %s\n", yamlQuotedString(name))
@@ -222,6 +252,52 @@ func renderWorkspaceGlobalConfig(name string, owner string, inboxRepo string, re
 		fmt.Fprintf(&b, "    number: %d\n", project.Number)
 	}
 	return b.String()
+}
+
+func renderWorkspaceGlobalConfig(name string, owner string, inboxRepo string, repos []string, project ProjectConfig) string {
+	var b strings.Builder
+	b.WriteString(renderWorkspaceInitWorkspaceBlock(name, owner, inboxRepo, repos, project))
+	return b.String()
+}
+
+func mergeWorkspaceInitConfig(existing []byte, workspaceBlock string) (string, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(existing, &doc); err != nil {
+		return "", err
+	}
+	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return "", fmt.Errorf("existing config must be a YAML mapping")
+	}
+	for i := 0; i+1 < len(doc.Content[0].Content); i += 2 {
+		key := doc.Content[0].Content[i]
+		if key.Value == "workspace" {
+			return "", fmt.Errorf("existing config already has workspace fields; use --overwrite only when replacement is intended")
+		}
+	}
+	return insertWorkspaceBlock(existing, workspaceBlock), nil
+}
+
+func insertWorkspaceBlock(existing []byte, workspaceBlock string) string {
+	lines := strings.Split(strings.TrimRight(string(existing), "\n"), "\n")
+	insertAt := len(lines)
+	for i, line := range lines {
+		if strings.HasPrefix(line, "profiles:") || strings.HasPrefix(line, "portfolio:") {
+			insertAt = i
+			break
+		}
+	}
+	block := strings.Split(strings.TrimRight(workspaceBlock, "\n"), "\n")
+	merged := make([]string, 0, len(lines)+len(block)+2)
+	merged = append(merged, lines[:insertAt]...)
+	if len(merged) > 0 && strings.TrimSpace(merged[len(merged)-1]) != "" {
+		merged = append(merged, "")
+	}
+	merged = append(merged, block...)
+	if insertAt < len(lines) && strings.TrimSpace(lines[insertAt]) != "" {
+		merged = append(merged, "")
+	}
+	merged = append(merged, lines[insertAt:]...)
+	return strings.Join(merged, "\n") + "\n"
 }
 
 func yamlQuotedString(value string) string {
@@ -245,6 +321,11 @@ func FormatWorkspaceInitReport(report WorkspaceInitReport) string {
 	}
 	fmt.Fprintf(&b, "inbox: %s\n", report.InboxRepo)
 	fmt.Fprintf(&b, "repos: %s\n", strings.Join(report.Repos, ","))
+	if report.Merge && report.MergeBlock != "" {
+		b.WriteString("workspace block:\n")
+		b.WriteString(strings.TrimRight(report.MergeBlock, "\n"))
+		b.WriteString("\n")
+	}
 	if report.DryRun {
 		b.WriteString("config:\n")
 		b.WriteString(strings.TrimRight(report.Content, "\n"))

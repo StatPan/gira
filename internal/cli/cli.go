@@ -287,7 +287,7 @@ Flags:
 const workspaceHelp = `Personal workspace inbox and backlog commands.
 
 Usage:
-  gira workspace init --inbox-repo OWNER/REPO [--repo OWNER/REPO] [--scope repo|global] [--project-owner OWNER] [--project-title TITLE] [--project-number N] --dry-run|--apply [--path .] [--config-root PATH]
+  gira workspace init --inbox-repo OWNER/REPO [--repo OWNER/REPO] [--scope repo|global] [--project-owner OWNER] [--project-title TITLE] [--project-number N] [--merge] --dry-run|--apply [--path .] [--config-root PATH]
   gira workspace validate [--config .gira/config.yaml] [--json]
   gira workspace status [--config .gira/config.yaml] [--repo OWNER/REPO] [--limit N] [--active-only] [--cache-ttl 5m] [--refresh] [--json]
   gira workspace backlog [--config .gira/config.yaml] [--repo OWNER/REPO] [--limit N] [--cache-ttl 5m] [--refresh] [--json]
@@ -4848,6 +4848,7 @@ func runWorkspaceInit(args []string, stdout io.Writer, stderr io.Writer) int {
 	scope := fs.String("scope", "repo", "Workspace config scope: repo or global")
 	configRoot := fs.String("config-root", "", "Override global config root for --scope global")
 	pathValue := fs.String("path", ".", "Directory where .gira/config.yaml is written")
+	merge := fs.Bool("merge", false, "Merge workspace fields into an existing repo-local config")
 	overwrite := fs.Bool("overwrite", false, "Overwrite existing config")
 	dryRun := fs.Bool("dry-run", false, "Preview without writing config")
 	apply := fs.Bool("apply", false, "Write config")
@@ -4875,7 +4876,7 @@ func runWorkspaceInit(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, workspaceHelp)
 		return 2
 	}
-	report, err := newWorkspaceInitReport(gira.WorkspaceInitInput{Name: *name, Owner: *owner, InboxRepo: *inboxRepo, Repos: repos, ProjectOwner: *projectOwner, ProjectTitle: *projectTitle, ProjectNumber: *projectNumber, Scope: *scope, ConfigRoot: *configRoot, Path: *pathValue, Overwrite: *overwrite, DryRun: *dryRun, Apply: *apply})
+	report, err := newWorkspaceInitReport(gira.WorkspaceInitInput{Name: *name, Owner: *owner, InboxRepo: *inboxRepo, Repos: repos, ProjectOwner: *projectOwner, ProjectTitle: *projectTitle, ProjectNumber: *projectNumber, Scope: *scope, ConfigRoot: *configRoot, Path: *pathValue, Merge: *merge, Overwrite: *overwrite, DryRun: *dryRun, Apply: *apply})
 	if err != nil {
 		if *jsonOutput {
 			out, _ := json.MarshalIndent(report, "", "  ")

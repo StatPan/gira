@@ -105,6 +105,43 @@ func TestFinishWorkApplyRemovesActiveStatusFromClosedIssue(t *testing.T) {
 	}
 }
 
+func TestFinishWorkApplyRetriesTransientMissingLinkedPR(t *testing.T) {
+	restoreDelay := finishMissingPRRetryDelay
+	finishMissingPRRetryDelay = 0
+	t.Cleanup(func() {
+		finishMissingPRRetryDelay = restoreDelay
+	})
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
+			[]byte(`[]`),
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"https://github.com/StatPan/gira/pull/220","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-219-finish","baseRefName":"main","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"https://github.com/StatPan/gira/pull/220","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","headRefName":"issue-219-finish","baseRefName":"main","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		},
+		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch": {nil},
+		"git remote get-url origin":                                    {[]byte("git@github.com:StatPan/gira.git\n")},
+		"git branch --show-current":                                    {[]byte("issue-219-finish\n")},
+		"git status --porcelain":                                       {[]byte("")},
+		"git checkout main":                                            {nil},
+		"git pull --ff-only origin main":                               {nil},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+		},
+	}, errs: map[string]error{}}
+
+	result, err := FinishWork(repo, 219, false, 0, runner)
+	if err != nil {
+		t.Fatalf("FinishWork error: %v", err)
+	}
+	if !result.Merged || result.PRNumber != 220 || result.PRLookupAttempts != 2 || len(result.Blockers) != 0 {
+		t.Fatalf("unexpected retry result: %+v", result)
+	}
+	if got := countFinishCall(runner.calls, "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20"); got != 3 {
+		t.Fatalf("expected transient retry plus final status lookup, got %d calls: %v", got, runner.calls)
+	}
+}
+
 func TestFinishWorkApplyAddsDoneLabelWhenAvailable(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{
@@ -251,6 +288,34 @@ func TestFinishWorkMissingLinkedPRSuggestsOpenPR(t *testing.T) {
 	}
 	if !containsString(result.Blockers, "missing_linked_pr") || !strings.Contains(result.NextStep, "ticket pr") {
 		t.Fatalf("unexpected missing PR result: %+v", result)
+	}
+}
+
+func TestFinishWorkApplyStopsRetryingMissingLinkedPR(t *testing.T) {
+	restoreDelay := finishMissingPRRetryDelay
+	finishMissingPRRetryDelay = 0
+	t.Cleanup(func() {
+		finishMissingPRRetryDelay = restoreDelay
+	})
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
+			[]byte(`[]`),
+			[]byte(`[]`),
+			[]byte(`[]`),
+		},
+		"gh api repos/StatPan/gira/issues/219": {[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-progress"}]}`)},
+	}, errs: map[string]error{}}
+
+	result, err := FinishWork(repo, 219, false, 0, runner)
+	if err != nil {
+		t.Fatalf("FinishWork error: %v", err)
+	}
+	if result.PRLookupAttempts != 3 || !containsString(result.Blockers, "missing_linked_pr") || !strings.Contains(result.NextStep, "ticket pr") {
+		t.Fatalf("expected bounded missing PR retry result: %+v", result)
+	}
+	if got := countFinishCall(runner.calls, "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20"); got != 3 {
+		t.Fatalf("expected bounded retry count, got %d calls: %v", got, runner.calls)
 	}
 }
 

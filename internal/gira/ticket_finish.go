@@ -31,23 +31,27 @@ type WorkFinishJiraTransition struct {
 }
 
 type WorkFinishResult struct {
-	Repo           string                    `json:"repo"`
-	Issue          int                       `json:"issue"`
-	JiraKey        string                    `json:"jira_key,omitempty"`
-	DryRun         bool                      `json:"dry_run"`
-	Wait           string                    `json:"wait"`
-	PRNumber       int                       `json:"pr_number,omitempty"`
-	PRURL          string                    `json:"pr_url,omitempty"`
-	PRState        string                    `json:"pr_state,omitempty"`
-	Merged         bool                      `json:"merged"`
-	AlreadyDone    bool                      `json:"already_done"`
-	JiraTransition *WorkFinishJiraTransition `json:"jira_transition,omitempty"`
-	Actions        []WorkFinishAction        `json:"actions"`
-	Blockers       []string                  `json:"blockers"`
-	LocalSync      WorkFinishLocalSync       `json:"local_sync"`
-	FinalStatus    WorkStatusResult          `json:"final_status"`
-	NextStep       string                    `json:"next_step"`
+	Repo             string                    `json:"repo"`
+	Issue            int                       `json:"issue"`
+	JiraKey          string                    `json:"jira_key,omitempty"`
+	DryRun           bool                      `json:"dry_run"`
+	Wait             string                    `json:"wait"`
+	PRLookupAttempts int                       `json:"pr_lookup_attempts,omitempty"`
+	PRNumber         int                       `json:"pr_number,omitempty"`
+	PRURL            string                    `json:"pr_url,omitempty"`
+	PRState          string                    `json:"pr_state,omitempty"`
+	Merged           bool                      `json:"merged"`
+	AlreadyDone      bool                      `json:"already_done"`
+	JiraTransition   *WorkFinishJiraTransition `json:"jira_transition,omitempty"`
+	Actions          []WorkFinishAction        `json:"actions"`
+	Blockers         []string                  `json:"blockers"`
+	LocalSync        WorkFinishLocalSync       `json:"local_sync"`
+	FinalStatus      WorkStatusResult          `json:"final_status"`
+	NextStep         string                    `json:"next_step"`
 }
+
+var finishMissingPRRetryAttempts = 3
+var finishMissingPRRetryDelay = time.Second
 
 func FinishWork(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, runner CommandRunner) (WorkFinishResult, error) {
 	if runner == nil {
@@ -66,10 +70,17 @@ func FinishWork(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, 
 		NextStep: fmt.Sprintf("gira ticket status --repo %s --ticket %d", repo.FullName(), issueNumber),
 	}
 
-	status, err := DevPRStatus(repo, issueNumber, runner)
+	var status DevPRStatusResult
+	var err error
+	if dryRun {
+		status, err = DevPRStatus(repo, issueNumber, runner)
+	} else {
+		status, err = DevPRStatusWithMissingPRRetry(repo, issueNumber, runner, finishMissingPRRetryAttempts, finishMissingPRRetryDelay)
+	}
 	if err != nil {
 		return result, err
 	}
+	result.PRLookupAttempts = status.LookupAttempts
 	result.PRNumber = status.PRNumber
 	result.PRURL = status.PRURL
 	result.PRState = status.State

@@ -45,6 +45,7 @@ type EpicIssue struct {
 type EpicCandidate struct {
 	Number    int    `json:"number"`
 	Title     string `json:"title"`
+	State     string `json:"state,omitempty"`
 	Slug      string `json:"slug"`
 	Milestone string `json:"milestone,omitempty"`
 }
@@ -95,6 +96,7 @@ func BuildEpicStatusReport(input EpicInput, runner CommandRunner) (EpicReport, e
 	epic, candidates, err := resolveEpic(input, runner)
 	report := EpicReport{Repo: input.Repo.FullName(), Candidates: candidates, NextStep: fmt.Sprintf("gira epic status --repo %s", input.Repo.FullName())}
 	if err != nil {
+		report.NextStep = epicUnavailableNextStep(input.Repo, candidates)
 		return report, err
 	}
 	report.Epic = epicIssueFromRaw(epic)
@@ -198,9 +200,27 @@ func resolveEpic(input EpicInput, runner CommandRunner) (epicRawIssue, []EpicCan
 		return filtered[0], candidates, nil
 	}
 	if len(filtered) == 0 {
-		return epicRawIssue{}, candidates, fmt.Errorf("epic context unavailable: pass --ticket N, --title, --slug, --milestone, run from an epic branch, or keep exactly one open epic")
+		closedCandidates, closedErr := fetchClosedEpicCandidates(input, runner)
+		if closedErr == nil && len(closedCandidates) > 0 {
+			return epicRawIssue{}, closedCandidates, fmt.Errorf("epic context unavailable: no open epic matched; to verify a closed epic, run `gira epic status --repo %s --ticket N` with one of the closed candidates", input.Repo.FullName())
+		}
+		return epicRawIssue{}, candidates, fmt.Errorf("epic context unavailable: no open epic matched; pass --ticket N, --title, --slug, --milestone, run from an epic branch, or use `gira epic list --repo %s --state closed` before verifying a closed epic with `gira epic status --ticket N`", input.Repo.FullName())
 	}
 	return epicRawIssue{}, candidates, fmt.Errorf("epic context ambiguous: pass --ticket N, --title, --slug, or --milestone")
+}
+
+func fetchClosedEpicCandidates(input EpicInput, runner CommandRunner) ([]EpicCandidate, error) {
+	issues, err := fetchEpicIssues(input.Repo, "closed", runner)
+	if err != nil {
+		return nil, err
+	}
+	epics := []epicRawIssue{}
+	for _, issue := range issues {
+		if hasLabel(rawLabels(issue), "type:epic") {
+			epics = append(epics, issue)
+		}
+	}
+	return epicCandidatesFromRaw(filterEpicCandidates(epics, input)), nil
 }
 
 func fetchEpicIssue(repo RepoRef, issueNumber int, runner CommandRunner) (epicRawIssue, error) {
@@ -330,7 +350,7 @@ func epicIssueFromRaw(issue epicRawIssue) EpicIssue {
 func epicCandidatesFromRaw(issues []epicRawIssue) []EpicCandidate {
 	out := make([]EpicCandidate, 0, len(issues))
 	for _, issue := range issues {
-		out = append(out, EpicCandidate{Number: issue.Number, Title: issue.Title, Slug: slugifyEpic(issue.Title), Milestone: rawMilestone(issue)})
+		out = append(out, EpicCandidate{Number: issue.Number, Title: issue.Title, State: strings.ToLower(issue.State), Slug: slugifyEpic(issue.Title), Milestone: rawMilestone(issue)})
 	}
 	return out
 }
@@ -358,6 +378,18 @@ func epicStatusNextStep(repo RepoRef, report EpicReport) string {
 		return "epic is closed"
 	}
 	return fmt.Sprintf("gira epic finish --repo %s --ticket %d --dry-run", repo.FullName(), report.Epic.Number)
+}
+
+func epicUnavailableNextStep(repo RepoRef, candidates []EpicCandidate) string {
+	if len(candidates) == 1 && strings.EqualFold(candidates[0].State, "closed") {
+		return fmt.Sprintf("gira epic status --repo %s --ticket %d", repo.FullName(), candidates[0].Number)
+	}
+	for _, candidate := range candidates {
+		if strings.EqualFold(candidate.State, "closed") {
+			return fmt.Sprintf("choose a closed epic candidate, then gira epic status --repo %s --ticket N", repo.FullName())
+		}
+	}
+	return fmt.Sprintf("gira epic list --repo %s --state closed --limit 10", repo.FullName())
 }
 
 func applyEpicLabels(repo RepoRef, issueNumber int, addLabels []string, removeLabels []string, runner CommandRunner) error {
@@ -485,10 +517,13 @@ func FormatEpicReport(report EpicReport) string {
 	} else {
 		b.WriteString("epic status: unresolved\n")
 	}
-	if len(report.Candidates) > 1 {
+	if len(report.Candidates) > 1 || (report.Epic.Number == 0 && len(report.Candidates) > 0) {
 		b.WriteString("candidates:\n")
 		for _, candidate := range report.Candidates {
 			fmt.Fprintf(&b, "  #%d %s slug=%s", candidate.Number, candidate.Title, candidate.Slug)
+			if candidate.State != "" {
+				fmt.Fprintf(&b, " state=%s", candidate.State)
+			}
 			if candidate.Milestone != "" {
 				fmt.Fprintf(&b, " milestone=%s", candidate.Milestone)
 			}

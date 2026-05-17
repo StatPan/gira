@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -37,7 +38,10 @@ func TestBuildProjectsSyncReportPlansMissingItemsAndStatusUpdates(t *testing.T) 
 	if report.Counts.ProjectLinksAdd != 1 || report.Counts.ProjectItemsAdd != 1 || report.Counts.ProjectItemsSkip != 1 || report.Counts.StatusUpdates != 1 {
 		t.Fatalf("counts = %+v", report.Counts)
 	}
-	for _, want := range []string{"project_repo:link", "project_item:add", "project_status:update"} {
+	if report.Counts.ProjectItemsSkipReasons.AlreadyPresent != 1 {
+		t.Fatalf("skip reasons = %+v", report.Counts.ProjectItemsSkipReasons)
+	}
+	for _, want := range []string{"project_repo:link", "project_item:add", "project_status:update", "already_present=1"} {
 		if !strings.Contains(FormatProjectsSyncReport(report), want) {
 			t.Fatalf("formatted report missing %q:\n%s", want, FormatProjectsSyncReport(report))
 		}
@@ -85,6 +89,9 @@ func TestBuildProjectsSyncReportFetchesIndependentReadsConcurrently(t *testing.T
 	if report.Counts.Issues != 1 || report.Counts.ProjectItemsSkip != 1 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
+	if report.Counts.ProjectItemsSkipReasons.AlreadyPresent != 1 {
+		t.Fatalf("skip reasons = %+v", report.Counts.ProjectItemsSkipReasons)
+	}
 	if elapsed > 260*time.Millisecond {
 		t.Fatalf("BuildProjectsSyncReport took %s, want independent reads under 260ms", elapsed)
 	}
@@ -120,6 +127,9 @@ func TestBuildProjectsSyncReportApplyIsIdempotentForExistingItems(t *testing.T) 
 	if len(report.Actions) != 0 || report.Counts.ProjectItemsSkip != 1 {
 		t.Fatalf("report = %+v", report)
 	}
+	if report.Counts.ProjectItemsSkipReasons.AlreadyPresent != 1 {
+		t.Fatalf("skip reasons = %+v", report.Counts.ProjectItemsSkipReasons)
+	}
 	if !report.ManualActionRequired || len(report.ManualActions) != 1 || !report.Counts.ViewSetupRequired {
 		t.Fatalf("manual view setup should be machine-readable: %+v", report)
 	}
@@ -128,6 +138,54 @@ func TestBuildProjectsSyncReportApplyIsIdempotentForExistingItems(t *testing.T) 
 	}
 	if len(client.linkedApplied) != 0 || len(client.added) != 0 || len(client.updated) != 0 {
 		t.Fatalf("apply should not mutate existing synced item: %+v", client)
+	}
+}
+
+func TestBuildProjectsSyncReportBreaksDownProjectItemSkipReasons(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "Done": "done"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues: map[string][]ProjectsSyncIssue{
+			"StatPan/gira": {{Repo: "StatPan/gira", Number: 180, Title: "Ready", URL: "https://github.com/StatPan/gira/issues/180", Labels: []string{"status:ready"}}},
+		},
+		items: []ProjectsSyncItem{
+			{ID: "item-180", Repo: "StatPan/gira", Number: 180, Status: "Todo", IssueState: "open"},
+			{ID: "item-180-duplicate", Repo: "StatPan/gira", Number: 180, Status: "Todo", IssueState: "open"},
+			{ID: "item-closed", Repo: "StatPan/gira", Number: 199, Status: "Done", IssueState: "closed"},
+			{ID: "item-draft"},
+		},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, true, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	reasons := report.Counts.ProjectItemsSkipReasons
+	if report.Counts.ProjectItemsSkip != 4 || reasons.AlreadyPresent != 1 || reasons.DuplicateCandidate != 1 || reasons.ClosedDone != 1 || reasons.UnsupportedItemShape != 1 {
+		t.Fatalf("skip counts=%+v reasons=%+v", report.Counts, reasons)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal report: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"project_items_skip_reasons"`) || !strings.Contains(string(encoded), `"duplicate_candidate":1`) {
+		t.Fatalf("JSON output missing skip reasons:\n%s", encoded)
+	}
+	text := FormatProjectsSyncReport(report)
+	for _, want := range []string{"project-items-skip: total=4", "already_present=1", "closed_done=1", "duplicate_candidate=1", "unsupported_item_shape=1"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("formatted output missing %q:\n%s", want, text)
+		}
 	}
 }
 

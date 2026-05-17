@@ -261,14 +261,15 @@ func CoreCommandSpecs() []CommandSpec {
 		},
 		{
 			Path:        []string{"ticket", "view"},
-			Summary:     "Show a Gira operating card for the ticket, linked PR, blockers, and next action.",
-			Usage:       "gira ticket view [TICKET] [--repo OWNER/REPO] [--json]",
+			Summary:     "Show a Gira operating card for the ticket, linked PR, blockers, and next action. Alias: gira ticket show.",
+			Usage:       "gira ticket view|show [TICKET] [--repo OWNER/REPO] [--json]",
 			Since:       "v1.12.0",
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
 			GuideTopics: []string{"ticket", "agent"},
 			GuideOrder:  15,
 			Examples: []CommandExample{
 				{Summary: "Inspect current branch ticket context", Command: "gira ticket view"},
+				{Summary: "Inspect an explicit ticket with the show alias", Command: "gira ticket show 42 --repo OWNER/app"},
 			},
 		},
 		{

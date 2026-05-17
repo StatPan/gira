@@ -529,12 +529,12 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
 ## `ticket view`
 
-Show a Gira operating card for the ticket, linked PR, blockers, and next action.
+Show a Gira operating card for the ticket, linked PR, blockers, and next action. Alias: gira ticket show.
 
 Usage:
 
 ```bash
-gira ticket view [TICKET] [--repo OWNER/REPO] [--json]
+gira ticket view|show [TICKET] [--repo OWNER/REPO] [--json]
 ```
 
 Since: `v1.12.0`
@@ -545,6 +545,12 @@ Examples:
 
 ```bash
 gira ticket view
+```
+
+- Inspect an explicit ticket with the show alias
+
+```bash
+gira ticket show 42 --repo OWNER/app
 ```
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`

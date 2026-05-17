@@ -2575,6 +2575,61 @@ func TestTicketPRInfersTicketFromBranch(t *testing.T) {
 	}
 }
 
+func TestResolveTicketContextExplicitSkipsInference(t *testing.T) {
+	restoreDev := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = restoreDev })
+	devCommandRunner = devCLIRunner{errs: map[string]error{
+		"git branch --show-current":                                    fmt.Errorf("should not infer"),
+		"gh pr view --repo StatPan/gira --json body,headRefName,title": fmt.Errorf("should not infer"),
+	}}
+
+	var stderr bytes.Buffer
+	ticket, ok := resolveTicketContext(gira.RepoRef{Owner: "StatPan", Name: "gira"}, 225, 0, 0, true, &stderr)
+	if !ok || ticket != 225 || stderr.Len() != 0 {
+		t.Fatalf("ticket=%d ok=%t stderr=%q", ticket, ok, stderr.String())
+	}
+}
+
+func TestResolveTicketContextMissingWhenInferenceDisabled(t *testing.T) {
+	var stderr bytes.Buffer
+	ticket, ok := resolveTicketContext(gira.RepoRef{Owner: "StatPan", Name: "gira"}, 0, 0, 0, false, &stderr)
+	if ok || ticket != 0 || !strings.Contains(stderr.String(), "--ticket or positional ticket is required") {
+		t.Fatalf("ticket=%d ok=%t stderr=%q", ticket, ok, stderr.String())
+	}
+}
+
+func TestInferTicketFromCurrentContextRejectsAmbiguousPRBody(t *testing.T) {
+	runner := devCLIRunner{outputs: map[string][]byte{
+		"git branch --show-current":                                    []byte("main\n"),
+		"gh pr view --repo StatPan/gira --json body,headRefName,title": []byte(`{"body":"Closes #10\nFixes #11","headRefName":"feature/context","title":"Context"}`),
+	}}
+
+	_, err := inferTicketFromCurrentContext(gira.RepoRef{Owner: "StatPan", Name: "gira"}, runner)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("expected ambiguous PR body error, got %v", err)
+	}
+}
+
+func TestTicketLifecycleNextStepsShortenWorkCommands(t *testing.T) {
+	start := ticketWorkStartNextStep(gira.WorkStartResult{
+		Repo:     "StatPan/gira",
+		Issue:    126,
+		NextStep: "gira work start --repo StatPan/gira --issue 126 --apply",
+	})
+	if start != "gira ticket start 126 --apply" {
+		t.Fatalf("start next step = %q", start)
+	}
+
+	finish := ticketFinishNextStep(gira.WorkFinishResult{
+		Repo:     "StatPan/gira",
+		Issue:    219,
+		NextStep: "resolve review requirements, then gira work pr --repo StatPan/gira --issue 219 --apply",
+	})
+	if finish != "resolve review requirements, then gira ticket pr --apply" {
+		t.Fatalf("finish next step = %q", finish)
+	}
+}
+
 func TestTicketChecksJSON(t *testing.T) {
 	restoreChecks := newTicketChecksReport
 	restoreRepo := repoContextRunner

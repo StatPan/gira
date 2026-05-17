@@ -125,6 +125,48 @@ Evidence sources should be additive and explainable:
 
 When evidence conflicts, reports should prefer lower confidence and show why. Unknown attribution must not be treated as human work or agent work by default.
 
+## Provenance Notes
+
+`agent:*` labels are execution actor evidence. They are not final ownership,
+review, or accountability evidence. `lane:*` labels are delegation policy. They
+say what kind of work may be delegated, not who actually planned, implemented,
+or reviewed a specific result.
+
+When labels are too coarse, record a GitHub-visible provenance block in an
+issue or PR body/comment:
+
+```markdown
+<!-- gira:provenance:start -->
+planning: human
+implementation: ai
+review: human
+<!-- gira:provenance:end -->
+```
+
+Allowed actor classes are `human` and `ai`. Tool-specific names such as
+`codex`, `agent`, `bot`, or `llm` normalize to `ai`; names such as
+`maintainer`, `operator`, or `person` normalize to `human`.
+
+Use the phases this way:
+
+| Phase | Meaning |
+| --- | --- |
+| `planning` | Who shaped the issue, task breakdown, acceptance criteria, or direction. |
+| `implementation` | Who produced the material change or execution artifact. |
+| `review` | Who reviewed, accepted, requested changes, or supplied final judgment. |
+
+Mixed values are allowed:
+
+```markdown
+implementation: human, ai
+review: human, ai
+```
+
+Status and future stats reports can summarize these blocks without private
+identity inference. If a provenance block is absent, Gira may use `agent:*`
+labels as a low-friction implementation actor hint, but it must not treat
+`lane:*` labels as proof of execution.
+
 ## Safety And Privacy Boundary
 
 Delegation Quality is an operating safety report. It is not a scorecard for individual productivity.

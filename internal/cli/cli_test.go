@@ -4344,7 +4344,7 @@ func (c cliFakeStatusClient) JSON(args []string, target any) error {
 func cliStatusResponses(repo string) map[string]string {
 	return map[string]string{
 		"api repos/" + repo + "/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                         `[[{"number":1,"title":"MVP","state":"open","description":"","due_on":null,"open_issues":1,"closed_issues":1}]]`,
-		"issue list --repo " + repo + " --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url": `[{"number":1,"title":"Issue 1","state":"OPEN","labels":[],"milestone":{"title":"MVP"},"updatedAt":"2026-04-25T12:00:00Z","url":"https://github.com/` + repo + `/issues/1"}]`,
+		"issue list --repo " + repo + " --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url,body": `[{"number":1,"title":"Issue 1","state":"OPEN","labels":[],"milestone":{"title":"MVP"},"updatedAt":"2026-04-25T12:00:00Z","url":"https://github.com/` + repo + `/issues/1"}]`,
 	}
 }
 

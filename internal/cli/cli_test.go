@@ -3334,6 +3334,107 @@ func TestSprintRolloverMissingRepoReturnsTwo(t *testing.T) {
 	}
 }
 
+func TestSprintCommandsRequireBoundedModeAndArgs(t *testing.T) {
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"sprint", "plan", "--repo", "StatPan/gira", "--iteration", "2026-W18", "--capacity", "2"}, "--repo, --iteration, --capacity and exactly one of --dry-run/--apply are required"},
+		{[]string{"sprint", "plan", "--repo", "StatPan/gira", "--iteration", "2026-W18", "--capacity", "2", "--dry-run", "--apply"}, "--repo, --iteration, --capacity and exactly one of --dry-run/--apply are required"},
+		{[]string{"sprint", "start", "--repo", "StatPan/gira", "--iteration", "2026-W18"}, "--repo, --iteration and exactly one of --dry-run/--apply are required"},
+		{[]string{"sprint", "close", "--repo", "StatPan/gira", "--iteration", "2026-W18", "--spillover-disposition", "carry", "--dry-run"}, "--repo, --iteration, --spillover-disposition, --rollover-reason and exactly one of --dry-run/--apply are required"},
+		{[]string{"sprint", "rollover", "--repo", "StatPan/gira", "--dry-run", "--apply"}, "--repo and exactly one of --dry-run/--apply are required"},
+	}
+	for _, tc := range cases {
+		var stdout, stderr bytes.Buffer
+		code := Run(tc.args, &stdout, &stderr)
+		if code != 2 {
+			t.Fatalf("Run(%v) exit code=%d, want 2", tc.args, code)
+		}
+		if !strings.Contains(stderr.String(), tc.want) {
+			t.Fatalf("Run(%v) stderr missing %q:\n%s", tc.args, tc.want, stderr.String())
+		}
+	}
+}
+
+func TestSprintPlanStartCloseJSONLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"sprint", "plan", "--repo", "StatPan/gira", "--iteration", "2026-W18", "--capacity", "2", "--issues", "3,1,2", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("plan exit code=%d stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{`"mode": "apply"`, `"capacity_target": 2`, `"commit_count": 3`, `"capacity_breach": true`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("sprint plan JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"sprint", "start", "--repo", "StatPan/gira", "--iteration", "2026-W18", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("start exit code=%d stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{`"mode": "apply"`, `"commitment_frozen": true`, `"started_at"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("sprint start JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"sprint", "close", "--repo", "StatPan/gira", "--iteration", "2026-W18", "--completed", "1,3", "--spillover-disposition", "carry", "--rollover-reason", "dependency blocked", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("close exit code=%d stderr=%s", code, stderr.String())
+	}
+	var closeReport gira.SprintCloseReport
+	if err := json.Unmarshal(stdout.Bytes(), &closeReport); err != nil {
+		t.Fatalf("decode sprint close JSON: %v\n%s", err, stdout.String())
+	}
+	if closeReport.Mode != "apply" || fmt.Sprint(closeReport.Summary.CompletedItems) != "[1 3]" || fmt.Sprint(closeReport.Summary.SpilloverItems) != "[2]" || closeReport.Summary.SpilloverDisposition != "carry" || closeReport.Summary.RolloverReason != "dependency blocked" {
+		t.Fatalf("unexpected sprint close report: %+v", closeReport)
+	}
+}
+
+func TestSprintRolloverJSONUsesInjectedReport(t *testing.T) {
+	restore := newSprintRolloverReport
+	t.Cleanup(func() { newSprintRolloverReport = restore })
+	newSprintRolloverReport = func(repo gira.RepoRef, toMilestone string, apply bool) (gira.SprintRolloverReport, error) {
+		if repo.FullName() != "StatPan/gira" || toMilestone != "W18" || !apply {
+			t.Fatalf("unexpected rollover args repo=%s to=%s apply=%t", repo.FullName(), toMilestone, apply)
+		}
+		return gira.SprintRolloverReport{
+			Repo:             repo.FullName(),
+			Mode:             "apply",
+			TargetMilestone:  &gira.SprintRolloverTarget{Number: 2, Title: "W18"},
+			TargetResolution: "explicit --to",
+			Summary:          gira.SprintRolloverSummary{Candidates: 1, Applied: 1},
+			Items:            []gira.SprintRolloverItem{{IssueNumber: 10, IssueTitle: "Carry me", FromMilestone: "W17", Action: "applied", TargetMilestone: "W18"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"sprint", "rollover", "--repo", "StatPan/gira", "--to", "W18", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("rollover exit code=%d stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{`"mode": "apply"`, `"target_resolution": "explicit --to"`, `"applied": 1`, `"issue_number": 10`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("sprint rollover JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestTriageMissingRepoReturnsTwo(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"triage", "--dry-run"}, &stdout, &stderr)

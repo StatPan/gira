@@ -134,6 +134,22 @@ func TestResolveWorkspaceConfigMissingContext(t *testing.T) {
 	}
 }
 
+func TestResolveWorkspaceConfigRepoOnlyConfigExplainsWorkspaceInit(t *testing.T) {
+	dir := chdirTemp(t)
+	defaultGlobalConfigRootForTest(t)
+	writeTestFile(t, filepath.Join(dir, ".gira", "config.yaml"), "repo: StatPan/gira\nprofiles:\n  default:\n    labels: []\n")
+
+	_, err := ResolveWorkspaceConfig("")
+	if err == nil {
+		t.Fatal("expected repo-only config to fail workspace resolution")
+	}
+	for _, want := range []string{"workspace.inbox_repo is required", "repo-local configs from gira adopt repo are not workspace-ready", "gira workspace init --inbox-repo OWNER/backlog --repo OWNER/repo --path . --dry-run"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q:\n%v", want, err)
+		}
+	}
+}
+
 func TestBuildWorkspaceStatusReportAggregatesInboxAndRepos(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",

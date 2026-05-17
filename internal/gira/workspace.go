@@ -219,7 +219,7 @@ func resolveWorkspaceConfigFile(path string, source string) (WorkspaceConfigReso
 		workspace.Repos = append([]string{}, cfg.Portfolio.Repos...)
 	}
 	if strings.TrimSpace(workspace.InboxRepo) == "" {
-		return WorkspaceConfigResolved{}, fmt.Errorf("workspace.inbox_repo is required in %s", path)
+		return WorkspaceConfigResolved{}, fmt.Errorf("workspace.inbox_repo is required in %s; repo-local configs from gira adopt repo are not workspace-ready. Run gira workspace init --inbox-repo OWNER/backlog --repo OWNER/repo --path . --dry-run, or pass --config to an existing workspace config", path)
 	}
 	if len(workspace.Repos) == 0 {
 		return WorkspaceConfigResolved{}, fmt.Errorf("workspace.repos must include at least one execution repo in %s", path)

@@ -51,6 +51,28 @@ func TestPortfolioLowerPlanAmbiguousExisting(t *testing.T) {
 	if len(actions) != 1 || actions[0].Action != "execution_issue:ambiguous_existing" {
 		t.Fatalf("actions = %+v, want ambiguous block", actions)
 	}
+	if strings.Join(client.calls, "\n") != "search StatPan/gira 31" {
+		t.Fatalf("calls = %+v, want one duplicate-search probe", client.calls)
+	}
+}
+
+func TestPortfolioLowerPlanBlocksInvalidTicketsWithoutSearch(t *testing.T) {
+	client := &fakePortfolioLowerClient{failOnSearch: true}
+	tickets, diagnostics := ParsePortfolioTickets([]PortfolioRawTicket{
+		{Number: 31, Title: "Missing target", State: "open", Body: portfolioBody("single_repo", "", "")},
+		{Number: 32, Title: "Invalid routing", State: "open", Body: portfolioBody("handoff", "StatPan/gira", "")},
+	}, []RepoRef{mustRepoRefForPortfolio("StatPan/gira")})
+
+	actions, err := PortfolioLowerPlan(tickets, diagnostics, mustRepoRefForPortfolio("StatPan/portfolio"), []RepoRef{mustRepoRefForPortfolio("StatPan/gira")}, client, allowAllPortfolioLowerCapability())
+	if err != nil {
+		t.Fatalf("PortfolioLowerPlan error: %v", err)
+	}
+	if len(actions) != 2 || actions[0].Action != "ticket:blocked_invalid_repo" || actions[1].Action != "ticket:blocked_invalid_repo" {
+		t.Fatalf("actions = %+v, want invalid tickets blocked", actions)
+	}
+	if client.searchCalls != 0 || len(client.calls) != 0 {
+		t.Fatalf("searchCalls=%d calls=%+v, want no execution repo probes for invalid tickets", client.searchCalls, client.calls)
+	}
 }
 
 func TestApplyPortfolioLowerActionsCreatesAndUpdatesParent(t *testing.T) {
@@ -72,6 +94,26 @@ func TestApplyPortfolioLowerActionsCreatesAndUpdatesParent(t *testing.T) {
 	}
 	if !applied[0].Applied || !applied[1].Applied || applied[0].IssueNumber == 0 || applied[1].IssueNumber == 0 {
 		t.Fatalf("applied actions = %+v, want created issue numbers and applied flags", applied)
+	}
+}
+
+func TestApplyPortfolioLowerActionsRecordsCommandSequence(t *testing.T) {
+	client := &fakePortfolioLowerClient{}
+	tickets, _ := ParsePortfolioTickets([]PortfolioRawTicket{
+		{Number: 31, Title: "Create", State: "open", Body: portfolioBody("single_repo", "StatPan/gira", "")},
+	}, []RepoRef{mustRepoRefForPortfolio("StatPan/gira")})
+	actions := []PortfolioLowerAction{
+		{Ticket: 31, Action: "execution_issue:create", Repo: "StatPan/gira"},
+		{Ticket: 31, Action: "portfolio_ticket:update_child_issues", Repo: "StatPan/gira"},
+	}
+
+	if _, err := ApplyPortfolioLowerActions(actions, tickets, mustRepoRefForPortfolio("StatPan/portfolio"), client, nil); err != nil {
+		t.Fatalf("ApplyPortfolioLowerActions error: %v", err)
+	}
+
+	want := "create StatPan/gira 31\nupdate 31 StatPan/gira#100"
+	if strings.Join(client.calls, "\n") != want {
+		t.Fatalf("calls = %+v, want:\n%s", client.calls, want)
 	}
 }
 
@@ -392,16 +434,43 @@ func TestAppendPortfolioChildIssuesUpdatesEmptyHeading(t *testing.T) {
 	}
 }
 
+func TestGHPortfolioLowerClientUpdatePortfolioChildIssuesRendersPatchedBody(t *testing.T) {
+	runner := &portfolioLowerRecordingRunner{}
+	client := GHPortfolioLowerClient{portfolioRepo: mustRepoRefForPortfolio("StatPan/portfolio"), runner: runner}
+	ticket := PortfolioTicket{
+		Number: 31,
+		Body:   "## Goal\nG\n\n## Child Issues\nStatPan/gira#1\n\n## Non Goals\nN\n",
+	}
+
+	if err := client.UpdatePortfolioChildIssues(ticket, []string{"StatPan/gira#1", "StatPan/docs#2"}); err != nil {
+		t.Fatalf("UpdatePortfolioChildIssues error: %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("calls = %+v, want one gh api patch", runner.calls)
+	}
+	call := runner.calls[0]
+	for _, want := range []string{
+		"gh api repos/StatPan/portfolio/issues/31 -X PATCH",
+		"body=## Goal\nG\n\n## Child Issues\nStatPan/gira#1\nStatPan/docs#2\n## Non Goals\nN",
+	} {
+		if !strings.Contains(call, want) {
+			t.Fatalf("patch call missing %q:\n%s", want, call)
+		}
+	}
+}
+
 type fakePortfolioLowerClient struct {
 	existing     map[string][]PortfolioLoweredIssue
 	created      []PortfolioLoweredIssue
 	updated      map[int][]string
 	failOnSearch bool
 	searchCalls  int
+	calls        []string
 }
 
 func (c *fakePortfolioLowerClient) SearchLoweredIssues(repo RepoRef, portfolioRepo RepoRef, ticket int) ([]PortfolioLoweredIssue, error) {
 	c.searchCalls++
+	c.calls = append(c.calls, "search "+repo.FullName()+" "+itoaForPortfolioLower(ticket))
 	if c.failOnSearch {
 		return nil, errors.New("unexpected search")
 	}
@@ -413,6 +482,7 @@ func (c *fakePortfolioLowerClient) SearchLoweredIssues(repo RepoRef, portfolioRe
 
 func (c *fakePortfolioLowerClient) CreateExecutionIssue(repo RepoRef, ticket PortfolioTicket, portfolioRepo RepoRef) (PortfolioLoweredIssue, error) {
 	issue := PortfolioLoweredIssue{Repo: repo.FullName(), Number: 100 + len(c.created), URL: "https://github.com/" + repo.FullName() + "/issues/" + itoaForPortfolioLower(100+len(c.created))}
+	c.calls = append(c.calls, "create "+repo.FullName()+" "+itoaForPortfolioLower(ticket.Number))
 	c.created = append(c.created, issue)
 	return issue, nil
 }
@@ -421,8 +491,18 @@ func (c *fakePortfolioLowerClient) UpdatePortfolioChildIssues(ticket PortfolioTi
 	if c.updated == nil {
 		c.updated = map[int][]string{}
 	}
+	c.calls = append(c.calls, "update "+itoaForPortfolioLower(ticket.Number)+" "+strings.Join(childIssues, ","))
 	c.updated[ticket.Number] = append(c.updated[ticket.Number], childIssues...)
 	return nil
+}
+
+type portfolioLowerRecordingRunner struct {
+	calls []string
+}
+
+func (r *portfolioLowerRecordingRunner) Run(name string, args ...string) ([]byte, error) {
+	r.calls = append(r.calls, strings.Join(append([]string{name}, args...), " "))
+	return []byte("ok\n"), nil
 }
 
 func itoaForPortfolioLower(value int) string {

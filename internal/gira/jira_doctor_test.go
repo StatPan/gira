@@ -124,6 +124,61 @@ func TestBuildJiraDoctorReportWarnsWhenTransitionSampleMissing(t *testing.T) {
 	}
 }
 
+func TestBuildJiraDoctorReportWarnsWhenDoneTransitionUnreachable(t *testing.T) {
+	root := writeJiraDoctorConfig(t, "")
+	fakeJiraDoctorAPI(t, "statuses_simple.json", "transitions_in_progress.json", nil)
+	runner := &jiraRunner{outputs: map[string][]byte{
+		"gh issue list --repo StatPan/gira --state all --limit 1000 --json number,title,body,url,labels": []byte(`[{"number":77,"title":"Mirror","body":"Jira-Key: ABC-123\n","url":"https://github.com/StatPan/gira/issues/77","labels":[{"name":"jira:ABC-123"}]}]`),
+	}}
+
+	report, err := BuildJiraDoctorReport(JiraDoctorInput{
+		Repo:       ParseRepoRefMust("StatPan/gira"),
+		ConfigRoot: root,
+		SampleKey:  "ABC-123",
+		Email:      "alice@example.com",
+		Token:      "secret-token",
+	}, runner)
+	if err != nil {
+		t.Fatalf("BuildJiraDoctorReport error: %v", err)
+	}
+	if report.Status != "warning" || report.Transitions.Status != "warning" || !strings.Contains(report.Transitions.Detail, "no allowed transition") {
+		t.Fatalf("expected unreachable Done transition warning: %+v", report.Transitions)
+	}
+	if !hasJiraDoctorCheck(report, "transition_reachability", "warning") {
+		t.Fatalf("missing transition warning check: %+v", report.Checks)
+	}
+	if text := FormatJiraDoctorReport(report); !strings.Contains(text, "transition_sample: warning ABC-123") || !strings.Contains(text, "Use Jira admin workflow settings") {
+		t.Fatalf("formatted report missing unreachable transition guidance:\n%s", text)
+	}
+}
+
+func TestBuildJiraDoctorReportWarnsOnMissingMirrorLabels(t *testing.T) {
+	root := writeJiraDoctorConfig(t, "")
+	fakeJiraDoctorAPI(t, "statuses_simple.json", "transitions_done.json", nil)
+	runner := &jiraRunner{outputs: map[string][]byte{
+		"gh issue list --repo StatPan/gira --state all --limit 1000 --json number,title,body,url,labels": []byte(`[{"number":77,"title":"Mirror","body":"Jira-Key: ABC-123\n","url":"https://github.com/StatPan/gira/issues/77","labels":[]}]`),
+	}}
+
+	report, err := BuildJiraDoctorReport(JiraDoctorInput{
+		Repo:       ParseRepoRefMust("StatPan/gira"),
+		ConfigRoot: root,
+		Email:      "alice@example.com",
+		Token:      "secret-token",
+	}, runner)
+	if err != nil {
+		t.Fatalf("BuildJiraDoctorReport error: %v", err)
+	}
+	if report.Status != "warning" || report.Mirror.Status != "warning" || len(report.Mirror.MissingKeyLabels) != 1 {
+		t.Fatalf("expected missing mirror label warning: %+v", report.Mirror)
+	}
+	if report.Mirror.MissingKeyLabels[0].Key != "ABC-123" || report.Mirror.MissingKeyLabels[0].Issue.Number != 77 {
+		t.Fatalf("unexpected missing key label diagnostic: %+v", report.Mirror.MissingKeyLabels)
+	}
+	if !hasJiraDoctorCheck(report, "mirror_issue_health", "warning") {
+		t.Fatalf("missing mirror warning check: %+v", report.Checks)
+	}
+}
+
 func TestBuildJiraDoctorReportBlocksWhenSampleMirrorIsMissing(t *testing.T) {
 	root := writeJiraDoctorConfig(t, "")
 	fakeJiraDoctorAPI(t, "statuses_simple.json", "transitions_done.json", nil)

@@ -2051,7 +2051,7 @@ func TestTicketHelpIncludesListFilters(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{"gira ticket list", "--state open|closed|all", "--label LABEL", "--assignee LOGIN", "--milestone TITLE"} {
+	for _, want := range []string{"gira ticket list", "gira ticket view|show", "Alias: show", "--state open|closed|all", "--label LABEL", "--assignee LOGIN", "--milestone TITLE"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("ticket help missing %q:\n%s", want, stdout.String())
 		}
@@ -2630,6 +2630,26 @@ func TestTicketViewResolvesJiraKey(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("ticket view output missing %q:\n%s", want, stdout.String())
 		}
+	}
+}
+
+func TestTicketShowAliasesTicketView(t *testing.T) {
+	restoreView := newTicketViewReport
+	t.Cleanup(func() { newTicketViewReport = restoreView })
+	newTicketViewReport = func(repo gira.RepoRef, issue int) (gira.TicketViewReport, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 77 {
+			t.Fatalf("unexpected ticket show args repo=%s issue=%d", repo.FullName(), issue)
+		}
+		return gira.TicketViewReport{Command: "ticket view", Repo: repo.FullName(), Ticket: issue, Status: gira.WorkStatusResult{Repo: repo.FullName(), Issue: issue, Title: "Alias", State: "open", Status: "Ready", NextAction: "start_work", NextStep: "gira ticket start --repo StatPan/gira --ticket 77 --dry-run"}}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "show", "77", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "ticket view: #77 Alias") {
+		t.Fatalf("ticket show output should use view formatter:\n%s", stdout.String())
 	}
 }
 

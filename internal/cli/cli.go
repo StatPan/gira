@@ -749,7 +749,7 @@ const ticketHelp = `Jira-style ticket lifecycle commands.
 Usage:
   gira ticket new "Title" --dry-run|--apply [--body TEXT|--body-file PATH|-] [--start] [--json]
   gira ticket list [--repo OWNER/REPO] [--state open|closed|all] [--label LABEL] [--assignee LOGIN] [--milestone TITLE] [--limit N] [--json]
-  gira ticket view [TICKET|JIRA-KEY] [--repo OWNER/REPO] [--json]
+  gira ticket view|show [TICKET|JIRA-KEY] [--repo OWNER/REPO] [--json]
   gira ticket prompt [TICKET] --role planner|implementer|reviewer [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]
   gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
@@ -763,7 +763,7 @@ Usage:
 Commands:
   new     Create a repo-bound executable ticket with a structured Gira body
   list    List repo tickets with compact GitHub issue-backed filters
-  view    Show an operating card for the ticket, linked PR, blockers, and next action
+  view    Show an operating card for the ticket, linked PR, blockers, and next action. Alias: show
   prompt  Render a stateless planner, implementer, or reviewer prompt from ticket context
   start   Verify a ready ticket, create/reuse its branch, and move to in-progress on apply. Alias: gira start
   pr      Validate or create a linked PR with Closes #N and update review status on apply
@@ -2834,7 +2834,7 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTicketNew(args[1:], stdout, stderr)
 	case "list":
 		return runTicketList(args[1:], stdout, stderr)
-	case "view":
+	case "view", "show":
 		return runTicketView(args[1:], stdout, stderr)
 	case "prompt":
 		return runTicketPrompt(args[1:], stdout, stderr)

@@ -18,6 +18,9 @@ func TestBuildAuditReadinessReportWarnsForMissingLedger(t *testing.T) {
 	if report.Audit.Status != AuditReadinessStatusMissing {
 		t.Fatalf("audit status = %q, want missing", report.Audit.Status)
 	}
+	if report.Mode != AuditReadinessModeDailyOperation {
+		t.Fatalf("mode = %q, want daily_operation", report.Mode)
+	}
 	if report.Audit.Verify.Failure != "no_audit_files_found" {
 		t.Fatalf("audit failure = %q, want no_audit_files_found", report.Audit.Verify.Failure)
 	}
@@ -120,29 +123,36 @@ func TestFormatAuditReadinessReportSeparatesDoctorAndAuditSections(t *testing.T)
 	report := BuildAuditReadinessReport(repo, filepath.Join(t.TempDir(), "*.jsonl"), readyDoctorRunner(), fixedAuditReadinessTime())
 	out := FormatAuditReadinessReport(report)
 
-	for _, want := range []string{"readiness/doctor checks:", "audit ledger health:", "[warn] audit_ledger"} {
+	for _, want := range []string{"mode: daily_operation", "readiness/doctor checks:", "audit ledger health:", "[warn] audit_ledger"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("formatted report missing %q:\n%s", want, out)
 		}
 	}
 }
 
-func TestFormatAuditReadinessReportMissingLedgerIncludesWorkGuidance(t *testing.T) {
+func TestBuildAuditReadinessReportNoOpenWorkModeIsReady(t *testing.T) {
 	report := BuildAuditReadinessReport(
 		ParseRepoRefMust("StatPan/gira"),
 		filepath.Join(t.TempDir(), "*.jsonl"),
-		readyDoctorRunner(),
+		noOpenWorkDoctorRunner(),
 		fixedAuditReadinessTime(),
 	)
 
 	if !report.Ready || report.Audit.Status != AuditReadinessStatusMissing {
-		t.Fatalf("report = %+v, want doctor-ready missing-ledger readiness warning", report)
+		t.Fatalf("report = %+v, want no-open-work readiness warning", report)
 	}
-	if !strings.Contains(report.NextStep, "gira ticket new") || !strings.Contains(report.NextStep, "--repo StatPan/gira") {
-		t.Fatalf("next step = %q, want work/evidence guidance", report.NextStep)
+	if report.Mode != AuditReadinessModeNoOpenWork || !report.Doctor.Ready {
+		t.Fatalf("mode=%q doctor.ready=%t, want no_open_work ready", report.Mode, report.Doctor.Ready)
+	}
+	check := doctorCheckByID(report.Doctor, "onboard_readiness")
+	if check == nil || check.Status != DoctorCheckWarn || check.Detail != "open issues=0" {
+		t.Fatalf("onboard_readiness check = %+v, want no-open-work warning", check)
+	}
+	if !strings.Contains(report.NextStep, "no open work") || strings.Contains(report.NextStep, "gira ticket new") {
+		t.Fatalf("next step = %q, want completion/idle guidance without hard start prompt", report.NextStep)
 	}
 	text := FormatAuditReadinessReport(report)
-	for _, want := range []string{"audit readiness: READY", "[warn] audit_ledger", "next step: run `gira status --repo StatPan/gira`"} {
+	for _, want := range []string{"audit readiness: READY", "mode: no_open_work", "[warn] onboard_readiness: open issues=0", "[warn] audit_ledger"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("formatted readiness missing %q:\n%s", want, text)
 		}
@@ -171,6 +181,7 @@ func TestBuildAuditReadinessReportInvalidGlobGuidesVerify(t *testing.T) {
 func TestAuditReadinessNextStepUsesFirstDoctorFailureRemediation(t *testing.T) {
 	report := AuditReadinessReport{
 		Repo:  "StatPan/gira",
+		Mode:  AuditReadinessModeDailyOperation,
 		Ready: false,
 		Doctor: DoctorReport{
 			Ready: false,
@@ -193,4 +204,10 @@ func TestAuditReadinessNextStepUsesFirstDoctorFailureRemediation(t *testing.T) {
 
 func fixedAuditReadinessTime() time.Time {
 	return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+}
+
+func noOpenWorkDoctorRunner() onboardFakeRunner {
+	runner := readyDoctorRunner()
+	runner.responses["gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100"] = `[]`
+	return runner
 }

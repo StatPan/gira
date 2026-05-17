@@ -11,11 +11,15 @@ const (
 	AuditReadinessStatusOK      = "ok"
 	AuditReadinessStatusMissing = "missing"
 	AuditReadinessStatusFailed  = "failed"
+
+	AuditReadinessModeDailyOperation = "daily_operation"
+	AuditReadinessModeNoOpenWork     = "no_open_work"
 )
 
 type AuditReadinessReport struct {
 	Repo      string               `json:"repo"`
 	Command   string               `json:"command"`
+	Mode      string               `json:"mode"`
 	Ready     bool                 `json:"ready"`
 	CheckedAt string               `json:"checked_at"`
 	Doctor    DoctorReport         `json:"doctor"`
@@ -42,9 +46,11 @@ func BuildAuditReadinessReport(repo RepoRef, ledgerPath string, runner CommandRu
 		verify = VerifyAuditLedgerForRepo(ledgerPath, repo)
 	}
 	audit := auditReadinessHealth(repo, ledgerPath, verify)
+	doctor, mode := auditReadinessDoctorMode(doctor)
 	report := AuditReadinessReport{
 		Repo:      repo.FullName(),
 		Command:   "audit readiness",
+		Mode:      mode,
 		Ready:     doctor.Ready && audit.Status != AuditReadinessStatusFailed,
 		CheckedAt: checkedAt.UTC().Format(time.RFC3339),
 		Doctor:    doctor,
@@ -67,6 +73,9 @@ func FormatAuditReadinessReport(report AuditReadinessReport) string {
 	if strings.TrimSpace(report.CheckedAt) != "" {
 		fmt.Fprintf(&b, "checked_at: %s\n", report.CheckedAt)
 	}
+	if strings.TrimSpace(report.Mode) != "" {
+		fmt.Fprintf(&b, "mode: %s\n", report.Mode)
+	}
 	fmt.Fprintln(&b, "\nreadiness/doctor checks:")
 	for _, check := range report.Doctor.Checks {
 		fmt.Fprintf(&b, "- [%s] %s: %s\n", check.Status, check.ID, check.Detail)
@@ -81,6 +90,44 @@ func FormatAuditReadinessReport(report AuditReadinessReport) string {
 	}
 	fmt.Fprintf(&b, "\nnext step: %s\n", report.NextStep)
 	return b.String()
+}
+
+func auditReadinessDoctorMode(doctor DoctorReport) (DoctorReport, string) {
+	if doctor.Ready {
+		return doctor, AuditReadinessModeDailyOperation
+	}
+	if !auditReadinessOnlyNoOpenWorkFailed(doctor) {
+		return doctor, AuditReadinessModeDailyOperation
+	}
+	out := doctor
+	out.Checks = append([]DoctorCheck(nil), doctor.Checks...)
+	for i, check := range out.Checks {
+		if auditReadinessNoOpenWorkCheck(check) {
+			out.Checks[i].Status = DoctorCheckWarn
+			out.Checks[i].Remediation = "repository has no open work; create or sync ready issues when starting the next daily operation cycle"
+			break
+		}
+	}
+	out.Ready = true
+	return out, AuditReadinessModeNoOpenWork
+}
+
+func auditReadinessOnlyNoOpenWorkFailed(doctor DoctorReport) bool {
+	found := false
+	for _, check := range doctor.Checks {
+		if check.Status != DoctorCheckFail {
+			continue
+		}
+		if !auditReadinessNoOpenWorkCheck(check) {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
+func auditReadinessNoOpenWorkCheck(check DoctorCheck) bool {
+	return check.ID == "onboard_readiness" && strings.TrimSpace(check.Detail) == "open issues=0"
 }
 
 func auditReadinessHealth(repo RepoRef, ledgerPath string, verify AuditVerifyReport) AuditReadinessHealth {
@@ -128,6 +175,9 @@ func auditReadinessNextStep(report AuditReadinessReport, ledgerPath string) stri
 	}
 	if report.Audit.Status == AuditReadinessStatusFailed {
 		return fmt.Sprintf("fix audit ledger corruption, then run `gira audit verify%s --path %s`", repoFlag, ledgerPath)
+	}
+	if report.Mode == AuditReadinessModeNoOpenWork {
+		return fmt.Sprintf("no open work; run `gira status%s` for completion evidence or create a ready ticket when starting the next cycle", repoFlag)
 	}
 	if !report.Doctor.Ready {
 		for _, check := range report.Doctor.Checks {

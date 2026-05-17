@@ -104,21 +104,30 @@ type ProjectsSyncReport struct {
 }
 
 type ProjectsSyncCounts struct {
-	Repos               int  `json:"repos"`
-	Issues              int  `json:"issues"`
-	FieldsCreate        int  `json:"fields_create"`
-	FieldsSkip          int  `json:"fields_skip"`
-	ProjectLinksAdd     int  `json:"project_links_add"`
-	ProjectItemsAdd     int  `json:"project_items_add"`
-	ProjectItemsSkip    int  `json:"project_items_skip"`
-	ProjectItemsArchive int  `json:"project_items_archive"`
-	StatusUpdates       int  `json:"status_updates"`
-	StatusUpdateSkips   int  `json:"status_update_skips"`
-	FieldUpdates        int  `json:"field_updates"`
-	FieldUpdateSkips    int  `json:"field_update_skips"`
-	DateUpdates         int  `json:"date_updates"`
-	DateUpdateSkips     int  `json:"date_update_skips"`
-	ViewSetupRequired   bool `json:"view_setup_required"`
+	Repos                   int                                `json:"repos"`
+	Issues                  int                                `json:"issues"`
+	FieldsCreate            int                                `json:"fields_create"`
+	FieldsSkip              int                                `json:"fields_skip"`
+	ProjectLinksAdd         int                                `json:"project_links_add"`
+	ProjectItemsAdd         int                                `json:"project_items_add"`
+	ProjectItemsSkip        int                                `json:"project_items_skip"`
+	ProjectItemsSkipReasons ProjectsSyncProjectItemSkipReasons `json:"project_items_skip_reasons"`
+	ProjectItemsArchive     int                                `json:"project_items_archive"`
+	StatusUpdates           int                                `json:"status_updates"`
+	StatusUpdateSkips       int                                `json:"status_update_skips"`
+	FieldUpdates            int                                `json:"field_updates"`
+	FieldUpdateSkips        int                                `json:"field_update_skips"`
+	DateUpdates             int                                `json:"date_updates"`
+	DateUpdateSkips         int                                `json:"date_update_skips"`
+	ViewSetupRequired       bool                               `json:"view_setup_required"`
+}
+
+type ProjectsSyncProjectItemSkipReasons struct {
+	AlreadyPresent        int `json:"already_present"`
+	ClosedDone            int `json:"closed_done"`
+	DuplicateCandidate    int `json:"duplicate_candidate"`
+	CapabilityUnavailable int `json:"capability_unavailable"`
+	UnsupportedItemShape  int `json:"unsupported_item_shape"`
 }
 
 type ProjectsSyncAction struct {
@@ -621,10 +630,21 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 		}
 	}
 	itemByIssue := map[string]ProjectsSyncItem{}
+	validItems := []ProjectsSyncItem{}
 	for _, item := range items {
-		itemByIssue[projectIssueKey(item.Repo, item.Number)] = item
+		if strings.TrimSpace(item.Repo) == "" || item.Number <= 0 {
+			recordProjectItemSkip(&report, "unsupported_item_shape")
+			continue
+		}
+		key := projectIssueKey(item.Repo, item.Number)
+		if _, exists := itemByIssue[key]; exists {
+			recordProjectItemSkip(&report, "duplicate_candidate")
+			continue
+		}
+		itemByIssue[key] = item
+		validItems = append(validItems, item)
 	}
-	for _, item := range items {
+	for _, item := range validItems {
 		if item.ID == "" || item.IssueState != "closed" {
 			continue
 		}
@@ -681,7 +701,7 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 				report.Actions = append(report.Actions, action)
 				report.Counts.ProjectItemsAdd++
 			} else {
-				report.Counts.ProjectItemsSkip++
+				recordProjectItemSkip(&report, "already_present")
 			}
 			desired := desiredProjectStatus(issue.Labels)
 			current := item.Status
@@ -828,7 +848,7 @@ func fetchProjectsSyncRepoInputs(client ProjectsSyncClient, project ProjectsSync
 func syncProjectDoneStatus(report *ProjectsSyncReport, client ProjectsSyncClient, project ProjectsSyncProject, statusField ProjectsSyncStatusField, item ProjectsSyncItem, dryRun bool) {
 	current := item.Status
 	if current == "Done" {
-		report.Counts.ProjectItemsSkip++
+		recordProjectItemSkip(report, "closed_done")
 		return
 	}
 	optionID := statusField.Options["Done"]
@@ -850,6 +870,22 @@ func syncProjectDoneStatus(report *ProjectsSyncReport, client ProjectsSyncClient
 	}
 	report.Actions = append(report.Actions, action)
 	report.Counts.StatusUpdates++
+}
+
+func recordProjectItemSkip(report *ProjectsSyncReport, reason string) {
+	report.Counts.ProjectItemsSkip++
+	switch reason {
+	case "already_present":
+		report.Counts.ProjectItemsSkipReasons.AlreadyPresent++
+	case "closed_done":
+		report.Counts.ProjectItemsSkipReasons.ClosedDone++
+	case "duplicate_candidate":
+		report.Counts.ProjectItemsSkipReasons.DuplicateCandidate++
+	case "capability_unavailable":
+		report.Counts.ProjectItemsSkipReasons.CapabilityUnavailable++
+	case "unsupported_item_shape":
+		report.Counts.ProjectItemsSkipReasons.UnsupportedItemShape++
+	}
 }
 
 func syncProjectPlanningFields(report *ProjectsSyncReport, client ProjectsSyncClient, project ProjectsSyncProject, fields map[string]ProjectsSyncField, issue ProjectsSyncIssue, item ProjectsSyncItem, dryRun bool) {
@@ -1022,6 +1058,7 @@ func FormatProjectsSyncReport(report ProjectsSyncReport) string {
 	fmt.Fprintf(&b, "projects sync: %s\n", mode)
 	fmt.Fprintf(&b, "project: %s #%d\n", report.Project.Title, report.Project.Number)
 	fmt.Fprintf(&b, "repos: %d issues: %d fields-create: %d add-items: %d archive-items: %d status-updates: %d field-updates: %d date-updates: %d\n", report.Counts.Repos, report.Counts.Issues, report.Counts.FieldsCreate, report.Counts.ProjectItemsAdd, report.Counts.ProjectItemsArchive, report.Counts.StatusUpdates, report.Counts.FieldUpdates, report.Counts.DateUpdates)
+	fmt.Fprintf(&b, "project-items-skip: total=%d already_present=%d closed_done=%d duplicate_candidate=%d capability_unavailable=%d unsupported_item_shape=%d\n", report.Counts.ProjectItemsSkip, report.Counts.ProjectItemsSkipReasons.AlreadyPresent, report.Counts.ProjectItemsSkipReasons.ClosedDone, report.Counts.ProjectItemsSkipReasons.DuplicateCandidate, report.Counts.ProjectItemsSkipReasons.CapabilityUnavailable, report.Counts.ProjectItemsSkipReasons.UnsupportedItemShape)
 	if report.ManualActionRequired && len(report.Actions) == 0 {
 		b.WriteString("data sync: complete; manual action required for GitHub Project view setup\n")
 	}

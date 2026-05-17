@@ -130,3 +130,117 @@ func TestFormatCachePruneReportIncludesModeCountsAndReasons(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatLowRiskReportsKeepOutputContracts(t *testing.T) {
+	prompt := FormatAgentPrompt(AgentPromptReport{Prompt: "Plan this\n\n"})
+	if prompt != "Plan this\n" {
+		t.Fatalf("agent prompt = %q, want single trailing newline", prompt)
+	}
+
+	version := FormatVersionInfo(VersionInfo{Version: "v1.2.3", Commit: "abc123", Date: "2026-05-17"})
+	if version != "gira v1.2.3 (abc123, 2026-05-17)\n" {
+		t.Fatalf("version output = %q", version)
+	}
+
+	upgrade := FormatUpgradeReport(UpgradeReport{
+		Current:  "v1.0.0",
+		Latest:   "v1.1.0",
+		Status:   "update_available",
+		Channel:  "pipx",
+		NextStep: "pipx upgrade gira-cli",
+	})
+	for _, want := range []string{"upgrade: gira", "current: v1.0.0", "latest:  v1.1.0", "status:  update_available", "channel: pipx", "next step:\n  pipx upgrade gira-cli"} {
+		if !strings.Contains(upgrade, want) {
+			t.Fatalf("upgrade report missing %q:\n%s", want, upgrade)
+		}
+	}
+
+	none := FormatWorkStatus(WorkStatusResult{Repo: "StatPan/gira", Issue: 42, Status: "Ready", NextAction: "start_work"})
+	if !strings.Contains(none, "blockers=none") || !strings.Contains(none, "next step: gira work start --repo StatPan/gira --issue 42 --apply") {
+		t.Fatalf("work status no-blocker output unexpected:\n%s", none)
+	}
+	blocked := FormatWorkStatus(WorkStatusResult{Repo: "StatPan/gira", Issue: 43, Status: "In review", PRNumber: 44, Blockers: []string{"draft", "checks"}, NextAction: "mark_pr_ready"})
+	if !strings.Contains(blocked, "work status: issue #43 status=In review pr=44 blockers=draft,checks next=mark_pr_ready") || !strings.Contains(blocked, "next step: mark the PR ready for review") {
+		t.Fatalf("work status blocker output unexpected:\n%s", blocked)
+	}
+}
+
+func TestFormatSetupGlobalReportIncludesDryRunContentAndGuidance(t *testing.T) {
+	out := FormatSetupGlobalReport(SetupGlobalReport{
+		Mode:       SetupGlobalModeHybrid,
+		ConfigRoot: "/tmp/gira",
+		Repo:       "StatPan/gira",
+		Workspace:  WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+		InboxRepo:  "StatPan/backlog",
+		RepoContract: ConfigFileStatus{
+			Path:   "/repo/.gira/config.yaml",
+			Exists: true,
+			Valid:  true,
+		},
+		DryRun: true,
+		Status: "planned",
+		Files: []SetupGlobalFilePlan{{
+			Path:    "/tmp/gira/config.yaml",
+			Action:  "create",
+			Content: "default_workspace: personal\n",
+		}},
+		Notes:    []string{"global registry remains personal metadata"},
+		NextStep: "gira setup global --apply",
+	})
+
+	for _, want := range []string{
+		"setup global: planned hybrid",
+		"config root: /tmp/gira",
+		"repo: StatPan/gira",
+		"workspace: personal (StatPan)",
+		"inbox: StatPan/backlog",
+		"repo-local contract: /repo/.gira/config.yaml valid=true",
+		"file: /tmp/gira/config.yaml action=create",
+		"default_workspace: personal",
+		"note: global registry remains personal metadata",
+		"next step: gira setup global --apply",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("setup global report missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestFormatJiraReportsKeepOutputContracts(t *testing.T) {
+	importReport := FormatJiraImportReport(JiraImportReport{
+		Repo:   "StatPan/gira",
+		Counts: JiraImportCounts{SourceItems: 3, Create: 2, Duplicate: 1, Applied: 2},
+	})
+	for _, want := range []string{"jira import:", "repo: StatPan/gira", "source_items: 3", "create: 2", "duplicate: 1", "applied: 2"} {
+		if !strings.Contains(importReport, want) {
+			t.Fatalf("jira import report missing %q:\n%s", want, importReport)
+		}
+	}
+
+	mirror := FormatJiraMirrorReport(JiraMirrorReport{
+		Repo:   "StatPan/gira",
+		Key:    "ABC-123",
+		Status: "blocked",
+		Action: "manual_resolve",
+		Issue:  JiraMirrorIssue{Number: 12, Title: "Primary mirror"},
+		Duplicates: []JiraMirrorIssue{
+			{Number: 13, Title: "Duplicate mirror"},
+		},
+		Labels:   []string{"jira:ABC", "status:ready"},
+		NextStep: "resolve duplicate mirrors",
+	})
+	for _, want := range []string{"jira mirror: blocked ABC-123", "repo: StatPan/gira", "action: manual_resolve", "issue: #12 Primary mirror", "duplicates:", "- #13 Duplicate mirror", "labels: jira:ABC,status:ready", "next step: resolve duplicate mirrors"} {
+		if !strings.Contains(mirror, want) {
+			t.Fatalf("jira mirror report missing %q:\n%s", want, mirror)
+		}
+	}
+
+	exportReport := JiraExportReport{OutputRoot: "/tmp/gira-jira-export"}
+	exportReport.Counts.Issues = 4
+	exported := FormatJiraExportReport(exportReport)
+	for _, want := range []string{"jira export artifacts written to /tmp/gira-jira-export", "issues: 4"} {
+		if !strings.Contains(exported, want) {
+			t.Fatalf("jira export report missing %q:\n%s", want, exported)
+		}
+	}
+}

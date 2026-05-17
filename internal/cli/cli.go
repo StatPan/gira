@@ -1196,6 +1196,10 @@ var newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
 
 var reviewGateRunner gira.CommandRunner = gira.ExecCommandRunner{}
 
+var newSprintRolloverReport = func(repo gira.RepoRef, toMilestone string, apply bool) (gira.SprintRolloverReport, error) {
+	return gira.SprintRollover(repo, toMilestone, apply, time.Now(), gira.ExecCommandRunner{})
+}
+
 var newGuardrailsSyncReport = func(repo gira.RepoRef, policyPath string, apply bool, allowRelaxation bool) (gira.GuardrailsSyncReport, error) {
 	policy, err := gira.LoadGuardrailsPolicy(policyPath)
 	if err != nil {
@@ -6681,7 +6685,7 @@ func runSprint(args []string, stdout io.Writer, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "%v\n", err)
 			return 2
 		}
-		report, err := gira.SprintRollover(repo, *toMilestone, *apply, time.Now(), gira.ExecCommandRunner{})
+		report, err := newSprintRolloverReport(repo, *toMilestone, *apply)
 		if err != nil {
 			fmt.Fprintf(stderr, "%v\n", err)
 			return 1

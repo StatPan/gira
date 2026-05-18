@@ -450,6 +450,39 @@ gira ticket prompt 42 --role reviewer --pr 77
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
+## `ticket review`
+
+Render a reviewer packet from current ticket and linked PR state.
+
+Usage:
+
+```bash
+gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--json]
+```
+
+Since: `v1.15.0`
+
+Flags:
+
+- `--pr`: Optional PR number override for reviewer packet context.
+- `--json`: Emit stable JSON including issue, PR, evidence, and prompt fields.
+
+Examples:
+
+- Render reviewer packet for current branch ticket
+
+```bash
+gira ticket review
+```
+
+- Render reviewer packet with an explicit PR override
+
+```bash
+gira ticket review --ticket 42 --pr 77 --json
+```
+
+Documented in: `docs-site/ticket-workflow.md`, `docs-site/command-reference.md`, `docs/dogfood.md`
+
 ## `ticket start`
 
 Verify a ready issue, create or reuse its branch, and move it to in-progress.

@@ -753,6 +753,7 @@ Usage:
   gira ticket list [--repo OWNER/REPO] [--state open|closed|all] [--label LABEL] [--assignee LOGIN] [--milestone TITLE] [--limit N] [--json]
   gira ticket view|show [TICKET|JIRA-KEY] [--repo OWNER/REPO] [--json]
   gira ticket prompt [TICKET] --role planner|implementer|reviewer [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]
+  gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--json]
   gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
   gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both] [--body TEXT|--body-file PATH|-] [--json]
@@ -767,6 +768,7 @@ Commands:
   list    List repo tickets with compact GitHub issue-backed filters
   view    Show an operating card for the ticket, linked PR, blockers, and next action. Alias: show
   prompt  Render a stateless planner, implementer, or reviewer prompt from ticket context
+  review  Render a reviewer packet from current ticket and linked PR state
   start   Verify a ready ticket, create/reuse its branch, and move to in-progress on apply. Alias: gira start
   pr      Validate or create a linked PR with Closes #N and update review status on apply
   note    Post a structured context note to the issue, linked PR, or both
@@ -2848,6 +2850,8 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTicketView(args[1:], stdout, stderr)
 	case "prompt":
 		return runTicketPrompt(args[1:], stdout, stderr)
+	case "review":
+		return runTicketReview(args[1:], stdout, stderr)
 	case "start":
 		return runTicketStart(args[1:], stdout, stderr)
 	case "pr":
@@ -3051,6 +3055,74 @@ func runTicketPrompt(args []string, stdout io.Writer, stderr io.Writer) int {
 		out, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			fmt.Fprintf(stderr, "encode ticket prompt JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatAgentPrompt(result))
+	return 0
+}
+
+func runTicketReview(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalIdentifier, positionalOK := extractTicketIdentifierPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("ticket review", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	profile := fs.String("profile", "default", "Prompt profile: default|python")
+	prNumber := fs.Int("pr", 0, "Optional PR number for reviewer packet context")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	ticketNumber, _, resolved, resolveErr := resolveTicketIdentifierContext(repo, *ticket, *issue, positionalIdentifier, true, stderr)
+	if resolveErr != nil {
+		fmt.Fprintf(stderr, "%v\n", resolveErr)
+		return 1
+	}
+	if !resolved {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	result, err := newTicketPromptReport(gira.AgentPromptInput{
+		Repo:     repo,
+		Ticket:   ticketNumber,
+		Role:     gira.AgentPromptRoleReviewer,
+		Profile:  *profile,
+		PRNumber: *prNumber,
+	})
+	result.Command = "ticket review"
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode ticket review JSON: %v\n", err)
 			return 2
 		}
 		fmt.Fprintf(stdout, "%s\n", out)

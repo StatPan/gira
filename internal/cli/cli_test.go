@@ -4128,6 +4128,61 @@ func TestTicketPromptJSONUsesInjectedBuilder(t *testing.T) {
 	}
 }
 
+func TestTicketReviewInfersTicketAndDefaultsReviewerRole(t *testing.T) {
+	restorePrompt := newTicketPromptReport
+	restoreRunner := devCommandRunner
+	t.Cleanup(func() {
+		newTicketPromptReport = restorePrompt
+		devCommandRunner = restoreRunner
+	})
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"git branch --show-current": []byte("issue-436-add-prompts\n"),
+	}}
+	newTicketPromptReport = func(input gira.AgentPromptInput) (gira.AgentPromptReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 436 || input.Role != "reviewer" || input.PRNumber != 77 {
+			t.Fatalf("unexpected review input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.AgentPromptReport{
+			Command: "ticket prompt",
+			Repo:    input.Repo.FullName(),
+			Ticket:  input.Ticket,
+			Role:    input.Role,
+			Profile: input.Profile,
+			PR:      &gira.AgentPromptPR{Number: input.PRNumber, Title: "feat: prompts", FinishReady: true},
+			Prompt:  "# Gira reviewer prompt\n\nFinish Ready: `true`\n",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "review", "--repo", "StatPan/gira", "--pr", "77", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "ticket review"`, `"role": "reviewer"`, `"ticket": 436`, `"finish_ready": true`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket review JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestTicketReviewMissingContextGivesActionableError(t *testing.T) {
+	restoreRunner := devCommandRunner
+	t.Cleanup(func() { devCommandRunner = restoreRunner })
+	devCommandRunner = devCLIRunner{errs: map[string]error{
+		"git branch --show-current":                                    fmt.Errorf("not a branch"),
+		"gh pr view --repo StatPan/gira --json body,headRefName,title": fmt.Errorf("no pr"),
+	}}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "review", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2; stdout: %s stderr: %s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "ticket context unavailable: pass --ticket N or run from an issue branch") {
+		t.Fatalf("stderr missing context guidance:\n%s", stderr.String())
+	}
+}
+
 func TestSyncDryRunUsesInjectedClientWithoutApplying(t *testing.T) {
 	restoreClient := newSyncClient
 	t.Cleanup(func() {

@@ -211,6 +211,11 @@ func RenderAgentPrompt(report AgentPromptReport) string {
 				fmt.Fprintf(&b, "  - `%s`\n", file)
 			}
 		}
+		if report.Role == AgentPromptRoleReviewer {
+			b.WriteString("\n## Review Evidence Commands\n")
+			fmt.Fprintf(&b, "- Inspect the actual diff: `gh pr diff %d --repo %s`\n", report.PR.Number, report.Repo)
+			fmt.Fprintf(&b, "- Inspect the changed file list: `gh pr diff %d --repo %s --name-only`\n", report.PR.Number, report.Repo)
+		}
 		if strings.TrimSpace(report.PR.Body) != "" {
 			fmt.Fprintf(&b, "\n### PR Body\n%s\n", fencedOrNone(report.PR.Body))
 		}
@@ -364,6 +369,10 @@ func agentPromptRoleRules(role string) []string {
 		}
 	case AgentPromptRoleReviewer:
 		return []string{
+			"Treat this as a read-only review brief; do not modify files, commit, push, or resolve comments.",
+			"Inspect the actual diff when a PR is known; do not review only the issue body, PR body, or changed-file list.",
+			"Check AGENTS.md and repository-local agent instructions before applying generic review assumptions.",
+			"Consider AI Delivery Telemetry, Gira label/workflow conventions, CLI/tool contract conventions, and tests required by the changed surface.",
 			"Review findings first, ordered by severity, with file and line references where available.",
 			"Prioritize bugs, regressions, missing tests, security, data loss, and operational risks.",
 			"Do not lead with a summary before findings.",

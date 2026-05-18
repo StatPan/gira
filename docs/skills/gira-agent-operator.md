@@ -60,6 +60,11 @@ lifecycle, safety, or evidence rules defined here.
    - Prefer `gira ticket checks TICKET --repo OWNER/REPO`.
    - Prefer `gira ticket wait TICKET --repo OWNER/REPO --timeout 5m`.
    - Investigate failed checks before requesting finish.
+   - For review handoff, use `gira ticket review` or
+     `gira ticket prompt --role reviewer`; the reviewer prompt is read-only,
+     points to the actual PR diff, and reminds reviewers to check repo-local
+     agent instructions, Gira workflow conventions, tool contracts, telemetry,
+     and changed-surface tests.
 6. Finish.
    - Prefer `gira ticket finish TICKET --repo OWNER/REPO --dry-run`.
    - Apply only after the dry-run is clean: `gira ticket finish TICKET --repo OWNER/REPO --apply`.

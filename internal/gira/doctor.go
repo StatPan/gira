@@ -76,6 +76,7 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 			skippedDoctorCheck("metadata_drift", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
 			skippedDoctorCheck("workflow_policy_labels", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
 			skippedDoctorCheck("closed_issue_status_labels", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
+			skippedDoctorCheck("workflow_nonconformance", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
 			skippedDoctorCheck("onboard_readiness", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
 		)
 		report.Checks = append(report.Checks, companionDoctorsCheck(repo))
@@ -105,6 +106,7 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 		report.Checks = append(report.Checks, metadataDriftDoctorCheck(repo, runner))
 		report.Checks = append(report.Checks, workflowPolicyLabelsDoctorCheck(repo, runner))
 		report.Checks = append(report.Checks, closedIssueStatusLabelsDoctorCheck(repo, runner))
+		report.Checks = append(report.Checks, workflowNonconformanceDoctorCheck(repo, runner))
 		report.Checks = append(report.Checks, onboardReadinessDoctorCheck(repo, runner, checkedAt))
 	} else {
 		report.Checks = append(report.Checks,
@@ -112,6 +114,7 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 			skippedDoctorCheck("metadata_drift", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
 			skippedDoctorCheck("workflow_policy_labels", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
 			skippedDoctorCheck("closed_issue_status_labels", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
+			skippedDoctorCheck("workflow_nonconformance", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
 			skippedDoctorCheck("onboard_readiness", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
 		)
 	}
@@ -382,6 +385,8 @@ func doctorWorkflowPolicyLabels() []string {
 		"status:ready",
 		"status:in-progress",
 		"status:in-review",
+		"status:blocked",
+		"status:done",
 		"priority:p1",
 		"priority:p2",
 		"area:backend",
@@ -389,6 +394,36 @@ func doctorWorkflowPolicyLabels() []string {
 		"area:ai",
 		"agent:human",
 		"agent:worker",
+	}
+}
+
+func workflowNonconformanceDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
+	report, err := BuildWorkflowAuditReport(repo, runner, time.Now().UTC())
+	if err != nil {
+		return DoctorCheck{
+			ID:          "workflow_nonconformance",
+			Status:      DoctorCheckFail,
+			Detail:      err.Error(),
+			Remediation: fmt.Sprintf("run `gira audit workflow --repo %s --json`; fix read access or malformed GitHub data", repo.FullName()),
+		}
+	}
+	if len(report.Findings) == 0 {
+		return DoctorCheck{
+			ID:          "workflow_nonconformance",
+			Status:      DoctorCheckPass,
+			Detail:      fmt.Sprintf("workflow drift findings=0; issues scanned=%d; prs scanned=%d", report.Counts.IssuesScanned, report.Counts.PRsScanned),
+			Remediation: "",
+		}
+	}
+	status := DoctorCheckFail
+	if report.Ready {
+		status = DoctorCheckWarn
+	}
+	return DoctorCheck{
+		ID:          "workflow_nonconformance",
+		Status:      status,
+		Detail:      fmt.Sprintf("workflow drift findings=%d (%s)", len(report.Findings), formatWorkflowFindingSummary(report.Findings)),
+		Remediation: fmt.Sprintf("run `gira audit workflow --repo %s --json`, then normalize safe status drift with `gira adopt issues --repo %s --state all --normalize-status --dry-run`", repo.FullName(), repo.FullName()),
 	}
 }
 

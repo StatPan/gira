@@ -13,7 +13,7 @@ func TestBuildDoctorReportReady(t *testing.T) {
 	if !report.Ready {
 		t.Fatalf("ready = false, want true: %+v", report.Checks)
 	}
-	for _, id := range []string{"gira_cli_visible", "gh_available", "repo_context", "gh_auth", "repo_access", "metadata_drift", "workflow_policy_labels", "closed_issue_status_labels", "onboard_readiness", "companion_doctors", "local_git_state"} {
+	for _, id := range []string{"gira_cli_visible", "gh_available", "repo_context", "gh_auth", "repo_access", "metadata_drift", "workflow_policy_labels", "closed_issue_status_labels", "workflow_nonconformance", "onboard_readiness", "companion_doctors", "local_git_state"} {
 		check := doctorCheckByID(report, id)
 		if check == nil {
 			t.Fatalf("missing check %s: %+v", id, report.Checks)
@@ -234,6 +234,8 @@ func readyDoctorRunner() onboardFakeRunner {
 			"gh api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                  doctorDesiredMilestonesJSON(),
 			"gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100":                      `[[{"number":129,"title":"Doctor","state":"open","labels":[{"name":"type:task"}],"milestone":{"title":"MVP"},"updated_at":"2026-05-05T12:00:00Z","html_url":"https://github.com/StatPan/gira/issues/129"}]]`,
 			"gh issue list --repo StatPan/gira --state closed --limit 1000 --json number,title,labels":                     `[]`,
+			"gh issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,body":             `[{"number":129,"title":"Doctor","state":"OPEN","body":"` + ProvenanceBlockStart + `\nplanning: human\nimplementation:\nreview:\n` + ProvenanceBlockEnd + `","labels":[{"name":"type:task"},{"name":"status:ready"}]}]`,
+			"gh pr list --repo StatPan/gira --state all --limit 1000 --json number,title,body,state,mergedAt":              `[]`,
 			"gh issue list --repo StatPan/gira --state all --label gira:bootstrap --json number,title,labels --limit 1000": desiredBootstrapIssuesJSON(),
 			"git rev-parse --is-inside-work-tree":                                                                          "true",
 			"git branch --show-current":                                                                                    "main",

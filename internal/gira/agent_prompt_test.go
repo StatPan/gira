@@ -61,7 +61,23 @@ func TestBuildAgentPromptReportReviewerWithExplicitPR(t *testing.T) {
 	if report.PR.FinishReady || !containsString(report.PR.Blockers, "review") {
 		t.Fatalf("expected review blocker and not finish ready: %+v", report.PR)
 	}
-	for _, want := range []string{"Review findings first", "Pull Request Context", "Review Decision: `REVIEW_REQUIRED`", "Changed Files:", "internal/gira/agent_prompt.go", "Closes #436", "Findings first"} {
+	for _, want := range []string{
+		"do not modify files, commit, push, or resolve comments",
+		"Inspect the actual diff",
+		"gh pr diff 45",
+		"AGENTS.md",
+		"AI Delivery Telemetry",
+		"Gira label/workflow",
+		"tool contract",
+		"tests required by the changed surface",
+		"Review findings first",
+		"Pull Request Context",
+		"Review Decision: `REVIEW_REQUIRED`",
+		"Changed Files:",
+		"internal/gira/agent_prompt.go",
+		"Closes #436",
+		"Findings first",
+	} {
 		if !strings.Contains(report.Prompt, want) {
 			t.Fatalf("reviewer prompt missing %q:\n%s", want, report.Prompt)
 		}

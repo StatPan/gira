@@ -363,6 +363,7 @@ var DesiredLabels = []LabelDef{
 	{Name: "status:in-progress", Color: "1D76DB", Description: "Work has started on a branch or active implementation."},
 	{Name: "status:in-review", Color: "7057FF", Description: "A linked PR or review surface is active."},
 	{Name: "status:blocked", Color: "E99695", Description: "Blocked by an external dependency or decision."},
+	{Name: "status:done", Color: "0E8A16", Description: "Work is completed with merged, closed, or accepted completion evidence."},
 	{Name: "priority:p1", Color: "D93F0B", Description: "High priority work."},
 	{Name: "priority:p2", Color: "FBCA04", Description: "Medium priority work."},
 	{Name: "area:backend", Color: "0052CC", Description: "Backend, CLI, and core workflow implementation."},

@@ -53,7 +53,7 @@ func TestTicketNewDryRunRendersStructuredBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildTicketNewReport error: %v", err)
 	}
-	for _, want := range []string{"## Goal", "Retry transient auth failures", "- retries 3 times", "## Doctor Impact", "## Notes", "Keep logs terse"} {
+	for _, want := range []string{"## Goal", "Retry transient auth failures", "- retries 3 times", "## Doctor Impact", "## Notes", "Keep logs terse", ProvenanceBlockStart, "planning: human", ProvenanceBlockEnd} {
 		if !strings.Contains(report.Body, want) {
 			t.Fatalf("body missing %q:\n%s", want, report.Body)
 		}
@@ -157,7 +157,7 @@ func TestTicketNewApplyStartRunsStartWork(t *testing.T) {
 }
 
 func defaultTicketNewBody(title string) string {
-	return "## Goal\n" + title + "\n\n## Scope\n_No response_\n\n## Acceptance Criteria\n_No response_\n\n## Doctor Impact\n_No response_\n\n## Notes\n_No response_\n"
+	return "## Goal\n" + title + "\n\n## Scope\n_No response_\n\n## Acceptance Criteria\n_No response_\n\n## Doctor Impact\n_No response_\n\n## Notes\n_No response_\n\n" + DefaultProvenanceBlock() + "\n"
 }
 
 func TestTicketNewRejectsInvalidTypeAndPriority(t *testing.T) {

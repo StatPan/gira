@@ -49,6 +49,10 @@ func ParseProvenanceNote(text string) ProvenanceNote {
 	return note
 }
 
+func DefaultProvenanceBlock() string {
+	return ProvenanceBlockStart + "\nplanning: human\nimplementation:\nreview:\n" + ProvenanceBlockEnd
+}
+
 func extractProvenanceBlock(text string) string {
 	start := strings.Index(text, ProvenanceBlockStart)
 	if start < 0 {

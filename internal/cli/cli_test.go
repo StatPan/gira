@@ -5251,6 +5251,67 @@ func TestAuditCommandBranchesAndVerifyJSONFailure(t *testing.T) {
 	}
 }
 
+func TestAuditWorkflowJSONUsesInjectedReportAndExitCode(t *testing.T) {
+	restore := newAuditWorkflowReport
+	t.Cleanup(func() { newAuditWorkflowReport = restore })
+	newAuditWorkflowReport = func(repo gira.RepoRef) (gira.WorkflowAuditReport, error) {
+		if repo.FullName() != "StatPan/gira" {
+			t.Fatalf("repo = %q, want StatPan/gira", repo.FullName())
+		}
+		return gira.WorkflowAuditReport{
+			Repo:      repo.FullName(),
+			Command:   "audit workflow",
+			CheckedAt: "2026-05-18T12:00:00Z",
+			Ready:     false,
+			Counts:    gira.WorkflowAuditCounts{IssuesScanned: 2, PRsScanned: 1, Findings: 1},
+			Findings: []gira.WorkflowAuditFinding{{
+				ID:          "open_issue_done_status",
+				Severity:    "fail",
+				IssueNumber: 7,
+				Detail:      "open issue has terminal status:done",
+				Remediation: "normalize status",
+			}},
+			NextStep: "gira adopt issues --repo StatPan/gira --state all --issues 7 --normalize-status --dry-run",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"audit", "workflow", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "audit workflow"`, `"ready": false`, `"issues_scanned": 2`, `"id": "open_issue_done_status"`, `"next_step": "gira adopt issues`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("audit workflow JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestAuditWorkflowTextReady(t *testing.T) {
+	restore := newAuditWorkflowReport
+	t.Cleanup(func() { newAuditWorkflowReport = restore })
+	newAuditWorkflowReport = func(repo gira.RepoRef) (gira.WorkflowAuditReport, error) {
+		return gira.WorkflowAuditReport{
+			Repo:     repo.FullName(),
+			Command:  "audit workflow",
+			Ready:    true,
+			Counts:   gira.WorkflowAuditCounts{IssuesScanned: 2, PRsScanned: 1},
+			NextStep: "workflow contract is converged",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"audit", "workflow", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"audit workflow: READY", "repo: StatPan/gira", "next step: workflow contract is converged"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("audit workflow text missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestAuditReadinessJSONUsesInjectedReportAndExitCode(t *testing.T) {
 	restore := newAuditReadinessReport
 	t.Cleanup(func() { newAuditReadinessReport = restore })

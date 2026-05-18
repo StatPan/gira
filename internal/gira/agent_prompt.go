@@ -25,23 +25,27 @@ type AgentPromptInput struct {
 }
 
 type AgentPromptReport struct {
-	Command  string           `json:"command"`
-	Repo     string           `json:"repo"`
-	Ticket   int              `json:"ticket"`
-	Role     string           `json:"role"`
-	Profile  string           `json:"profile"`
-	Issue    AgentPromptIssue `json:"issue"`
-	PR       *AgentPromptPR   `json:"pr,omitempty"`
-	Prompt   string           `json:"prompt"`
-	NextStep string           `json:"next_step"`
+	Command  string               `json:"command"`
+	Repo     string               `json:"repo"`
+	Ticket   int                  `json:"ticket"`
+	Role     string               `json:"role"`
+	Profile  string               `json:"profile"`
+	Issue    AgentPromptIssue     `json:"issue"`
+	PR       *AgentPromptPR       `json:"pr,omitempty"`
+	Evidence *AgentPromptEvidence `json:"evidence,omitempty"`
+	Prompt   string               `json:"prompt"`
+	NextStep string               `json:"next_step"`
 }
 
 type AgentPromptIssue struct {
-	Number int      `json:"number"`
-	Title  string   `json:"title"`
-	State  string   `json:"state"`
-	Body   string   `json:"body"`
-	Labels []string `json:"labels"`
+	Number     int      `json:"number"`
+	Title      string   `json:"title"`
+	State      string   `json:"state"`
+	Body       string   `json:"body"`
+	Labels     []string `json:"labels"`
+	Goal       string   `json:"goal,omitempty"`
+	Scope      string   `json:"scope,omitempty"`
+	Acceptance []string `json:"acceptance,omitempty"`
 }
 
 type AgentPromptPR struct {
@@ -55,6 +59,16 @@ type AgentPromptPR struct {
 	MergeState     string       `json:"merge_state,omitempty"`
 	Blockers       []string     `json:"blockers,omitempty"`
 	Checks         []DevPRCheck `json:"checks,omitempty"`
+	ChangedFiles   []string     `json:"changed_files,omitempty"`
+	FinishReady    bool         `json:"finish_ready"`
+}
+
+type AgentPromptEvidence struct {
+	ClosingIssues []int        `json:"closing_issues,omitempty"`
+	Checks        []DevPRCheck `json:"checks,omitempty"`
+	Blockers      []string     `json:"blockers,omitempty"`
+	ChangedFiles  []string     `json:"changed_files,omitempty"`
+	FinishReady   bool         `json:"finish_ready"`
 }
 
 func BuildAgentPromptReport(input AgentPromptInput, runner CommandRunner) (AgentPromptReport, error) {
@@ -94,15 +108,31 @@ func BuildAgentPromptReport(input AgentPromptInput, runner CommandRunner) (Agent
 		},
 		NextStep: agentPromptNextStep(input.Repo, input.Ticket, role),
 	}
+	report.Issue.Goal = markdownSection(issue.Body, "Goal")
+	report.Issue.Scope = markdownSection(issue.Body, "Scope")
+	report.Issue.Acceptance = markdownListSection(issue.Body, "Acceptance Criteria")
 	if role == AgentPromptRoleReviewer {
 		pr, err := resolveAgentPromptPR(input.Repo, input.Ticket, input.PRNumber, runner)
 		if err != nil {
 			return report, err
 		}
 		report.PR = pr
+		if pr != nil {
+			report.Evidence = agentPromptEvidence(pr)
+		}
 	}
 	report.Prompt = RenderAgentPrompt(report)
 	return report, nil
+}
+
+func agentPromptEvidence(pr *AgentPromptPR) *AgentPromptEvidence {
+	return &AgentPromptEvidence{
+		ClosingIssues: ExtractClosureIssueNumbers(pr.Body),
+		Checks:        append([]DevPRCheck(nil), pr.Checks...),
+		Blockers:      append([]string(nil), pr.Blockers...),
+		ChangedFiles:  append([]string(nil), pr.ChangedFiles...),
+		FinishReady:   pr.FinishReady,
+	}
 }
 
 func RenderAgentPrompt(report AgentPromptReport) string {
@@ -125,6 +155,21 @@ func RenderAgentPrompt(report AgentPromptReport) string {
 	b.WriteString("## Ticket Context\n")
 	fmt.Fprintf(&b, "- State: `%s`\n", valueOrUnknown(report.Issue.State))
 	fmt.Fprintf(&b, "- Labels: %s\n\n", valueOrNone(strings.Join(report.Issue.Labels, ", ")))
+	if strings.TrimSpace(report.Issue.Goal) != "" {
+		fmt.Fprintf(&b, "- Goal: %s\n", report.Issue.Goal)
+	}
+	if strings.TrimSpace(report.Issue.Scope) != "" {
+		fmt.Fprintf(&b, "- Scope: %s\n", report.Issue.Scope)
+	}
+	if len(report.Issue.Acceptance) > 0 {
+		b.WriteString("- Acceptance Criteria:\n")
+		for _, item := range report.Issue.Acceptance {
+			fmt.Fprintf(&b, "  - %s\n", item)
+		}
+	}
+	if strings.TrimSpace(report.Issue.Goal) != "" || strings.TrimSpace(report.Issue.Scope) != "" || len(report.Issue.Acceptance) > 0 {
+		b.WriteString("\n")
+	}
 	fmt.Fprintf(&b, "### Issue Body\n%s\n\n", fencedOrNone(report.Issue.Body))
 
 	if report.PR != nil {
@@ -139,8 +184,32 @@ func RenderAgentPrompt(report AgentPromptReport) string {
 		if strings.TrimSpace(report.PR.URL) != "" {
 			fmt.Fprintf(&b, "- URL: %s\n", report.PR.URL)
 		}
+		if strings.TrimSpace(report.PR.ReviewDecision) != "" {
+			fmt.Fprintf(&b, "- Review Decision: `%s`\n", report.PR.ReviewDecision)
+		}
+		if strings.TrimSpace(report.PR.MergeState) != "" {
+			fmt.Fprintf(&b, "- Merge State: `%s`\n", report.PR.MergeState)
+		}
+		fmt.Fprintf(&b, "- Draft: `%t`\n", report.PR.IsDraft)
+		fmt.Fprintf(&b, "- Finish Ready: `%t`\n", report.PR.FinishReady)
 		if len(report.PR.Blockers) > 0 {
 			fmt.Fprintf(&b, "- Blockers: %s\n", strings.Join(report.PR.Blockers, ", "))
+		}
+		if len(report.PR.Checks) > 0 {
+			b.WriteString("- Checks:\n")
+			for _, check := range report.PR.Checks {
+				name := valueOrUnknown(check.Name)
+				if strings.TrimSpace(check.Workflow) != "" {
+					name = check.Workflow + "/" + name
+				}
+				fmt.Fprintf(&b, "  - %s: %s\n", name, valueOrUnknown(check.State))
+			}
+		}
+		if len(report.PR.ChangedFiles) > 0 {
+			b.WriteString("- Changed Files:\n")
+			for _, file := range report.PR.ChangedFiles {
+				fmt.Fprintf(&b, "  - `%s`\n", file)
+			}
 		}
 		if strings.TrimSpace(report.PR.Body) != "" {
 			fmt.Fprintf(&b, "\n### PR Body\n%s\n", fencedOrNone(report.PR.Body))
@@ -196,16 +265,16 @@ func resolveAgentPromptPR(repo RepoRef, ticket int, prNumber int, runner Command
 		return nil, err
 	}
 	if status.PRNumber == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("reviewer prompt requires a linked PR for ticket #%d; run `gira ticket pr --repo %s --ticket %d --dry-run`", ticket, repo.FullName(), ticket)
 	}
-	return &AgentPromptPR{
-		Number:     status.PRNumber,
-		State:      status.State,
-		URL:        status.PRURL,
-		MergeState: status.Mergeable,
-		Blockers:   append([]string(nil), status.Blockers...),
-		Checks:     append([]DevPRCheck(nil), status.Checks...),
-	}, nil
+	pr, err := fetchAgentPromptPR(repo, status.PRNumber, runner)
+	if err != nil {
+		return nil, err
+	}
+	pr.Blockers = append([]string(nil), status.Blockers...)
+	pr.Checks = append([]DevPRCheck(nil), status.Checks...)
+	pr.FinishReady = status.Ready
+	return &pr, nil
 }
 
 func fetchAgentPromptPR(repo RepoRef, prNumber int, runner CommandRunner) (AgentPromptPR, error) {
@@ -224,6 +293,8 @@ func fetchAgentPromptPR(repo RepoRef, prNumber int, runner CommandRunner) (Agent
 	for _, check := range raw.StatusRollup {
 		checks = append(checks, DevPRCheck{Name: check.Name, Workflow: check.Workflow, Status: check.Status, Conclusion: check.Conclusion, URL: check.URL, State: classifyDevPRCheck(check.Status, check.Conclusion)})
 	}
+	changedFiles := fetchAgentPromptChangedFiles(repo, raw.Number, runner)
+	blockers := agentPromptPRBlockers(raw, checks)
 	return AgentPromptPR{
 		Number:         raw.Number,
 		Title:          raw.Title,
@@ -233,8 +304,45 @@ func fetchAgentPromptPR(repo RepoRef, prNumber int, runner CommandRunner) (Agent
 		ReviewDecision: raw.ReviewDecision,
 		IsDraft:        raw.IsDraft,
 		MergeState:     raw.MergeState,
+		Blockers:       blockers,
 		Checks:         checks,
+		ChangedFiles:   changedFiles,
+		FinishReady:    len(blockers) == 0,
 	}, nil
+}
+
+func fetchAgentPromptChangedFiles(repo RepoRef, prNumber int, runner CommandRunner) []string {
+	out, err := runner.Run("gh", "pr", "diff", strconv.Itoa(prNumber), "--repo", repo.FullName(), "--name-only")
+	if err != nil {
+		return nil
+	}
+	files := []string{}
+	for _, line := range strings.Split(string(out), "\n") {
+		file := strings.TrimSpace(line)
+		if file != "" {
+			files = append(files, file)
+		}
+	}
+	return files
+}
+
+func agentPromptPRBlockers(raw prSummary, checks []DevPRCheck) []string {
+	blockers := []string{}
+	if raw.IsDraft {
+		blockers = append(blockers, "draft")
+	}
+	if raw.ReviewDecision == "CHANGES_REQUESTED" || raw.ReviewDecision == "REVIEW_REQUIRED" {
+		blockers = append(blockers, "review")
+	}
+	for _, check := range checks {
+		switch check.State {
+		case "failing":
+			return append(blockers, "checks")
+		case "pending":
+			return append(blockers, "checks_pending")
+		}
+	}
+	return blockers
 }
 
 func agentPromptRoleRules(role string) []string {
@@ -333,4 +441,41 @@ func valueOrUnknown(value string) string {
 		return "unknown"
 	}
 	return value
+}
+
+func markdownSection(body string, heading string) string {
+	lines := strings.Split(body, "\n")
+	inSection := false
+	values := []string{}
+	target := strings.ToLower(strings.TrimSpace(heading))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "## ") {
+			current := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(trimmed, "## ")))
+			if inSection {
+				break
+			}
+			inSection = current == target
+			continue
+		}
+		if inSection {
+			values = append(values, line)
+		}
+	}
+	return strings.TrimSpace(strings.Join(values, "\n"))
+}
+
+func markdownListSection(body string, heading string) []string {
+	section := markdownSection(body, heading)
+	items := []string{}
+	for _, line := range strings.Split(section, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "- ") {
+			item := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+			if item != "" {
+				items = append(items, item)
+			}
+		}
+	}
+	return items
 }

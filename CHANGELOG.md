@@ -6,6 +6,36 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.15.0 - 2026-05-18
+
+- Added the reviewer packet workflow with `gira ticket review`, including
+  linked PR state, checks, changed files, finish readiness, evidence fields,
+  and a rendered reviewer prompt for stateless review workers.
+- Hardened reviewer prompts with explicit read-only behavior, actual PR diff
+  inspection commands, repository-local agent instruction reminders, Gira
+  workflow conventions, tool contract checks, telemetry context, and
+  changed-surface test expectations.
+- Added workflow convergence auditing with `gira audit workflow`, `status:done`
+  normalization, and no-open-work readiness semantics for completed queues.
+- Added goal-level operating model and contribution provenance support so
+  planning, implementation, and review ownership can be tracked across
+  human/AI work.
+- Improved ticket and workspace operating UX with `ticket show` guidance,
+  retry behavior for linked PR lookup after PR creation, workspace init merge
+  support, adopt repo/workspace guidance, adopt issues before/after state
+  clarity, project sync skip reasons, and closed epic status guidance.
+- Hardened security-sensitive boundaries for generated CLI continuation
+  commands, Jira API base URLs, release and site publishing workflows, review
+  gate policy checks, ticket finish branch binding, workspace guardrail
+  resolution, symlink-safe local writes, and branch push execution.
+- Expanded test coverage across ticket lifecycle formatting, workspace routing,
+  projects sync, Jira import/export and doctor diagnostics, sprint/release
+  review paths, report formatters, config and repo registry paths, and
+  deterministic output contracts.
+- Improved public positioning and documentation for Gira's issue-to-PR
+  agent workflow, business-group multi-repo workflows, release distribution,
+  and canonical agent operator guidance.
+
 ## v1.12.0 - 2026-05-14
 
 - Added Jira-primary provider workflow support across provider discovery,

@@ -104,8 +104,8 @@ func TestFormatTicketReportsKeepLifecycleOutputStable(t *testing.T) {
 		}
 	}
 
-	finish := FormatWorkFinish(WorkFinishResult{Issue: 42, PRNumber: 43, Blockers: []string{"review"}, Actions: []WorkFinishAction{{Action: "pr:merge", Status: "blocked"}}, NextStep: "resolve review"})
-	for _, want := range []string{"work finish: issue #42 pr=43 merged=false blockers=review actions=pr:merge:blocked", "next step: resolve review"} {
+	finish := FormatWorkFinish(WorkFinishResult{Issue: 42, PRNumber: 43, Readiness: WorkFinishReadinessReport{SchemaVersion: "finish-readiness/v1", Ready: false}, Blockers: []string{"review"}, Actions: []WorkFinishAction{{Action: "pr:merge", Status: "blocked"}}, NextStep: "resolve review"})
+	for _, want := range []string{"work finish: issue #42 pr=43 merged=false readiness=blocked blockers=review actions=pr:merge:blocked", "next step: resolve review"} {
 		if !strings.Contains(finish, want) {
 			t.Fatalf("finish output missing %q:\n%s", want, finish)
 		}

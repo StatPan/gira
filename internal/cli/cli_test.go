@@ -3450,13 +3450,13 @@ func TestFormatTicketFinishCoversBlockersActionsAndFallbacks(t *testing.T) {
 	}{
 		{
 			name:   "blocked with actions",
-			result: gira.WorkFinishResult{Issue: 21, PRNumber: 22, Blockers: []string{"checks", "review"}, Actions: []gira.WorkFinishAction{{Action: "linked_pr:inspect", Status: "done"}, {Action: "pr:merge", Status: "blocked"}}, NextStep: "resolve blockers"},
-			wants:  []string{"ticket #21", "pr=22", "merged=false", "blockers=checks,review", "actions=linked_pr:inspect:done,pr:merge:blocked", "next step: resolve blockers"},
+			result: gira.WorkFinishResult{Issue: 21, PRNumber: 22, Readiness: gira.WorkFinishReadinessReport{SchemaVersion: "finish-readiness/v1", Ready: false}, Blockers: []string{"checks", "review"}, Actions: []gira.WorkFinishAction{{Action: "linked_pr:inspect", Status: "done"}, {Action: "pr:merge", Status: "blocked"}}, NextStep: "resolve blockers"},
+			wants:  []string{"ticket #21", "pr=22", "merged=false", "readiness=blocked", "blockers=checks,review", "actions=linked_pr:inspect:done,pr:merge:blocked", "next step: resolve blockers"},
 		},
 		{
 			name:   "done without blockers or actions",
-			result: gira.WorkFinishResult{Issue: 23, PRNumber: 24, Merged: true, NextStep: "ticket is done"},
-			wants:  []string{"merged=true", "blockers=none", "actions=none", "next step: ticket is done"},
+			result: gira.WorkFinishResult{Issue: 23, PRNumber: 24, Merged: true, Readiness: gira.WorkFinishReadinessReport{SchemaVersion: "finish-readiness/v1", Ready: true}, NextStep: "ticket is done"},
+			wants:  []string{"merged=true", "readiness=ready", "blockers=none", "actions=none", "next step: ticket is done"},
 		},
 	}
 

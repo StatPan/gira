@@ -40,6 +40,8 @@ Use `gira epic list` for the same discovery pattern scoped to `type:epic` issues
 
 `gira ticket status --json` is the stable per-ticket state contract for automation. It preserves the compact legacy fields (`repo`, `issue`, `status`, `pr_number`, `blockers`, `next_action`, `next_step`) and adds `schema_version`, `labels`, `milestone`, `branch`, `pull_request`, `checks_status`, `checks`, `review_status`, `evidence`, and `warnings`. Missing linked PR, unknown branch, and missing checks are represented as explicit values so queue, review, finish, and audit commands can consume the same state without guessing from terminal text.
 
+`gira ticket finish --dry-run --json` includes a `readiness` report with schema `finish-readiness/v1`. The report groups issue state, linked PR state, checks, review status, label state, closing-reference evidence, acceptance-checklist counts, blockers, warnings, and the next safe action before any merge or provider mutation is attempted. Human output stays compact and shows `readiness=ready|blocked|unknown` beside the existing blockers and action plan.
+
 When [Jira-primary provider mode](/jira-primary-provider) is enabled, `gira ticket finish` also gates Jira Done on GitHub execution evidence. It refuses Done while the mirror issue, linked PR, review, checks, merge, or close evidence is incomplete.
 
 ## Agent Rules

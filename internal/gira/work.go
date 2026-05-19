@@ -42,18 +42,55 @@ type WorkPRResult struct {
 }
 
 type WorkStatusResult struct {
-	Repo             string   `json:"repo"`
-	Issue            int      `json:"issue"`
-	Title            string   `json:"title"`
-	State            string   `json:"state"`
-	Status           string   `json:"status"`
-	PRNumber         int      `json:"pr_number,omitempty"`
-	PRURL            string   `json:"pr_url,omitempty"`
-	PRState          string   `json:"pr_state,omitempty"`
-	PRLookupAttempts int      `json:"pr_lookup_attempts,omitempty"`
-	Blockers         []string `json:"blockers"`
-	NextAction       string   `json:"next_action"`
-	NextStep         string   `json:"next_step"`
+	Command          string                   `json:"command,omitempty"`
+	SchemaVersion    string                   `json:"schema_version,omitempty"`
+	Repo             string                   `json:"repo"`
+	Issue            int                      `json:"issue"`
+	Title            string                   `json:"title"`
+	State            string                   `json:"state"`
+	Status           string                   `json:"status"`
+	Labels           []string                 `json:"labels,omitempty"`
+	Milestone        string                   `json:"milestone"`
+	PRNumber         int                      `json:"pr_number,omitempty"`
+	PRURL            string                   `json:"pr_url,omitempty"`
+	PRState          string                   `json:"pr_state,omitempty"`
+	PRLookupAttempts int                      `json:"pr_lookup_attempts,omitempty"`
+	Blockers         []string                 `json:"blockers"`
+	NextAction       string                   `json:"next_action"`
+	NextStep         string                   `json:"next_step"`
+	Branch           *TicketStatusBranch      `json:"branch,omitempty"`
+	PullRequest      *TicketStatusPullRequest `json:"pull_request,omitempty"`
+	ChecksStatus     string                   `json:"checks_status,omitempty"`
+	Checks           []DevPRCheck             `json:"checks,omitempty"`
+	ReviewStatus     string                   `json:"review_status,omitempty"`
+	Evidence         *TicketStatusEvidence    `json:"evidence,omitempty"`
+	Warnings         []string                 `json:"warnings,omitempty"`
+}
+
+type TicketStatusBranch struct {
+	Expected string `json:"expected"`
+	Current  string `json:"current"`
+	Trusted  bool   `json:"trusted"`
+	Source   string `json:"source"`
+}
+
+type TicketStatusPullRequest struct {
+	Available      bool   `json:"available"`
+	Number         int    `json:"number"`
+	URL            string `json:"url"`
+	State          string `json:"state"`
+	Mergeable      string `json:"mergeable"`
+	HeadRefName    string `json:"head_ref_name"`
+	BaseRefName    string `json:"base_ref_name"`
+	ReviewDecision string `json:"review_decision"`
+	IsDraft        bool   `json:"is_draft"`
+}
+
+type TicketStatusEvidence struct {
+	ClosingReference bool     `json:"closing_reference"`
+	BranchTrusted    bool     `json:"branch_trusted"`
+	FinishReady      bool     `json:"finish_ready"`
+	Sources          []string `json:"sources"`
 }
 
 var workStatusMissingPRRetryAttempts = 3
@@ -246,17 +283,28 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 		prStatus.Blockers = nil
 	}
 	result := WorkStatusResult{
+		Command:          "ticket status",
+		SchemaVersion:    "ticket-status/v1",
 		Repo:             repo.FullName(),
 		Issue:            issueNumber,
 		Title:            issue.Title,
 		State:            issue.State,
 		Status:           status,
+		Labels:           append([]string(nil), issue.Labels...),
+		Milestone:        issue.Milestone,
 		PRNumber:         prStatus.PRNumber,
 		PRURL:            prStatus.PRURL,
 		PRState:          prStatus.State,
 		PRLookupAttempts: prStatus.LookupAttempts,
 		Blockers:         prStatus.Blockers,
 		NextAction:       nextAction,
+		Branch:           ticketStatusBranch(issue, prStatus),
+		PullRequest:      ticketStatusPullRequest(prStatus),
+		ChecksStatus:     ticketStatusChecksStatus(prStatus),
+		Checks:           append([]DevPRCheck(nil), prStatus.Checks...),
+		ReviewStatus:     ticketStatusReviewStatus(prStatus),
+		Evidence:         ticketStatusEvidence(prStatus, nextAction),
+		Warnings:         ticketStatusWarnings(issue, prStatus),
 	}
 	result.NextStep = workStatusNextStep(result)
 	return result
@@ -264,6 +312,107 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 
 func shouldRetryWorkStatusMissingPR(issue devStartIssue, prStatus DevPRStatusResult) bool {
 	return containsString(prStatus.Blockers, "missing_linked_pr") && strings.EqualFold(managedStatusFromLabels(issue.Labels), "In review")
+}
+
+func ticketStatusBranch(issue devStartIssue, pr DevPRStatusResult) *TicketStatusBranch {
+	expected := formatDevBranch(DefaultDevBranchPattern, issue.Number, issue.Title)
+	current := "unknown"
+	source := "expected_from_issue_title"
+	trusted := false
+	if pr.Binding.HeadRef != "" {
+		current = pr.Binding.HeadRef
+		source = pr.Binding.Source
+		trusted = pr.Binding.Trusted
+	}
+	return &TicketStatusBranch{Expected: expected, Current: current, Trusted: trusted, Source: source}
+}
+
+func ticketStatusPullRequest(pr DevPRStatusResult) *TicketStatusPullRequest {
+	if pr.PRNumber == 0 {
+		return &TicketStatusPullRequest{Available: false, State: "missing", Mergeable: "unknown", ReviewDecision: "unknown", HeadRefName: "unknown", BaseRefName: "unknown"}
+	}
+	return &TicketStatusPullRequest{
+		Available:      true,
+		Number:         pr.PRNumber,
+		URL:            pr.PRURL,
+		State:          valueOrUnknown(pr.State),
+		Mergeable:      valueOrUnknown(pr.Mergeable),
+		HeadRefName:    valueOrUnknown(pr.Binding.HeadRef),
+		BaseRefName:    valueOrUnknown(pr.Binding.BaseRef),
+		ReviewDecision: valueOrUnknown(pr.ReviewDecision),
+		IsDraft:        pr.IsDraft,
+	}
+}
+
+func ticketStatusChecksStatus(pr DevPRStatusResult) string {
+	if len(pr.Checks) == 0 {
+		return "missing"
+	}
+	if containsString(pr.Blockers, "checks") {
+		return "failed"
+	}
+	if containsString(pr.Blockers, "checks_pending") {
+		return "pending"
+	}
+	return "passed"
+}
+
+func ticketStatusReviewStatus(pr DevPRStatusResult) string {
+	if pr.PRNumber == 0 {
+		return "missing"
+	}
+	if containsString(pr.Blockers, "review") {
+		return "blocked"
+	}
+	if strings.EqualFold(pr.ReviewDecision, "APPROVED") {
+		return "approved"
+	}
+	if strings.TrimSpace(pr.ReviewDecision) == "" {
+		return "unknown"
+	}
+	return strings.ToLower(pr.ReviewDecision)
+}
+
+func ticketStatusEvidence(pr DevPRStatusResult, nextAction string) *TicketStatusEvidence {
+	sources := []string{}
+	if pr.PRNumber > 0 {
+		sources = append(sources, "closing_reference")
+	}
+	if pr.Binding.Trusted {
+		sources = append(sources, "branch_binding")
+	}
+	if len(pr.Checks) > 0 {
+		sources = append(sources, "checks")
+	}
+	if strings.TrimSpace(pr.ReviewDecision) != "" {
+		sources = append(sources, "review_state")
+	}
+	if len(sources) == 0 {
+		sources = append(sources, "none")
+	}
+	return &TicketStatusEvidence{
+		ClosingReference: pr.PRNumber > 0,
+		BranchTrusted:    pr.Binding.Trusted,
+		FinishReady:      nextAction == "merge_when_policy_allows" || nextAction == "done",
+		Sources:          sources,
+	}
+}
+
+func ticketStatusWarnings(issue devStartIssue, pr DevPRStatusResult) []string {
+	warnings := []string{}
+	if len(managedStatusLabels(issue.Labels)) > 1 {
+		warnings = append(warnings, "multiple_status_labels")
+	}
+	if pr.PRNumber == 0 {
+		warnings = append(warnings, "missing_linked_pr")
+	}
+	if containsString(pr.Blockers, "pr_binding") {
+		warnings = append(warnings, "untrusted_pr_branch_binding")
+	}
+	if len(warnings) == 0 {
+		return []string{}
+	}
+	return warnings
 }
 
 func setIssueStatus(repo RepoRef, issueNumber int, labels []string, targetLabel string, runner CommandRunner) error {

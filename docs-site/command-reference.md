@@ -643,6 +643,10 @@ gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO]
 
 Since: `v1.0.0`
 
+Flags:
+
+- `--json`: Emit the stable ticket-status/v1 JSON contract with issue, branch, PR, checks, review, evidence, blockers, warnings, and next action.
+
 Examples:
 
 - Start an existing ready issue

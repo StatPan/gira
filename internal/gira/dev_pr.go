@@ -25,6 +25,8 @@ type DevPRStatusResult struct {
 	PRURL          string       `json:"pr_url,omitempty"`
 	State          string       `json:"state,omitempty"`
 	Mergeable      string       `json:"mergeable,omitempty"`
+	ReviewDecision string       `json:"review_decision,omitempty"`
+	IsDraft        bool         `json:"is_draft,omitempty"`
 	Binding        DevPRBinding `json:"binding,omitempty"`
 	Blockers       []string     `json:"blockers"`
 	Checks         []DevPRCheck `json:"checks,omitempty"`
@@ -117,6 +119,8 @@ func DevPRStatus(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStat
 			result.PRURL = pr.URL
 			result.State = pr.State
 			result.Mergeable = pr.MergeState
+			result.ReviewDecision = pr.ReviewDecision
+			result.IsDraft = pr.IsDraft
 			result.Binding = validateDevPRBinding(issueNumber, pr)
 			result.Blockers = append(result.Blockers, result.Binding.Blockers...)
 			if pr.IsDraft {

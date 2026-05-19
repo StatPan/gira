@@ -38,6 +38,8 @@ Use `gira ticket prompt TICKET planner|implementer|reviewer --profile default|py
 Use `gira ticket supersede TICKET --replacement-title "TITLE" --body-file replacement.md --dry-run` when an issue should be replaced instead of manually closing the old issue and creating cross-links. Superseded tickets are closed with `resolution:superseded`, not `status:done`, so lifecycle reports can separate replaced work from completed work.
 Use `gira epic list` for the same discovery pattern scoped to `type:epic` issues.
 
+`gira ticket status --json` is the stable per-ticket state contract for automation. It preserves the compact legacy fields (`repo`, `issue`, `status`, `pr_number`, `blockers`, `next_action`, `next_step`) and adds `schema_version`, `labels`, `milestone`, `branch`, `pull_request`, `checks_status`, `checks`, `review_status`, `evidence`, and `warnings`. Missing linked PR, unknown branch, and missing checks are represented as explicit values so queue, review, finish, and audit commands can consume the same state without guessing from terminal text.
+
 When [Jira-primary provider mode](/jira-primary-provider) is enabled, `gira ticket finish` also gates Jira Done on GitHub execution evidence. It refuses Done while the mirror issue, linked PR, review, checks, merge, or close evidence is incomplete.
 
 ## Agent Rules

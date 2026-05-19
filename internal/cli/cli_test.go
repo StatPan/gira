@@ -5543,6 +5543,29 @@ func TestAuditWorkflowTextReady(t *testing.T) {
 	}
 }
 
+func TestAuditDriftAliasUsesWorkflowAuditReport(t *testing.T) {
+	restore := newAuditWorkflowReport
+	t.Cleanup(func() { newAuditWorkflowReport = restore })
+	newAuditWorkflowReport = func(repo gira.RepoRef) (gira.WorkflowAuditReport, error) {
+		return gira.WorkflowAuditReport{
+			Repo:     repo.FullName(),
+			Command:  "audit drift",
+			Ready:    true,
+			Counts:   gira.WorkflowAuditCounts{IssuesScanned: 1},
+			NextStep: "workflow contract is converged",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"audit", "drift", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "audit drift: READY") {
+		t.Fatalf("audit drift alias output unexpected:\n%s", stdout.String())
+	}
+}
+
 func TestAuditReadinessJSONUsesInjectedReportAndExitCode(t *testing.T) {
 	restore := newAuditReadinessReport
 	t.Cleanup(func() { newAuditReadinessReport = restore })

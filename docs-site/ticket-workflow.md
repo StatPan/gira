@@ -44,6 +44,8 @@ Use `gira epic list` for the same discovery pattern scoped to `type:epic` issues
 
 Finish also builds a `receipt` with schema `finish-receipt/v1`. Dry-run previews the concise issue comment; apply posts it after successful completion. The receipt records final issue/PR state, check and review summaries, evidence sources, label normalization, warnings, and AI Delivery Telemetry status. Agent-routed work such as `agent:worker`, `agent:codex`, `agent:gira`, `agent:reviewer`, `lane:agent`, or `lane:hybrid` expects an AI Delivery Telemetry or Gira provenance block; missing telemetry is reported as a warning in the receipt rather than expanded into a raw log dump.
 
+Use `gira audit drift --repo OWNER/REPO --json` when you need a repo-local convergence report without mutating anything. It is the drift-focused alias for the workflow audit and detects stale status labels, open `status:done` issues, multiple `status:*` labels, in-review issues without linked PRs, merged PRs whose issues did not converge, failed or pending checks on finished tickets, and missing AI Delivery Telemetry or completion evidence. Each finding includes severity, kind, current state, expected state, evidence, and a recommended manual action.
+
 When [Jira-primary provider mode](/jira-primary-provider) is enabled, `gira ticket finish` also gates Jira Done on GitHub execution evidence. It refuses Done while the mirror issue, linked PR, review, checks, merge, or close evidence is incomplete.
 
 ## Agent Rules

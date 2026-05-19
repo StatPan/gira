@@ -613,7 +613,7 @@ Since: `v1.15.0`
 Flags:
 
 - `--pr`: Optional PR number override for reviewer packet context.
-- `--json`: Emit stable JSON including issue, PR, evidence, and prompt fields.
+- `--json`: Emit stable JSON including issue, PR, evidence, repo guidance, verdict schema, and prompt fields.
 
 Examples:
 

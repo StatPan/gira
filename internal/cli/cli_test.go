@@ -2786,7 +2786,7 @@ func TestTicketStartMissingReadyHumanShowsNextStep(t *testing.T) {
 			Status:     "null",
 			NextStatus: "In progress",
 			NextStep:   "gira adopt issues --repo " + repo.FullName() + " --issue 33 --label status:ready --apply",
-		}, fmt.Errorf("issue #33 is not ready (missing status:ready)")
+		}, fmt.Errorf("issue #33 is not ready for start: missing label status:ready; try `gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply` after confirming the issue is executable")
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -2798,7 +2798,8 @@ func TestTicketStartMissingReadyHumanShowsNextStep(t *testing.T) {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
 	for _, want := range []string{
-		"issue #33 is not ready (missing status:ready)",
+		"issue #33 is not ready for start",
+		"missing label status:ready",
 		"next step: gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply",
 	} {
 		if !strings.Contains(stderr.String(), want) {
@@ -2817,7 +2818,7 @@ func TestTicketStartMissingReadyJSONUsesTicketNextStep(t *testing.T) {
 			Status:     "null",
 			NextStatus: "In progress",
 			NextStep:   "gira adopt issues --repo " + repo.FullName() + " --issue 33 --label status:ready --apply",
-		}, fmt.Errorf("issue #33 is not ready (missing status:ready)")
+		}, fmt.Errorf("issue #33 is not ready for start: missing label status:ready; try `gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply` after confirming the issue is executable")
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -3079,8 +3080,37 @@ func TestInferTicketFromCurrentContextRejectsAmbiguousBranchPRs(t *testing.T) {
 	}}
 
 	_, err := inferTicketFromCurrentContext(gira.RepoRef{Owner: "StatPan", Name: "gira"}, runner)
-	if err == nil || !strings.Contains(err.Error(), "candidates=#527 via PR #77") || !strings.Contains(err.Error(), "#528 via PR #78") || !strings.Contains(err.Error(), "pass --ticket N") {
+	if err == nil || !strings.Contains(err.Error(), "Candidates: #527 via PR #77") || !strings.Contains(err.Error(), "#528 via PR #78") || !strings.Contains(err.Error(), "Re-run with: --ticket N") {
 		t.Fatalf("expected candidate-rich ambiguity error, got %v", err)
+	}
+}
+
+func TestTicketPRApplyStopsOnAmbiguousContextBeforeMutation(t *testing.T) {
+	restoreWork := newWorkPRResult
+	restoreRunner := devCommandRunner
+	t.Cleanup(func() {
+		newWorkPRResult = restoreWork
+		devCommandRunner = restoreRunner
+	})
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"git branch --show-current": []byte("feature/context-runtime\n"),
+		"gh pr list --repo StatPan/gira --head feature/context-runtime --state all --json number,body,headRefName,title,url --limit 20": []byte(`[
+			{"number":77,"body":"Closes #527","headRefName":"feature/context-runtime","title":"feat: context runtime"},
+			{"number":78,"body":"Fixes #528","headRefName":"feature/context-runtime","title":"fix: context runtime"}
+		]`),
+	}}
+	newWorkPRResult = func(repo gira.RepoRef, issue int, dryRun bool, draft bool) (gira.WorkPRResult, error) {
+		t.Fatalf("newWorkPRResult should not be called when context is ambiguous")
+		return gira.WorkPRResult{}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "pr", "--repo", "StatPan/gira", "--apply"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Candidates: #527 via PR #77") || !strings.Contains(stderr.String(), "Re-run with: --ticket N") {
+		t.Fatalf("stderr missing ambiguity guidance:\n%s", stderr.String())
 	}
 }
 
@@ -3096,7 +3126,7 @@ func TestInferTicketFromCurrentContextMissingIncludesSafeActions(t *testing.T) {
 	}
 
 	_, err := inferTicketFromCurrentContext(gira.RepoRef{Owner: "StatPan", Name: "gira"}, runner)
-	if err == nil || !strings.Contains(err.Error(), "feature/no-ticket") || !strings.Contains(err.Error(), "pass --ticket N") || !strings.Contains(err.Error(), "Closes #N") {
+	if err == nil || !strings.Contains(err.Error(), "feature/no-ticket") || !strings.Contains(err.Error(), "Try: gira ticket status --repo StatPan/gira --ticket N") || !strings.Contains(err.Error(), "Closes #N") {
 		t.Fatalf("expected action-oriented missing context error, got %v", err)
 	}
 }
@@ -4311,8 +4341,21 @@ func TestTicketReviewMissingContextGivesActionableError(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2; stdout: %s stderr: %s", code, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "ticket context unavailable: pass --ticket N or run from an issue branch") {
+	if !strings.Contains(stderr.String(), "cannot determine current ticket") || !strings.Contains(stderr.String(), "Try: gira ticket status --repo StatPan/gira --ticket N") {
 		t.Fatalf("stderr missing context guidance:\n%s", stderr.String())
+	}
+}
+
+func TestMilestoneStatusMissingTitleGivesActionableError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"milestone", "status", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{"cannot determine milestone title", "Try: gira milestone list --repo OWNER/REPO", "Then: gira milestone status \"MILESTONE\" --repo OWNER/REPO"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr missing %q:\n%s", want, stderr.String())
+		}
 	}
 }
 

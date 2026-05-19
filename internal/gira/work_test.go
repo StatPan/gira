@@ -82,7 +82,7 @@ func TestStartWorkFailsMissingReady(t *testing.T) {
 	}}
 
 	_, err := StartWork(repo, 126, true, runner)
-	if err == nil || !strings.Contains(err.Error(), "missing status:ready") {
+	if err == nil || !strings.Contains(err.Error(), "missing label status:ready") || !strings.Contains(err.Error(), "gira adopt issues --repo StatPan/gira --issue 126 --label status:ready --apply") {
 		t.Fatalf("expected missing ready error, got %v", err)
 	}
 }

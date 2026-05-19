@@ -4572,14 +4572,14 @@ func ambiguousTicketContextError(candidates []ticketContextCandidate) error {
 		seen[part] = struct{}{}
 		parts = append(parts, part)
 	}
-	return fmt.Errorf("ticket context ambiguous: candidates=%s; pass --ticket N to disambiguate", strings.Join(parts, ", "))
+	return fmt.Errorf("ticket context ambiguous: multiple candidates match the current branch or PR context\nCandidates: %s\nRe-run with: --ticket N", strings.Join(parts, ", "))
 }
 
 func missingTicketContextError(repo gira.RepoRef, branch string) error {
 	if strings.TrimSpace(branch) != "" {
-		return fmt.Errorf("ticket context unavailable for branch %q: pass --ticket N or run from an issue branch; checkout an issue-N-* branch, or open a PR with Closes #N in %s", branch, repo.FullName())
+		return fmt.Errorf("cannot determine current ticket for branch %q\nMissing: explicit --ticket, issue-N-* branch name, or PR closing reference\nTry: gira ticket status --repo %s --ticket N\nOr: open a PR with Closes #N in %s", branch, repo.FullName(), repo.FullName())
 	}
-	return fmt.Errorf("ticket context unavailable: pass --ticket N or run from an issue branch; checkout an issue-N-* branch, or open a PR with Closes #N in %s", repo.FullName())
+	return fmt.Errorf("cannot determine current ticket\nMissing: explicit --ticket, issue-N-* branch name, or PR closing reference\nTry: gira ticket status --repo %s --ticket N\nOr: run from an issue-N-* branch or PR checkout", repo.FullName())
 }
 
 func issueNumberFromRef(ref string) int {
@@ -7058,7 +7058,7 @@ func runMilestone(args []string, stdout io.Writer, stderr io.Writer) int {
 			positional = fs.Arg(0)
 		}
 		if positional == "" || fs.NArg() > 1 {
-			fmt.Fprint(stderr, "exactly one milestone title is required\n\n")
+			fmt.Fprint(stderr, "cannot determine milestone title\nMissing: positional milestone title\nTry: gira milestone list --repo OWNER/REPO\nThen: gira milestone status \"MILESTONE\" --repo OWNER/REPO\n\n")
 			fmt.Fprint(stderr, milestoneHelp)
 			return 2
 		}

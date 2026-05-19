@@ -65,6 +65,7 @@ type WorkStatusResult struct {
 	ReviewStatus     string                   `json:"review_status,omitempty"`
 	Evidence         *TicketStatusEvidence    `json:"evidence,omitempty"`
 	Acceptance       *TicketStatusAcceptance  `json:"acceptance_criteria,omitempty"`
+	Telemetry        *TicketStatusTelemetry   `json:"telemetry,omitempty"`
 	Warnings         []string                 `json:"warnings,omitempty"`
 }
 
@@ -99,6 +100,14 @@ type TicketStatusAcceptance struct {
 	Total      int    `json:"total"`
 	Complete   int    `json:"complete"`
 	Incomplete int    `json:"incomplete"`
+}
+
+type TicketStatusTelemetry struct {
+	Required bool     `json:"required"`
+	Present  bool     `json:"present"`
+	Status   string   `json:"status"`
+	Sources  []string `json:"sources"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 var workStatusMissingPRRetryAttempts = 3
@@ -313,6 +322,7 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 		ReviewStatus:     ticketStatusReviewStatus(prStatus),
 		Evidence:         ticketStatusEvidence(prStatus, nextAction),
 		Acceptance:       ticketStatusAcceptance(issue.Body),
+		Telemetry:        ticketStatusTelemetry(issue.Body, issue.Labels),
 		Warnings:         ticketStatusWarnings(issue, prStatus),
 	}
 	result.NextStep = workStatusNextStep(result)
@@ -439,6 +449,54 @@ func ticketStatusAcceptance(body string) *TicketStatusAcceptance {
 	return report
 }
 
+func ticketStatusTelemetry(body string, labels []string) *TicketStatusTelemetry {
+	report := &TicketStatusTelemetry{
+		Required: aiDeliveryTelemetryRequired(labels),
+		Sources:  []string{},
+	}
+	lowerBody := strings.ToLower(body)
+	if strings.Contains(lowerBody, "ai delivery telemetry") {
+		report.Present = true
+		report.Sources = append(report.Sources, "issue_body:ai_delivery_telemetry")
+	}
+	if extractProvenanceBlock(body) != "" {
+		report.Present = true
+		report.Sources = append(report.Sources, "issue_body:gira_provenance")
+	}
+	if !report.Present {
+		report.Sources = append(report.Sources, "none")
+	}
+	switch {
+	case report.Required && report.Present:
+		report.Status = "present"
+	case report.Required:
+		report.Status = "missing"
+		report.Warnings = append(report.Warnings, "missing_ai_delivery_telemetry")
+	case report.Present:
+		report.Status = "present"
+	default:
+		report.Status = "not_required"
+	}
+	return report
+}
+
+func aiDeliveryTelemetryRequired(labels []string) bool {
+	for _, label := range labels {
+		lower := strings.ToLower(strings.TrimSpace(label))
+		if lower == "lane:agent" || lower == "lane:hybrid" {
+			return true
+		}
+		if !strings.HasPrefix(lower, "agent:") {
+			continue
+		}
+		switch strings.TrimPrefix(lower, "agent:") {
+		case "worker", "codex", "gira", "reviewer":
+			return true
+		}
+	}
+	return false
+}
+
 func ticketStatusWarnings(issue devStartIssue, pr DevPRStatusResult) []string {
 	warnings := []string{}
 	if len(managedStatusLabels(issue.Labels)) > 1 {
@@ -451,6 +509,9 @@ func ticketStatusWarnings(issue devStartIssue, pr DevPRStatusResult) []string {
 		warnings = append(warnings, "missing_acceptance_criteria")
 	} else if acceptance.Status == "incomplete" {
 		warnings = append(warnings, "incomplete_acceptance_criteria")
+	}
+	if telemetry := ticketStatusTelemetry(issue.Body, issue.Labels); len(telemetry.Warnings) > 0 {
+		warnings = appendUniqueStrings(warnings, telemetry.Warnings...)
 	}
 	if containsString(pr.Blockers, "pr_binding") {
 		warnings = append(warnings, "untrusted_pr_branch_binding")

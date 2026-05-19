@@ -91,6 +91,37 @@ type WorkFinishClosingReference struct {
 	Source  string `json:"source"`
 }
 
+type WorkFinishReceipt struct {
+	SchemaVersion    string                      `json:"schema_version"`
+	FinishedAt       string                      `json:"finished_at"`
+	Repository       string                      `json:"repository"`
+	Issue            WorkFinishReadinessIssue    `json:"issue"`
+	PullRequest      WorkFinishReceiptPR         `json:"pull_request"`
+	ChecksSummary    WorkFinishReadinessChecks   `json:"checks_summary"`
+	ReviewSummary    WorkFinishReadinessReview   `json:"review_summary"`
+	EvidenceSummary  WorkFinishReadinessEvidence `json:"evidence_summary"`
+	TelemetrySummary *TicketStatusTelemetry      `json:"telemetry_summary,omitempty"`
+	LabelChanges     []string                    `json:"label_changes"`
+	FinalState       WorkFinishReceiptFinalState `json:"final_state"`
+	Warnings         []string                    `json:"warnings,omitempty"`
+	Target           string                      `json:"target"`
+	RenderedBody     string                      `json:"rendered_body"`
+}
+
+type WorkFinishReceiptPR struct {
+	Number int    `json:"number,omitempty"`
+	URL    string `json:"url,omitempty"`
+	State  string `json:"state,omitempty"`
+	Merged bool   `json:"merged"`
+}
+
+type WorkFinishReceiptFinalState struct {
+	IssueState string `json:"issue_state,omitempty"`
+	Status     string `json:"status,omitempty"`
+	NextAction string `json:"next_action,omitempty"`
+	NextStep   string `json:"next_step,omitempty"`
+}
+
 type WorkFinishJiraTransition struct {
 	Key       string                  `json:"key,omitempty"`
 	Decision  string                  `json:"decision,omitempty"`
@@ -118,11 +149,13 @@ type WorkFinishResult struct {
 	LocalSync        WorkFinishLocalSync       `json:"local_sync"`
 	FinalStatus      WorkStatusResult          `json:"final_status"`
 	Readiness        WorkFinishReadinessReport `json:"readiness"`
+	Receipt          WorkFinishReceipt         `json:"receipt"`
 	NextStep         string                    `json:"next_step"`
 }
 
 var finishMissingPRRetryAttempts = 3
 var finishMissingPRRetryDelay = time.Second
+var finishReceiptNow = func() time.Time { return time.Now().UTC() }
 
 func FinishWork(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, runner CommandRunner) (WorkFinishResult, error) {
 	if runner == nil {
@@ -521,6 +554,13 @@ func finishWithStatus(repo RepoRef, issueNumber int, runner CommandRunner, resul
 		result.Actions = append(result.Actions, WorkFinishAction{Action: "ticket:status", Status: "blocked", Detail: statusErr.Error()})
 	}
 	result.Readiness = buildWorkFinishReadiness(result)
+	result.Receipt = buildWorkFinishReceipt(result)
+	if receiptAction, receiptErr := maybeApplyWorkFinishReceipt(repo, runner, &result, err); receiptAction.Action != "" {
+		result.Actions = append(result.Actions, receiptAction)
+		if receiptErr != nil {
+			return result, receiptErr
+		}
+	}
 	result.Actions = append(result.Actions, WorkFinishAction{Action: "projects:sync", Status: "planned", Detail: "gira projects sync --dry-run"})
 	return result, err
 }
@@ -665,6 +705,101 @@ func firstPositive(values ...int) int {
 		}
 	}
 	return 0
+}
+
+func buildWorkFinishReceipt(result WorkFinishResult) WorkFinishReceipt {
+	readiness := result.Readiness
+	receipt := WorkFinishReceipt{
+		SchemaVersion:    "finish-receipt/v1",
+		FinishedAt:       finishReceiptNow().Format(time.RFC3339),
+		Repository:       readiness.Repository,
+		Issue:            readiness.Issue,
+		PullRequest:      WorkFinishReceiptPR{Number: readiness.PullRequest.Number, URL: readiness.PullRequest.URL, State: readiness.PullRequest.State, Merged: result.Merged || result.AlreadyDone || strings.EqualFold(readiness.PullRequest.State, "MERGED")},
+		ChecksSummary:    readiness.Checks,
+		ReviewSummary:    readiness.Review,
+		EvidenceSummary:  readiness.Evidence,
+		TelemetrySummary: result.FinalStatus.Telemetry,
+		LabelChanges:     finishReceiptLabelChanges(result.Actions),
+		FinalState: WorkFinishReceiptFinalState{
+			IssueState: readiness.Issue.State,
+			Status:     readiness.Issue.Status,
+			NextAction: readiness.NextAction,
+			NextStep:   readiness.NextStep,
+		},
+		Warnings: append([]string(nil), readiness.Warnings...),
+		Target:   fmt.Sprintf("issue#%d", result.Issue),
+	}
+	if receipt.TelemetrySummary != nil {
+		receipt.Warnings = appendUniqueStrings(receipt.Warnings, receipt.TelemetrySummary.Warnings...)
+	}
+	receipt.RenderedBody = renderWorkFinishReceipt(receipt)
+	return receipt
+}
+
+func finishReceiptLabelChanges(actions []WorkFinishAction) []string {
+	changes := []string{}
+	for _, action := range actions {
+		if action.Action != "ticket:normalize-status" || strings.TrimSpace(action.Detail) == "" {
+			continue
+		}
+		changes = append(changes, action.Detail)
+	}
+	if len(changes) == 0 {
+		return []string{}
+	}
+	return changes
+}
+
+func renderWorkFinishReceipt(receipt WorkFinishReceipt) string {
+	pr := "none"
+	if receipt.PullRequest.Number > 0 {
+		pr = fmt.Sprintf("#%d", receipt.PullRequest.Number)
+	}
+	evidence := strings.Join(receipt.EvidenceSummary.Sources, ",")
+	if evidence == "" {
+		evidence = "none"
+	}
+	warnings := strings.Join(receipt.Warnings, ",")
+	if warnings == "" {
+		warnings = "none"
+	}
+	labels := strings.Join(receipt.LabelChanges, "; ")
+	if labels == "" {
+		labels = "none"
+	}
+	telemetry := "unknown"
+	if receipt.TelemetrySummary != nil {
+		telemetry = receipt.TelemetrySummary.Status
+	}
+	var b strings.Builder
+	b.WriteString("## Finish Receipt\n\n")
+	fmt.Fprintf(&b, "- Finished at: %s\n", receipt.FinishedAt)
+	fmt.Fprintf(&b, "- Ticket: #%d status=%s state=%s\n", receipt.Issue.Number, valueOrUnknown(receipt.Issue.Status), valueOrUnknown(receipt.Issue.State))
+	fmt.Fprintf(&b, "- Linked PR: %s state=%s merged=%t\n", pr, valueOrUnknown(receipt.PullRequest.State), receipt.PullRequest.Merged)
+	fmt.Fprintf(&b, "- Checks: %s total=%d passing=%d pending=%d failing=%d\n", valueOrUnknown(receipt.ChecksSummary.Status), receipt.ChecksSummary.Total, receipt.ChecksSummary.Passing, receipt.ChecksSummary.Pending, receipt.ChecksSummary.Failing)
+	fmt.Fprintf(&b, "- Review: %s\n", valueOrUnknown(receipt.ReviewSummary.Status))
+	fmt.Fprintf(&b, "- Evidence: %s\n", evidence)
+	fmt.Fprintf(&b, "- AI Delivery Telemetry: %s\n", telemetry)
+	fmt.Fprintf(&b, "- Label changes: %s\n", labels)
+	fmt.Fprintf(&b, "- Warnings: %s\n", warnings)
+	fmt.Fprintf(&b, "- Next: %s\n", valueOrUnknown(receipt.FinalState.NextStep))
+	return b.String()
+}
+
+func maybeApplyWorkFinishReceipt(repo RepoRef, runner CommandRunner, result *WorkFinishResult, finishErr error) (WorkFinishAction, error) {
+	if result.Receipt.SchemaVersion == "" {
+		return WorkFinishAction{}, nil
+	}
+	if len(result.Blockers) > 0 || finishErr != nil {
+		return WorkFinishAction{Action: "finish:receipt", Status: "blocked", Detail: "finish evidence is incomplete"}, nil
+	}
+	if result.DryRun {
+		return WorkFinishAction{Action: "finish:receipt", Status: "planned", Detail: "post concise finish receipt to issue"}, nil
+	}
+	if _, err := runner.Run("gh", "issue", "comment", fmt.Sprintf("%d", result.Issue), "--repo", repo.FullName(), "--body", result.Receipt.RenderedBody); err != nil {
+		return WorkFinishAction{Action: "finish:receipt", Status: "failed", Detail: "post concise finish receipt to issue"}, fmt.Errorf("post finish receipt: %w", err)
+	}
+	return WorkFinishAction{Action: "finish:receipt", Status: "applied", Detail: "posted concise finish receipt to issue"}, nil
 }
 
 func planLocalMainSync(repo RepoRef, runner CommandRunner, dryRun bool) (WorkFinishLocalSync, []WorkFinishAction) {

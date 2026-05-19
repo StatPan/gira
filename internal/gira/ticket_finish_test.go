@@ -24,6 +24,9 @@ func (r *finishRunner) Run(name string, args ...string) ([]byte, error) {
 		return nil, err
 	}
 	queue := r.outputs[key]
+	if len(queue) == 0 && strings.HasPrefix(key, "gh issue comment ") {
+		return nil, nil
+	}
 	if len(queue) == 0 {
 		return nil, fmt.Errorf("unexpected call: %s", key)
 	}
@@ -137,8 +140,41 @@ func TestFinishWorkApplyRetriesTransientMissingLinkedPR(t *testing.T) {
 	if !result.Merged || result.PRNumber != 220 || result.PRLookupAttempts != 2 || len(result.Blockers) != 0 {
 		t.Fatalf("unexpected retry result: %+v", result)
 	}
+	if !containsFinishCallPrefix(runner.calls, "gh issue comment 219 --repo StatPan/gira --body ## Finish Receipt") || !finishActionStatus(result.Actions, "finish:receipt", "applied") {
+		t.Fatalf("expected applied finish receipt comment, calls=%v actions=%+v", runner.calls, result.Actions)
+	}
 	if got := countFinishCall(runner.calls, "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20"); got != 3 {
 		t.Fatalf("expected transient retry plus final status lookup, got %d calls: %v", got, runner.calls)
+	}
+}
+
+func TestFinishWorkReceiptWarnsWhenAgentTelemetryMissing(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-219-finish","baseRefName":"main","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-219-finish","baseRefName":"main","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		},
+		"git remote get-url origin": {[]byte("git@github.com:StatPan/gira.git\n")},
+		"git branch --show-current": {[]byte("issue-219-finish\n")},
+		"git status --porcelain":    {[]byte("")},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"},{"name":"agent:worker"}]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"},{"name":"agent:worker"}]}`),
+		},
+	}, errs: map[string]error{}}
+
+	result, err := FinishWork(repo, 219, true, 0, runner)
+	if err != nil {
+		t.Fatalf("FinishWork error: %v", err)
+	}
+	if result.Receipt.TelemetrySummary == nil || result.Receipt.TelemetrySummary.Status != "missing" {
+		t.Fatalf("expected missing telemetry summary, got %+v", result.Receipt.TelemetrySummary)
+	}
+	for _, want := range []string{"AI Delivery Telemetry: missing", "missing_ai_delivery_telemetry"} {
+		if !strings.Contains(result.Receipt.RenderedBody, want) {
+			t.Fatalf("receipt missing %q:\n%s", want, result.Receipt.RenderedBody)
+		}
 	}
 }
 
@@ -170,7 +206,7 @@ func TestFinishWorkApplyAddsDoneLabelWhenAvailable(t *testing.T) {
 	if !containsCall(runner.calls, "gh issue edit 219 --repo StatPan/gira --add-label status:done --remove-label status:in-review") {
 		t.Fatalf("missing done status normalization call: %v", runner.calls)
 	}
-	if !strings.Contains(result.Actions[len(result.Actions)-2].Detail, "add=status:done") {
+	if !strings.Contains(finishActionDetail(result.Actions, "ticket:normalize-status"), "add=status:done") {
 		t.Fatalf("normalize action missing done detail: %+v", result.Actions)
 	}
 }
@@ -234,6 +270,9 @@ func TestFinishWorkDryRunReadySuggestsFinishApply(t *testing.T) {
 	}
 	if result.Readiness.SchemaVersion != "finish-readiness/v1" || !result.Readiness.ClosingReference.Present || result.Readiness.Checks.Status != "passed" || result.Readiness.Review.Status != "approved" {
 		t.Fatalf("readiness evidence missing expected contract fields: %+v", result.Readiness)
+	}
+	if result.Receipt.SchemaVersion != "finish-receipt/v1" || !strings.Contains(result.Receipt.RenderedBody, "## Finish Receipt") || !finishActionStatus(result.Actions, "finish:receipt", "planned") {
+		t.Fatalf("expected dry-run finish receipt preview and planned action: receipt=%+v actions=%+v", result.Receipt, result.Actions)
 	}
 }
 
@@ -586,6 +625,24 @@ func fakeJiraFinishAPI(t *testing.T, key string, status string, transitions stri
 func finishActionStatus(actions []WorkFinishAction, action string, status string) bool {
 	for _, item := range actions {
 		if item.Action == action && item.Status == status {
+			return true
+		}
+	}
+	return false
+}
+
+func finishActionDetail(actions []WorkFinishAction, action string) string {
+	for _, item := range actions {
+		if item.Action == action {
+			return item.Detail
+		}
+	}
+	return ""
+}
+
+func containsFinishCallPrefix(calls []string, prefix string) bool {
+	for _, call := range calls {
+		if strings.HasPrefix(call, prefix) {
 			return true
 		}
 	}

@@ -30,6 +30,9 @@ jobs:
       - name: Install docs dependencies
         run: npm ci
 
+      - name: Validate docs contract
+        run: sh scripts/check-docs-contract.sh .
+
       - name: Build docs site
         run: sh scripts/build-docs-site.sh docs-site site
 

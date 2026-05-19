@@ -109,6 +109,13 @@ documents may use their own managed blocks, such as
 registry-backed command guidance while keeping surrounding policy text
 human-owned.
 
+Skills are runtime contracts for agents, not secondary prose. Before changing
+agent lifecycle behavior, run `sh scripts/check-docs-contract.sh .`; CI runs the
+same refresh-and-diff check and fails when generated guide, skill, command
+reference, or docs-site artifacts are not committed. Tagged releases also attach
+a `gira_VERSION_docs.tar.gz` snapshot so the skill/docs contract for that
+version remains inspectable after current docs move on.
+
 This taxonomy keeps a clean recovery model: rerun `bootstrap` for local files, rerun `sync` for GitHub metadata, rerun `status` to decide what to do next, and rerun `onboard verify` to confirm the repo is truly ready for daily operation.
 
 ## CLI Development Path

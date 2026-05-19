@@ -135,6 +135,38 @@ func TestAgentSkillManagedBlockIsGeneratedFromRegistry(t *testing.T) {
 	}
 }
 
+func TestAgentSkillManagedBlockIsUnique(t *testing.T) {
+	path := filepath.Join("..", "..", "docs", "skills", "gira-agent-operator.md")
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read agent skill: %v", err)
+	}
+	text := string(got)
+	if starts := countExactLines(text, AgentSkillBlockStart); starts != 1 {
+		t.Fatalf("%s has %d managed skill block starts, want 1", path, starts)
+	}
+	if ends := countExactLines(text, AgentSkillBlockEnd); ends != 1 {
+		t.Fatalf("%s has %d managed skill block ends, want 1", path, ends)
+	}
+	refreshed, err := ReplaceSingleManagedBlock(text, AgentSkillBlockStart, AgentSkillBlockEnd, RenderAgentSkillManagedBlock(CoreCommandSpecs()))
+	if err != nil {
+		t.Fatalf("refresh managed block: %v", err)
+	}
+	if refreshed != text {
+		t.Fatalf("%s managed skill block is not idempotent", path)
+	}
+}
+
+func countExactLines(text string, target string) int {
+	count := 0
+	for _, line := range strings.Split(text, "\n") {
+		if strings.TrimSpace(line) == target {
+			count++
+		}
+	}
+	return count
+}
+
 func extractManagedBlock(text string, start string, end string) (string, bool) {
 	startAt := strings.Index(text, start)
 	endAt := strings.Index(text, end)

@@ -3047,8 +3047,57 @@ func TestInferTicketFromCurrentContextRejectsAmbiguousPRBody(t *testing.T) {
 	}}
 
 	_, err := inferTicketFromCurrentContext(gira.RepoRef{Owner: "StatPan", Name: "gira"}, runner)
-	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") || !strings.Contains(err.Error(), "#10") || !strings.Contains(err.Error(), "#11") || !strings.Contains(err.Error(), "--ticket N") {
 		t.Fatalf("expected ambiguous PR body error, got %v", err)
+	}
+}
+
+func TestInferTicketFromCurrentContextUsesBranchPRClosingReference(t *testing.T) {
+	runner := devCLIRunner{outputs: map[string][]byte{
+		"git branch --show-current": []byte("feature/context-runtime\n"),
+		"gh pr list --repo StatPan/gira --head feature/context-runtime --state all --json number,body,headRefName,title,url --limit 20": []byte(`[
+			{"number":77,"body":"Closes #527","headRefName":"feature/context-runtime","title":"feat: context runtime","url":"https://github.com/StatPan/gira/pull/77"}
+		]`),
+	}}
+
+	ticket, err := inferTicketFromCurrentContext(gira.RepoRef{Owner: "StatPan", Name: "gira"}, runner)
+	if err != nil {
+		t.Fatalf("inferTicketFromCurrentContext error: %v", err)
+	}
+	if ticket != 527 {
+		t.Fatalf("ticket = %d, want 527", ticket)
+	}
+}
+
+func TestInferTicketFromCurrentContextRejectsAmbiguousBranchPRs(t *testing.T) {
+	runner := devCLIRunner{outputs: map[string][]byte{
+		"git branch --show-current": []byte("feature/context-runtime\n"),
+		"gh pr list --repo StatPan/gira --head feature/context-runtime --state all --json number,body,headRefName,title,url --limit 20": []byte(`[
+			{"number":77,"body":"Closes #527","headRefName":"feature/context-runtime","title":"feat: context runtime"},
+			{"number":78,"body":"Fixes #528","headRefName":"feature/context-runtime","title":"fix: context runtime"}
+		]`),
+	}}
+
+	_, err := inferTicketFromCurrentContext(gira.RepoRef{Owner: "StatPan", Name: "gira"}, runner)
+	if err == nil || !strings.Contains(err.Error(), "candidates=#527 via PR #77") || !strings.Contains(err.Error(), "#528 via PR #78") || !strings.Contains(err.Error(), "pass --ticket N") {
+		t.Fatalf("expected candidate-rich ambiguity error, got %v", err)
+	}
+}
+
+func TestInferTicketFromCurrentContextMissingIncludesSafeActions(t *testing.T) {
+	runner := devCLIRunner{
+		outputs: map[string][]byte{
+			"git branch --show-current": []byte("feature/no-ticket\n"),
+		},
+		errs: map[string]error{
+			"gh pr list --repo StatPan/gira --head feature/no-ticket --state all --json number,body,headRefName,title,url --limit 20": fmt.Errorf("no PR"),
+			"gh pr view --repo StatPan/gira --json body,headRefName,title":                                                            fmt.Errorf("no current PR"),
+		},
+	}
+
+	_, err := inferTicketFromCurrentContext(gira.RepoRef{Owner: "StatPan", Name: "gira"}, runner)
+	if err == nil || !strings.Contains(err.Error(), "feature/no-ticket") || !strings.Contains(err.Error(), "pass --ticket N") || !strings.Contains(err.Error(), "Closes #N") {
+		t.Fatalf("expected action-oriented missing context error, got %v", err)
 	}
 }
 

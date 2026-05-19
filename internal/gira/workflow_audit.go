@@ -26,15 +26,20 @@ type WorkflowAuditCounts struct {
 }
 
 type WorkflowAuditFinding struct {
-	ID          string   `json:"id"`
-	Severity    string   `json:"severity"`
-	IssueNumber int      `json:"issue_number,omitempty"`
-	PRNumber    int      `json:"pr_number,omitempty"`
-	Title       string   `json:"title,omitempty"`
-	State       string   `json:"state,omitempty"`
-	Labels      []string `json:"labels,omitempty"`
-	Detail      string   `json:"detail"`
-	Remediation string   `json:"remediation"`
+	ID                string   `json:"id"`
+	Severity          string   `json:"severity"`
+	Kind              string   `json:"kind,omitempty"`
+	IssueNumber       int      `json:"issue_number,omitempty"`
+	PRNumber          int      `json:"pr_number,omitempty"`
+	Title             string   `json:"title,omitempty"`
+	State             string   `json:"state,omitempty"`
+	Labels            []string `json:"labels,omitempty"`
+	CurrentState      string   `json:"current_state,omitempty"`
+	ExpectedState     string   `json:"expected_state,omitempty"`
+	Evidence          []string `json:"evidence,omitempty"`
+	Detail            string   `json:"detail"`
+	Remediation       string   `json:"remediation"`
+	RecommendedAction string   `json:"recommended_action,omitempty"`
 }
 
 type workflowAuditIssue struct {
@@ -46,11 +51,13 @@ type workflowAuditIssue struct {
 }
 
 type workflowAuditPR struct {
-	Number   int
-	Title    string
-	Body     string
-	State    string
-	MergedAt string
+	Number         int
+	Title          string
+	Body           string
+	State          string
+	MergedAt       string
+	ReviewDecision string
+	Checks         []DevPRCheck
 }
 
 func BuildWorkflowAuditReport(repo RepoRef, runner CommandRunner, checkedAt time.Time) (WorkflowAuditReport, error) {
@@ -72,7 +79,7 @@ func BuildWorkflowAuditReport(repo RepoRef, runner CommandRunner, checkedAt time
 	findings := workflowAuditFindings(repo, issues, prs, statusDoneExists)
 	report := WorkflowAuditReport{
 		Repo:      repo.FullName(),
-		Command:   "audit workflow",
+		Command:   "audit drift",
 		CheckedAt: checkedAt.UTC().Format(time.RFC3339),
 		Ready:     workflowAuditFailureCount(findings) == 0,
 		Counts: WorkflowAuditCounts{
@@ -117,23 +124,38 @@ func fetchWorkflowAuditIssues(repo RepoRef, runner CommandRunner) ([]workflowAud
 }
 
 func fetchWorkflowAuditPRs(repo RepoRef, runner CommandRunner) ([]workflowAuditPR, error) {
-	output, err := runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--state", "all", "--limit", "1000", "--json", "number,title,body,state,mergedAt")
+	output, err := runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--state", "all", "--limit", "1000", "--json", "number,title,body,state,mergedAt,reviewDecision,statusCheckRollup")
 	if err != nil {
-		return nil, fmt.Errorf("fetch workflow prs: %w", err)
+		output, err = runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--state", "all", "--limit", "1000", "--json", "number,title,body,state,mergedAt")
+		if err != nil {
+			return nil, fmt.Errorf("fetch workflow prs: %w", err)
+		}
 	}
 	var rows []struct {
-		Number   int    `json:"number"`
-		Title    string `json:"title"`
-		Body     string `json:"body"`
-		State    string `json:"state"`
-		MergedAt string `json:"mergedAt"`
+		Number         int    `json:"number"`
+		Title          string `json:"title"`
+		Body           string `json:"body"`
+		State          string `json:"state"`
+		MergedAt       string `json:"mergedAt"`
+		ReviewDecision string `json:"reviewDecision"`
+		StatusRollup   []struct {
+			Name       string `json:"name"`
+			Workflow   string `json:"workflowName"`
+			Conclusion string `json:"conclusion"`
+			Status     string `json:"status"`
+			URL        string `json:"detailsUrl"`
+		} `json:"statusCheckRollup"`
 	}
 	if err := json.Unmarshal(output, &rows); err != nil {
 		return nil, fmt.Errorf("parse workflow prs: %w", err)
 	}
 	prs := make([]workflowAuditPR, 0, len(rows))
 	for _, row := range rows {
-		prs = append(prs, workflowAuditPR{Number: row.Number, Title: row.Title, Body: row.Body, State: strings.ToLower(row.State), MergedAt: row.MergedAt})
+		checks := make([]DevPRCheck, 0, len(row.StatusRollup))
+		for _, check := range row.StatusRollup {
+			checks = append(checks, DevPRCheck{Name: check.Name, Workflow: check.Workflow, Status: check.Status, Conclusion: check.Conclusion, URL: check.URL, State: classifyDevPRCheck(check.Status, check.Conclusion)})
+		}
+		prs = append(prs, workflowAuditPR{Number: row.Number, Title: row.Title, Body: row.Body, State: strings.ToLower(row.State), MergedAt: row.MergedAt, ReviewDecision: row.ReviewDecision, Checks: checks})
 	}
 	sort.Slice(prs, func(i, j int) bool { return prs[i].Number < prs[j].Number })
 	return prs, nil
@@ -169,20 +191,55 @@ func workflowAuditFindings(repo RepoRef, issues []workflowAuditIssue, prs []work
 		if strings.EqualFold(issue.State, "open") && hasLabel(issue.Labels, "status:in-review") && len(linkedPRs[issue.Number]) == 0 {
 			findings = append(findings, workflowIssueFinding(repo, "in_review_without_linked_pr", issue, issue.Labels, "issue is in review but no closing PR reference was found"))
 		}
-		if hasLabel(issue.Labels, "agent:worker") && extractProvenanceBlock(issue.Body) == "" {
+		telemetry := ticketStatusTelemetry(issue.Body, issue.Labels)
+		if telemetry.Required && !telemetry.Present {
 			findings = append(findings, WorkflowAuditFinding{
-				ID:          "missing_provenance",
-				Severity:    "warn",
-				IssueNumber: issue.Number,
-				Title:       issue.Title,
-				State:       issue.State,
-				Labels:      append([]string(nil), issue.Labels...),
-				Detail:      "agent-routed issue is missing a Gira provenance block",
-				Remediation: "add a Gira provenance block to the issue body when historical execution attribution matters",
+				ID:                "missing_ai_delivery_telemetry",
+				Severity:          "warn",
+				Kind:              "telemetry",
+				IssueNumber:       issue.Number,
+				Title:             issue.Title,
+				State:             issue.State,
+				Labels:            append([]string(nil), issue.Labels...),
+				CurrentState:      "telemetry=missing",
+				ExpectedState:     "telemetry=present",
+				Evidence:          telemetry.Sources,
+				Detail:            "agent-routed issue is missing AI Delivery Telemetry or Gira provenance evidence",
+				Remediation:       "add an AI Delivery Telemetry or Gira provenance block when historical execution attribution matters",
+				RecommendedAction: "add telemetry/provenance evidence",
+			})
+		}
+		if workflowIssueFinished(issue) && len(linkedPRs[issue.Number]) == 0 && !telemetry.Present {
+			findings = append(findings, WorkflowAuditFinding{
+				ID:                "finished_issue_missing_evidence",
+				Severity:          "warn",
+				Kind:              "evidence",
+				IssueNumber:       issue.Number,
+				Title:             issue.Title,
+				State:             issue.State,
+				Labels:            append([]string(nil), issue.Labels...),
+				CurrentState:      "finished_without_closing_pr_or_telemetry",
+				ExpectedState:     "closing_pr_or_finish_receipt_or_provenance",
+				Evidence:          []string{"missing_closing_pr", "missing_telemetry"},
+				Detail:            "finished issue has no linked PR or telemetry evidence marker",
+				Remediation:       "add a finish receipt/provenance note or link the completing PR",
+				RecommendedAction: "attach completion evidence",
 			})
 		}
 	}
 	for _, pr := range prs {
+		for _, issueNumber := range ExtractClosureIssueNumbers(pr.Body) {
+			issue, ok := byIssue[issueNumber]
+			if !ok || !workflowIssueFinished(issue) {
+				continue
+			}
+			if workflowPRChecksStatus(pr.Checks) == "failed" {
+				findings = append(findings, workflowPRCheckFinding(pr, issue, "finished_issue_failed_checks", "failed checks on a ticket marked done"))
+			}
+			if workflowPRChecksStatus(pr.Checks) == "pending" {
+				findings = append(findings, workflowPRCheckFinding(pr, issue, "finished_issue_pending_checks", "pending checks on a ticket marked done"))
+			}
+		}
 		if !workflowPRMerged(pr) {
 			continue
 		}
@@ -195,15 +252,20 @@ func workflowAuditFindings(repo RepoRef, issues []workflowAuditIssue, prs []work
 			managed := managedStatusLabels(issue.Labels)
 			if !strings.EqualFold(issue.State, "closed") || len(active) > 0 || (statusDoneExists && len(managed) > 0 && !hasLabel(issue.Labels, "status:done")) {
 				findings = append(findings, WorkflowAuditFinding{
-					ID:          "merged_pr_issue_not_converged",
-					Severity:    "fail",
-					IssueNumber: issue.Number,
-					PRNumber:    pr.Number,
-					Title:       issue.Title,
-					State:       issue.State,
-					Labels:      append([]string(nil), issue.Labels...),
-					Detail:      fmt.Sprintf("merged PR #%d closes issue #%d, but issue state/status has not converged", pr.Number, issue.Number),
-					Remediation: fmt.Sprintf("run `gira ticket finish %d --repo %s --dry-run` or normalize status with `gira adopt issues --repo %s --issues %d --normalize-status --dry-run`", issue.Number, repo.FullName(), repo.FullName(), issue.Number),
+					ID:                "merged_pr_issue_not_converged",
+					Severity:          "fail",
+					Kind:              "convergence",
+					IssueNumber:       issue.Number,
+					PRNumber:          pr.Number,
+					Title:             issue.Title,
+					State:             issue.State,
+					Labels:            append([]string(nil), issue.Labels...),
+					CurrentState:      fmt.Sprintf("issue=%s labels=%s", issue.State, strings.Join(issue.Labels, ",")),
+					ExpectedState:     "issue=closed status:done/no-active-status",
+					Evidence:          []string{fmt.Sprintf("merged_pr#%d", pr.Number), "closing_reference"},
+					Detail:            fmt.Sprintf("merged PR #%d closes issue #%d, but issue state/status has not converged", pr.Number, issue.Number),
+					Remediation:       fmt.Sprintf("run `gira ticket finish %d --repo %s --dry-run` or normalize status with `gira adopt issues --repo %s --issues %d --normalize-status --dry-run`", issue.Number, repo.FullName(), repo.FullName(), issue.Number),
+					RecommendedAction: "normalize issue status",
 				})
 			}
 		}
@@ -221,15 +283,62 @@ func workflowAuditFindings(repo RepoRef, issues []workflowAuditIssue, prs []work
 }
 
 func workflowIssueFinding(repo RepoRef, id string, issue workflowAuditIssue, labels []string, detail string) WorkflowAuditFinding {
+	remediation := fmt.Sprintf("run `gira adopt issues --repo %s --issues %d --normalize-status --dry-run` when this is status drift, or update the issue body/labels manually", repo.FullName(), issue.Number)
 	return WorkflowAuditFinding{
-		ID:          id,
-		Severity:    "fail",
-		IssueNumber: issue.Number,
-		Title:       issue.Title,
-		State:       issue.State,
-		Labels:      append([]string(nil), labels...),
-		Detail:      detail,
-		Remediation: fmt.Sprintf("run `gira adopt issues --repo %s --issues %d --normalize-status --dry-run` when this is status drift, or update the issue body/labels manually", repo.FullName(), issue.Number),
+		ID:                id,
+		Severity:          "fail",
+		Kind:              "issue_status",
+		IssueNumber:       issue.Number,
+		Title:             issue.Title,
+		State:             issue.State,
+		Labels:            append([]string(nil), labels...),
+		CurrentState:      fmt.Sprintf("issue=%s labels=%s", issue.State, strings.Join(labels, ",")),
+		ExpectedState:     "workflow labels converge with issue/PR state",
+		Evidence:          []string{"issue_state", "labels"},
+		Detail:            detail,
+		Remediation:       remediation,
+		RecommendedAction: remediation,
+	}
+}
+
+func workflowIssueFinished(issue workflowAuditIssue) bool {
+	return strings.EqualFold(issue.State, "closed") || hasLabel(issue.Labels, "status:done")
+}
+
+func workflowPRChecksStatus(checks []DevPRCheck) string {
+	for _, check := range checks {
+		if check.State == "failing" {
+			return "failed"
+		}
+	}
+	for _, check := range checks {
+		if check.State == "pending" {
+			return "pending"
+		}
+	}
+	if len(checks) == 0 {
+		return "missing"
+	}
+	return "passed"
+}
+
+func workflowPRCheckFinding(pr workflowAuditPR, issue workflowAuditIssue, id string, detail string) WorkflowAuditFinding {
+	status := workflowPRChecksStatus(pr.Checks)
+	return WorkflowAuditFinding{
+		ID:                id,
+		Severity:          "fail",
+		Kind:              "checks",
+		IssueNumber:       issue.Number,
+		PRNumber:          pr.Number,
+		Title:             issue.Title,
+		State:             issue.State,
+		Labels:            append([]string(nil), issue.Labels...),
+		CurrentState:      "checks=" + status,
+		ExpectedState:     "checks=passed",
+		Evidence:          []string{fmt.Sprintf("pr#%d", pr.Number), "statusCheckRollup"},
+		Detail:            detail,
+		Remediation:       fmt.Sprintf("inspect PR #%d checks before treating issue #%d as complete", pr.Number, issue.Number),
+		RecommendedAction: "repair checks or reopen the ticket",
 	}
 }
 
@@ -322,11 +431,20 @@ func FormatWorkflowAuditReport(report WorkflowAuditReport) string {
 	if !report.Ready {
 		verdict = "NOT READY"
 	}
+	command := strings.TrimSpace(report.Command)
+	if command == "" {
+		command = "audit drift"
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "audit workflow: %s\n", verdict)
+	fmt.Fprintf(&b, "%s: %s\n", command, verdict)
 	fmt.Fprintf(&b, "repo: %s\n", report.Repo)
 	fmt.Fprintf(&b, "scanned: issues=%d prs=%d findings=%d\n", report.Counts.IssuesScanned, report.Counts.PRsScanned, report.Counts.Findings)
+	lastSeverity := ""
 	for _, finding := range report.Findings {
+		if finding.Severity != lastSeverity {
+			lastSeverity = finding.Severity
+			fmt.Fprintf(&b, "%s findings:\n", lastSeverity)
+		}
 		target := ""
 		if finding.IssueNumber > 0 {
 			target = fmt.Sprintf(" issue=#%d", finding.IssueNumber)

@@ -17,8 +17,8 @@ func TestBuildWorkflowAuditReportDetectsDrift(t *testing.T) {
 				{"number":4,"title":"Review no PR","state":"OPEN","body":"","labels":[{"name":"status:in-review"}]},
 				{"number":5,"title":"Merged drift","state":"OPEN","body":"","labels":[{"name":"status:in-progress"}]}
 			]`,
-			"gh pr list --repo StatPan/gira --state all --limit 1000 --json number,title,body,state,mergedAt": `[
-				{"number":10,"title":"Merge work","body":"Closes #5","state":"MERGED","mergedAt":"2026-05-18T00:00:00Z"}
+			"gh pr list --repo StatPan/gira --state all --limit 1000 --json number,title,body,state,mergedAt,reviewDecision,statusCheckRollup": `[
+				{"number":10,"title":"Merge work","body":"Closes #5","state":"MERGED","mergedAt":"2026-05-18T00:00:00Z","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}
 			]`,
 			"gh label list --repo StatPan/gira --json name --limit 1000": `[{"name":"status:done"}]`,
 		},
@@ -38,7 +38,7 @@ func TestBuildWorkflowAuditReportDetectsDrift(t *testing.T) {
 		"open_issue_done_status",
 		"multiple_status_labels",
 		"in_review_without_linked_pr",
-		"missing_provenance",
+		"missing_ai_delivery_telemetry",
 		"merged_pr_issue_not_converged",
 	} {
 		if !workflowFindingsContain(report.Findings, id) {
@@ -56,7 +56,7 @@ func TestBuildWorkflowAuditReportDetectsDrift(t *testing.T) {
 func TestFormatWorkflowAuditReportIncludesActionableNextStep(t *testing.T) {
 	report := WorkflowAuditReport{
 		Repo:    "StatPan/gira",
-		Command: "audit workflow",
+		Command: "audit drift",
 		Ready:   false,
 		Counts:  WorkflowAuditCounts{IssuesScanned: 2, PRsScanned: 1, Findings: 1},
 		Findings: []WorkflowAuditFinding{{
@@ -70,9 +70,44 @@ func TestFormatWorkflowAuditReportIncludesActionableNextStep(t *testing.T) {
 	}
 
 	out := FormatWorkflowAuditReport(report)
-	for _, want := range []string{"audit workflow: NOT READY", "scanned: issues=2 prs=1 findings=1", "open_issue_done_status issue=#2", "remediation: run normalize", "next step: gira adopt issues"} {
+	for _, want := range []string{"audit drift: NOT READY", "scanned: issues=2 prs=1 findings=1", "open_issue_done_status issue=#2", "remediation: run normalize", "next step: gira adopt issues"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("workflow audit output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestBuildWorkflowAuditReportDetectsChecksTelemetryAndEvidenceDrift(t *testing.T) {
+	repo := mustRepo(t, "StatPan/gira")
+	runner := onboardFakeRunner{
+		responses: map[string]string{
+			"gh issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,body": `[
+				{"number":6,"title":"Done failing","state":"CLOSED","body":"AI Delivery Telemetry: present","labels":[{"name":"status:done"}]},
+				{"number":7,"title":"Done pending","state":"OPEN","body":"AI Delivery Telemetry: present","labels":[{"name":"status:done"}]},
+				{"number":8,"title":"Done no evidence","state":"CLOSED","body":"","labels":[{"name":"status:done"}]},
+				{"number":9,"title":"Agent no telemetry","state":"OPEN","body":"","labels":[{"name":"agent:worker"},{"name":"status:ready"}]}
+			]`,
+			"gh pr list --repo StatPan/gira --state all --limit 1000 --json number,title,body,state,mergedAt,reviewDecision,statusCheckRollup": `[
+				{"number":11,"title":"Fail","body":"Closes #6","state":"MERGED","mergedAt":"2026-05-18T00:00:00Z","statusCheckRollup":[{"conclusion":"FAILURE","status":"COMPLETED"}]},
+				{"number":12,"title":"Pending","body":"Closes #7","state":"OPEN","mergedAt":"","statusCheckRollup":[{"conclusion":"","status":"IN_PROGRESS"}]}
+			]`,
+			"gh label list --repo StatPan/gira --json name --limit 1000": `[{"name":"status:done"}]`,
+		},
+		errors: map[string]error{},
+	}
+
+	report, err := BuildWorkflowAuditReport(repo, runner, time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildWorkflowAuditReport error: %v", err)
+	}
+	for _, id := range []string{
+		"finished_issue_failed_checks",
+		"finished_issue_pending_checks",
+		"finished_issue_missing_evidence",
+		"missing_ai_delivery_telemetry",
+	} {
+		if !workflowFindingsContain(report.Findings, id) {
+			t.Fatalf("missing finding %s: %+v", id, report.Findings)
 		}
 	}
 }

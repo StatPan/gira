@@ -645,11 +645,13 @@ const auditHelp = `Audit utilities for append-only mutation ledger verification.
 
 Usage:
   gira audit readiness --repo OWNER/REPO [--path .gira/audit/*.jsonl] [--json]
+  gira audit drift --repo OWNER/REPO [--json]
   gira audit workflow --repo OWNER/REPO [--json]
   gira audit verify --repo OWNER/REPO --path .gira/audit/*.jsonl [--json]
 
 Commands:
   readiness    Inspect repo readiness, audit health, and next Gira step
+  drift        Inspect issue/PR workflow convergence, checks, evidence, and telemetry drift
   workflow     Inspect issue/PR workflow convergence and provenance drift
   verify       Validate JSONL schema and hash-chain integrity
 
@@ -7364,6 +7366,8 @@ func runAudit(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "readiness":
 		return runAuditReadiness(args[1:], stdout, stderr)
+	case "drift":
+		return runAuditWorkflow(args[1:], stdout, stderr)
 	case "workflow":
 		return runAuditWorkflow(args[1:], stdout, stderr)
 	case "verify":

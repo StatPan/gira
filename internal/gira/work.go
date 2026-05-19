@@ -64,6 +64,7 @@ type WorkStatusResult struct {
 	Checks           []DevPRCheck             `json:"checks,omitempty"`
 	ReviewStatus     string                   `json:"review_status,omitempty"`
 	Evidence         *TicketStatusEvidence    `json:"evidence,omitempty"`
+	Acceptance       *TicketStatusAcceptance  `json:"acceptance_criteria,omitempty"`
 	Warnings         []string                 `json:"warnings,omitempty"`
 }
 
@@ -91,6 +92,13 @@ type TicketStatusEvidence struct {
 	BranchTrusted    bool     `json:"branch_trusted"`
 	FinishReady      bool     `json:"finish_ready"`
 	Sources          []string `json:"sources"`
+}
+
+type TicketStatusAcceptance struct {
+	Status     string `json:"status"`
+	Total      int    `json:"total"`
+	Complete   int    `json:"complete"`
+	Incomplete int    `json:"incomplete"`
 }
 
 var workStatusMissingPRRetryAttempts = 3
@@ -304,6 +312,7 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 		Checks:           append([]DevPRCheck(nil), prStatus.Checks...),
 		ReviewStatus:     ticketStatusReviewStatus(prStatus),
 		Evidence:         ticketStatusEvidence(prStatus, nextAction),
+		Acceptance:       ticketStatusAcceptance(issue.Body),
 		Warnings:         ticketStatusWarnings(issue, prStatus),
 	}
 	result.NextStep = workStatusNextStep(result)
@@ -398,6 +407,38 @@ func ticketStatusEvidence(pr DevPRStatusResult, nextAction string) *TicketStatus
 	}
 }
 
+func ticketStatusAcceptance(body string) *TicketStatusAcceptance {
+	report := &TicketStatusAcceptance{Status: "missing"}
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if !strings.HasPrefix(lower, "- [") && !strings.HasPrefix(lower, "* [") {
+			continue
+		}
+		if len(lower) < 5 || lower[1] != ' ' || lower[2] != '[' || lower[4] != ']' {
+			continue
+		}
+		marker := lower[3]
+		switch marker {
+		case 'x':
+			report.Total++
+			report.Complete++
+		case ' ':
+			report.Total++
+			report.Incomplete++
+		}
+	}
+	if report.Total == 0 {
+		return report
+	}
+	if report.Incomplete > 0 {
+		report.Status = "incomplete"
+	} else {
+		report.Status = "complete"
+	}
+	return report
+}
+
 func ticketStatusWarnings(issue devStartIssue, pr DevPRStatusResult) []string {
 	warnings := []string{}
 	if len(managedStatusLabels(issue.Labels)) > 1 {
@@ -405,6 +446,11 @@ func ticketStatusWarnings(issue devStartIssue, pr DevPRStatusResult) []string {
 	}
 	if pr.PRNumber == 0 {
 		warnings = append(warnings, "missing_linked_pr")
+	}
+	if acceptance := ticketStatusAcceptance(issue.Body); acceptance.Status == "missing" {
+		warnings = append(warnings, "missing_acceptance_criteria")
+	} else if acceptance.Status == "incomplete" {
+		warnings = append(warnings, "incomplete_acceptance_criteria")
 	}
 	if containsString(pr.Blockers, "pr_binding") {
 		warnings = append(warnings, "untrusted_pr_branch_binding")

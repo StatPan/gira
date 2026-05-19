@@ -4674,6 +4674,13 @@ func formatTicketFinish(result gira.WorkFinishResult) string {
 	if blockers == "" {
 		blockers = "none"
 	}
+	readiness := "unknown"
+	if result.Readiness.SchemaVersion != "" {
+		readiness = "blocked"
+		if result.Readiness.Ready {
+			readiness = "ready"
+		}
+	}
 	actions := make([]string, 0, len(result.Actions))
 	for _, action := range result.Actions {
 		actions = append(actions, action.Action+":"+action.Status)
@@ -4682,10 +4689,11 @@ func formatTicketFinish(result gira.WorkFinishResult) string {
 		actions = append(actions, "none")
 	}
 	return fmt.Sprintf(
-		"ticket finish: ticket #%d pr=%d merged=%t blockers=%s actions=%s\nnext step: %s\n",
+		"ticket finish: ticket #%d pr=%d merged=%t readiness=%s blockers=%s actions=%s\nnext step: %s\n",
 		result.Issue,
 		result.PRNumber,
 		result.Merged,
+		readiness,
 		blockers,
 		strings.Join(actions, ","),
 		ticketFinishNextStep(result),

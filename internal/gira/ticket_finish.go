@@ -21,6 +21,76 @@ type WorkFinishLocalSync struct {
 	Branch    string `json:"branch,omitempty"`
 }
 
+type WorkFinishReadinessReport struct {
+	SchemaVersion      string                         `json:"schema_version"`
+	Repository         string                         `json:"repository"`
+	Issue              WorkFinishReadinessIssue       `json:"issue"`
+	PullRequest        WorkFinishReadinessPullRequest `json:"pull_request"`
+	Checks             WorkFinishReadinessChecks      `json:"checks"`
+	Review             WorkFinishReadinessReview      `json:"review"`
+	Evidence           WorkFinishReadinessEvidence    `json:"evidence"`
+	LabelState         WorkFinishReadinessLabelState  `json:"label_state"`
+	AcceptanceCriteria *TicketStatusAcceptance        `json:"acceptance_criteria,omitempty"`
+	ClosingReference   WorkFinishClosingReference     `json:"closing_reference"`
+	Ready              bool                           `json:"ready"`
+	Blockers           []string                       `json:"blockers"`
+	NextAction         string                         `json:"next_action"`
+	NextStep           string                         `json:"next_step"`
+	Warnings           []string                       `json:"warnings,omitempty"`
+}
+
+type WorkFinishReadinessIssue struct {
+	Number    int    `json:"number"`
+	Title     string `json:"title,omitempty"`
+	State     string `json:"state,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Milestone string `json:"milestone,omitempty"`
+}
+
+type WorkFinishReadinessPullRequest struct {
+	Available      bool   `json:"available"`
+	Number         int    `json:"number,omitempty"`
+	URL            string `json:"url,omitempty"`
+	State          string `json:"state,omitempty"`
+	Mergeable      string `json:"mergeable,omitempty"`
+	ReviewDecision string `json:"review_decision,omitempty"`
+	IsDraft        bool   `json:"is_draft,omitempty"`
+	HeadRefName    string `json:"head_ref_name,omitempty"`
+	BaseRefName    string `json:"base_ref_name,omitempty"`
+}
+
+type WorkFinishReadinessChecks struct {
+	Status  string `json:"status"`
+	Total   int    `json:"total"`
+	Passing int    `json:"passing"`
+	Pending int    `json:"pending"`
+	Failing int    `json:"failing"`
+	Missing bool   `json:"missing"`
+}
+
+type WorkFinishReadinessReview struct {
+	Status   string `json:"status"`
+	Decision string `json:"decision,omitempty"`
+}
+
+type WorkFinishReadinessEvidence struct {
+	ClosingReference bool     `json:"closing_reference"`
+	BranchTrusted    bool     `json:"branch_trusted"`
+	FinishReady      bool     `json:"finish_ready"`
+	Sources          []string `json:"sources"`
+}
+
+type WorkFinishReadinessLabelState struct {
+	Status             string   `json:"status,omitempty"`
+	Labels             []string `json:"labels,omitempty"`
+	ActiveStatusLabels []string `json:"active_status_labels,omitempty"`
+}
+
+type WorkFinishClosingReference struct {
+	Present bool   `json:"present"`
+	Source  string `json:"source"`
+}
+
 type WorkFinishJiraTransition struct {
 	Key       string                  `json:"key,omitempty"`
 	Decision  string                  `json:"decision,omitempty"`
@@ -47,6 +117,7 @@ type WorkFinishResult struct {
 	Blockers         []string                  `json:"blockers"`
 	LocalSync        WorkFinishLocalSync       `json:"local_sync"`
 	FinalStatus      WorkStatusResult          `json:"final_status"`
+	Readiness        WorkFinishReadinessReport `json:"readiness"`
 	NextStep         string                    `json:"next_step"`
 }
 
@@ -449,8 +520,151 @@ func finishWithStatus(repo RepoRef, issueNumber int, runner CommandRunner, resul
 		result.Blockers = append(result.Blockers, "final_status_unavailable")
 		result.Actions = append(result.Actions, WorkFinishAction{Action: "ticket:status", Status: "blocked", Detail: statusErr.Error()})
 	}
+	result.Readiness = buildWorkFinishReadiness(result)
 	result.Actions = append(result.Actions, WorkFinishAction{Action: "projects:sync", Status: "planned", Detail: "gira projects sync --dry-run"})
 	return result, err
+}
+
+func buildWorkFinishReadiness(result WorkFinishResult) WorkFinishReadinessReport {
+	status := result.FinalStatus
+	report := WorkFinishReadinessReport{
+		SchemaVersion: "finish-readiness/v1",
+		Repository:    firstNonEmpty(status.Repo, result.Repo),
+		Issue: WorkFinishReadinessIssue{
+			Number:    firstPositive(status.Issue, result.Issue),
+			Title:     status.Title,
+			State:     status.State,
+			Status:    status.Status,
+			Milestone: status.Milestone,
+		},
+		Checks: WorkFinishReadinessChecks{
+			Status:  firstNonEmpty(status.ChecksStatus, "missing"),
+			Total:   len(status.Checks),
+			Missing: len(status.Checks) == 0,
+		},
+		Review: WorkFinishReadinessReview{
+			Status: firstNonEmpty(status.ReviewStatus, "missing"),
+		},
+		LabelState: WorkFinishReadinessLabelState{
+			Status:             status.Status,
+			Labels:             append([]string(nil), status.Labels...),
+			ActiveStatusLabels: activeStatusLabels(status.Labels),
+		},
+		AcceptanceCriteria: status.Acceptance,
+		NextAction:         status.NextAction,
+		NextStep:           firstNonEmpty(result.NextStep, status.NextStep),
+		Warnings:           append([]string(nil), status.Warnings...),
+	}
+	if status.PullRequest != nil {
+		report.PullRequest = WorkFinishReadinessPullRequest{
+			Available:      status.PullRequest.Available,
+			Number:         status.PullRequest.Number,
+			URL:            status.PullRequest.URL,
+			State:          status.PullRequest.State,
+			Mergeable:      status.PullRequest.Mergeable,
+			ReviewDecision: status.PullRequest.ReviewDecision,
+			IsDraft:        status.PullRequest.IsDraft,
+			HeadRefName:    status.PullRequest.HeadRefName,
+			BaseRefName:    status.PullRequest.BaseRefName,
+		}
+	} else if result.PRNumber > 0 {
+		report.PullRequest = WorkFinishReadinessPullRequest{
+			Available: true,
+			Number:    result.PRNumber,
+			URL:       result.PRURL,
+			State:     result.PRState,
+		}
+	}
+	if status.Evidence != nil {
+		report.Evidence = WorkFinishReadinessEvidence{
+			ClosingReference: status.Evidence.ClosingReference,
+			BranchTrusted:    status.Evidence.BranchTrusted,
+			FinishReady:      status.Evidence.FinishReady,
+			Sources:          append([]string(nil), status.Evidence.Sources...),
+		}
+	}
+	report.ClosingReference = WorkFinishClosingReference{
+		Present: report.Evidence.ClosingReference,
+		Source:  closingReferenceSource(report.Evidence.ClosingReference),
+	}
+	report.Checks.Passing, report.Checks.Pending, report.Checks.Failing = finishCheckCounts(status.Checks)
+	report.Review.Decision = report.PullRequest.ReviewDecision
+	report.Blockers = finishReadinessBlockers(result, report)
+	report.Ready = len(report.Blockers) == 0 && finishEvidenceReady(report, status.NextAction, result)
+	if !report.Ready && report.NextAction == "" {
+		report.NextAction = "resolve_finish_blockers"
+	}
+	return report
+}
+
+func finishCheckCounts(checks []DevPRCheck) (passing int, pending int, failing int) {
+	for _, check := range checks {
+		switch check.State {
+		case "passing":
+			passing++
+		case "pending":
+			pending++
+		case "failing":
+			failing++
+		}
+	}
+	return passing, pending, failing
+}
+
+func finishReadinessBlockers(result WorkFinishResult, report WorkFinishReadinessReport) []string {
+	blockers := make([]string, 0, len(result.Blockers))
+	blockers = append(blockers, result.Blockers...)
+	if !report.PullRequest.Available {
+		blockers = appendUniqueStrings(blockers, "missing_linked_pr")
+	}
+	if report.Checks.Status == "failed" {
+		blockers = appendUniqueStrings(blockers, "checks")
+	}
+	if report.Checks.Status == "pending" {
+		blockers = appendUniqueStrings(blockers, "checks_pending")
+	}
+	if report.PullRequest.IsDraft {
+		blockers = appendUniqueStrings(blockers, "draft")
+	}
+	if report.Review.Status == "blocked" {
+		blockers = appendUniqueStrings(blockers, "review")
+	}
+	return blockers
+}
+
+func finishEvidenceReady(report WorkFinishReadinessReport, nextAction string, result WorkFinishResult) bool {
+	if result.AlreadyDone {
+		return true
+	}
+	if nextAction == "done" || nextAction == "merge_when_policy_allows" {
+		return report.ClosingReference.Present && report.PullRequest.Available
+	}
+	return false
+}
+
+func closingReferenceSource(present bool) string {
+	if present {
+		return "linked_pull_request_body"
+	}
+	return "missing"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstPositive(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func planLocalMainSync(repo RepoRef, runner CommandRunner, dryRun bool) (WorkFinishLocalSync, []WorkFinishAction) {
@@ -553,6 +767,13 @@ func FormatWorkFinish(result WorkFinishResult) string {
 	if blockers == "" {
 		blockers = "none"
 	}
+	readiness := "unknown"
+	if result.Readiness.SchemaVersion != "" {
+		readiness = "blocked"
+		if result.Readiness.Ready {
+			readiness = "ready"
+		}
+	}
 	actions := make([]string, 0, len(result.Actions))
 	for _, action := range result.Actions {
 		actions = append(actions, action.Action+":"+action.Status)
@@ -561,10 +782,11 @@ func FormatWorkFinish(result WorkFinishResult) string {
 		actions = append(actions, "none")
 	}
 	return fmt.Sprintf(
-		"work finish: issue #%d pr=%d merged=%t blockers=%s actions=%s\nnext step: %s\n",
+		"work finish: issue #%d pr=%d merged=%t readiness=%s blockers=%s actions=%s\nnext step: %s\n",
 		result.Issue,
 		result.PRNumber,
 		result.Merged,
+		readiness,
 		blockers,
 		strings.Join(actions, ","),
 		result.NextStep,

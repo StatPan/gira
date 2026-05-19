@@ -195,6 +195,9 @@ func TestFinishWorkDryRunPendingChecksReportsBlockerWithoutWaiting(t *testing.T)
 	if !containsString(result.Blockers, "checks_pending") {
 		t.Fatalf("expected checks_pending blocker, got %+v", result.Blockers)
 	}
+	if result.Readiness.Ready || !containsString(result.Readiness.Blockers, "checks_pending") || result.Readiness.Checks.Status != "pending" {
+		t.Fatalf("expected blocked pending-check readiness report, got %+v", result.Readiness)
+	}
 	if containsCall(runner.calls, "gh pr merge 220 --repo StatPan/gira --squash --delete-branch") {
 		t.Fatalf("dry-run pending checks should not merge: %v", runner.calls)
 	}
@@ -225,6 +228,12 @@ func TestFinishWorkDryRunReadySuggestsFinishApply(t *testing.T) {
 	}
 	if result.NextStep != "gira ticket finish --repo StatPan/gira --ticket 219 --apply" {
 		t.Fatalf("unexpected next step: %q", result.NextStep)
+	}
+	if !result.Readiness.Ready || len(result.Readiness.Blockers) != 0 {
+		t.Fatalf("expected ready finish readiness report, got %+v", result.Readiness)
+	}
+	if result.Readiness.SchemaVersion != "finish-readiness/v1" || !result.Readiness.ClosingReference.Present || result.Readiness.Checks.Status != "passed" || result.Readiness.Review.Status != "approved" {
+		t.Fatalf("readiness evidence missing expected contract fields: %+v", result.Readiness)
 	}
 }
 
@@ -288,6 +297,12 @@ func TestFinishWorkMissingLinkedPRSuggestsOpenPR(t *testing.T) {
 	}
 	if !containsString(result.Blockers, "missing_linked_pr") || !strings.Contains(result.NextStep, "ticket pr") {
 		t.Fatalf("unexpected missing PR result: %+v", result)
+	}
+	if result.Readiness.Ready || !containsString(result.Readiness.Blockers, "missing_linked_pr") || result.Readiness.PullRequest.Available {
+		t.Fatalf("expected missing PR readiness blocker, got %+v", result.Readiness)
+	}
+	if result.Readiness.ClosingReference.Present || result.Readiness.Evidence.FinishReady {
+		t.Fatalf("missing PR should not report completion evidence: %+v", result.Readiness)
 	}
 }
 

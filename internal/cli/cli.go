@@ -763,7 +763,7 @@ Usage:
   gira ticket new "Title" --dry-run|--apply [--body TEXT|--body-file PATH|-] [--start] [--json]
   gira ticket list [--repo OWNER/REPO] [--state open|closed|all] [--label LABEL] [--assignee LOGIN] [--milestone TITLE] [--limit N] [--json]
   gira ticket view|show [TICKET|JIRA-KEY] [--repo OWNER/REPO] [--json]
-  gira ticket prompt [TICKET] --role planner|implementer|reviewer [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]
+  gira ticket prompt [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]
   gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--json]
   gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
@@ -3030,6 +3030,11 @@ func runTicketView(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runTicketPrompt(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalRole, roleOK := extractTicketPromptRolePositional(args, stderr)
+	if !roleOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
 	args, positionalIdentifier, positionalOK := extractTicketIdentifierPositional(args, stderr)
 	if !positionalOK {
 		_, _ = io.WriteString(stderr, ticketHelp)
@@ -3054,6 +3059,14 @@ func runTicketPrompt(args []string, stdout io.Writer, stderr io.Writer) int {
 	if *help {
 		_, _ = io.WriteString(stdout, ticketHelp)
 		return 0
+	}
+	if positionalRole != "" {
+		if strings.TrimSpace(*role) != "" && !strings.EqualFold(*role, positionalRole) {
+			fmt.Fprint(stderr, "positional role and --role must match when both are provided\n\n")
+			_, _ = io.WriteString(stderr, ticketHelp)
+			return 2
+		}
+		*role = positionalRole
 	}
 	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
 	if err != nil {
@@ -4093,6 +4106,37 @@ func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bo
 		cleaned = cleaned[:len(cleaned)-1]
 	}
 	return cleaned, positional, true
+}
+
+func extractTicketPromptRolePositional(args []string, stderr io.Writer) ([]string, string, bool) {
+	cleaned := make([]string, 0, len(args))
+	role := ""
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--role": {}, "--profile": {}, "--pr": {}}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		cleaned = append(cleaned, arg)
+		if _, ok := valueFlags[arg]; ok {
+			if i+1 < len(args) {
+				i++
+				cleaned = append(cleaned, args[i])
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		lower := strings.ToLower(strings.TrimSpace(arg))
+		if lower != gira.AgentPromptRolePlanner && lower != gira.AgentPromptRoleImplementer && lower != gira.AgentPromptRoleReviewer {
+			continue
+		}
+		if role != "" && role != lower {
+			fmt.Fprint(stderr, "only one positional prompt role can be provided\n\n")
+			return nil, "", false
+		}
+		role = lower
+		cleaned = cleaned[:len(cleaned)-1]
+	}
+	return cleaned, role, true
 }
 
 type ticketIdentifier struct {

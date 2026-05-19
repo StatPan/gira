@@ -363,7 +363,7 @@ func CoreCommandSpecs() []CommandSpec {
 		{
 			Path:    []string{"ticket", "prompt"},
 			Summary: "Render a stateless planner, implementer, or reviewer prompt from ticket context.",
-			Usage:   "gira ticket prompt [TICKET] --role planner|implementer|reviewer [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]",
+			Usage:   "gira ticket prompt [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]",
 			Since:   "v1.14.0",
 			Flags: []FlagSpec{
 				{Name: "--role", Summary: "Prompt role: planner, implementer, or reviewer."},
@@ -375,8 +375,8 @@ func CoreCommandSpecs() []CommandSpec {
 			GuideTopics: []string{"ticket", "agent"},
 			GuideOrder:  18,
 			Examples: []CommandExample{
-				{Summary: "Render an implementation worker prompt", Command: "gira ticket prompt 42 --role implementer --profile python"},
-				{Summary: "Render a reviewer prompt with PR context", Command: "gira ticket prompt 42 --role reviewer --pr 77"},
+				{Summary: "Render an implementation worker prompt", Command: "gira ticket prompt 42 implementer --profile python"},
+				{Summary: "Render a reviewer prompt with PR context", Command: "gira ticket prompt 42 reviewer --pr 77"},
 			},
 		},
 		{

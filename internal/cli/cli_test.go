@@ -4230,6 +4230,37 @@ func TestTicketPromptJSONUsesInjectedBuilder(t *testing.T) {
 	}
 }
 
+func TestTicketPromptAcceptsPositionalRole(t *testing.T) {
+	restore := newTicketPromptReport
+	t.Cleanup(func() { newTicketPromptReport = restore })
+	newTicketPromptReport = func(input gira.AgentPromptInput) (gira.AgentPromptReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 436 || input.Role != "planner" {
+			t.Fatalf("unexpected prompt input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.AgentPromptReport{Command: "ticket prompt", Repo: input.Repo.FullName(), Ticket: input.Ticket, Role: input.Role, Profile: input.Profile, Prompt: "# Gira planner prompt\n"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "prompt", "436", "planner", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"role": "planner"`) {
+		t.Fatalf("ticket prompt JSON missing positional role:\n%s", stdout.String())
+	}
+}
+
+func TestTicketPromptRejectsConflictingPositionalRole(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "prompt", "436", "planner", "--repo", "StatPan/gira", "--role", "implementer"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "positional role and --role must match") {
+		t.Fatalf("stderr missing role conflict:\n%s", stderr.String())
+	}
+}
+
 func TestTicketReviewInfersTicketAndDefaultsReviewerRole(t *testing.T) {
 	restorePrompt := newTicketPromptReport
 	restoreRunner := devCommandRunner

@@ -3,6 +3,8 @@ package gira
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -33,6 +35,7 @@ type AgentPromptReport struct {
 	Issue    AgentPromptIssue     `json:"issue"`
 	PR       *AgentPromptPR       `json:"pr,omitempty"`
 	Evidence *AgentPromptEvidence `json:"evidence,omitempty"`
+	Review   *AgentReviewContract `json:"review,omitempty"`
 	Prompt   string               `json:"prompt"`
 	NextStep string               `json:"next_step"`
 }
@@ -54,6 +57,8 @@ type AgentPromptPR struct {
 	Body           string       `json:"body,omitempty"`
 	State          string       `json:"state,omitempty"`
 	URL            string       `json:"url,omitempty"`
+	HeadRefName    string       `json:"head_ref_name,omitempty"`
+	BaseRefName    string       `json:"base_ref_name,omitempty"`
 	ReviewDecision string       `json:"review_decision,omitempty"`
 	IsDraft        bool         `json:"is_draft,omitempty"`
 	MergeState     string       `json:"merge_state,omitempty"`
@@ -69,6 +74,35 @@ type AgentPromptEvidence struct {
 	Blockers      []string     `json:"blockers,omitempty"`
 	ChangedFiles  []string     `json:"changed_files,omitempty"`
 	FinishReady   bool         `json:"finish_ready"`
+}
+
+type AgentReviewContract struct {
+	DiffReferences []AgentReviewReference   `json:"diff_references"`
+	Guidance       []AgentPromptGuidance    `json:"guidance"`
+	VerdictSchema  AgentReviewVerdictSchema `json:"verdict_schema"`
+}
+
+type AgentReviewReference struct {
+	Kind    string `json:"kind"`
+	Command string `json:"command"`
+}
+
+type AgentPromptGuidance struct {
+	Path    string `json:"path"`
+	Status  string `json:"status"`
+	Content string `json:"content,omitempty"`
+}
+
+type AgentReviewVerdictSchema struct {
+	GoalFulfilled            []string `json:"goal_fulfilled"`
+	AcceptanceCriteriaStatus []string `json:"acceptance_criteria_status"`
+	ChecksStatus             []string `json:"checks_status"`
+	EvidenceStatus           []string `json:"evidence_status"`
+	ResidualRisk             []string `json:"residual_risk"`
+	RecommendedAction        []string `json:"recommended_action"`
+	ReviewerNotes            string   `json:"reviewer_notes"`
+	TestGaps                 string   `json:"test_gaps"`
+	FollowUps                string   `json:"follow_ups"`
 }
 
 func BuildAgentPromptReport(input AgentPromptInput, runner CommandRunner) (AgentPromptReport, error) {
@@ -114,12 +148,15 @@ func BuildAgentPromptReport(input AgentPromptInput, runner CommandRunner) (Agent
 	if role == AgentPromptRoleReviewer {
 		pr, err := resolveAgentPromptPR(input.Repo, input.Ticket, input.PRNumber, runner)
 		if err != nil {
-			return report, err
-		}
-		report.PR = pr
-		if pr != nil {
+			if !isMissingLinkedPRPromptError(err) {
+				return report, err
+			}
+			report.Evidence = &AgentPromptEvidence{Blockers: []string{"missing_linked_pr"}}
+		} else if pr != nil {
+			report.PR = pr
 			report.Evidence = agentPromptEvidence(pr)
 		}
+		report.Review = buildAgentReviewContract(report)
 	}
 	report.Prompt = RenderAgentPrompt(report)
 	return report, nil
@@ -184,6 +221,12 @@ func RenderAgentPrompt(report AgentPromptReport) string {
 		if strings.TrimSpace(report.PR.URL) != "" {
 			fmt.Fprintf(&b, "- URL: %s\n", report.PR.URL)
 		}
+		if strings.TrimSpace(report.PR.HeadRefName) != "" {
+			fmt.Fprintf(&b, "- Head: `%s`\n", report.PR.HeadRefName)
+		}
+		if strings.TrimSpace(report.PR.BaseRefName) != "" {
+			fmt.Fprintf(&b, "- Base: `%s`\n", report.PR.BaseRefName)
+		}
 		if strings.TrimSpace(report.PR.ReviewDecision) != "" {
 			fmt.Fprintf(&b, "- Review Decision: `%s`\n", report.PR.ReviewDecision)
 		}
@@ -220,6 +263,29 @@ func RenderAgentPrompt(report AgentPromptReport) string {
 			fmt.Fprintf(&b, "\n### PR Body\n%s\n", fencedOrNone(report.PR.Body))
 		}
 		b.WriteString("\n")
+	}
+
+	if report.Review != nil {
+		b.WriteString("## Review Packet Contract\n")
+		if len(report.Review.DiffReferences) > 0 {
+			b.WriteString("- Diff References:\n")
+			for _, ref := range report.Review.DiffReferences {
+				fmt.Fprintf(&b, "  - %s: `%s`\n", ref.Kind, ref.Command)
+			}
+		}
+		if len(report.Review.Guidance) > 0 {
+			b.WriteString("- Repo-local Guidance:\n")
+			for _, guidance := range report.Review.Guidance {
+				fmt.Fprintf(&b, "  - `%s`: %s\n", guidance.Path, guidance.Status)
+			}
+		}
+		b.WriteString("- Verdict Schema:\n")
+		fmt.Fprintf(&b, "  - goal_fulfilled: %s\n", strings.Join(report.Review.VerdictSchema.GoalFulfilled, " / "))
+		fmt.Fprintf(&b, "  - acceptance_criteria_status: %s\n", strings.Join(report.Review.VerdictSchema.AcceptanceCriteriaStatus, " / "))
+		fmt.Fprintf(&b, "  - checks_status: %s\n", strings.Join(report.Review.VerdictSchema.ChecksStatus, " / "))
+		fmt.Fprintf(&b, "  - evidence_status: %s\n", strings.Join(report.Review.VerdictSchema.EvidenceStatus, " / "))
+		fmt.Fprintf(&b, "  - residual_risk: %s\n", strings.Join(report.Review.VerdictSchema.ResidualRisk, " / "))
+		fmt.Fprintf(&b, "  - recommended_action: %s\n\n", strings.Join(report.Review.VerdictSchema.RecommendedAction, " / "))
 	}
 
 	b.WriteString("## Expected Output\n")
@@ -283,7 +349,7 @@ func resolveAgentPromptPR(repo RepoRef, ticket int, prNumber int, runner Command
 }
 
 func fetchAgentPromptPR(repo RepoRef, prNumber int, runner CommandRunner) (AgentPromptPR, error) {
-	out, err := runner.Run("gh", "pr", "view", strconv.Itoa(prNumber), "--repo", repo.FullName(), "--json", "number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup")
+	out, err := runner.Run("gh", "pr", "view", strconv.Itoa(prNumber), "--repo", repo.FullName(), "--json", "number,title,body,state,url,headRefName,baseRefName,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup")
 	if err != nil {
 		return AgentPromptPR{}, fmt.Errorf("fetch pr: %w", err)
 	}
@@ -306,6 +372,8 @@ func fetchAgentPromptPR(repo RepoRef, prNumber int, runner CommandRunner) (Agent
 		Body:           raw.Body,
 		State:          raw.State,
 		URL:            raw.URL,
+		HeadRefName:    raw.HeadRefName,
+		BaseRefName:    raw.BaseRefName,
 		ReviewDecision: raw.ReviewDecision,
 		IsDraft:        raw.IsDraft,
 		MergeState:     raw.MergeState,
@@ -381,6 +449,66 @@ func agentPromptRoleRules(role string) []string {
 	default:
 		return nil
 	}
+}
+
+func buildAgentReviewContract(report AgentPromptReport) *AgentReviewContract {
+	refs := []AgentReviewReference{}
+	if report.PR != nil && report.PR.Number > 0 {
+		refs = append(refs,
+			AgentReviewReference{Kind: "diff", Command: fmt.Sprintf("gh pr diff %d --repo %s", report.PR.Number, report.Repo)},
+			AgentReviewReference{Kind: "changed_files", Command: fmt.Sprintf("gh pr diff %d --repo %s --name-only", report.PR.Number, report.Repo)},
+			AgentReviewReference{Kind: "metadata", Command: fmt.Sprintf("gh pr view %d --repo %s --json state,reviewDecision,mergeStateStatus,statusCheckRollup", report.PR.Number, report.Repo)},
+		)
+	}
+	return &AgentReviewContract{
+		DiffReferences: refs,
+		Guidance:       loadAgentPromptGuidance(),
+		VerdictSchema: AgentReviewVerdictSchema{
+			GoalFulfilled:            []string{"yes", "no", "partial", "unknown"},
+			AcceptanceCriteriaStatus: []string{"satisfied", "missing", "partial", "unknown"},
+			ChecksStatus:             []string{"passed", "failed", "pending", "missing", "unknown"},
+			EvidenceStatus:           []string{"sufficient", "missing", "partial", "unknown"},
+			ResidualRisk:             []string{"low", "medium", "high", "unknown"},
+			RecommendedAction:        []string{"approve", "request_changes", "ask_human", "wait_for_checks", "gather_evidence"},
+			ReviewerNotes:            "Short review notes with findings first and file/line references where applicable.",
+			TestGaps:                 "Explicit remaining verification gaps, or none.",
+			FollowUps:                "Follow-up issues or actions that should not block this review, or none.",
+		},
+	}
+}
+
+func loadAgentPromptGuidance() []AgentPromptGuidance {
+	path, ok := findFileUpward("AGENTS.md")
+	if !ok {
+		return []AgentPromptGuidance{{Path: "AGENTS.md", Status: "missing"}}
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return []AgentPromptGuidance{{Path: "AGENTS.md", Status: "unreadable"}}
+	}
+	return []AgentPromptGuidance{{Path: "AGENTS.md", Status: "found", Content: strings.TrimSpace(string(content))}}
+}
+
+func findFileUpward(name string) (string, bool) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+	for {
+		candidate := filepath.Join(dir, name)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
+func isMissingLinkedPRPromptError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "requires a linked PR")
 }
 
 func agentPromptProfileRules(profile string) []string {

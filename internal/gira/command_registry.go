@@ -386,7 +386,7 @@ func CoreCommandSpecs() []CommandSpec {
 			Since:   "v1.15.0",
 			Flags: []FlagSpec{
 				{Name: "--pr", Summary: "Optional PR number override for reviewer packet context."},
-				{Name: "--json", Summary: "Emit stable JSON including issue, PR, evidence, and prompt fields."},
+				{Name: "--json", Summary: "Emit stable JSON including issue, PR, evidence, repo guidance, verdict schema, and prompt fields."},
 			},
 			Docs:        []string{"docs-site/ticket-workflow.md", "docs-site/command-reference.md", "docs/dogfood.md"},
 			GuideTopics: []string{"ticket", "agent"},

@@ -6,6 +6,28 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.16.0 - 2026-05-19
+
+- Added milestone lifecycle commands for creating, listing, assigning, planning,
+  and inspecting repo milestones without dropping to raw GitHub commands.
+- Hardened state-aware ticket and PR context resolution so ticket commands can
+  infer work from current branches or PRs and return actionable ambiguity
+  errors when context is missing or unsafe.
+- Added deterministic ticket status JSON fields for labels, milestones, branch
+  binding, linked PR state, checks, review state, evidence, acceptance
+  criteria, telemetry, warnings, and next actions.
+- Added stateless role prompt packets for planner, implementer, and reviewer
+  workers, plus reviewer packet contracts with diff references, guidance, and
+  verdict schemas.
+- Added finish readiness and finish receipt contracts so `ticket finish`
+  previews evidence-backed completion, writes concise completion receipts on
+  apply, and reports AI Delivery Telemetry warnings for agent-routed work.
+- Added `gira audit drift` for workflow convergence audits across issue status,
+  linked PRs, checks, evidence, and telemetry while preserving the existing
+  `audit workflow` compatibility path.
+- Improved action-oriented errors for missing ticket context, ambiguous
+  workflow state, unready issues, and missing milestone titles.
+
 ## v1.15.0 - 2026-05-18
 
 - Added the reviewer packet workflow with `gira ticket review`, including

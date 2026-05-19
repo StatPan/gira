@@ -9,6 +9,8 @@ gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply --start
 gira ticket new --title "TITLE" --body-file issue.md --dry-run
 gira ticket new --title "TITLE" --body-file - --apply --start < issue.md
 gira ticket list --state open --label status:ready --limit 20
+gira milestone new "MILESTONE" --dry-run
+gira milestone plan "MILESTONE" --label status:ready --dry-run
 gira ticket pr --apply --draft
 gira ticket view
 gira ticket prompt --role implementer --profile python
@@ -30,6 +32,7 @@ gira ticket finish --apply
 ```
 
 Use `gira ticket new --body`, `--body-file PATH`, or `--body-file -` when the issue packet is already drafted in Markdown. Dry-run output includes the title, repo, labels, milestone, start intent, and body that will be sent to GitHub. `ticket new` does not create taxonomy labels implicitly; requested labels must already exist and are checked during dry-run/apply. Use `gira ticket list` to discover repo issue-backed tickets without dropping to raw `gh`. It supports `--state open|closed|all`, repeatable or comma-separated `--label`, `--assignee`, `--milestone`, `--limit`, and `--json`.
+Use `gira milestone new`, `gira milestone list`, `gira milestone status`, `gira milestone assign`, and `gira milestone plan` when a work batch should be created, inspected, or filled before ticket execution starts. Milestone mutation commands use dry-run/apply, and `milestone plan` defaults to selecting `status:ready` tickets.
 Use `gira ticket view` instead of composing `gh issue view` and `gh pr view` when you need the ticket operating card. Use `gira ticket note --dry-run` before `--apply` when you need a progress, blocker, decision, handoff, summary, or check note on the issue or linked PR.
 Use `gira ticket prompt TICKET --role planner|implementer|reviewer --profile default|python` when a stateless agent needs a deterministic handoff prompt from the GitHub issue. Use `gira ticket review` when a reviewer needs the current ticket, linked PR, checks, changed files, finish readiness, and evidence fields in one packet. Reviewer prompts are read-only briefs: they tell the reviewer to inspect the actual PR diff, check `AGENTS.md` or repo-local instructions, and account for AI Delivery Telemetry, Gira label/workflow conventions, tool contracts, and tests required by the changed surface. Reviewer prompts and packets can include explicit PR context with `--pr N`; `--json` includes the rendered prompt for automation.
 Use `gira ticket supersede TICKET --replacement-title "TITLE" --body-file replacement.md --dry-run` when an issue should be replaced instead of manually closing the old issue and creating cross-links. Superseded tickets are closed with `resolution:superseded`, not `status:done`, so lifecycle reports can separate replaced work from completed work.

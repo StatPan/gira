@@ -189,6 +189,154 @@ gira jira transition ABC-123 --repo OWNER/app --to done --dry-run
 
 Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-primary-provider.md`
 
+## `milestone assign`
+
+Bulk attach selected tickets to a milestone through dry-run/apply.
+
+Usage:
+
+```bash
+gira milestone assign MILESTONE --tickets 1,2,3 [--repo OWNER/REPO] --dry-run|--apply [--json]
+```
+
+Since: `v1.16.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--tickets`: Comma-separated ticket numbers.
+- `--dry-run`: Preview assignment.
+- `--apply`: Assign selected tickets.
+- `--json`: Emit stable JSON.
+
+Examples:
+
+- Preview bulk assignment
+
+```bash
+gira milestone assign "2.0 Alpha" --tickets 12,13 --dry-run
+```
+
+Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
+
+## `milestone list`
+
+List GitHub milestones with Gira progress fields.
+
+Usage:
+
+```bash
+gira milestone list [--repo OWNER/REPO] [--state open|closed|all] [--json]
+```
+
+Since: `v1.16.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--state`: Milestone state: open, closed, or all. Default: open.
+- `--json`: Emit stable JSON.
+
+Examples:
+
+- List open milestones
+
+```bash
+gira milestone list --state open
+```
+
+Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
+
+## `milestone new`
+
+Preview and create a GitHub milestone as a first-class Gira work batch.
+
+Usage:
+
+```bash
+gira milestone new "TITLE" [--repo OWNER/REPO] [--description TEXT] [--due-on YYYY-MM-DD] --dry-run|--apply [--json]
+```
+
+Since: `v1.16.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--description`: Milestone description.
+- `--due-on`: Milestone due date or timestamp.
+- `--dry-run`: Preview milestone creation.
+- `--apply`: Create the milestone.
+- `--json`: Emit stable JSON.
+
+Examples:
+
+- Preview a milestone
+
+```bash
+gira milestone new "2.0 Alpha - State-Aware Ticket Runtime" --dry-run
+```
+
+Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
+
+## `milestone plan`
+
+Select candidate tickets by labels and assign them to a milestone.
+
+Usage:
+
+```bash
+gira milestone plan MILESTONE [--repo OWNER/REPO] [--label LABEL] [--state open|closed|all] [--limit N] --dry-run|--apply [--json]
+```
+
+Since: `v1.16.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--label`: Candidate label filter. Defaults to status:ready.
+- `--state`: Ticket state: open, closed, or all. Default: open.
+- `--limit`: Maximum candidate tickets. Default: 20.
+- `--dry-run`: Preview assignment plan.
+- `--apply`: Assign selected tickets.
+- `--json`: Emit stable JSON.
+
+Examples:
+
+- Plan from ready tickets
+
+```bash
+gira milestone plan "2.0 Alpha" --label status:ready --dry-run
+```
+
+Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
+
+## `milestone status`
+
+Summarize child ticket state for one milestone work batch.
+
+Usage:
+
+```bash
+gira milestone status MILESTONE [--repo OWNER/REPO] [--json]
+```
+
+Since: `v1.16.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--json`: Emit stable JSON.
+
+Examples:
+
+- Inspect a milestone
+
+```bash
+gira milestone status "2.0 Alpha - State-Aware Ticket Runtime"
+```
+
+Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
+
 ## `setup global`
 
 Create or update the OS-user global config, workspace registry, and repo registry.

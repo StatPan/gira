@@ -32,6 +32,7 @@ Daily commands:
   adopt       Plan or apply adoption for existing repositories and issues
   ticket      Jira-style ticket lifecycle commands
   epic        Numberless epic status and finish commands
+  milestone   Milestone lifecycle and bulk ticket assignment
   sprint      Sprint iteration planning/start/close workflow
   release     Release readiness gate report
   status      Show a compact read-only GitHub status summary
@@ -746,6 +747,16 @@ Usage:
   gira sprint rollover --repo OWNER/REPO [--to MILESTONE] --dry-run|--apply [--json]
 `
 
+const milestoneHelp = `Milestone command family.
+
+Usage:
+  gira milestone new "TITLE" [--repo OWNER/REPO] [--description TEXT] [--due-on YYYY-MM-DD] --dry-run|--apply [--json]
+  gira milestone list [--repo OWNER/REPO] [--state open|closed|all] [--json]
+  gira milestone status MILESTONE [--repo OWNER/REPO] [--json]
+  gira milestone assign MILESTONE --tickets 1,2,3 [--repo OWNER/REPO] --dry-run|--apply [--json]
+  gira milestone plan MILESTONE [--repo OWNER/REPO] [--label LABEL] [--state open|closed|all] [--limit N] --dry-run|--apply [--json]
+`
+
 const ticketHelp = `Jira-style ticket lifecycle commands.
 
 Usage:
@@ -1309,6 +1320,26 @@ var newTicketListReport = func(options gira.TicketListOptions) (gira.TicketListR
 	return gira.BuildTicketListReport(options, devCommandRunner)
 }
 
+var newMilestoneNewReport = func(input gira.MilestoneNewInput) (gira.MilestoneReport, error) {
+	return gira.BuildMilestoneNewReport(input, devCommandRunner)
+}
+
+var newMilestoneListReport = func(options gira.MilestoneListOptions) (gira.MilestoneReport, error) {
+	return gira.BuildMilestoneListReport(options, devCommandRunner)
+}
+
+var newMilestoneStatusReport = func(options gira.MilestoneStatusOptions) (gira.MilestoneReport, error) {
+	return gira.BuildMilestoneStatusReport(options, devCommandRunner)
+}
+
+var newMilestoneAssignReport = func(input gira.MilestoneAssignInput) (gira.MilestoneReport, error) {
+	return gira.BuildMilestoneAssignReport(input, devCommandRunner)
+}
+
+var newMilestonePlanReport = func(input gira.MilestonePlanInput) (gira.MilestoneReport, error) {
+	return gira.BuildMilestonePlanReport(input, devCommandRunner)
+}
+
 var newTicketChecksReport = func(repo gira.RepoRef, issue int, wait time.Duration, pollInterval time.Duration) (gira.TicketChecksReport, error) {
 	return gira.BuildTicketChecksReport(repo, issue, wait, pollInterval, devCommandRunner)
 }
@@ -1468,6 +1499,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTriage(args[1:], stdout, stderr)
 	case "sprint":
 		return runSprint(args[1:], stdout, stderr)
+	case "milestone":
+		return runMilestone(args[1:], stdout, stderr)
 	case "graph":
 		return runGraph(args[1:], stdout, stderr)
 	case "review":
@@ -6780,6 +6813,198 @@ func runSprint(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, sprintHelp)
 		return 2
 	}
+}
+
+func runMilestone(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, milestoneHelp)
+		return 0
+	}
+	switch args[0] {
+	case "new":
+		positional, flagArgs := splitLeadingMilestoneTitle(args[1:])
+		fs := flag.NewFlagSet("milestone new", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		titleFlag := fs.String("title", "", "Milestone title")
+		description := fs.String("description", "", "Milestone description")
+		dueOn := fs.String("due-on", "", "Milestone due date or timestamp")
+		dryRun := fs.Bool("dry-run", false, "Preview milestone create")
+		apply := fs.Bool("apply", false, "Create milestone")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(flagArgs); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, milestoneHelp)
+			return 2
+		}
+		title := strings.TrimSpace(*titleFlag)
+		if title == "" && positional != "" {
+			title = positional
+		}
+		if title == "" && fs.NArg() == 1 {
+			title = fs.Arg(0)
+		}
+		if fs.NArg() > 1 || (fs.NArg() == 1 && title != fs.Arg(0) && positional != "") {
+			fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+			fmt.Fprint(stderr, milestoneHelp)
+			return 2
+		}
+		if title == "" || (*dryRun == *apply) {
+			fmt.Fprint(stderr, "title and exactly one of --dry-run/--apply are required\n\n")
+			fmt.Fprint(stderr, milestoneHelp)
+			return 2
+		}
+		repo, ok := resolveRepoContext(*repoValue, stderr, milestoneHelp)
+		if !ok {
+			return 2
+		}
+		report, err := newMilestoneNewReport(gira.MilestoneNewInput{Repo: repo, Title: title, Description: *description, DueOn: *dueOn, DryRun: *dryRun, Apply: *apply})
+		return writeMilestoneReport(report, err, *jsonOutput, stdout, stderr)
+	case "list":
+		fs := flag.NewFlagSet("milestone list", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		state := fs.String("state", "open", "Milestone state: open, closed, or all")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, milestoneHelp)
+			return 2
+		}
+		if fs.NArg() > 0 {
+			fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+			fmt.Fprint(stderr, milestoneHelp)
+			return 2
+		}
+		repo, ok := resolveRepoContext(*repoValue, stderr, milestoneHelp)
+		if !ok {
+			return 2
+		}
+		report, err := newMilestoneListReport(gira.MilestoneListOptions{Repo: repo, State: *state})
+		return writeMilestoneReport(report, err, *jsonOutput, stdout, stderr)
+	case "status":
+		positional, flagArgs := splitLeadingMilestoneTitle(args[1:])
+		fs := flag.NewFlagSet("milestone status", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(flagArgs); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, milestoneHelp)
+			return 2
+		}
+		if positional == "" && fs.NArg() == 1 {
+			positional = fs.Arg(0)
+		}
+		if positional == "" || fs.NArg() > 1 {
+			fmt.Fprint(stderr, "exactly one milestone title is required\n\n")
+			fmt.Fprint(stderr, milestoneHelp)
+			return 2
+		}
+		repo, ok := resolveRepoContext(*repoValue, stderr, milestoneHelp)
+		if !ok {
+			return 2
+		}
+		report, err := newMilestoneStatusReport(gira.MilestoneStatusOptions{Repo: repo, Milestone: positional})
+		return writeMilestoneReport(report, err, *jsonOutput, stdout, stderr)
+	case "assign":
+		positional, flagArgs := splitLeadingMilestoneTitle(args[1:])
+		fs := flag.NewFlagSet("milestone assign", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		ticketsValue := fs.String("tickets", "", "Comma-separated ticket numbers")
+		dryRun := fs.Bool("dry-run", false, "Preview assignment")
+		apply := fs.Bool("apply", false, "Assign selected tickets")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		if err := fs.Parse(flagArgs); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, milestoneHelp)
+			return 2
+		}
+		if positional == "" && fs.NArg() == 1 {
+			positional = fs.Arg(0)
+		}
+		if positional == "" || fs.NArg() > 1 || *ticketsValue == "" || (*dryRun == *apply) {
+			fmt.Fprint(stderr, "milestone, --tickets, and exactly one of --dry-run/--apply are required\n\n")
+			fmt.Fprint(stderr, milestoneHelp)
+			return 2
+		}
+		repo, ok := resolveRepoContext(*repoValue, stderr, milestoneHelp)
+		if !ok {
+			return 2
+		}
+		tickets, err := parseCSVInts(*ticketsValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		report, err := newMilestoneAssignReport(gira.MilestoneAssignInput{Repo: repo, Milestone: positional, Tickets: tickets, DryRun: *dryRun, Apply: *apply})
+		return writeMilestoneReport(report, err, *jsonOutput, stdout, stderr)
+	case "plan":
+		positional, flagArgs := splitLeadingMilestoneTitle(args[1:])
+		fs := flag.NewFlagSet("milestone plan", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+		state := fs.String("state", "open", "Ticket state: open, closed, or all")
+		limit := fs.Int("limit", 20, "Maximum candidate tickets")
+		dryRun := fs.Bool("dry-run", false, "Preview assignment plan")
+		apply := fs.Bool("apply", false, "Assign selected tickets")
+		jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+		var labels repeatedStringFlag
+		fs.Var(&labels, "label", "Candidate label filter")
+		if err := fs.Parse(flagArgs); err != nil {
+			fmt.Fprintf(stderr, "%v\n\n", err)
+			fmt.Fprint(stderr, milestoneHelp)
+			return 2
+		}
+		if positional == "" && fs.NArg() == 1 {
+			positional = fs.Arg(0)
+		}
+		if positional == "" || fs.NArg() > 1 || (*dryRun == *apply) {
+			fmt.Fprint(stderr, "milestone and exactly one of --dry-run/--apply are required\n\n")
+			fmt.Fprint(stderr, milestoneHelp)
+			return 2
+		}
+		repo, ok := resolveRepoContext(*repoValue, stderr, milestoneHelp)
+		if !ok {
+			return 2
+		}
+		report, err := newMilestonePlanReport(gira.MilestonePlanInput{Repo: repo, Milestone: positional, Labels: labels, State: *state, Limit: *limit, DryRun: *dryRun, Apply: *apply})
+		return writeMilestoneReport(report, err, *jsonOutput, stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown milestone command: %s\n\n", args[0])
+		fmt.Fprint(stderr, milestoneHelp)
+		return 2
+	}
+}
+
+func splitLeadingMilestoneTitle(args []string) (string, []string) {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return "", args
+	}
+	return args[0], args[1:]
+}
+
+func writeMilestoneReport(report gira.MilestoneReport, err error, jsonOutput bool, stdout io.Writer, stderr io.Writer) int {
+	if err != nil {
+		if jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode milestone JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatMilestoneReport(report))
+	return 0
 }
 
 func runWorker(args []string, stdout io.Writer, stderr io.Writer) int {

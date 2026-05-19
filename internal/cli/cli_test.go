@@ -26,6 +26,9 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "ticket") {
 		t.Fatalf("help output missing ticket command:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "milestone") {
+		t.Fatalf("help output missing milestone command:\n%s", stdout.String())
+	}
 	if !strings.Contains(stdout.String(), "guide") {
 		t.Fatalf("help output missing guide command:\n%s", stdout.String())
 	}
@@ -2359,6 +2362,56 @@ func TestTicketHelpIncludesListFilters(t *testing.T) {
 	for _, want := range []string{"gira ticket list", "gira ticket view|show", "Alias: show", "--state open|closed|all", "--label LABEL", "--assignee LOGIN", "--milestone TITLE"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("ticket help missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestMilestoneHelpIncludesLifecycleCommands(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"milestone", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"gira milestone new", "gira milestone list", "gira milestone status", "gira milestone assign", "gira milestone plan", "--dry-run|--apply"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("milestone help missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestMilestonePlanJSON(t *testing.T) {
+	restore := newMilestonePlanReport
+	t.Cleanup(func() { newMilestonePlanReport = restore })
+	newMilestonePlanReport = func(input gira.MilestonePlanInput) (gira.MilestoneReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Milestone != "2.0 Alpha" || !input.DryRun || input.Apply || input.State != "open" || input.Limit != 5 {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		if strings.Join(input.Labels, "|") != "status:ready|area:backend" {
+			t.Fatalf("unexpected labels: %+v", input.Labels)
+		}
+		return gira.MilestoneReport{
+			Command: "milestone plan",
+			Repo:    input.Repo.FullName(),
+			DryRun:  input.DryRun,
+			Milestone: &gira.MilestoneItem{
+				Number: 1,
+				Title:  input.Milestone,
+				State:  "open",
+			},
+			Filters: gira.MilestoneFilters{Milestone: input.Milestone, State: input.State, Labels: input.Labels, Limit: input.Limit},
+			Counts:  gira.MilestoneWorkCounts{Tickets: 1, WouldAssign: 1},
+			Actions: []gira.MilestoneAction{{Action: "issue:assign-milestone", Status: "planned", Issue: 42, Milestone: input.Milestone}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"milestone", "plan", "2.0 Alpha", "--repo", "StatPan/gira", "--label", "status:ready", "--label", "area:backend", "--limit", "5", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "milestone plan"`, `"repo": "StatPan/gira"`, `"milestone": "2.0 Alpha"`, `"would_assign": 1`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("milestone plan JSON missing %q:\n%s", want, stdout.String())
 		}
 	}
 }

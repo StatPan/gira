@@ -18,7 +18,10 @@ func TestBuildAgentPromptReportPythonImplementer(t *testing.T) {
 	if report.Command != "ticket prompt" || report.Role != AgentPromptRoleImplementer || report.Profile != AgentPromptProfilePython {
 		t.Fatalf("unexpected report metadata: %+v", report)
 	}
-	for _, want := range []string{"# Gira implementer prompt", "Assume no prior chat state", "pytest", "ruff", "mypy", "## Goal\nRender prompts"} {
+	if report.Packet == nil || len(report.Packet.WorkOrder) == 0 || len(report.Packet.ExpectedEvidence) == 0 || len(report.Packet.Guidance) == 0 {
+		t.Fatalf("implementer packet missing work order/evidence/guidance: %+v", report.Packet)
+	}
+	for _, want := range []string{"# Gira implementer prompt", "Assume no prior chat state", "pytest", "ruff", "mypy", "## Goal\nRender prompts", "Role Packet", "Work Order", "Expected Evidence"} {
 		if !strings.Contains(report.Prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, report.Prompt)
 		}
@@ -37,6 +40,9 @@ func TestBuildAgentPromptReportDefaultProfileExcludesPythonSpecificTools(t *test
 	}
 	if report.Profile != AgentPromptProfileDefault {
 		t.Fatalf("profile = %q, want default", report.Profile)
+	}
+	if report.Packet == nil || !containsString(report.Packet.Readiness, "issue_open") || !containsString(report.Packet.Readiness, "acceptance_criteria_missing") {
+		t.Fatalf("planner packet missing readiness context: %+v", report.Packet)
 	}
 	if strings.Contains(report.Prompt, "pytest") || strings.Contains(report.Prompt, "ruff") || strings.Contains(report.Prompt, "mypy") {
 		t.Fatalf("default profile included Python-only guidance:\n%s", report.Prompt)
@@ -60,6 +66,9 @@ func TestBuildAgentPromptReportReviewerWithExplicitPR(t *testing.T) {
 	}
 	if report.Review == nil || len(report.Review.DiffReferences) != 3 || len(report.Review.Guidance) == 0 || len(report.Review.VerdictSchema.RecommendedAction) == 0 {
 		t.Fatalf("unexpected review contract: %+v", report.Review)
+	}
+	if report.Packet == nil || len(report.Packet.WorkOrder) == 0 || len(report.Packet.ExpectedEvidence) == 0 {
+		t.Fatalf("reviewer packet missing work order/evidence: %+v", report.Packet)
 	}
 	if report.PR.FinishReady || !containsString(report.PR.Blockers, "review") {
 		t.Fatalf("expected review blocker and not finish ready: %+v", report.PR)

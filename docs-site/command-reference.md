@@ -570,7 +570,7 @@ Render a stateless planner, implementer, or reviewer prompt from ticket context.
 Usage:
 
 ```bash
-gira ticket prompt [TICKET] --role planner|implementer|reviewer [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]
+gira ticket prompt [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]
 ```
 
 Since: `v1.14.0`
@@ -587,13 +587,13 @@ Examples:
 - Render an implementation worker prompt
 
 ```bash
-gira ticket prompt 42 --role implementer --profile python
+gira ticket prompt 42 implementer --profile python
 ```
 
 - Render a reviewer prompt with PR context
 
 ```bash
-gira ticket prompt 42 --role reviewer --pr 77
+gira ticket prompt 42 reviewer --pr 77
 ```
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`

@@ -27,17 +27,18 @@ type AgentPromptInput struct {
 }
 
 type AgentPromptReport struct {
-	Command  string               `json:"command"`
-	Repo     string               `json:"repo"`
-	Ticket   int                  `json:"ticket"`
-	Role     string               `json:"role"`
-	Profile  string               `json:"profile"`
-	Issue    AgentPromptIssue     `json:"issue"`
-	PR       *AgentPromptPR       `json:"pr,omitempty"`
-	Evidence *AgentPromptEvidence `json:"evidence,omitempty"`
-	Review   *AgentReviewContract `json:"review,omitempty"`
-	Prompt   string               `json:"prompt"`
-	NextStep string               `json:"next_step"`
+	Command  string                 `json:"command"`
+	Repo     string                 `json:"repo"`
+	Ticket   int                    `json:"ticket"`
+	Role     string                 `json:"role"`
+	Profile  string                 `json:"profile"`
+	Issue    AgentPromptIssue       `json:"issue"`
+	PR       *AgentPromptPR         `json:"pr,omitempty"`
+	Evidence *AgentPromptEvidence   `json:"evidence,omitempty"`
+	Packet   *AgentPromptRolePacket `json:"packet,omitempty"`
+	Review   *AgentReviewContract   `json:"review,omitempty"`
+	Prompt   string                 `json:"prompt"`
+	NextStep string                 `json:"next_step"`
 }
 
 type AgentPromptIssue struct {
@@ -74,6 +75,18 @@ type AgentPromptEvidence struct {
 	Blockers      []string     `json:"blockers,omitempty"`
 	ChangedFiles  []string     `json:"changed_files,omitempty"`
 	FinishReady   bool         `json:"finish_ready"`
+}
+
+type AgentPromptRolePacket struct {
+	Role             string                `json:"role"`
+	Goal             string                `json:"goal,omitempty"`
+	Scope            string                `json:"scope,omitempty"`
+	Labels           []string              `json:"labels,omitempty"`
+	Readiness        []string              `json:"readiness,omitempty"`
+	WorkOrder        []string              `json:"work_order,omitempty"`
+	Risk             []string              `json:"risk,omitempty"`
+	ExpectedEvidence []string              `json:"expected_evidence,omitempty"`
+	Guidance         []AgentPromptGuidance `json:"guidance,omitempty"`
 }
 
 type AgentReviewContract struct {
@@ -145,6 +158,7 @@ func BuildAgentPromptReport(input AgentPromptInput, runner CommandRunner) (Agent
 	report.Issue.Goal = markdownSection(issue.Body, "Goal")
 	report.Issue.Scope = markdownSection(issue.Body, "Scope")
 	report.Issue.Acceptance = markdownListSection(issue.Body, "Acceptance Criteria")
+	report.Packet = buildAgentPromptRolePacket(report, issue)
 	if role == AgentPromptRoleReviewer {
 		pr, err := resolveAgentPromptPR(input.Repo, input.Ticket, input.PRNumber, runner)
 		if err != nil {
@@ -261,6 +275,41 @@ func RenderAgentPrompt(report AgentPromptReport) string {
 		}
 		if strings.TrimSpace(report.PR.Body) != "" {
 			fmt.Fprintf(&b, "\n### PR Body\n%s\n", fencedOrNone(report.PR.Body))
+		}
+		b.WriteString("\n")
+	}
+
+	if report.Packet != nil {
+		b.WriteString("## Role Packet\n")
+		if len(report.Packet.Readiness) > 0 {
+			b.WriteString("- Readiness:\n")
+			for _, item := range report.Packet.Readiness {
+				fmt.Fprintf(&b, "  - %s\n", item)
+			}
+		}
+		if len(report.Packet.WorkOrder) > 0 {
+			b.WriteString("- Work Order:\n")
+			for _, item := range report.Packet.WorkOrder {
+				fmt.Fprintf(&b, "  - %s\n", item)
+			}
+		}
+		if len(report.Packet.ExpectedEvidence) > 0 {
+			b.WriteString("- Expected Evidence:\n")
+			for _, item := range report.Packet.ExpectedEvidence {
+				fmt.Fprintf(&b, "  - %s\n", item)
+			}
+		}
+		if len(report.Packet.Risk) > 0 {
+			b.WriteString("- Risk Signals:\n")
+			for _, item := range report.Packet.Risk {
+				fmt.Fprintf(&b, "  - %s\n", item)
+			}
+		}
+		if len(report.Packet.Guidance) > 0 {
+			b.WriteString("- Repo-local Guidance:\n")
+			for _, guidance := range report.Packet.Guidance {
+				fmt.Fprintf(&b, "  - `%s`: %s\n", guidance.Path, guidance.Status)
+			}
 		}
 		b.WriteString("\n")
 	}
@@ -509,6 +558,86 @@ func findFileUpward(name string) (string, bool) {
 
 func isMissingLinkedPRPromptError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "requires a linked PR")
+}
+
+func buildAgentPromptRolePacket(report AgentPromptReport, issue devStartIssue) *AgentPromptRolePacket {
+	packet := &AgentPromptRolePacket{
+		Role:     report.Role,
+		Goal:     report.Issue.Goal,
+		Scope:    report.Issue.Scope,
+		Labels:   append([]string(nil), report.Issue.Labels...),
+		Risk:     agentPromptRiskSignals(report.Issue.Labels),
+		Guidance: loadAgentPromptGuidance(),
+	}
+	switch report.Role {
+	case AgentPromptRolePlanner:
+		packet.Readiness = plannerReadinessSignals(issue, report.Issue.Acceptance)
+		packet.ExpectedEvidence = []string{
+			"queue-ready issue has a clear goal, bounded scope, acceptance criteria, and verification commands",
+			"implementation tasks should be small enough for stateless workers",
+			"human decisions should be called out before implementation starts",
+		}
+	case AgentPromptRoleImplementer:
+		branch := formatDevBranch(DefaultDevBranchPattern, report.Ticket, report.Issue.Title)
+		packet.WorkOrder = []string{
+			fmt.Sprintf("start or reuse branch `%s` with `gira ticket start --repo %s --ticket %d --apply`", branch, report.Repo, report.Ticket),
+			"keep changes bounded to the ticket goal, scope, and acceptance criteria",
+			fmt.Sprintf("open a PR with a closing reference such as `Closes #%d`", report.Ticket),
+		}
+		packet.ExpectedEvidence = []string{
+			"changed files are limited to the issue scope",
+			"local tests or documented verification commands were run",
+			"PR body links the ticket and summarizes behavior, tests, and caveats",
+			"checks, review, and finish status can be inspected with Gira lifecycle commands",
+		}
+	case AgentPromptRoleReviewer:
+		packet.WorkOrder = []string{
+			"inspect the actual PR diff before forming a verdict",
+			"compare changed files, checks, and evidence against issue goal and acceptance criteria",
+			"use the review verdict schema and put findings first",
+		}
+		packet.ExpectedEvidence = []string{
+			"linked PR has a closing reference to the ticket",
+			"checks and review state are represented in the packet when available",
+			"residual risk, test gaps, and follow-ups are explicit",
+		}
+	}
+	return packet
+}
+
+func plannerReadinessSignals(issue devStartIssue, acceptance []string) []string {
+	signals := []string{}
+	if strings.EqualFold(issue.State, "open") {
+		signals = append(signals, "issue_open")
+	} else {
+		signals = append(signals, "issue_not_open")
+	}
+	status := managedStatusFromLabels(issue.Labels)
+	if status == "" {
+		signals = append(signals, "missing_status_label")
+	} else {
+		signals = append(signals, "status:"+strings.ToLower(strings.ReplaceAll(displayStatus(status), " ", "-")))
+	}
+	if len(acceptance) > 0 {
+		signals = append(signals, "acceptance_criteria_present")
+	} else {
+		signals = append(signals, "acceptance_criteria_missing")
+	}
+	return signals
+}
+
+func agentPromptRiskSignals(labels []string) []string {
+	risks := []string{}
+	for _, label := range labels {
+		lower := strings.ToLower(strings.TrimSpace(label))
+		if strings.HasPrefix(lower, "priority:p0") || strings.HasPrefix(lower, "priority:p1") || strings.Contains(lower, "security") || strings.Contains(lower, "area:ai") {
+			risks = append(risks, label)
+		}
+	}
+	if len(risks) == 0 {
+		return []string{"none_detected_from_labels"}
+	}
+	return risks
 }
 
 func agentPromptProfileRules(profile string) []string {

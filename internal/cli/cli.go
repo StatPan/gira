@@ -4389,14 +4389,23 @@ func inferTicketFromCurrentContext(repo gira.RepoRef, runner gira.CommandRunner)
 	if runner == nil {
 		runner = gira.ExecCommandRunner{}
 	}
+	branch := ""
 	if out, err := runner.Run("git", "branch", "--show-current"); err == nil {
-		if n := issueNumberFromRef(strings.TrimSpace(string(out))); n > 0 {
+		branch = strings.TrimSpace(string(out))
+		if n := issueNumberFromRef(branch); n > 0 {
 			return n, nil
+		}
+	}
+	if branch != "" && branch != "main" && branch != "master" {
+		if n, err := inferTicketFromBranchPRs(repo, branch, runner); err == nil && n > 0 {
+			return n, nil
+		} else if err != nil {
+			return 0, err
 		}
 	}
 	out, err := runner.Run("gh", "pr", "view", "--repo", repo.FullName(), "--json", "body,headRefName,title")
 	if err != nil {
-		return 0, fmt.Errorf("ticket context unavailable: pass --ticket N or run from an issue branch")
+		return 0, missingTicketContextError(repo, branch)
 	}
 	var raw struct {
 		Body        string `json:"body"`
@@ -4406,19 +4415,127 @@ func inferTicketFromCurrentContext(repo gira.RepoRef, runner gira.CommandRunner)
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return 0, fmt.Errorf("parse PR context JSON: %w", err)
 	}
-	issues := gira.ExtractClosureIssueNumbers(raw.Body)
-	if len(issues) == 1 {
-		return issues[0], nil
+	candidates := ticketContextCandidatesFromPRs([]ticketContextPRCandidate{{
+		Body:        raw.Body,
+		HeadRefName: raw.HeadRefName,
+		Title:       raw.Title,
+	}})
+	if n, ok := singleTicketContextCandidate(candidates); ok {
+		return n, nil
 	}
-	if len(issues) > 1 {
-		return 0, fmt.Errorf("ticket context ambiguous: PR body references multiple closing issues; pass --ticket N")
+	if len(candidates) > 1 {
+		return 0, ambiguousTicketContextError(candidates)
 	}
-	for _, ref := range []string{raw.HeadRefName, raw.Title} {
-		if n := issueNumberFromRef(ref); n > 0 {
-			return n, nil
+	return 0, missingTicketContextError(repo, branch)
+}
+
+type ticketContextPRCandidate struct {
+	Number      int    `json:"number"`
+	Body        string `json:"body"`
+	HeadRefName string `json:"headRefName"`
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+}
+
+type ticketContextCandidate struct {
+	Ticket int
+	PR     int
+	Source string
+}
+
+func inferTicketFromBranchPRs(repo gira.RepoRef, branch string, runner gira.CommandRunner) (int, error) {
+	out, err := runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--head", branch, "--state", "all", "--json", "number,body,headRefName,title,url", "--limit", "20")
+	if err != nil {
+		return 0, nil
+	}
+	var prs []ticketContextPRCandidate
+	if err := json.Unmarshal(out, &prs); err != nil {
+		return 0, fmt.Errorf("parse branch PR context JSON: %w", err)
+	}
+	candidates := ticketContextCandidatesFromPRs(prs)
+	if n, ok := singleTicketContextCandidate(candidates); ok {
+		return n, nil
+	}
+	if len(candidates) > 1 {
+		return 0, ambiguousTicketContextError(candidates)
+	}
+	return 0, nil
+}
+
+func ticketContextCandidatesFromPRs(prs []ticketContextPRCandidate) []ticketContextCandidate {
+	seen := map[string]struct{}{}
+	candidates := []ticketContextCandidate{}
+	add := func(ticket int, pr int, source string) {
+		if ticket <= 0 {
+			return
+		}
+		key := fmt.Sprintf("%d/%d/%s", ticket, pr, source)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		candidates = append(candidates, ticketContextCandidate{Ticket: ticket, PR: pr, Source: source})
+	}
+	for _, pr := range prs {
+		for _, n := range gira.ExtractClosureIssueNumbers(pr.Body) {
+			add(n, pr.Number, "closing_reference")
+		}
+		for _, ref := range []string{pr.HeadRefName, pr.Title} {
+			if n := issueNumberFromRef(ref); n > 0 {
+				add(n, pr.Number, "ref_name")
+			}
 		}
 	}
-	return 0, fmt.Errorf("ticket context unavailable: pass --ticket N or run from an issue branch")
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].Ticket != candidates[j].Ticket {
+			return candidates[i].Ticket < candidates[j].Ticket
+		}
+		if candidates[i].PR != candidates[j].PR {
+			return candidates[i].PR < candidates[j].PR
+		}
+		return candidates[i].Source < candidates[j].Source
+	})
+	return candidates
+}
+
+func singleTicketContextCandidate(candidates []ticketContextCandidate) (int, bool) {
+	if len(candidates) == 0 {
+		return 0, false
+	}
+	ticket := candidates[0].Ticket
+	for _, candidate := range candidates[1:] {
+		if candidate.Ticket != ticket {
+			return 0, false
+		}
+	}
+	return ticket, true
+}
+
+func ambiguousTicketContextError(candidates []ticketContextCandidate) error {
+	parts := make([]string, 0, len(candidates))
+	seen := map[string]struct{}{}
+	for _, candidate := range candidates {
+		part := fmt.Sprintf("#%d", candidate.Ticket)
+		if candidate.PR > 0 {
+			part = fmt.Sprintf("#%d via PR #%d", candidate.Ticket, candidate.PR)
+		}
+		if candidate.Source != "" {
+			part += " " + candidate.Source
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		parts = append(parts, part)
+	}
+	return fmt.Errorf("ticket context ambiguous: candidates=%s; pass --ticket N to disambiguate", strings.Join(parts, ", "))
+}
+
+func missingTicketContextError(repo gira.RepoRef, branch string) error {
+	if strings.TrimSpace(branch) != "" {
+		return fmt.Errorf("ticket context unavailable for branch %q: pass --ticket N or run from an issue branch; checkout an issue-N-* branch, or open a PR with Closes #N in %s", branch, repo.FullName())
+	}
+	return fmt.Errorf("ticket context unavailable: pass --ticket N or run from an issue branch; checkout an issue-N-* branch, or open a PR with Closes #N in %s", repo.FullName())
 }
 
 func issueNumberFromRef(ref string) int {

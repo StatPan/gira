@@ -22,12 +22,13 @@ type DevStartResult struct {
 }
 
 type devStartIssue struct {
-	Number int      `json:"number"`
-	Title  string   `json:"title"`
-	State  string   `json:"state"`
-	Body   string   `json:"body"`
-	Labels []string `json:"labels"`
-	IsPR   bool     `json:"is_pr"`
+	Number    int      `json:"number"`
+	Title     string   `json:"title"`
+	State     string   `json:"state"`
+	Body      string   `json:"body"`
+	Labels    []string `json:"labels"`
+	Milestone string   `json:"milestone,omitempty"`
+	IsPR      bool     `json:"is_pr"`
 }
 
 func StartDevBranch(repo RepoRef, issueNumber int, pattern string, dryRun bool, force bool, runner CommandRunner) (DevStartResult, error) {
@@ -111,6 +112,9 @@ func fetchDevIssue(repo RepoRef, issueNumber int, runner CommandRunner) (devStar
 		Labels      []struct {
 			Name string `json:"name"`
 		} `json:"labels"`
+		Milestone *struct {
+			Title string `json:"title"`
+		} `json:"milestone"`
 	}
 	if err := json.Unmarshal(output, &raw); err != nil {
 		return devStartIssue{}, fmt.Errorf("parse issue JSON: %w", err)
@@ -129,7 +133,11 @@ func fetchDevIssue(repo RepoRef, issueNumber int, runner CommandRunner) (devStar
 	if raw.Body != nil {
 		body = *raw.Body
 	}
-	return devStartIssue{Number: raw.Number, Title: raw.Title, State: raw.State, Body: body, Labels: labels, IsPR: raw.PullRequest != nil}, nil
+	milestone := ""
+	if raw.Milestone != nil {
+		milestone = raw.Milestone.Title
+	}
+	return devStartIssue{Number: raw.Number, Title: raw.Title, State: raw.State, Body: body, Labels: labels, Milestone: milestone, IsPR: raw.PullRequest != nil}, nil
 }
 
 func hasReadyLabel(labels []string) bool {

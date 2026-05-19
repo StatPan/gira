@@ -180,6 +180,36 @@ func TestOpenWorkPRApplyNonDraftMovesInReview(t *testing.T) {
 	}
 }
 
+func TestGetWorkStatusIncludesDeterministicJSONContractFields(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","milestone":{"title":"2.0 Alpha"},"labels":[{"name":"status:in-review"},{"name":"priority:p1"}]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": []byte(`[
+			{"number":201,"title":"feat: work","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/201","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-126-work-command","baseRefName":"main","statusCheckRollup":[{"name":"test","workflowName":"ci","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://ci.example"}]}
+		]`),
+	}}
+
+	result, err := GetWorkStatus(repo, 126, runner)
+	if err != nil {
+		t.Fatalf("GetWorkStatus error: %v", err)
+	}
+	if result.Command != "ticket status" || result.SchemaVersion != "ticket-status/v1" || result.Milestone != "2.0 Alpha" {
+		t.Fatalf("missing status contract metadata: %+v", result)
+	}
+	if !containsString(result.Labels, "priority:p1") || result.Branch == nil || result.Branch.Expected != "issue-126-work-command" || !result.Branch.Trusted {
+		t.Fatalf("missing label/branch contract: %+v", result)
+	}
+	if result.PullRequest == nil || !result.PullRequest.Available || result.PullRequest.HeadRefName != "issue-126-work-command" || result.PullRequest.BaseRefName != "main" {
+		t.Fatalf("missing PR contract: %+v", result.PullRequest)
+	}
+	if result.ChecksStatus != "passed" || len(result.Checks) != 1 || result.ReviewStatus != "approved" {
+		t.Fatalf("missing check/review contract: %+v", result)
+	}
+	if result.Evidence == nil || !result.Evidence.ClosingReference || !result.Evidence.BranchTrusted || !containsString(result.Evidence.Sources, "checks") {
+		t.Fatalf("missing evidence contract: %+v", result.Evidence)
+	}
+}
+
 func TestOpenWorkPRDryRunReportsMissingLinkedPR(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{

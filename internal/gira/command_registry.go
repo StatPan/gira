@@ -397,10 +397,13 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
-			Path:        []string{"ticket", "start"},
-			Summary:     "Verify a ready issue, create or reuse its branch, and move it to in-progress.",
-			Usage:       "gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO]",
-			Since:       "v1.0.0",
+			Path:    []string{"ticket", "start"},
+			Summary: "Verify a ready issue, create or reuse its branch, and move it to in-progress.",
+			Usage:   "gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO]",
+			Since:   "v1.0.0",
+			Flags: []FlagSpec{
+				{Name: "--json", Summary: "Emit the stable ticket-status/v1 JSON contract with issue, branch, PR, checks, review, evidence, blockers, warnings, and next action."},
+			},
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
 			GuideTopics: []string{"ticket", "agent"},
 			GuideOrder:  20,

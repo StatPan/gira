@@ -52,6 +52,10 @@ jobs:
       - name: Run Go tests
         run: go test ./...
 
+      - name: Validate docs contract
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: sh scripts/check-docs-contract.sh .
+
       - name: Run npm wrapper tests
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         run: npm test --prefix packages/npm
@@ -175,6 +179,9 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Package docs contract snapshot
+        run: sh scripts/package-docs-snapshot.sh "${GITHUB_REF_NAME}" release-assets
+
       - name: Generate checksum asset
         run: |
           set -euo pipefail
@@ -185,12 +192,13 @@ jobs:
             "gira_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
             "gira_${GITHUB_REF_NAME}_linux_arm64.tar.gz"
             "gira_${GITHUB_REF_NAME}_windows_amd64.zip"
+            "gira_${GITHUB_REF_NAME}_docs.tar.gz"
           )
           for asset in "${expected_assets[@]}"; do
             test -f "${asset}"
           done
           actual_count="$(find . -maxdepth 1 -type f ! -name checksums.txt | wc -l | tr -d ' ')"
-          test "${actual_count}" = "5"
+          test "${actual_count}" = "6"
           sha256sum "${expected_assets[@]}" > checksums.txt
           sha256sum -c checksums.txt
 

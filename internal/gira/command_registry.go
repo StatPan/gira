@@ -492,8 +492,8 @@ func CoreCommandSpecs() []CommandSpec {
 		},
 		{
 			Path:        []string{"ticket", "finish"},
-			Summary:     "Merge the linked PR when policy allows, sync main, and close the ticket loop.",
-			Usage:       "gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO]",
+			Summary:     "Merge the linked PR when policy allows and close the ticket loop without local checkout sync by default.",
+			Usage:       "gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--sync-local]",
 			Since:       "v1.0.0",
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
 			GuideTopics: []string{"ticket", "agent"},

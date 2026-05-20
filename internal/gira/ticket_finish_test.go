@@ -45,11 +45,6 @@ func TestFinishWorkApplyMarksDraftReadyThenMerges(t *testing.T) {
 		},
 		"gh pr ready 220 --repo StatPan/gira":                          {nil},
 		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch": {nil},
-		"git remote get-url origin":                                    {[]byte("git@github.com:StatPan/gira.git\n")},
-		"git branch --show-current":                                    {[]byte("issue-219-finish\n")},
-		"git status --porcelain":                                       {[]byte("")},
-		"git checkout main":                                            {nil},
-		"git pull --ff-only origin main":                               {nil},
 		"gh api repos/StatPan/gira/issues/219": {
 			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
 			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
@@ -66,12 +61,69 @@ func TestFinishWorkApplyMarksDraftReadyThenMerges(t *testing.T) {
 	for _, want := range []string{
 		"gh pr ready 220 --repo StatPan/gira",
 		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch",
-		"git checkout main",
-		"git pull --ff-only origin main",
 	} {
 		if !containsCall(runner.calls, want) {
 			t.Fatalf("missing call %q in %v", want, runner.calls)
 		}
+	}
+	for _, unexpected := range []string{
+		"git remote get-url origin",
+		"git checkout main",
+		"git pull --ff-only origin main",
+	} {
+		if containsCall(runner.calls, unexpected) {
+			t.Fatalf("default finish should not sync local checkout; unexpected %q in %v", unexpected, runner.calls)
+		}
+	}
+	if !result.LocalSync.Skipped || result.LocalSync.Reason != "local_sync_disabled" {
+		t.Fatalf("expected local sync disabled by default, got %+v", result.LocalSync)
+	}
+}
+
+func TestFinishWorkApplySyncLocalOptInTargetsPRBase(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-219-finish","baseRefName":"release/2.0","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","headRefName":"issue-219-finish","baseRefName":"release/2.0","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		},
+		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch": {nil},
+		"git remote get-url origin":                                    {[]byte("git@github.com:StatPan/gira.git\n")},
+		"git branch --show-current":                                    {[]byte("issue-219-finish\n")},
+		"git status --porcelain":                                       {[]byte("")},
+		"git checkout release/2.0":                                     {nil},
+		"git pull --ff-only origin release/2.0":                        {nil},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+		},
+	}, errs: map[string]error{}}
+
+	result, err := FinishWorkWithOptions(repo, 219, false, 0, WorkFinishOptions{SyncLocal: true}, runner)
+	if err != nil {
+		t.Fatalf("FinishWorkWithOptions error: %v", err)
+	}
+	for _, want := range []string{
+		"git checkout release/2.0",
+		"git pull --ff-only origin release/2.0",
+	} {
+		if !containsCall(runner.calls, want) {
+			t.Fatalf("missing opt-in local sync call %q in %v", want, runner.calls)
+		}
+	}
+	for _, unexpected := range []string{
+		"git checkout main",
+		"git pull --ff-only origin main",
+	} {
+		if containsCall(runner.calls, unexpected) {
+			t.Fatalf("local sync should target PR base, not hard-coded main; calls=%v", runner.calls)
+		}
+	}
+	if !result.LocalSync.Attempted || result.LocalSync.Skipped || result.LocalSync.TargetBranch != "release/2.0" {
+		t.Fatalf("expected applied local sync against PR base, got %+v", result.LocalSync)
+	}
+	if !finishActionStatus(result.Actions, "local:sync_base", "applied") {
+		t.Fatalf("missing applied local sync action: %+v", result.Actions)
 	}
 }
 
@@ -246,8 +298,8 @@ func TestFinishWorkDryRunReadySuggestsFinishApply(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
-			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
-			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-219-finish","baseRefName":"release/2.0","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-219-finish","baseRefName":"release/2.0","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 		},
 		"git remote get-url origin": {[]byte("git@github.com:StatPan/gira.git\n")},
 		"git branch --show-current": {[]byte("issue-219-finish\n")},
@@ -270,6 +322,15 @@ func TestFinishWorkDryRunReadySuggestsFinishApply(t *testing.T) {
 	}
 	if result.Readiness.SchemaVersion != "finish-readiness/v1" || !result.Readiness.ClosingReference.Present || result.Readiness.Checks.Status != "passed" || result.Readiness.Review.Status != "approved" {
 		t.Fatalf("readiness evidence missing expected contract fields: %+v", result.Readiness)
+	}
+	if !result.LocalSync.Skipped || result.LocalSync.Reason != "local_sync_disabled" {
+		t.Fatalf("expected dry-run local sync to be disabled by default, got %+v", result.LocalSync)
+	}
+	if finishActionStatus(result.Actions, "local:sync_base", "planned") || finishActionStatus(result.Actions, "local:sync_main", "planned") {
+		t.Fatalf("dry-run should not plan local sync by default: %+v", result.Actions)
+	}
+	if containsCall(runner.calls, "git remote get-url origin") {
+		t.Fatalf("default finish should not inspect local checkout for sync: %v", runner.calls)
 	}
 	if result.Receipt.SchemaVersion != "finish-receipt/v1" || !strings.Contains(result.Receipt.RenderedBody, "## Finish Receipt") || !finishActionStatus(result.Actions, "finish:receipt", "planned") {
 		t.Fatalf("expected dry-run finish receipt preview and planned action: receipt=%+v actions=%+v", result.Receipt, result.Actions)
@@ -377,8 +438,8 @@ func TestFinishWorkDryRunSkipsLocalSyncOnDirtyWorktree(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
-			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
-			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-219-finish","baseRefName":"release/2.0","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-219-finish","baseRefName":"release/2.0","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 		},
 		"git remote get-url origin":            {[]byte("https://github.com/StatPan/gira.git\n")},
 		"git branch --show-current":            {[]byte("issue-219-finish\n")},
@@ -386,12 +447,15 @@ func TestFinishWorkDryRunSkipsLocalSyncOnDirtyWorktree(t *testing.T) {
 		"gh api repos/StatPan/gira/issues/219": {[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`)},
 	}, errs: map[string]error{}}
 
-	result, err := FinishWork(repo, 219, true, 0, runner)
+	result, err := FinishWorkWithOptions(repo, 219, true, 0, WorkFinishOptions{SyncLocal: true}, runner)
 	if err != nil {
 		t.Fatalf("FinishWork error: %v", err)
 	}
 	if !result.LocalSync.Skipped || result.LocalSync.Reason != "dirty_worktree" {
 		t.Fatalf("expected dirty local sync skip, got %+v", result.LocalSync)
+	}
+	if result.LocalSync.TargetBranch != "release/2.0" {
+		t.Fatalf("expected local sync target from PR base, got %+v", result.LocalSync)
 	}
 }
 

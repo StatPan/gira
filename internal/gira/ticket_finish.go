@@ -15,10 +15,11 @@ type WorkFinishAction struct {
 }
 
 type WorkFinishLocalSync struct {
-	Attempted bool   `json:"attempted"`
-	Skipped   bool   `json:"skipped"`
-	Reason    string `json:"reason,omitempty"`
-	Branch    string `json:"branch,omitempty"`
+	Attempted    bool   `json:"attempted"`
+	Skipped      bool   `json:"skipped"`
+	Reason       string `json:"reason,omitempty"`
+	Branch       string `json:"branch,omitempty"`
+	TargetBranch string `json:"target_branch,omitempty"`
 }
 
 type WorkFinishReadinessReport struct {
@@ -153,11 +154,19 @@ type WorkFinishResult struct {
 	NextStep         string                    `json:"next_step"`
 }
 
+type WorkFinishOptions struct {
+	SyncLocal bool `json:"sync_local"`
+}
+
 var finishMissingPRRetryAttempts = 3
 var finishMissingPRRetryDelay = time.Second
 var finishReceiptNow = func() time.Time { return time.Now().UTC() }
 
 func FinishWork(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, runner CommandRunner) (WorkFinishResult, error) {
+	return FinishWorkWithOptions(repo, issueNumber, dryRun, wait, WorkFinishOptions{}, runner)
+}
+
+func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, options WorkFinishOptions, runner CommandRunner) (WorkFinishResult, error) {
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
@@ -232,7 +241,7 @@ func FinishWork(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, 
 		} else if jiraDone.AlreadyDone() {
 			result.Actions = append(result.Actions, WorkFinishAction{Action: "jira:done", Status: "skipped", Detail: jiraDone.ApplyDetail()})
 		}
-		return finishWithLocalSync(repo, issueNumber, runner, result, true, &status)
+		return finishWithLocalSync(repo, issueNumber, runner, result, true, &status, &status, options)
 	}
 
 	if containsString(status.Blockers, "draft") {
@@ -292,7 +301,7 @@ func FinishWork(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, 
 			appendJiraDoneBlockedAction(&result, jiraDone)
 			result.NextStep = fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
 		}
-		return finishWithLocalSync(repo, issueNumber, runner, result, true, &status)
+		return finishWithLocalSync(repo, issueNumber, runner, result, true, &status, &status, options)
 	}
 	if _, err := runner.Run("gh", "pr", "merge", fmt.Sprintf("%d", status.PRNumber), "--repo", repo.FullName(), "--squash", "--delete-branch"); err != nil {
 		return result, fmt.Errorf("merge PR: %w", err)
@@ -317,7 +326,7 @@ func FinishWork(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, 
 		jiraDone.Transition.Applied = true
 		result.Actions = append(result.Actions, plannedOrAppliedAction("jira:done", false, jiraDone.ApplyDetail()))
 	}
-	return finishWithLocalSync(repo, issueNumber, runner, result, true, nil)
+	return finishWithLocalSync(repo, issueNumber, runner, result, true, nil, &status, options)
 }
 
 type jiraDoneTransitionGate struct {
@@ -451,16 +460,16 @@ func appendJiraDoneBlockedAction(result *WorkFinishResult, gate jiraDoneTransiti
 	result.Actions = append(result.Actions, WorkFinishAction{Action: "jira:done", Status: "blocked", Detail: detail})
 }
 
-func finishWithLocalSync(repo RepoRef, issueNumber int, runner CommandRunner, result WorkFinishResult, mergePlanned bool, knownPRStatus *DevPRStatusResult) (WorkFinishResult, error) {
-	local, actions := planLocalMainSync(repo, runner, result.DryRun)
+func finishWithLocalSync(repo RepoRef, issueNumber int, runner CommandRunner, result WorkFinishResult, mergePlanned bool, knownPRStatus *DevPRStatusResult, localSyncPRStatus *DevPRStatusResult, options WorkFinishOptions) (WorkFinishResult, error) {
+	local, actions := planLocalBaseSync(repo, runner, result.DryRun, localSyncPRStatus, options.SyncLocal)
 	result.LocalSync = local
 	result.Actions = append(result.Actions, actions...)
 	if !result.DryRun && mergePlanned && local.Attempted && !local.Skipped {
-		if _, err := runner.Run("git", "checkout", "main"); err != nil {
-			return result, fmt.Errorf("checkout main: %w", err)
+		if _, err := runner.Run("git", "checkout", local.TargetBranch); err != nil {
+			return result, fmt.Errorf("checkout %s: %w", local.TargetBranch, err)
 		}
-		if _, err := runner.Run("git", "pull", "--ff-only", "origin", "main"); err != nil {
-			return result, fmt.Errorf("pull main: %w", err)
+		if _, err := runner.Run("git", "pull", "--ff-only", "origin", local.TargetBranch); err != nil {
+			return result, fmt.Errorf("pull %s: %w", local.TargetBranch, err)
 		}
 	}
 	if mergePlanned && len(result.Blockers) == 0 {
@@ -802,28 +811,52 @@ func maybeApplyWorkFinishReceipt(repo RepoRef, runner CommandRunner, result *Wor
 	return WorkFinishAction{Action: "finish:receipt", Status: "applied", Detail: "posted concise finish receipt to issue"}, nil
 }
 
-func planLocalMainSync(repo RepoRef, runner CommandRunner, dryRun bool) (WorkFinishLocalSync, []WorkFinishAction) {
+func planLocalBaseSync(repo RepoRef, runner CommandRunner, dryRun bool, knownPRStatus *DevPRStatusResult, syncLocal bool) (WorkFinishLocalSync, []WorkFinishAction) {
 	local := WorkFinishLocalSync{}
 	actions := []WorkFinishAction{}
+	if !syncLocal {
+		local.Skipped = true
+		local.Reason = "local_sync_disabled"
+		actions = append(actions, WorkFinishAction{Action: "local:sync_base", Status: "skipped", Detail: local.Reason})
+		return local, actions
+	}
+	targetBranch := ""
+	if knownPRStatus != nil {
+		targetBranch = strings.TrimSpace(knownPRStatus.Binding.BaseRef)
+	}
+	if targetBranch == "" {
+		local.Skipped = true
+		local.Reason = "missing_pr_base"
+		actions = append(actions, WorkFinishAction{Action: "local:sync_base", Status: "skipped", Detail: local.Reason})
+		return local, actions
+	}
+	if err := validateGitBranchPushName(targetBranch); err != nil {
+		local.Skipped = true
+		local.Reason = "invalid_pr_base"
+		local.TargetBranch = targetBranch
+		actions = append(actions, WorkFinishAction{Action: "local:sync_base", Status: "skipped", Detail: local.Reason})
+		return local, actions
+	}
+	local.TargetBranch = targetBranch
 	remoteOut, err := runner.Run("git", "remote", "get-url", "origin")
 	if err != nil {
 		local.Skipped = true
 		local.Reason = "not_git_checkout"
-		actions = append(actions, WorkFinishAction{Action: "local:sync_main", Status: "skipped", Detail: local.Reason})
+		actions = append(actions, WorkFinishAction{Action: "local:sync_base", Status: "skipped", Detail: local.Reason})
 		return local, actions
 	}
 	currentRepo, err := ParseGitHubRemoteRepo(strings.TrimSpace(string(remoteOut)))
 	if err != nil || !strings.EqualFold(currentRepo.FullName(), repo.FullName()) {
 		local.Skipped = true
 		local.Reason = "checkout_repo_mismatch"
-		actions = append(actions, WorkFinishAction{Action: "local:sync_main", Status: "skipped", Detail: local.Reason})
+		actions = append(actions, WorkFinishAction{Action: "local:sync_base", Status: "skipped", Detail: local.Reason})
 		return local, actions
 	}
 	branchOut, err := runner.Run("git", "branch", "--show-current")
 	if err != nil {
 		local.Skipped = true
 		local.Reason = "current_branch_unavailable"
-		actions = append(actions, WorkFinishAction{Action: "local:sync_main", Status: "skipped", Detail: local.Reason})
+		actions = append(actions, WorkFinishAction{Action: "local:sync_base", Status: "skipped", Detail: local.Reason})
 		return local, actions
 	}
 	local.Branch = strings.TrimSpace(string(branchOut))
@@ -831,17 +864,17 @@ func planLocalMainSync(repo RepoRef, runner CommandRunner, dryRun bool) (WorkFin
 	if err != nil {
 		local.Skipped = true
 		local.Reason = "worktree_status_unavailable"
-		actions = append(actions, WorkFinishAction{Action: "local:sync_main", Status: "skipped", Detail: local.Reason})
+		actions = append(actions, WorkFinishAction{Action: "local:sync_base", Status: "skipped", Detail: local.Reason})
 		return local, actions
 	}
 	if strings.TrimSpace(string(statusOut)) != "" {
 		local.Skipped = true
 		local.Reason = "dirty_worktree"
-		actions = append(actions, WorkFinishAction{Action: "local:sync_main", Status: "skipped", Detail: local.Reason})
+		actions = append(actions, WorkFinishAction{Action: "local:sync_base", Status: "skipped", Detail: local.Reason})
 		return local, actions
 	}
 	local.Attempted = true
-	actions = append(actions, plannedOrAppliedAction("local:sync_main", dryRun, "checkout main and pull --ff-only"))
+	actions = append(actions, plannedOrAppliedAction("local:sync_base", dryRun, "checkout "+targetBranch+" and pull --ff-only"))
 	return local, actions
 }
 

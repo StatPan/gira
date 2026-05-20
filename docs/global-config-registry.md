@@ -82,8 +82,29 @@ defaults:
   agent: codex
   assignee: ilgukim
 
+branch_policy:
+  mode: github-flow
+
 workspace:
   name: personal
+```
+
+Global workspace entries may also carry a workspace-level branch policy when a
+set of repos share the same branching convention:
+
+```yaml
+workspace:
+  name: release
+  owner: StatPan
+  inbox_repo: StatPan/backlog
+  repos:
+    - StatPan/gira
+    - StatPan/docs
+
+branch_policy:
+  mode: git-flow
+  default_base: develop
+  production_base: main
 ```
 
 For normal global-first setup, prefer the intention-based setup flow. It
@@ -220,6 +241,7 @@ Global workspace entries own personal workspace grouping:
 - inbox repo
 - execution repo list
 - personal workspace-level defaults
+- optional workspace-level branch policy
 
 Global repo entries own personal repo metadata:
 
@@ -227,11 +249,13 @@ Global repo entries own personal repo metadata:
 - aliases
 - default agent or assignee for that operator
 - pointer to a repo-local contract path
+- optional repo-specific branch policy override
 
 Repo-local contracts own shared repo policy:
 
 - repo identity, which must match selected target when both are known
 - label/status/type policy
+- branch policy when it is shared by the repo
 - review and check policy
 - ticket lifecycle policy
 - issue and PR template policy

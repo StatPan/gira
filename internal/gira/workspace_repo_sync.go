@@ -316,11 +316,18 @@ func diffRepoStrings(oldRepos []string, newRepos []string) ([]string, []string) 
 
 func renderGlobalWorkspaceRegistryEntry(entry GlobalWorkspaceRegistryEntry) string {
 	content := renderWorkspaceGlobalConfig(entry.Workspace.Name, entry.Workspace.Owner, entry.Workspace.InboxRepo, entry.Workspace.Repos, entry.Workspace.Project)
-	if entry.Defaults.Agent == "" && entry.Defaults.Assignee == "" && len(entry.Defaults.AgentLabels) == 0 {
+	branchPolicy := renderBranchPolicyConfig(entry.BranchPolicy)
+	if entry.Defaults.Agent == "" && entry.Defaults.Assignee == "" && len(entry.Defaults.AgentLabels) == 0 && branchPolicy == "" {
 		return content
 	}
 	var b strings.Builder
 	b.WriteString(content)
+	if branchPolicy != "" {
+		b.WriteString(branchPolicy)
+	}
+	if entry.Defaults.Agent == "" && entry.Defaults.Assignee == "" && len(entry.Defaults.AgentLabels) == 0 {
+		return b.String()
+	}
 	b.WriteString("defaults:\n")
 	fmt.Fprintf(&b, "  agent: %s\n", yamlQuotedString(entry.Defaults.Agent))
 	fmt.Fprintf(&b, "  assignee: %s\n", yamlQuotedString(entry.Defaults.Assignee))

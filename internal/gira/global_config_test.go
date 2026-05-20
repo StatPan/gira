@@ -64,12 +64,16 @@ func TestGlobalRegistrySchemaTypes(t *testing.T) {
 		Path:     "~/workspace/apps/gira",
 		Aliases:  []string{"gira"},
 		Contract: ".gira/config.yaml",
+		BranchPolicy: &BranchPolicyConfig{
+			Mode:        BranchPolicyModeGitFlow,
+			DefaultBase: "develop",
+		},
 		Defaults: GlobalDefaults{Agent: "codex", Assignee: "ilgukim", AgentLabels: []string{"agent:codex"}},
 		Workspace: GlobalRepoWorkspaceRef{
 			Name: "personal",
 		},
 	}
-	if repo.Repo != "StatPan/gira" || repo.Workspace.Name != "personal" || repo.Contract == "" {
+	if repo.Repo != "StatPan/gira" || repo.Workspace.Name != "personal" || repo.Contract == "" || repo.BranchPolicy.Mode != BranchPolicyModeGitFlow {
 		t.Fatalf("unexpected repo registry schema fixture: %+v", repo)
 	}
 
@@ -80,9 +84,10 @@ func TestGlobalRegistrySchemaTypes(t *testing.T) {
 			InboxRepo: "StatPan/backlog",
 			Repos:     []string{"StatPan/gira"},
 		},
-		Defaults: GlobalDefaults{Agent: "codex"},
+		Defaults:     GlobalDefaults{Agent: "codex"},
+		BranchPolicy: &BranchPolicyConfig{Mode: BranchPolicyModeTrunk},
 	}
-	if workspace.Workspace.InboxRepo != "StatPan/backlog" || workspace.Defaults.Agent != "codex" {
+	if workspace.Workspace.InboxRepo != "StatPan/backlog" || workspace.Defaults.Agent != "codex" || workspace.BranchPolicy.Mode != BranchPolicyModeTrunk {
 		t.Fatalf("unexpected workspace registry schema fixture: %+v", workspace)
 	}
 }
@@ -111,6 +116,30 @@ paths:
 	}
 }
 
+func TestLoadInitConfigParsesBranchPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	writeTestFile(t, path, `repo: StatPan/gira
+branch_policy:
+  mode: github-flow
+  default_base: trunk
+profiles:
+  default:
+    labels: []
+`)
+
+	cfg, err := LoadInitConfig(path)
+	if err != nil {
+		t.Fatalf("LoadInitConfig returned error: %v", err)
+	}
+	policy, err := ResolveBranchPolicy(cfg.BranchPolicy, "main")
+	if err != nil {
+		t.Fatalf("ResolveBranchPolicy returned error: %v", err)
+	}
+	if policy.Mode != BranchPolicyModeGitHubFlow || policy.DefaultBase != "trunk" {
+		t.Fatalf("unexpected init branch policy: %+v", policy)
+	}
+}
+
 func TestLoadGlobalRepoRegistryEntry(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "repos", "StatPan", "gira.yaml")
@@ -123,6 +152,10 @@ defaults:
   agent: codex
 workspace:
   name: personal
+branch_policy:
+  mode: git-flow
+  default_base: develop
+  production_base: main
 `)
 
 	entry, err := LoadGlobalRepoRegistryEntry(root, ParseRepoRefMust("StatPan/gira"))
@@ -131,6 +164,26 @@ workspace:
 	}
 	if entry.Repo != "StatPan/gira" || entry.Path == "" || entry.Contract != ".gira/config.yaml" {
 		t.Fatalf("unexpected repo registry entry: %+v", entry)
+	}
+	policy, err := ResolveBranchPolicy(entry.BranchPolicy, "main")
+	if err != nil {
+		t.Fatalf("ResolveBranchPolicy returned error: %v", err)
+	}
+	if policy.Mode != BranchPolicyModeGitFlow || policy.DefaultBase != "develop" || policy.ProductionBase != "main" {
+		t.Fatalf("unexpected branch policy: %+v", policy)
+	}
+}
+
+func TestLoadGlobalRepoRegistryEntryInvalidBranchPolicy(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "repos", "StatPan", "gira.yaml"), `repo: StatPan/gira
+branch_policy:
+  mode: svn-flow
+`)
+
+	_, err := LoadGlobalRepoRegistryEntry(root, ParseRepoRefMust("StatPan/gira"))
+	if err == nil || !strings.Contains(err.Error(), "unknown branch_policy mode") {
+		t.Fatalf("error = %v, want branch policy mode error", err)
 	}
 }
 
@@ -144,6 +197,10 @@ func TestLoadGlobalWorkspaceRegistryEntry(t *testing.T) {
   repos:
     - StatPan/gira
     - StatPan/docs
+branch_policy:
+  mode: release-train
+  default_base: main
+  release_branch_pattern: release/*
 defaults:
   agent: codex
 `)
@@ -154,6 +211,54 @@ defaults:
 	}
 	if entry.Workspace.Name != "personal" || len(entry.Workspace.Repos) != 2 || entry.Defaults.Agent != "codex" {
 		t.Fatalf("unexpected workspace registry entry: %+v", entry)
+	}
+	policy, err := ResolveBranchPolicy(entry.BranchPolicy, "main")
+	if err != nil {
+		t.Fatalf("ResolveBranchPolicy returned error: %v", err)
+	}
+	if policy.Mode != BranchPolicyModeReleaseTrain || policy.ReleaseBranchPattern != "release/*" {
+		t.Fatalf("unexpected workspace branch policy: %+v", policy)
+	}
+}
+
+func TestLoadGlobalWorkspaceRegistryEntryInvalidBranchPolicy(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "workspaces", "personal.yaml"), `workspace:
+  name: personal
+  inbox_repo: StatPan/backlog
+  repos:
+    - StatPan/gira
+branch_policy:
+  mode: svn-flow
+`)
+
+	_, err := LoadGlobalWorkspaceRegistryEntry(root, "personal")
+	if err == nil || !strings.Contains(err.Error(), "unknown branch_policy mode") {
+		t.Fatalf("error = %v, want branch policy mode error", err)
+	}
+}
+
+func TestRenderGlobalWorkspaceRegistryEntryPreservesBranchPolicy(t *testing.T) {
+	entry := GlobalWorkspaceRegistryEntry{
+		Workspace: WorkspaceConfig{
+			Name:      "personal",
+			Owner:     "StatPan",
+			InboxRepo: "StatPan/backlog",
+			Repos:     []string{"StatPan/gira"},
+		},
+		BranchPolicy: &BranchPolicyConfig{
+			Mode:          BranchPolicyModeGitFlow,
+			DefaultBase:   "develop",
+			DefaultTarget: "dev",
+		},
+	}
+
+	content := renderGlobalWorkspaceRegistryEntry(entry)
+	if !strings.Contains(content, "branch_policy:") || !strings.Contains(content, `mode: "git-flow"`) {
+		t.Fatalf("rendered content missing branch policy:\n%s", content)
+	}
+	if strings.Contains(content, "defaults:") {
+		t.Fatalf("rendered content should not add empty defaults:\n%s", content)
 	}
 }
 

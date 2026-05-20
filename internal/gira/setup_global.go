@@ -424,6 +424,9 @@ func renderSetupGlobalRepoEntry(entry GlobalRepoRegistryEntry) string {
 	if strings.TrimSpace(entry.Contract) != "" {
 		fmt.Fprintf(&b, "contract: %s\n", entry.Contract)
 	}
+	if branchPolicy := renderBranchPolicyConfig(entry.BranchPolicy); branchPolicy != "" {
+		b.WriteString(branchPolicy)
+	}
 	b.WriteString("defaults:\n")
 	fmt.Fprintf(&b, "  agent: %s\n", yamlQuotedString(entry.Defaults.Agent))
 	fmt.Fprintf(&b, "  assignee: %s\n", yamlQuotedString(entry.Defaults.Assignee))

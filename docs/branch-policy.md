@@ -1,8 +1,8 @@
 # Branch Policy Contract
 
-This document defines the target branch policy contract for Gira ticket
-lifecycle commands. It is a design/spec contract, not a claim that every field
-or command behavior below is already implemented.
+This document defines the branch policy contract for Gira ticket lifecycle
+commands. Config schema and preset loading are implemented; lifecycle command
+behavior is being delivered in the follow-up slices listed below.
 
 Gira should not make users repeat low-level `gh` or `git` branch flags at every
 step. The Gira-native value is to resolve branch intent once, record it as
@@ -59,26 +59,61 @@ Explicit user-defined policy for repositories that do not fit a built-in mode.
 
 ## Config Shape
 
-Initial `github-flow` shape:
+`branch_policy` can be declared in repo-local config, global repo registry
+entries, or global workspace registry entries. When it is absent, Gira resolves
+the `github-flow` preset against the GitHub default branch.
+
+Supported fields:
+
+| Field | Meaning |
+| --- | --- |
+| `mode` | One of `github-flow`, `trunk`, `git-flow`, `release-train`, or `custom`. |
+| `default_base` | Base branch used by the default target. |
+| `development_base` | Integration branch for development work, such as `develop`. |
+| `production_base` | Production branch, commonly `main`. |
+| `default_target` | Named target used when no explicit lifecycle target is provided. |
+| `feature_branch_pattern` | Pattern for feature branch names. |
+| `release_branch_pattern` | Pattern for release branch names. |
+| `hotfix_branch_pattern` | Pattern for hotfix branch names. |
+| `preserve_start_base` | Whether `ticket start` should preserve the resolved base. |
+| `forbid_implicit_current_branch_base` | Whether current checkout may be used as an implicit base. |
+| `pr_base_source` | Source for PR base selection. Currently `recorded_ticket_base`. |
+| `finish_sync_local` | Whether finish may sync local checkout. Default is false. |
+| `targets` | Named target to base branch map, for example `dev: develop`. |
+
+Minimal `github-flow` shape:
+
+```yaml
+branch_policy:
+  mode: github-flow
+```
+
+Explicit `github-flow` shape:
 
 ```yaml
 branch_policy:
   mode: github-flow
   default_base: main
-  feature_branch_pattern: ticket/{number}-{slug}
+  default_target: default
+  feature_branch_pattern: issue/{number}-{slug}
   preserve_start_base: true
   forbid_implicit_current_branch_base: true
   pr_base_source: recorded_ticket_base
   finish_sync_local: false
+  targets:
+    default: main
+    dev: main
 ```
 
-Initial `git-flow` shape:
+Explicit `git-flow` shape:
 
 ```yaml
 branch_policy:
   mode: git-flow
   default_base: develop
+  development_base: develop
   production_base: main
+  default_target: dev
   release_branch_pattern: release/*
   hotfix_branch_pattern: hotfix/*
   feature_branch_pattern: feature/{number}-{slug}
@@ -86,7 +121,35 @@ branch_policy:
   forbid_implicit_current_branch_base: true
   pr_base_source: recorded_ticket_base
   finish_sync_local: false
+  targets:
+    default: develop
+    dev: develop
+    production: main
 ```
+
+Custom release target example:
+
+```yaml
+branch_policy:
+  mode: custom
+  default_base: develop
+  production_base: main
+  default_target: dev
+  targets:
+    dev: develop
+    release/2.0: release/2.0
+    production: main
+```
+
+## Preset Defaults
+
+| Mode | Default base | Development base | Production base | Default target | Branch patterns |
+| --- | --- | --- | --- | --- | --- |
+| `github-flow` | GitHub default branch | GitHub default branch | GitHub default branch | `default` | `issue/{number}-{slug}` |
+| `trunk` | GitHub default branch | GitHub default branch | GitHub default branch | `dev` | `issue/{number}-{slug}` |
+| `git-flow` | `develop` | `develop` | `main` | `dev` | `feature/{number}-{slug}`, `release/*`, `hotfix/*` |
+| `release-train` | GitHub default branch | GitHub default branch | GitHub default branch | `dev` | `issue/{number}-{slug}`, `release/*` |
+| `custom` | GitHub default branch | GitHub default branch | GitHub default branch | `default` | `issue/{number}-{slug}` |
 
 ## Base Resolution Order
 

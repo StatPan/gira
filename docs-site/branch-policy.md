@@ -1,7 +1,8 @@
 # Branch Policy
 
-This page defines the target branch policy contract for Gira ticket lifecycle
-commands. It is a design/spec contract for the next implementation slices.
+This page defines the branch policy contract for Gira ticket lifecycle
+commands. Config schema and preset loading are implemented; lifecycle command
+behavior is delivered in follow-up slices.
 
 Gira should not make users repeat low-level `gh` or `git` branch flags at every
 step. The Gira-native value is to resolve branch intent once, record it as
@@ -36,15 +37,38 @@ environment-specific train branches for staged delivery.
 
 ## Config Shape
 
+`branch_policy` can be declared in repo-local config, global repo registry
+entries, or global workspace registry entries. When it is absent, Gira resolves
+the `github-flow` preset against the GitHub default branch.
+
+Supported fields: `mode`, `default_base`, `development_base`,
+`production_base`, `default_target`, `feature_branch_pattern`,
+`release_branch_pattern`, `hotfix_branch_pattern`, `preserve_start_base`,
+`forbid_implicit_current_branch_base`, `pr_base_source`, `finish_sync_local`,
+and `targets`.
+
+Minimal default:
+
+```yaml
+branch_policy:
+  mode: github-flow
+```
+
+Explicit GitHub-flow example:
+
 ```yaml
 branch_policy:
   mode: github-flow
   default_base: main
-  feature_branch_pattern: ticket/{number}-{slug}
+  default_target: default
+  feature_branch_pattern: issue/{number}-{slug}
   preserve_start_base: true
   forbid_implicit_current_branch_base: true
   pr_base_source: recorded_ticket_base
   finish_sync_local: false
+  targets:
+    default: main
+    dev: main
 ```
 
 Git-flow example:
@@ -53,7 +77,9 @@ Git-flow example:
 branch_policy:
   mode: git-flow
   default_base: develop
+  development_base: develop
   production_base: main
+  default_target: dev
   release_branch_pattern: release/*
   hotfix_branch_pattern: hotfix/*
   feature_branch_pattern: feature/{number}-{slug}
@@ -61,7 +87,21 @@ branch_policy:
   forbid_implicit_current_branch_base: true
   pr_base_source: recorded_ticket_base
   finish_sync_local: false
+  targets:
+    default: develop
+    dev: develop
+    production: main
 ```
+
+Preset defaults:
+
+| Mode | Default base | Development base | Production base | Default target |
+| --- | --- | --- | --- | --- |
+| `github-flow` | GitHub default branch | GitHub default branch | GitHub default branch | `default` |
+| `trunk` | GitHub default branch | GitHub default branch | GitHub default branch | `dev` |
+| `git-flow` | `develop` | `develop` | `main` | `dev` |
+| `release-train` | GitHub default branch | GitHub default branch | GitHub default branch | `dev` |
+| `custom` | GitHub default branch | GitHub default branch | GitHub default branch | `default` |
 
 ## Base Resolution Order
 

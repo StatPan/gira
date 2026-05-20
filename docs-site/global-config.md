@@ -102,11 +102,29 @@ gira config repo --repo OWNER/app
 gira config doctor --repo OWNER/app
 ```
 
+Global repo or workspace registry entries can carry `branch_policy` when branch
+strategy is personal or workspace-scoped rather than committed as repo-local
+contract:
+
+```yaml
+workspace:
+  name: release
+  owner: OWNER
+  inbox_repo: OWNER/backlog
+  repos:
+    - OWNER/app
+
+branch_policy:
+  mode: git-flow
+  default_base: develop
+  production_base: main
+```
+
 ## Repo Contract Mode
 
 Keep `.gira/config.yaml` in a repository when the repo itself should declare
 shared Gira policy, such as labels, status conventions, review policy, ticket
-lifecycle policy, or agent skill references.
+lifecycle policy, branch policy, or agent skill references.
 
 Repo contract mode is optional. It is useful for teams and agent-ready repos,
 but it should not be required for personal multi-repo operation.

@@ -773,7 +773,7 @@ Usage:
   gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr] [--json]
   gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]
   gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--json]
-  gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--wait 0s] [--json]
+  gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--wait 0s] [--sync-local] [--json]
   gira ticket status [TICKET] [--repo OWNER/REPO] [--json]
 
 Commands:
@@ -1310,8 +1310,8 @@ var newWorkStatusResult = func(repo gira.RepoRef, issue int) (gira.WorkStatusRes
 	return gira.GetWorkStatus(repo, issue, devCommandRunner)
 }
 
-var newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration) (gira.WorkFinishResult, error) {
-	return gira.FinishWork(repo, issue, dryRun, wait, devCommandRunner)
+var newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration, options gira.WorkFinishOptions) (gira.WorkFinishResult, error) {
+	return gira.FinishWorkWithOptions(repo, issue, dryRun, wait, options, devCommandRunner)
 }
 
 var newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
@@ -3847,6 +3847,7 @@ func runTicketFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
 	apply := fs.Bool("apply", false, "Apply changes")
 	wait := fs.Duration("wait", 0, "Optional pending-check wait")
+	syncLocal := fs.Bool("sync-local", false, "Opt in to syncing the local PR base branch after finish")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -3869,7 +3870,7 @@ func runTicketFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
 	}
-	result, err := newWorkFinishResult(repo, ticketNumber, *dryRun, *wait)
+	result, err := newWorkFinishResult(repo, ticketNumber, *dryRun, *wait, gira.WorkFinishOptions{SyncLocal: *syncLocal})
 	result = normalizeTicketFinishResult(result)
 	if err != nil {
 		if *jsonOutput {

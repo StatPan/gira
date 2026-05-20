@@ -445,12 +445,12 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
 ## `ticket finish`
 
-Merge the linked PR when policy allows, sync main, and close the ticket loop.
+Merge the linked PR when policy allows and close the ticket loop without local checkout sync by default.
 
 Usage:
 
 ```bash
-gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO]
+gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--sync-local]
 ```
 
 Since: `v1.0.0`

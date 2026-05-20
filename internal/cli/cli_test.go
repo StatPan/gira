@@ -3384,9 +3384,9 @@ func TestTicketWaitUsesTimeoutAndInterval(t *testing.T) {
 func TestTicketFinishDryRunJSON(t *testing.T) {
 	restore := newWorkFinishResult
 	t.Cleanup(func() { newWorkFinishResult = restore })
-	newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration) (gira.WorkFinishResult, error) {
-		if repo.FullName() != "StatPan/gira" || issue != 219 || !dryRun || wait != 0 {
-			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t wait=%s", repo.FullName(), issue, dryRun, wait)
+	newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration, options gira.WorkFinishOptions) (gira.WorkFinishResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 219 || !dryRun || wait != 0 || options.SyncLocal {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t wait=%s options=%+v", repo.FullName(), issue, dryRun, wait, options)
 		}
 		return gira.WorkFinishResult{Repo: repo.FullName(), Issue: issue, DryRun: true, PRNumber: 220, Blockers: []string{"checks_pending"}, FinalStatus: gira.WorkStatusResult{Repo: repo.FullName(), Issue: issue, NextAction: "open_pr", NextStep: "gira work pr --repo StatPan/gira --issue 219 --apply"}, NextStep: "wait for required checks, then gira ticket finish --repo StatPan/gira --ticket 219 --apply"}, nil
 	}
@@ -3401,6 +3401,26 @@ func TestTicketFinishDryRunJSON(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "gira work pr") {
 		t.Fatalf("ticket finish JSON leaked work next step:\n%s", stdout.String())
+	}
+}
+
+func TestTicketFinishSyncLocalFlagPassesOption(t *testing.T) {
+	restore := newWorkFinishResult
+	t.Cleanup(func() { newWorkFinishResult = restore })
+	newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration, options gira.WorkFinishOptions) (gira.WorkFinishResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 219 || !dryRun || !options.SyncLocal {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t wait=%s options=%+v", repo.FullName(), issue, dryRun, wait, options)
+		}
+		return gira.WorkFinishResult{Repo: repo.FullName(), Issue: issue, DryRun: true, LocalSync: gira.WorkFinishLocalSync{Skipped: true, Reason: "dirty_worktree", TargetBranch: "release/2.0"}, NextStep: "gira ticket finish --repo StatPan/gira --ticket 219 --apply"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "finish", "219", "--repo", "StatPan/gira", "--dry-run", "--sync-local", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"target_branch": "release/2.0"`) {
+		t.Fatalf("ticket finish JSON missing local sync target:\n%s", stdout.String())
 	}
 }
 
@@ -3508,7 +3528,7 @@ func TestTicketStatusInfersTicketFromCurrentPR(t *testing.T) {
 func TestTicketFinishApplyBlockedReturnsJSONAndError(t *testing.T) {
 	restore := newWorkFinishResult
 	t.Cleanup(func() { newWorkFinishResult = restore })
-	newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration) (gira.WorkFinishResult, error) {
+	newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration, options gira.WorkFinishOptions) (gira.WorkFinishResult, error) {
 		return gira.WorkFinishResult{Repo: repo.FullName(), Issue: issue, PRNumber: 220, Blockers: []string{"review"}, NextStep: "resolve review requirements, then gira ticket finish --repo StatPan/gira --ticket 219 --apply"}, fmt.Errorf("ticket finish blocked: review")
 	}
 

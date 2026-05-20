@@ -35,6 +35,8 @@ Documentation: <https://gira.statpan.com>
 
 Docs source lives in `docs-site/` and is built with VitePress. The docs toolchain is separate from the product runtime; the shipped product remains the Go-built `gira` binary.
 
+The target branch policy contract is documented in [docs/branch-policy.md](docs/branch-policy.md). It defines the planned direction for resolving a ticket base branch once, recording it as lifecycle state, preserving it through PR creation and review, and avoiding hidden local checkout mutation during finish.
+
 Gira is not a Jira clone or a separate planning database. It is a workflow
 control layer over GitHub Issues, branches, PRs, checks, labels, and milestones.
 Repo-linked Projects are visibility surfaces; Project-only items stay intake or

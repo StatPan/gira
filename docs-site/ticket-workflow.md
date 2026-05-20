@@ -38,6 +38,11 @@ Use `gira ticket prompt TICKET planner|implementer|reviewer --profile default|py
 Use `gira ticket supersede TICKET --replacement-title "TITLE" --body-file replacement.md --dry-run` when an issue should be replaced instead of manually closing the old issue and creating cross-links. Superseded tickets are closed with `resolution:superseded`, not `status:done`, so lifecycle reports can separate replaced work from completed work.
 Use `gira epic list` for the same discovery pattern scoped to `type:epic` issues.
 
+The target [branch policy contract](/branch-policy) defines how future lifecycle
+commands should resolve a base branch once, record it as ticket state, preserve
+it through PR creation and review, and avoid hidden local checkout mutation
+during finish.
+
 `gira ticket status --json` is the stable per-ticket state contract for automation. It preserves the compact legacy fields (`repo`, `issue`, `status`, `pr_number`, `blockers`, `next_action`, `next_step`) and adds `schema_version`, `labels`, `milestone`, `branch`, `pull_request`, `checks_status`, `checks`, `review_status`, `evidence`, and `warnings`. Missing linked PR, unknown branch, and missing checks are represented as explicit values so queue, review, finish, and audit commands can consume the same state without guessing from terminal text.
 
 `gira ticket finish --dry-run --json` includes a `readiness` report with schema `finish-readiness/v1`. The report groups issue state, linked PR state, checks, review status, label state, closing-reference evidence, acceptance-checklist counts, blockers, warnings, and the next safe action before any merge or provider mutation is attempted. Human output stays compact and shows `readiness=ready|blocked|unknown` beside the existing blockers and action plan.

@@ -17,6 +17,7 @@ export default defineConfig({
       { text: 'Mapping', link: '/jira-mapping' },
       { text: 'Jira Provider', link: '/jira-primary-provider' },
       { text: 'Workflow', link: '/ticket-workflow' },
+      { text: 'Branch Policy', link: '/branch-policy' },
       { text: 'Config', link: '/global-config' },
       { text: 'Distribution', link: '/distribution' },
       { text: 'GitHub', link: 'https://github.com/StatPan/gira' }
@@ -30,6 +31,7 @@ export default defineConfig({
           { text: 'Global Config', link: '/global-config' },
           { text: 'Jira-Primary Provider', link: '/jira-primary-provider' },
           { text: 'Ticket Workflow', link: '/ticket-workflow' },
+          { text: 'Branch Policy', link: '/branch-policy' },
           { text: 'Closure Funnel Stats', link: '/closure-funnel-stats' },
           { text: 'Command Reference', link: '/command-reference' },
           { text: 'Agent Operator Skill', link: '/agent-operator-skill' },

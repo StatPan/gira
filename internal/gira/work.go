@@ -56,31 +56,32 @@ type WorkPRResult struct {
 }
 
 type WorkStatusResult struct {
-	Command          string                   `json:"command,omitempty"`
-	SchemaVersion    string                   `json:"schema_version,omitempty"`
-	Repo             string                   `json:"repo"`
-	Issue            int                      `json:"issue"`
-	Title            string                   `json:"title"`
-	State            string                   `json:"state"`
-	Status           string                   `json:"status"`
-	Labels           []string                 `json:"labels,omitempty"`
-	Milestone        string                   `json:"milestone"`
-	PRNumber         int                      `json:"pr_number,omitempty"`
-	PRURL            string                   `json:"pr_url,omitempty"`
-	PRState          string                   `json:"pr_state,omitempty"`
-	PRLookupAttempts int                      `json:"pr_lookup_attempts,omitempty"`
-	Blockers         []string                 `json:"blockers"`
-	NextAction       string                   `json:"next_action"`
-	NextStep         string                   `json:"next_step"`
-	Branch           *TicketStatusBranch      `json:"branch,omitempty"`
-	PullRequest      *TicketStatusPullRequest `json:"pull_request,omitempty"`
-	ChecksStatus     string                   `json:"checks_status,omitempty"`
-	Checks           []DevPRCheck             `json:"checks,omitempty"`
-	ReviewStatus     string                   `json:"review_status,omitempty"`
-	Evidence         *TicketStatusEvidence    `json:"evidence,omitempty"`
-	Acceptance       *TicketStatusAcceptance  `json:"acceptance_criteria,omitempty"`
-	Telemetry        *TicketStatusTelemetry   `json:"telemetry,omitempty"`
-	Warnings         []string                 `json:"warnings,omitempty"`
+	Command          string                    `json:"command,omitempty"`
+	SchemaVersion    string                    `json:"schema_version,omitempty"`
+	Repo             string                    `json:"repo"`
+	Issue            int                       `json:"issue"`
+	Title            string                    `json:"title"`
+	State            string                    `json:"state"`
+	Status           string                    `json:"status"`
+	Labels           []string                  `json:"labels,omitempty"`
+	Milestone        string                    `json:"milestone"`
+	PRNumber         int                       `json:"pr_number,omitempty"`
+	PRURL            string                    `json:"pr_url,omitempty"`
+	PRState          string                    `json:"pr_state,omitempty"`
+	PRLookupAttempts int                       `json:"pr_lookup_attempts,omitempty"`
+	Blockers         []string                  `json:"blockers"`
+	NextAction       string                    `json:"next_action"`
+	NextStep         string                    `json:"next_step"`
+	Branch           *TicketStatusBranch       `json:"branch,omitempty"`
+	BranchPolicy     *TicketStatusBranchPolicy `json:"branch_policy,omitempty"`
+	PullRequest      *TicketStatusPullRequest  `json:"pull_request,omitempty"`
+	ChecksStatus     string                    `json:"checks_status,omitempty"`
+	Checks           []DevPRCheck              `json:"checks,omitempty"`
+	ReviewStatus     string                    `json:"review_status,omitempty"`
+	Evidence         *TicketStatusEvidence     `json:"evidence,omitempty"`
+	Acceptance       *TicketStatusAcceptance   `json:"acceptance_criteria,omitempty"`
+	Telemetry        *TicketStatusTelemetry    `json:"telemetry,omitempty"`
+	Warnings         []string                  `json:"warnings,omitempty"`
 }
 
 type TicketStatusBranch struct {
@@ -88,6 +89,16 @@ type TicketStatusBranch struct {
 	Current  string `json:"current"`
 	Trusted  bool   `json:"trusted"`
 	Source   string `json:"source"`
+}
+
+type TicketStatusBranchPolicy struct {
+	RecordedBase       string   `json:"recorded_base,omitempty"`
+	RecordedBaseSource string   `json:"recorded_base_source,omitempty"`
+	PolicyMode         string   `json:"policy_mode,omitempty"`
+	WorkBranch         string   `json:"work_branch,omitempty"`
+	ActualPRBase       string   `json:"actual_pr_base,omitempty"`
+	BaseMismatch       bool     `json:"base_mismatch"`
+	Diagnostics        []string `json:"diagnostics"`
 }
 
 type TicketStatusPullRequest struct {
@@ -486,6 +497,7 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 		Blockers:         prStatus.Blockers,
 		NextAction:       nextAction,
 		Branch:           ticketStatusBranch(issue, prStatus),
+		BranchPolicy:     ticketStatusBranchPolicy(issue, prStatus),
 		PullRequest:      ticketStatusPullRequest(prStatus),
 		ChecksStatus:     ticketStatusChecksStatus(prStatus),
 		Checks:           append([]DevPRCheck(nil), prStatus.Checks...),
@@ -514,6 +526,32 @@ func ticketStatusBranch(issue devStartIssue, pr DevPRStatusResult) *TicketStatus
 		trusted = pr.Binding.Trusted
 	}
 	return &TicketStatusBranch{Expected: expected, Current: current, Trusted: trusted, Source: source}
+}
+
+func ticketStatusBranchPolicy(issue devStartIssue, pr DevPRStatusResult) *TicketStatusBranchPolicy {
+	state := ParseTicketLifecycleState(issue.Body)
+	report := &TicketStatusBranchPolicy{
+		RecordedBase:       strings.TrimSpace(state.BaseBranch),
+		RecordedBaseSource: strings.TrimSpace(state.BaseSource),
+		PolicyMode:         strings.TrimSpace(state.BranchPolicyMode),
+		WorkBranch:         strings.TrimSpace(state.WorkBranch),
+		ActualPRBase:       strings.TrimSpace(pr.Binding.BaseRef),
+		Diagnostics:        []string{},
+	}
+	if report.RecordedBase == "" {
+		report.Diagnostics = append(report.Diagnostics, "missing_recorded_base")
+	}
+	if report.PolicyMode == "" {
+		report.Diagnostics = append(report.Diagnostics, "missing_branch_policy_mode")
+	}
+	if report.RecordedBase != "" && report.ActualPRBase != "" && report.RecordedBase != report.ActualPRBase {
+		report.BaseMismatch = true
+		report.Diagnostics = append(report.Diagnostics, "recorded_base_actual_pr_base_mismatch")
+	}
+	if len(report.Diagnostics) == 0 {
+		report.Diagnostics = []string{}
+	}
+	return report
 }
 
 func ticketStatusPullRequest(pr DevPRStatusResult) *TicketStatusPullRequest {
@@ -685,6 +723,9 @@ func ticketStatusWarnings(issue devStartIssue, pr DevPRStatusResult) []string {
 	}
 	if containsString(pr.Blockers, "pr_binding") {
 		warnings = append(warnings, "untrusted_pr_branch_binding")
+	}
+	if branchPolicy := ticketStatusBranchPolicy(issue, pr); branchPolicy.BaseMismatch {
+		warnings = append(warnings, "recorded_base_actual_pr_base_mismatch")
 	}
 	if len(warnings) == 0 {
 		return []string{}

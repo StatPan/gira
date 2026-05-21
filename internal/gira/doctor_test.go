@@ -26,6 +26,9 @@ func TestBuildDoctorReportReady(t *testing.T) {
 	if !strings.Contains(cliCheck.Detail, "executable=") {
 		t.Fatalf("gira_cli_visible detail = %q, want executable detail", cliCheck.Detail)
 	}
+	if got := doctorCheckByID(report, "branch_policy"); got == nil || got.Status != DoctorCheckWarn || !strings.Contains(got.Detail, "github-flow defaults") {
+		t.Fatalf("branch_policy = %+v, want default-policy warning", got)
+	}
 }
 
 func TestBuildDoctorReportMissingGhFailsAndSkipsGhDependentChecks(t *testing.T) {
@@ -238,8 +241,9 @@ func readyDoctorRunner() onboardFakeRunner {
 			"gh pr list --repo StatPan/gira --state all --limit 1000 --json number,title,body,state,mergedAt":              `[]`,
 			"gh issue list --repo StatPan/gira --state all --label gira:bootstrap --json number,title,labels --limit 1000": desiredBootstrapIssuesJSON(),
 			"git rev-parse --is-inside-work-tree":                                                                          "true",
-			"git branch --show-current":                                                                                    "main",
-			"git status --porcelain":                                                                                       "",
+			"git ls-remote --exit-code --heads origin main":                                                                "abc\trefs/heads/main",
+			"git branch --show-current": "main",
+			"git status --porcelain":    "",
 		},
 		errors: map[string]error{},
 	}

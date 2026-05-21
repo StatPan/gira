@@ -4668,7 +4668,14 @@ func formatTicketPR(result gira.WorkPRResult) string {
 	if result.BranchPush != "" && result.BranchPush != "skipped" {
 		branchPush = fmt.Sprintf(" branch_push=%s", result.BranchPush)
 	}
-	return fmt.Sprintf("ticket pr: ticket #%d pr=%s status=%s %s%s\nnext step: %s\n", result.Issue, url, result.NextStatus, created, branchPush, next)
+	base := ""
+	if strings.TrimSpace(result.RecordedBase) != "" {
+		base = fmt.Sprintf(" base=%s", result.RecordedBase)
+		if strings.TrimSpace(result.ActualBase) != "" && result.ActualBase != result.RecordedBase {
+			base += fmt.Sprintf(" actual_base=%s", result.ActualBase)
+		}
+	}
+	return fmt.Sprintf("ticket pr: ticket #%d pr=%s status=%s %s%s%s\nnext step: %s\n", result.Issue, url, result.NextStatus, created, branchPush, base, next)
 }
 
 func formatTicketStatus(result gira.WorkStatusResult) string {

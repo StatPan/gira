@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -102,8 +103,9 @@ func TestBuildAgentPromptReportReviewerWithExplicitPR(t *testing.T) {
 
 func TestBuildAgentPromptReportReviewerResolvesLinkedPRAndAcceptance(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	body := "## Goal\nRender prompts\n\n## Scope\nPrompt UX\n\n## Acceptance Criteria\n- includes issue goal\n- includes PR evidence\n\n" + RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default"})
 	runner := onboardFakeRunner{responses: map[string]string{
-		"gh api repos/StatPan/gira/issues/436": `{"number":436,"title":"Add prompts","state":"open","body":"## Goal\nRender prompts\n\n## Scope\nPrompt UX\n\n## Acceptance Criteria\n- includes issue goal\n- includes PR evidence","labels":[{"name":"type:story"},{"name":"status:in-review"}]}`,
+		"gh api repos/StatPan/gira/issues/436": `{"number":436,"title":"Add prompts","state":"open","body":` + strconv.Quote(body) + `,"labels":[{"name":"type:story"},{"name":"status:in-review"}]}`,
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 436 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[{"number":45,"title":"feat: prompts","body":"Closes #436","state":"OPEN","url":"https://github.com/StatPan/gira/pull/45","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-436-add-prompts","baseRefName":"main","statusCheckRollup":[{"name":"test","workflowName":"ci","status":"completed","conclusion":"success","detailsUrl":"https://ci.example"}]}]`,
 		"gh pr view 45 --repo StatPan/gira --json number,title,body,state,url,headRefName,baseRefName,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup":                                                          `{"number":45,"title":"feat: prompts","body":"Closes #436","state":"OPEN","url":"https://github.com/StatPan/gira/pull/45","headRefName":"issue-436-add-prompts","baseRefName":"main","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"name":"test","workflowName":"ci","status":"completed","conclusion":"success","detailsUrl":"https://ci.example"}]}`,
 		"gh pr diff 45 --repo StatPan/gira --name-only": "internal/gira/agent_prompt.go\n",
@@ -119,10 +121,40 @@ func TestBuildAgentPromptReportReviewerResolvesLinkedPRAndAcceptance(t *testing.
 	if report.PR == nil || report.PR.Number != 45 || !report.PR.FinishReady {
 		t.Fatalf("unexpected PR context: %+v", report.PR)
 	}
+	if report.PR.RecordedBase != "main" || report.PR.RecordedBaseSource != "branch_policy.default" || report.PR.BaseMismatch {
+		t.Fatalf("unexpected branch base context: %+v", report.PR)
+	}
 	if report.Evidence == nil || !report.Evidence.FinishReady || len(report.Evidence.ClosingIssues) != 1 || report.Evidence.ClosingIssues[0] != 436 || len(report.Evidence.ChangedFiles) != 1 {
 		t.Fatalf("unexpected evidence: %+v", report.Evidence)
 	}
-	for _, want := range []string{"Goal: Render prompts", "Acceptance Criteria:", "includes PR evidence", "Finish Ready: `true`"} {
+	for _, want := range []string{"Goal: Render prompts", "Acceptance Criteria:", "includes PR evidence", "Finish Ready: `true`", "Recorded Base: `main`", "Verify the PR targets the recorded base `main`"} {
+		if !strings.Contains(report.Prompt, want) {
+			t.Fatalf("reviewer prompt missing %q:\n%s", want, report.Prompt)
+		}
+	}
+}
+
+func TestBuildAgentPromptReportReviewerSurfacesBaseMismatch(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	body := "## Goal\nRender prompts\n\n" + RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default"})
+	runner := onboardFakeRunner{responses: map[string]string{
+		"gh api repos/StatPan/gira/issues/436": `{"number":436,"title":"Add prompts","state":"open","body":` + strconv.Quote(body) + `,"labels":[{"name":"type:story"},{"name":"status:in-review"}]}`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 436 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[{"number":45,"title":"feat: prompts","body":"Closes #436","state":"OPEN","url":"https://github.com/StatPan/gira/pull/45","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-436-add-prompts","baseRefName":"develop","statusCheckRollup":[]}]`,
+		"gh pr view 45 --repo StatPan/gira --json number,title,body,state,url,headRefName,baseRefName,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup":                                                          `{"number":45,"title":"feat: prompts","body":"Closes #436","state":"OPEN","url":"https://github.com/StatPan/gira/pull/45","headRefName":"issue-436-add-prompts","baseRefName":"develop","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}`,
+		"gh pr diff 45 --repo StatPan/gira --name-only": "internal/gira/agent_prompt.go\n",
+	}, errors: map[string]error{}}
+
+	report, err := BuildAgentPromptReport(AgentPromptInput{Repo: repo, Ticket: 436, Role: "reviewer"}, runner)
+	if err != nil {
+		t.Fatalf("BuildAgentPromptReport error: %v", err)
+	}
+	if report.PR == nil || !report.PR.BaseMismatch || report.PR.RecordedBase != "main" || report.PR.BaseRefName != "develop" || report.PR.FinishReady {
+		t.Fatalf("expected base mismatch in PR context: %+v", report.PR)
+	}
+	if report.Evidence == nil || !containsString(report.Evidence.Blockers, "pr_base_mismatch") {
+		t.Fatalf("expected base mismatch evidence blocker: %+v", report.Evidence)
+	}
+	for _, want := range []string{"Base: `develop`", "Recorded Base: `main`", "Base Matches Recorded: `false`"} {
 		if !strings.Contains(report.Prompt, want) {
 			t.Fatalf("reviewer prompt missing %q:\n%s", want, report.Prompt)
 		}

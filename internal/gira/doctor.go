@@ -75,6 +75,7 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 			skippedDoctorCheck("repo_access", "GitHub CLI is unavailable", "fix `gh_available`, then run `gh repo view OWNER/REPO`"),
 			skippedDoctorCheck("metadata_drift", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
 			skippedDoctorCheck("workflow_policy_labels", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
+			skippedDoctorCheck("branch_policy", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
 			skippedDoctorCheck("closed_issue_status_labels", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
 			skippedDoctorCheck("workflow_nonconformance", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
 			skippedDoctorCheck("onboard_readiness", "GitHub CLI is unavailable", "fix `gh_available`, then rerun `gira doctor --repo OWNER/REPO`"),
@@ -105,6 +106,7 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 		report.Checks = append(report.Checks, repoAccessDoctorCheck(repo, runner))
 		report.Checks = append(report.Checks, metadataDriftDoctorCheck(repo, runner))
 		report.Checks = append(report.Checks, workflowPolicyLabelsDoctorCheck(repo, runner))
+		report.Checks = append(report.Checks, branchPolicyDoctorCheck(repo, runner))
 		report.Checks = append(report.Checks, closedIssueStatusLabelsDoctorCheck(repo, runner))
 		report.Checks = append(report.Checks, workflowNonconformanceDoctorCheck(repo, runner))
 		report.Checks = append(report.Checks, onboardReadinessDoctorCheck(repo, runner, checkedAt))
@@ -113,6 +115,7 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 			skippedDoctorCheck("repo_access", "repo context is unavailable", "provide `--repo OWNER/REPO` or run from a GitHub repository"),
 			skippedDoctorCheck("metadata_drift", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
 			skippedDoctorCheck("workflow_policy_labels", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
+			skippedDoctorCheck("branch_policy", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
 			skippedDoctorCheck("closed_issue_status_labels", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
 			skippedDoctorCheck("workflow_nonconformance", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
 			skippedDoctorCheck("onboard_readiness", "repo context is unavailable", "fix `repo_context`, then rerun `gira doctor`"),
@@ -246,6 +249,49 @@ func repoAccessDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
 		ID:          "repo_access",
 		Status:      DoctorCheckPass,
 		Detail:      fmt.Sprintf("default branch=%s, permission=%s", branch, permission),
+		Remediation: "",
+	}
+}
+
+func branchPolicyDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
+	policy, err := resolveRepoBranchPolicy(repo, runner)
+	if err != nil {
+		return DoctorCheck{
+			ID:          "branch_policy",
+			Status:      DoctorCheckFail,
+			Detail:      err.Error(),
+			Remediation: fmt.Sprintf("fix branch_policy config for %s or remove invalid branch_policy fields, then rerun `gira doctor --repo %s`", repo.FullName(), repo.FullName()),
+		}
+	}
+	if err := validateRemoteBranchExists("origin", policy.DefaultBase, runner); err != nil {
+		return DoctorCheck{
+			ID:          "branch_policy",
+			Status:      DoctorCheckFail,
+			Detail:      err.Error(),
+			Remediation: fmt.Sprintf("create or fetch base branch %q, or update branch_policy.default_base for %s", policy.DefaultBase, repo.FullName()),
+		}
+	}
+	detail := fmt.Sprintf("mode=%s source=%s default_base=%s default_target=%s pr_base_source=%s finish_sync_local=%t", policy.Mode, policy.Source, policy.DefaultBase, policy.DefaultTarget, policy.PRBaseSource, policy.FinishSyncLocal)
+	if policy.FinishSyncLocal {
+		return DoctorCheck{
+			ID:          "branch_policy",
+			Status:      DoctorCheckWarn,
+			Detail:      detail + "; local finish sync is enabled",
+			Remediation: "prefer finish_sync_local=false unless local checkout mutation is intentionally accepted",
+		}
+	}
+	if policy.Source == "default" {
+		return DoctorCheck{
+			ID:          "branch_policy",
+			Status:      DoctorCheckWarn,
+			Detail:      detail + "; branch_policy config is absent and github-flow defaults are in use",
+			Remediation: "add branch_policy to .gira/config.yaml or the global repo registry when the repo does not use github-flow",
+		}
+	}
+	return DoctorCheck{
+		ID:          "branch_policy",
+		Status:      DoctorCheckPass,
+		Detail:      detail,
 		Remediation: "",
 	}
 }

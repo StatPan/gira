@@ -638,13 +638,14 @@ Verify a ready issue, create or reuse its branch, and move it to in-progress.
 Usage:
 
 ```bash
-gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO]
+gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH]
 ```
 
 Since: `v1.0.0`
 
 Flags:
 
+- `--base`: Explicit lifecycle base branch override recorded on the ticket.
 - `--json`: Emit the stable ticket-status/v1 JSON contract with issue, branch, PR, checks, review, evidence, blockers, warnings, and next action.
 
 Examples:

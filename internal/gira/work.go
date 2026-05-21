@@ -33,19 +33,23 @@ type WorkStartOptions struct {
 }
 
 type WorkPRResult struct {
-	Repo       string `json:"repo"`
-	Issue      int    `json:"issue"`
-	DryRun     bool   `json:"dry_run"`
-	Draft      bool   `json:"draft"`
-	PRNumber   int    `json:"pr_number,omitempty"`
-	PRURL      string `json:"pr_url,omitempty"`
-	Created    bool   `json:"created"`
-	Status     string `json:"status"`
-	NextStatus string `json:"next_status"`
-	Branch     string `json:"branch,omitempty"`
-	BranchPush string `json:"branch_push,omitempty"`
-	PushRemote string `json:"push_remote,omitempty"`
-	LocalGit   string `json:"local_git,omitempty"`
+	Repo               string `json:"repo"`
+	Issue              int    `json:"issue"`
+	DryRun             bool   `json:"dry_run"`
+	Draft              bool   `json:"draft"`
+	PRNumber           int    `json:"pr_number,omitempty"`
+	PRURL              string `json:"pr_url,omitempty"`
+	Created            bool   `json:"created"`
+	Status             string `json:"status"`
+	NextStatus         string `json:"next_status"`
+	Branch             string `json:"branch,omitempty"`
+	BranchPush         string `json:"branch_push,omitempty"`
+	PushRemote         string `json:"push_remote,omitempty"`
+	LocalGit           string `json:"local_git,omitempty"`
+	RecordedBase       string `json:"recorded_base,omitempty"`
+	RecordedBaseSource string `json:"recorded_base_source,omitempty"`
+	ActualBase         string `json:"actual_base,omitempty"`
+	BaseMismatch       bool   `json:"base_mismatch,omitempty"`
 
 	Blockers    []string `json:"blockers"`
 	ClosingBody string   `json:"closing_body"`
@@ -157,6 +161,37 @@ func resolveTicketStartBase(repo RepoRef, issue devStartIssue, explicitBase stri
 		PolicyMode: policy.Mode,
 		Target:     target,
 	}, nil
+}
+
+func resolveTicketPRBase(repo RepoRef, issue devStartIssue, runner CommandRunner) (ticketStartBaseResolution, error) {
+	recorded := ParseTicketLifecycleState(issue.Body)
+	if strings.TrimSpace(recorded.BaseBranch) != "" {
+		source := strings.TrimSpace(recorded.BaseSource)
+		if source == "" {
+			source = "recorded_ticket_base"
+		}
+		return ticketStartBaseResolution{BaseBranch: strings.TrimSpace(recorded.BaseBranch), BaseSource: source, PolicyMode: recorded.BranchPolicyMode, Target: recorded.Target}, nil
+	}
+	policy, err := resolveRepoBranchPolicy(repo, runner)
+	if err != nil {
+		return ticketStartBaseResolution{}, err
+	}
+	target := strings.TrimSpace(policy.DefaultTarget)
+	base := strings.TrimSpace(policy.Targets[target])
+	if base == "" {
+		base = strings.TrimSpace(policy.DefaultBase)
+	}
+	return ticketStartBaseResolution{BaseBranch: base, BaseSource: "branch_policy." + target, PolicyMode: policy.Mode, Target: target}, nil
+}
+
+func applyPRBaseMismatch(result *WorkPRResult, expectedBase string, actualBase string) {
+	result.RecordedBase = strings.TrimSpace(expectedBase)
+	result.ActualBase = strings.TrimSpace(actualBase)
+	if result.RecordedBase == "" || result.ActualBase == "" || result.RecordedBase == result.ActualBase {
+		return
+	}
+	result.BaseMismatch = true
+	result.Blockers = appendMissingWorkBlocker(result.Blockers, "pr_base_mismatch")
 }
 
 func resolveRepoBranchPolicy(repo RepoRef, runner CommandRunner) (ResolvedBranchPolicy, error) {
@@ -285,20 +320,26 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 	if err != nil {
 		return WorkPRResult{}, err
 	}
+	base, err := resolveTicketPRBase(repo, issue, runner)
+	if err != nil {
+		return WorkPRResult{}, err
+	}
 	status := displayStatus(managedStatusFromLabels(issue.Labels))
 	targetStatus := "In review"
 	if draft {
 		targetStatus = "In progress"
 	}
 	result := WorkPRResult{
-		Repo:        repo.FullName(),
-		Issue:       issueNumber,
-		DryRun:      dryRun,
-		Draft:       draft,
-		Status:      status,
-		NextStatus:  targetStatus,
-		Blockers:    []string{},
-		ClosingBody: fmt.Sprintf("Closes #%d", issueNumber),
+		Repo:               repo.FullName(),
+		Issue:              issueNumber,
+		DryRun:             dryRun,
+		Draft:              draft,
+		Status:             status,
+		NextStatus:         targetStatus,
+		RecordedBase:       base.BaseBranch,
+		RecordedBaseSource: base.BaseSource,
+		Blockers:           []string{},
+		ClosingBody:        fmt.Sprintf("Closes #%d", issueNumber),
 	}
 
 	prStatus, err := DevPRStatus(repo, issueNumber, runner)
@@ -316,6 +357,10 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 		result.PRNumber = prStatus.PRNumber
 		result.PRURL = prStatus.PRURL
 		result.Blockers = prStatus.Blockers
+		applyPRBaseMismatch(&result, base.BaseBranch, prStatus.Binding.BaseRef)
+		if result.BaseMismatch {
+			return result, fmt.Errorf("existing PR base %q does not match recorded ticket base %q", result.ActualBase, result.RecordedBase)
+		}
 		if dryRun {
 			return result, nil
 		}
@@ -351,12 +396,13 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 	result.PushRemote = push.Remote
 	result.LocalGit = push.LocalGit
 
-	opened, err := OpenDevPRWithOptions(repo, issueNumber, draft, runner)
+	opened, err := OpenDevPRWithCreateOptions(repo, issueNumber, DevPRCreateOptions{Draft: draft, Base: base.BaseBranch}, runner)
 	if err != nil {
 		return result, err
 	}
 	result.PRNumber = opened.PRNumber
 	result.PRURL = opened.PRURL
+	result.ActualBase = opened.Base
 	result.Created = true
 	result.Blockers = []string{}
 	if draft {
@@ -730,8 +776,11 @@ func prepareWorkPRBranchPush(issue devStartIssue, issueNumber int, dryRun bool, 
 		return workPRBranchPush{}, err
 	}
 	localGit := fmt.Sprintf("git push -u %s <validated-ticket-branch>", remote)
-	if _, err := runner.Run("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err == nil {
-		return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "skipped", LocalGit: localGit}, nil
+	if upstreamOut, err := runner.Run("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err == nil {
+		upstream := strings.TrimSpace(string(upstreamOut))
+		if upstream == remote+"/"+currentBranch {
+			return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "skipped", LocalGit: localGit}, nil
+		}
 	}
 	if dryRun {
 		return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "planned", LocalGit: localGit}, nil

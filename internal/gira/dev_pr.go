@@ -16,6 +16,12 @@ type DevPROpenResult struct {
 	Title    string `json:"title"`
 	Body     string `json:"body"`
 	Draft    bool   `json:"draft"`
+	Base     string `json:"base,omitempty"`
+}
+
+type DevPRCreateOptions struct {
+	Draft bool
+	Base  string
 }
 
 type DevPRStatusResult struct {
@@ -77,6 +83,10 @@ func OpenDevPR(repo RepoRef, issueNumber int, runner CommandRunner) (DevPROpenRe
 }
 
 func OpenDevPRWithOptions(repo RepoRef, issueNumber int, draft bool, runner CommandRunner) (DevPROpenResult, error) {
+	return OpenDevPRWithCreateOptions(repo, issueNumber, DevPRCreateOptions{Draft: draft}, runner)
+}
+
+func OpenDevPRWithCreateOptions(repo RepoRef, issueNumber int, options DevPRCreateOptions, runner CommandRunner) (DevPROpenResult, error) {
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
@@ -87,7 +97,11 @@ func OpenDevPRWithOptions(repo RepoRef, issueNumber int, draft bool, runner Comm
 	title := fmt.Sprintf("feat: %s", issue.Title)
 	body := fmt.Sprintf("Closes #%d", issueNumber)
 	args := []string{"pr", "create", "--repo", repo.FullName(), "--title", title, "--body", body}
-	if draft {
+	base := strings.TrimSpace(options.Base)
+	if base != "" {
+		args = append(args, "--base", base)
+	}
+	if options.Draft {
 		args = append(args, "--draft")
 	}
 	out, err := runner.Run("gh", args...)
@@ -96,7 +110,7 @@ func OpenDevPRWithOptions(repo RepoRef, issueNumber int, draft bool, runner Comm
 	}
 	url := strings.TrimSpace(string(out))
 	prNumber := extractPRNumber(url)
-	return DevPROpenResult{Repo: repo.FullName(), Issue: issueNumber, PRNumber: prNumber, PRURL: url, Title: title, Body: body, Draft: draft}, nil
+	return DevPROpenResult{Repo: repo.FullName(), Issue: issueNumber, PRNumber: prNumber, PRURL: url, Title: title, Body: body, Draft: options.Draft, Base: base}, nil
 }
 
 func DevPRStatus(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStatusResult, error) {

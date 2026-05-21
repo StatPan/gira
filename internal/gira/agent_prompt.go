@@ -53,20 +53,23 @@ type AgentPromptIssue struct {
 }
 
 type AgentPromptPR struct {
-	Number         int          `json:"number"`
-	Title          string       `json:"title,omitempty"`
-	Body           string       `json:"body,omitempty"`
-	State          string       `json:"state,omitempty"`
-	URL            string       `json:"url,omitempty"`
-	HeadRefName    string       `json:"head_ref_name,omitempty"`
-	BaseRefName    string       `json:"base_ref_name,omitempty"`
-	ReviewDecision string       `json:"review_decision,omitempty"`
-	IsDraft        bool         `json:"is_draft,omitempty"`
-	MergeState     string       `json:"merge_state,omitempty"`
-	Blockers       []string     `json:"blockers,omitempty"`
-	Checks         []DevPRCheck `json:"checks,omitempty"`
-	ChangedFiles   []string     `json:"changed_files,omitempty"`
-	FinishReady    bool         `json:"finish_ready"`
+	Number             int          `json:"number"`
+	Title              string       `json:"title,omitempty"`
+	Body               string       `json:"body,omitempty"`
+	State              string       `json:"state,omitempty"`
+	URL                string       `json:"url,omitempty"`
+	HeadRefName        string       `json:"head_ref_name,omitempty"`
+	BaseRefName        string       `json:"base_ref_name,omitempty"`
+	RecordedBase       string       `json:"recorded_base,omitempty"`
+	RecordedBaseSource string       `json:"recorded_base_source,omitempty"`
+	BaseMismatch       bool         `json:"base_mismatch,omitempty"`
+	ReviewDecision     string       `json:"review_decision,omitempty"`
+	IsDraft            bool         `json:"is_draft,omitempty"`
+	MergeState         string       `json:"merge_state,omitempty"`
+	Blockers           []string     `json:"blockers,omitempty"`
+	Checks             []DevPRCheck `json:"checks,omitempty"`
+	ChangedFiles       []string     `json:"changed_files,omitempty"`
+	FinishReady        bool         `json:"finish_ready"`
 }
 
 type AgentPromptEvidence struct {
@@ -167,6 +170,7 @@ func BuildAgentPromptReport(input AgentPromptInput, runner CommandRunner) (Agent
 			}
 			report.Evidence = &AgentPromptEvidence{Blockers: []string{"missing_linked_pr"}}
 		} else if pr != nil {
+			annotateAgentPromptPRBranchContext(pr, issue)
 			report.PR = pr
 			report.Evidence = agentPromptEvidence(pr)
 		}
@@ -184,6 +188,23 @@ func agentPromptEvidence(pr *AgentPromptPR) *AgentPromptEvidence {
 		ChangedFiles:  append([]string(nil), pr.ChangedFiles...),
 		FinishReady:   pr.FinishReady,
 	}
+}
+
+func annotateAgentPromptPRBranchContext(pr *AgentPromptPR, issue devStartIssue) {
+	state := ParseTicketLifecycleState(issue.Body)
+	recorded := strings.TrimSpace(state.BaseBranch)
+	if recorded == "" {
+		return
+	}
+	pr.RecordedBase = recorded
+	pr.RecordedBaseSource = strings.TrimSpace(state.BaseSource)
+	actual := strings.TrimSpace(pr.BaseRefName)
+	if actual == "" || actual == recorded {
+		return
+	}
+	pr.BaseMismatch = true
+	pr.Blockers = appendMissingWorkBlocker(pr.Blockers, "pr_base_mismatch")
+	pr.FinishReady = false
 }
 
 func RenderAgentPrompt(report AgentPromptReport) string {
@@ -241,6 +262,14 @@ func RenderAgentPrompt(report AgentPromptReport) string {
 		if strings.TrimSpace(report.PR.BaseRefName) != "" {
 			fmt.Fprintf(&b, "- Base: `%s`\n", report.PR.BaseRefName)
 		}
+		if strings.TrimSpace(report.PR.RecordedBase) != "" {
+			fmt.Fprintf(&b, "- Recorded Base: `%s`", report.PR.RecordedBase)
+			if strings.TrimSpace(report.PR.RecordedBaseSource) != "" {
+				fmt.Fprintf(&b, " (%s)", report.PR.RecordedBaseSource)
+			}
+			b.WriteString("\n")
+			fmt.Fprintf(&b, "- Base Matches Recorded: `%t`\n", !report.PR.BaseMismatch)
+		}
 		if strings.TrimSpace(report.PR.ReviewDecision) != "" {
 			fmt.Fprintf(&b, "- Review Decision: `%s`\n", report.PR.ReviewDecision)
 		}
@@ -272,6 +301,9 @@ func RenderAgentPrompt(report AgentPromptReport) string {
 			b.WriteString("\n## Review Evidence Commands\n")
 			fmt.Fprintf(&b, "- Inspect the actual diff: `gh pr diff %d --repo %s`\n", report.PR.Number, report.Repo)
 			fmt.Fprintf(&b, "- Inspect the changed file list: `gh pr diff %d --repo %s --name-only`\n", report.PR.Number, report.Repo)
+			if strings.TrimSpace(report.PR.RecordedBase) != "" {
+				fmt.Fprintf(&b, "- Verify the PR targets the recorded base `%s`, not only the current checkout or GitHub default branch.\n", report.PR.RecordedBase)
+			}
 		}
 		if strings.TrimSpace(report.PR.Body) != "" {
 			fmt.Fprintf(&b, "\n### PR Body\n%s\n", fencedOrNone(report.PR.Body))

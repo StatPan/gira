@@ -2,6 +2,8 @@ package gira
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -14,12 +16,20 @@ type WorkStartResult struct {
 	MirrorIssue   int             `json:"mirror_issue,omitempty"`
 	Title         string          `json:"title"`
 	Branch        string          `json:"branch"`
+	BaseBranch    string          `json:"base_branch,omitempty"`
+	BaseSource    string          `json:"base_source,omitempty"`
+	PolicyMode    string          `json:"branch_policy_mode,omitempty"`
 	DryRun        bool            `json:"dry_run"`
 	CreatedBranch bool            `json:"created_branch"`
 	Status        string          `json:"status"`
 	NextStatus    string          `json:"next_status"`
 	NextStep      string          `json:"next_step,omitempty"`
 	Checks        map[string]bool `json:"checks"`
+}
+
+type WorkStartOptions struct {
+	DryRun       bool
+	BaseOverride string
 }
 
 type WorkPRResult struct {
@@ -113,7 +123,90 @@ type TicketStatusTelemetry struct {
 var workStatusMissingPRRetryAttempts = 3
 var workStatusMissingPRRetryDelay = time.Second
 
+type ticketStartBaseResolution struct {
+	BaseBranch string
+	BaseSource string
+	PolicyMode string
+	Target     string
+}
+
+func resolveTicketStartBase(repo RepoRef, issue devStartIssue, explicitBase string, runner CommandRunner) (ticketStartBaseResolution, error) {
+	if base := strings.TrimSpace(explicitBase); base != "" {
+		return ticketStartBaseResolution{BaseBranch: base, BaseSource: "explicit --base", Target: "override"}, nil
+	}
+	recorded := ParseTicketLifecycleState(issue.Body)
+	if strings.TrimSpace(recorded.BaseBranch) != "" {
+		source := strings.TrimSpace(recorded.BaseSource)
+		if source == "" {
+			source = "recorded_ticket_base"
+		}
+		return ticketStartBaseResolution{BaseBranch: strings.TrimSpace(recorded.BaseBranch), BaseSource: source, PolicyMode: recorded.BranchPolicyMode, Target: recorded.Target}, nil
+	}
+	policy, err := resolveRepoBranchPolicy(repo, runner)
+	if err != nil {
+		return ticketStartBaseResolution{}, err
+	}
+	target := strings.TrimSpace(policy.DefaultTarget)
+	base := strings.TrimSpace(policy.Targets[target])
+	if base == "" {
+		base = strings.TrimSpace(policy.DefaultBase)
+	}
+	return ticketStartBaseResolution{
+		BaseBranch: base,
+		BaseSource: "branch_policy." + target,
+		PolicyMode: policy.Mode,
+		Target:     target,
+	}, nil
+}
+
+func resolveRepoBranchPolicy(repo RepoRef, runner CommandRunner) (ResolvedBranchPolicy, error) {
+	defaultBranch := "main"
+	if view, err := fetchRepoView(runner, repo); err == nil && view.DefaultBranchRef != nil && strings.TrimSpace(view.DefaultBranchRef.Name) != "" {
+		defaultBranch = strings.TrimSpace(view.DefaultBranchRef.Name)
+	} else if err != nil {
+		return ResolvedBranchPolicy{}, fmt.Errorf("resolve GitHub default branch: %w", err)
+	}
+	config, err := loadLocalBranchPolicyConfig(runner)
+	if err != nil {
+		return ResolvedBranchPolicy{}, err
+	}
+	return ResolveBranchPolicy(config, defaultBranch)
+}
+
+func loadLocalBranchPolicyConfig(runner CommandRunner) (*BranchPolicyConfig, error) {
+	paths := []string{DefaultInitConfigPath("."), ".gira/config.toml"}
+	if output, err := runner.Run("git", "rev-parse", "--show-toplevel"); err == nil {
+		root := strings.TrimSpace(string(output))
+		if root != "" && root != "." {
+			paths = append(paths, filepath.Join(root, ".gira", "config.yaml"), filepath.Join(root, ".gira", "config.toml"))
+		}
+	}
+	seen := map[string]struct{}{}
+	for _, path := range paths {
+		clean := filepath.Clean(path)
+		if _, ok := seen[clean]; ok {
+			continue
+		}
+		seen[clean] = struct{}{}
+		if _, err := os.Stat(clean); err != nil {
+			continue
+		}
+		cfg, err := LoadInitConfig(clean)
+		if err != nil {
+			return nil, err
+		}
+		if cfg.BranchPolicy != nil {
+			return cfg.BranchPolicy, nil
+		}
+	}
+	return nil, nil
+}
+
 func StartWork(repo RepoRef, issueNumber int, dryRun bool, runner CommandRunner) (WorkStartResult, error) {
+	return StartWorkWithOptions(repo, issueNumber, WorkStartOptions{DryRun: dryRun}, runner)
+}
+
+func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOptions, runner CommandRunner) (WorkStartResult, error) {
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
@@ -126,25 +219,56 @@ func StartWork(repo RepoRef, issueNumber int, dryRun bool, runner CommandRunner)
 	if alreadyStarted && !strings.EqualFold(issue.State, "open") {
 		return WorkStartResult{}, fmt.Errorf("issue #%d is not open", issue.Number)
 	}
+	if !alreadyStarted && (!strings.EqualFold(issue.State, "open") || !hasReadyLabel(issue.Labels)) {
+		start, err := StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: DefaultDevBranchPattern, DryRun: options.DryRun}, runner)
+		result := WorkStartResult{
+			Repo:       repo.FullName(),
+			Issue:      issueNumber,
+			Title:      start.Title,
+			Branch:     start.Branch,
+			DryRun:     options.DryRun,
+			Status:     status,
+			NextStatus: "In progress",
+			NextStep:   workStartNextStep(repo.FullName(), issueNumber, issue.State, status, options.DryRun),
+			Checks:     start.Checked,
+		}
+		return result, err
+	}
 
-	start, err := StartDevBranch(repo, issueNumber, DefaultDevBranchPattern, dryRun, alreadyStarted, runner)
+	base, err := resolveTicketStartBase(repo, issue, options.BaseOverride, runner)
+	if err != nil {
+		return WorkStartResult{}, err
+	}
+	start, err := StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: DefaultDevBranchPattern, Base: base.BaseBranch, DryRun: options.DryRun, Force: alreadyStarted, RequireCleanWorktree: true}, runner)
 	result := WorkStartResult{
 		Repo:          repo.FullName(),
 		Issue:         issueNumber,
 		Title:         start.Title,
 		Branch:        start.Branch,
-		DryRun:        dryRun,
+		BaseBranch:    base.BaseBranch,
+		BaseSource:    base.BaseSource,
+		PolicyMode:    base.PolicyMode,
+		DryRun:        options.DryRun,
 		CreatedBranch: start.Created,
 		Status:        status,
 		NextStatus:    "In progress",
-		NextStep:      workStartNextStep(repo.FullName(), issueNumber, issue.State, status, dryRun),
+		NextStep:      workStartNextStep(repo.FullName(), issueNumber, issue.State, status, options.DryRun),
 		Checks:        start.Checked,
 	}
 	if err != nil {
 		return result, err
 	}
-	if dryRun {
+	if options.DryRun {
 		return result, nil
+	}
+	if err := recordTicketLifecycleState(repo, issueNumber, issue.Body, TicketLifecycleState{
+		BaseBranch:       base.BaseBranch,
+		BaseSource:       base.BaseSource,
+		BranchPolicyMode: base.PolicyMode,
+		Target:           base.Target,
+		WorkBranch:       start.Branch,
+	}, runner); err != nil {
+		return result, err
 	}
 	if err := setIssueStatus(repo, issueNumber, issue.Labels, "status:in-progress", runner); err != nil {
 		return result, err

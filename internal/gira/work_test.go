@@ -47,7 +47,26 @@ func (r *workRunner) Run(name string, args ...string) ([]byte, error) {
 	if hasOut {
 		return out, nil
 	}
+	if out, ok := defaultBranchPolicyTestOutput(key); ok {
+		return out, nil
+	}
 	return nil, fmt.Errorf("unexpected call: %s", key)
+}
+
+func defaultBranchPolicyTestOutput(key string) ([]byte, bool) {
+	if strings.HasPrefix(key, "gh repo view ") && strings.HasSuffix(key, " --json nameWithOwner,viewerPermission,defaultBranchRef") {
+		return []byte(`{"nameWithOwner":"StatPan/gira","viewerPermission":"WRITE","defaultBranchRef":{"name":"main"}}`), true
+	}
+	if key == "git ls-remote --exit-code --heads origin main" {
+		return []byte("abc\trefs/heads/main"), true
+	}
+	if key == "git status --porcelain" {
+		return nil, true
+	}
+	if strings.HasPrefix(key, "gh api repos/") && strings.Contains(key, " -X PATCH -f body=") {
+		return nil, true
+	}
+	return nil, false
 }
 
 func TestStartWorkApplyReadyIssueCreatesBranchAndMovesInProgress(t *testing.T) {
@@ -55,7 +74,7 @@ func TestStartWorkApplyReadyIssueCreatesBranchAndMovesInProgress(t *testing.T) {
 	issueJSON := []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`)
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126":                                               issueJSON,
-		"git checkout -b issue-126-work-command":                                             nil,
+		"git checkout -b issue-126-work-command origin/main":                                 nil,
 		"gh api repos/StatPan/gira/issues/126/labels/status:ready -X DELETE":                 nil,
 		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-progress": nil,
 	}, errs: map[string]error{
@@ -70,8 +89,59 @@ func TestStartWorkApplyReadyIssueCreatesBranchAndMovesInProgress(t *testing.T) {
 	if result.Status != "In progress" || !result.CreatedBranch {
 		t.Fatalf("unexpected result: %+v", result)
 	}
+	if result.BaseBranch != "main" || result.BaseSource != "branch_policy.default" {
+		t.Fatalf("unexpected base resolution: %+v", result)
+	}
 	if !containsCall(runner.calls, "gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-progress") {
 		t.Fatalf("missing status apply call: %v", runner.calls)
+	}
+	if !containsCallWith(runner.calls, "gh api repos/StatPan/gira/issues/126 -X PATCH -f body=", "base_branch: main") {
+		t.Fatalf("missing lifecycle base recording call: %v", runner.calls)
+	}
+}
+
+func TestStartWorkDryRunAcceptsExplicitReleaseAndHotfixBase(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	for _, base := range []string{"release/2.0", "hotfix/urgent-fix"} {
+		t.Run(base, func(t *testing.T) {
+			runner := &workRunner{outputs: map[string][]byte{
+				"gh api repos/StatPan/gira/issues/126":             []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`),
+				"git ls-remote --exit-code --heads origin " + base: []byte("abc\trefs/heads/" + base),
+			}, errs: map[string]error{
+				"git show-ref --verify --quiet refs/heads/issue-126-work-command": fmt.Errorf("exit status 1"),
+				"git ls-remote --exit-code --heads origin issue-126-work-command": fmt.Errorf("exit status 2"),
+			}}
+
+			result, err := StartWorkWithOptions(repo, 126, WorkStartOptions{DryRun: true, BaseOverride: base}, runner)
+			if err != nil {
+				t.Fatalf("StartWorkWithOptions error: %v", err)
+			}
+			if result.BaseBranch != base || result.BaseSource != "explicit --base" {
+				t.Fatalf("unexpected base result: %+v", result)
+			}
+			if !result.Checks["base_branch_exists"] {
+				t.Fatalf("expected base branch check: %+v", result.Checks)
+			}
+		})
+	}
+}
+
+func TestStartWorkApplyRejectsDirtyWorktreeBeforeBranchMutation(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`),
+		"git status --porcelain":               []byte(" M internal/gira/work.go\n"),
+	}, errs: map[string]error{
+		"git show-ref --verify --quiet refs/heads/issue-126-work-command": fmt.Errorf("exit status 1"),
+		"git ls-remote --exit-code --heads origin issue-126-work-command": fmt.Errorf("exit status 2"),
+	}}
+
+	_, err := StartWork(repo, 126, false, runner)
+	if err == nil || !strings.Contains(err.Error(), "dirty worktree") {
+		t.Fatalf("expected dirty worktree error, got %v", err)
+	}
+	if containsCall(runner.calls, "git checkout -b issue-126-work-command origin/main") {
+		t.Fatalf("dirty worktree should block checkout, calls=%v", runner.calls)
 	}
 }
 
@@ -345,6 +415,15 @@ func callIndex(calls []string, target string) int {
 		}
 	}
 	return -1
+}
+
+func containsCallWith(calls []string, prefix string, contains string) bool {
+	for _, call := range calls {
+		if strings.HasPrefix(call, prefix) && strings.Contains(call, contains) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestOpenWorkPRApplyReusesExistingLinkedPR(t *testing.T) {

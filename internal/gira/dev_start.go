@@ -15,10 +15,19 @@ type DevStartResult struct {
 	Issue    int               `json:"issue"`
 	Title    string            `json:"title"`
 	Branch   string            `json:"branch"`
+	Base     string            `json:"base,omitempty"`
 	DryRun   bool              `json:"dry_run"`
 	Created  bool              `json:"created"`
 	Checked  map[string]bool   `json:"checks"`
 	Failures map[string]string `json:"failures,omitempty"`
+}
+
+type DevStartOptions struct {
+	Pattern              string
+	Base                 string
+	DryRun               bool
+	Force                bool
+	RequireCleanWorktree bool
 }
 
 type devStartIssue struct {
@@ -32,21 +41,27 @@ type devStartIssue struct {
 }
 
 func StartDevBranch(repo RepoRef, issueNumber int, pattern string, dryRun bool, force bool, runner CommandRunner) (DevStartResult, error) {
+	return StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: pattern, DryRun: dryRun, Force: force}, runner)
+}
+
+func StartDevBranchWithOptions(repo RepoRef, issueNumber int, options DevStartOptions, runner CommandRunner) (DevStartResult, error) {
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
 	if issueNumber <= 0 {
 		return DevStartResult{}, fmt.Errorf("issue must be > 0")
 	}
+	pattern := options.Pattern
 	if strings.TrimSpace(pattern) == "" {
 		pattern = DefaultDevBranchPattern
 	}
+	base := strings.TrimSpace(options.Base)
 	issue, err := fetchDevIssue(repo, issueNumber, runner)
 	if err != nil {
 		return DevStartResult{}, err
 	}
 	branch := formatDevBranch(pattern, issue.Number, issue.Title)
-	result := DevStartResult{Repo: repo.FullName(), Issue: issue.Number, Title: issue.Title, Branch: branch, DryRun: dryRun, Checked: map[string]bool{}, Failures: map[string]string{}}
+	result := DevStartResult{Repo: repo.FullName(), Issue: issue.Number, Title: issue.Title, Branch: branch, Base: base, DryRun: options.DryRun, Checked: map[string]bool{}, Failures: map[string]string{}}
 
 	result.Checked["issue_exists"] = true
 	if issue.IsPR {
@@ -54,14 +69,26 @@ func StartDevBranch(repo RepoRef, issueNumber int, pattern string, dryRun bool, 
 		return result, fmt.Errorf("issue #%d resolves to a pull request", issueNumber)
 	}
 	result.Checked["issue_open"] = strings.EqualFold(issue.State, "open")
-	if !result.Checked["issue_open"] && !force {
+	if !result.Checked["issue_open"] && !options.Force {
 		result.Failures["issue_open"] = "not_open"
 		return result, fmt.Errorf("issue #%d is not open", issue.Number)
 	}
 	result.Checked["ready_label"] = hasReadyLabel(issue.Labels)
-	if !result.Checked["ready_label"] && !force {
+	if !result.Checked["ready_label"] && !options.Force {
 		result.Failures["ready_label"] = "missing_status:ready"
 		return result, fmt.Errorf("issue #%d is not ready for start: missing label status:ready; try `gira adopt issues --repo %s --issue %d --label status:ready --apply` after confirming the issue is executable", issue.Number, repo.FullName(), issue.Number)
+	}
+
+	if base != "" {
+		if err := validateGitBranchPushName(base); err != nil {
+			result.Failures["base_branch"] = "invalid"
+			return result, fmt.Errorf("invalid base branch: %w", err)
+		}
+		if err := validateRemoteBranchExists("origin", base, runner); err != nil {
+			result.Failures["base_branch"] = "missing"
+			return result, err
+		}
+		result.Checked["base_branch_exists"] = true
 	}
 
 	localExists, err := gitLocalBranchExists(branch, runner)
@@ -80,10 +107,16 @@ func StartDevBranch(repo RepoRef, issueNumber int, pattern string, dryRun bool, 
 		return result, fmt.Errorf("branch conflict: remote branch %q already exists", branch)
 	}
 
-	if dryRun {
+	if options.DryRun {
 		return result, nil
 	}
 
+	if options.RequireCleanWorktree {
+		if err := ensureCleanWorktreeBeforeBranchMutation(runner); err != nil {
+			result.Failures["worktree"] = "dirty"
+			return result, err
+		}
+	}
 	if localExists {
 		if _, err := runner.Run("git", "checkout", branch); err != nil {
 			return result, err
@@ -91,7 +124,11 @@ func StartDevBranch(repo RepoRef, issueNumber int, pattern string, dryRun bool, 
 		return result, nil
 	}
 
-	if _, err := runner.Run("git", "checkout", "-b", branch); err != nil {
+	args := []string{"checkout", "-b", branch}
+	if base != "" {
+		args = append(args, "origin/"+base)
+	}
+	if _, err := runner.Run("git", args...); err != nil {
 		return result, err
 	}
 	result.Created = true
@@ -182,4 +219,28 @@ func gitRemoteBranchExists(branch string, runner CommandRunner) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func validateRemoteBranchExists(remote string, branch string, runner CommandRunner) error {
+	if err := validateGitRemoteName(remote); err != nil {
+		return err
+	}
+	if _, err := runner.Run("git", "ls-remote", "--exit-code", "--heads", remote, branch); err != nil {
+		if strings.Contains(err.Error(), "exit status 2") || strings.Contains(err.Error(), "exit status 1") {
+			return fmt.Errorf("base branch %q does not exist on %s", branch, remote)
+		}
+		return fmt.Errorf("validate base branch %q on %s: %w", branch, remote, err)
+	}
+	return nil
+}
+
+func ensureCleanWorktreeBeforeBranchMutation(runner CommandRunner) error {
+	out, err := runner.Run("git", "status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("check worktree before branch mutation: %w", err)
+	}
+	if strings.TrimSpace(string(out)) != "" {
+		return fmt.Errorf("dirty worktree before branch mutation; commit, stash, or intentionally clear local changes before running ticket start")
+	}
+	return nil
 }

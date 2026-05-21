@@ -767,7 +767,7 @@ Usage:
   gira ticket view|show [TICKET|JIRA-KEY] [--repo OWNER/REPO] [--json]
   gira ticket prompt [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]
   gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--json]
-  gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--json]
+  gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
   gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both] [--body TEXT|--body-file PATH|-] [--json]
   gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr] [--json]
@@ -1300,6 +1300,13 @@ var repoContextRunner gira.CommandRunner = gira.ExecCommandRunner{}
 
 var newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
 	return gira.StartWork(repo, issue, dryRun, devCommandRunner)
+}
+
+var newWorkStartResultWithOptions = func(repo gira.RepoRef, issue int, options gira.WorkStartOptions) (gira.WorkStartResult, error) {
+	if strings.TrimSpace(options.BaseOverride) == "" {
+		return newWorkStartResult(repo, issue, options.DryRun)
+	}
+	return gira.StartWorkWithOptions(repo, issue, options, devCommandRunner)
 }
 
 var newWorkPRResult = func(repo gira.RepoRef, issue int, dryRun bool, draft bool) (gira.WorkPRResult, error) {
@@ -3478,6 +3485,7 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	ticket := fs.Int("ticket", 0, "Ticket number")
 	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	base := fs.String("base", "", "Explicit base branch override for ticket start")
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
 	apply := fs.Bool("apply", false, "Apply changes")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
@@ -3522,7 +3530,7 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 		ticketNumber = mirror.Number
 		jiraKey = strings.ToUpper(strings.TrimSpace(positionalIdentifier.JiraKey))
 	}
-	result, err := newWorkStartResult(repo, ticketNumber, *dryRun)
+	result, err := newWorkStartResultWithOptions(repo, ticketNumber, gira.WorkStartOptions{DryRun: *dryRun, BaseOverride: *base})
 	if jiraKey != "" {
 		result.JiraKey = jiraKey
 		result.MirrorIssue = ticketNumber
@@ -4621,6 +4629,13 @@ func formatTicketStart(result gira.WorkStartResult) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "ticket start: ticket #%d branch=%s status=%s\n", result.Issue, result.Branch, result.NextStatus)
+	if strings.TrimSpace(result.BaseBranch) != "" {
+		fmt.Fprintf(&b, "base: %s", result.BaseBranch)
+		if strings.TrimSpace(result.BaseSource) != "" {
+			fmt.Fprintf(&b, " (%s)", result.BaseSource)
+		}
+		b.WriteString("\n")
+	}
 	if strings.TrimSpace(result.JiraKey) != "" {
 		fmt.Fprintf(&b, "jira key: %s\n", result.JiraKey)
 		fmt.Fprintf(&b, "mirror issue: #%d\n", result.MirrorIssue)

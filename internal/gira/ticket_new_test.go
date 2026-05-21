@@ -21,6 +21,9 @@ func (r *ticketNewRunner) Run(name string, args ...string) ([]byte, error) {
 	if out, ok := r.outputs[key]; ok {
 		return out, nil
 	}
+	if out, ok := defaultBranchPolicyTestOutput(key); ok {
+		return out, nil
+	}
 	return nil, fmt.Errorf("unexpected call: %s", key)
 }
 
@@ -136,7 +139,7 @@ func TestTicketNewApplyStartRunsStartWork(t *testing.T) {
 	outputs := ticketNewLabelOutputs("type:task", "status:ready")
 	outputs["gh issue create --repo StatPan/gira --title Add retry --body "+defaultTicketNewBody("Add retry")+" --label type:task --label status:ready"] = []byte("https://github.com/StatPan/gira/issues/224\n")
 	outputs["gh api repos/StatPan/gira/issues/224"] = []byte(`{"number":224,"title":"Add retry","state":"open","labels":[{"name":"status:ready"}]}`)
-	outputs["git checkout -b issue-224-add-retry"] = nil
+	outputs["git checkout -b issue-224-add-retry origin/main"] = nil
 	outputs["gh api repos/StatPan/gira/issues/224/labels/status:ready -X DELETE"] = nil
 	outputs["gh api repos/StatPan/gira/issues/224/labels -X POST -f labels[]=status:in-progress"] = nil
 	runner := &ticketNewRunner{outputs: outputs, errs: map[string]error{
@@ -151,7 +154,7 @@ func TestTicketNewApplyStartRunsStartWork(t *testing.T) {
 	if report.StartResult.Issue != 224 || report.NextStep != "gira ticket pr --dry-run" {
 		t.Fatalf("unexpected start report: %+v", report)
 	}
-	if !containsCall(runner.calls, "git checkout -b issue-224-add-retry") {
+	if !containsCall(runner.calls, "git checkout -b issue-224-add-retry origin/main") {
 		t.Fatalf("missing branch start call: %v", runner.calls)
 	}
 }

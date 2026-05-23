@@ -1868,6 +1868,8 @@ func TestWorkspaceReposSyncJSON(t *testing.T) {
 			ConfigRoot:      input.ConfigRoot,
 			ConfigPath:      "/tmp/gira/workspaces/personal.yaml",
 			Owner:           input.Owner,
+			Limit:           input.Limit,
+			IncludeArchived: input.IncludeArchived,
 			Workspace:       gira.WorkspaceSummary{Name: input.WorkspaceName, Owner: input.Owner},
 			InboxRepo:       "StatPan/backlog",
 			DiscoveredRepos: []string{"StatPan/backlog", "StatPan/gira", "StatPan/statpan-infra"},
@@ -1891,6 +1893,56 @@ func TestWorkspaceReposSyncJSON(t *testing.T) {
 	}
 	if report.Status != "planned" || strings.Join(report.AddedRepos, ",") != "StatPan/statpan-infra" {
 		t.Fatalf("unexpected report: %+v", report)
+	}
+	if report.SchemaVersion != gira.WorkspaceReposSyncReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("workspace repos sync dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira workspace repos sync" || report.Approval.OutputSchema != gira.WorkspaceReposSyncReportSchemaVersion {
+		t.Fatalf("unexpected workspace repos sync approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira workspace repos sync --owner StatPan --workspace personal --config-root /tmp/gira --limit 50 --include-archived --apply" || report.Approval.PostApplyVerification != "gira workspace status --config /tmp/gira/workspaces/personal.yaml --json" {
+		t.Fatalf("unexpected workspace repos sync approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
+	}
+}
+
+func TestWorkspaceReposSyncApplyJSONOmitsApprovalEvidence(t *testing.T) {
+	restore := newWorkspaceRepoSyncReport
+	t.Cleanup(func() { newWorkspaceRepoSyncReport = restore })
+	newWorkspaceRepoSyncReport = func(input gira.WorkspaceRepoSyncInput) (gira.WorkspaceRepoSyncReport, error) {
+		if input.Owner != "StatPan" || input.WorkspaceName != "personal" || input.ConfigRoot != "/tmp/gira" || input.Limit != 50 || !input.Apply || input.DryRun {
+			t.Fatalf("unexpected workspace repos sync input: %+v", input)
+		}
+		return gira.WorkspaceRepoSyncReport{
+			Command:    "workspace repos sync",
+			ConfigRoot: input.ConfigRoot,
+			ConfigPath: "/tmp/gira/workspaces/personal.yaml",
+			Owner:      input.Owner,
+			Limit:      input.Limit,
+			Workspace:  gira.WorkspaceSummary{Name: input.WorkspaceName, Owner: input.Owner},
+			InboxRepo:  "StatPan/backlog",
+			File:       gira.SetupGlobalFilePlan{Path: "/tmp/gira/workspaces/personal.yaml", Action: "update"},
+			Applied:    true,
+			Status:     "applied",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "repos", "sync", "--owner", "StatPan", "--workspace", "personal", "--config-root", "/tmp/gira", "--limit", "50", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkspaceRepoSyncReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode workspace repos sync JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.WorkspaceReposSyncReportSchemaVersion || !report.Applied {
+		t.Fatalf("unexpected workspace repos sync apply report: %+v", report)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 }
 

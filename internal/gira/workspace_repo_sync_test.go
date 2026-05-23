@@ -32,6 +32,19 @@ func TestBuildWorkspaceRepoSyncReportDryRun(t *testing.T) {
 	if report.Status != "planned" || report.File.Action != "update" {
 		t.Fatalf("unexpected report: %+v", report)
 	}
+	if report.SchemaVersion != WorkspaceReposSyncReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("expected workspace repos sync schema and approval evidence: %+v", report)
+	}
+	expectedApply := "gira workspace repos sync --owner StatPan --workspace personal --config-root " + QuoteShellArg(root) + " --limit 100 --apply"
+	if report.Approval.SchemaVersion != ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira workspace repos sync" || report.Approval.OutputSchema != WorkspaceReposSyncReportSchemaVersion {
+		t.Fatalf("unexpected workspace repos sync approval identity: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != expectedApply || report.Approval.PostApplyVerification != "gira workspace status --config "+QuoteShellArg(report.ConfigPath)+" --json" {
+		t.Fatalf("unexpected workspace repos sync approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil || !approvalHasAction(report.Approval.PlannedActions, "file:update") || !approvalHasAction(report.Approval.PlannedActions, "workspace_repo:add") {
+		t.Fatalf("unexpected workspace repos sync approval plan: %+v", report.Approval)
+	}
 	if strings.Join(report.TargetRepos, ",") != "StatPan/gira,StatPan/statpan-infra" {
 		t.Fatalf("target repos = %v", report.TargetRepos)
 	}
@@ -74,6 +87,9 @@ func TestBuildWorkspaceRepoSyncReportApply(t *testing.T) {
 	}
 	if !report.Applied || report.Status != "applied" {
 		t.Fatalf("unexpected apply report: %+v", report)
+	}
+	if report.SchemaVersion != WorkspaceReposSyncReportSchemaVersion || report.Approval != nil {
+		t.Fatalf("apply report should have schema and omit dry-run approval: %+v", report)
 	}
 	entry, err := LoadGlobalWorkspaceRegistryEntry(root, "personal")
 	if err != nil {

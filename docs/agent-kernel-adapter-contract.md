@@ -229,10 +229,11 @@ The approval packet should include:
 An approval for one command must not authorize a different command, a different
 repo, a different issue, a different branch, or additional flags.
 
-## Current Gaps
+## Remaining Hardening
 
-The first flow can run with existing commands, but these gaps should be fixed
-before broad adapter use:
+The 2.0 control-plane path can run with stable command capability metadata,
+schema-versioned goal/workspace/readiness surfaces, and shared approval evidence
+for the main Gira apply boundaries. These gaps remain before broad adapter use:
 
 | Gap | Impact | Follow-up |
 | --- | --- | --- |

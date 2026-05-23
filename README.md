@@ -26,6 +26,22 @@ a Jira-like lifecycle that coding agents can operate safely:
 - `ticket finish` merges only when policy allows, then converges issue state.
 - `doctor` detects repo, workflow, label, and closed-issue status drift.
 
+The 2.0 control-plane surface extends that loop with stable contracts for
+long-running agent work:
+
+- `goal status`, `goal next`, `goal plan`, and `goal finish` model a larger
+  objective as an evidence-backed child-ticket graph with explicit human-review
+  stop conditions.
+- Ticket readiness, PR readiness, review packets, finish readiness, finish
+  receipts, and drift audits make completion reviewable without trusting an
+  agent transcript.
+- `workspace status --json` includes `workspace-queues/v1` so operators can see
+  agent-ready, review-needed, finish-ready, blocked, failed-check, and
+  human-decision queues across repos.
+- Adapter-facing command metadata and approval evidence, including
+  `gira-approval-plan/v1`, let durable agent runtimes treat Gira dry-runs as
+  auditable plans before any matching `--apply`.
+
 The core safety model is Terraform-like:
 
 - `--dry-run` previews GitHub or repository mutations.

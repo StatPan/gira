@@ -4418,6 +4418,38 @@ func TestGoalStatusTextRequiresGoal(t *testing.T) {
 	}
 }
 
+func TestGoalNextJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newGoalNextReport
+	t.Cleanup(func() { newGoalNextReport = restore })
+	newGoalNextReport = func(input gira.GoalNextInput) (gira.GoalNextReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 {
+			t.Fatalf("unexpected goal next input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		selected := gira.GoalNextCandidate{Number: 573, Title: "Next", Category: "ready", Reason: "next_ready_child", NextStep: "gira ticket start --repo StatPan/gira --ticket 573 --apply"}
+		return gira.GoalNextReport{
+			Command:        "goal next",
+			SchemaVersion:  gira.GoalNextSchemaVersion,
+			Repo:           input.Repo.FullName(),
+			Goal:           gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 2.0", State: "open", Status: "Ready"},
+			SelectedTicket: &selected,
+			Counts:         map[string]int{"total": 1, "ready": 1},
+			NextAction:     "start_child",
+			NextStep:       selected.NextStep,
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "next", "521", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "goal next"`, `"schema_version": "goal-next/v1"`, `"selected_ticket"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("goal next JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestTicketReviewInfersTicketAndDefaultsReviewerRole(t *testing.T) {
 	restorePrompt := newTicketPromptReport
 	restoreRunner := devCommandRunner

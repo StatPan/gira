@@ -24,6 +24,7 @@ type GoalStatusReport struct {
 	Children                []GoalStatusChild `json:"children"`
 	Counts                  map[string]int    `json:"counts"`
 	Blockers                []string          `json:"blockers,omitempty"`
+	HandoffReceiptPresent   bool              `json:"handoff_receipt_present"`
 	NextAction              string            `json:"next_action"`
 	NextStep                string            `json:"next_step"`
 	RemainingAutonomousWork int               `json:"remaining_autonomous_work"`
@@ -87,6 +88,7 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 		},
 		Counts: map[string]int{},
 	}
+	report.HandoffReceiptPresent = goalFinishGoalReceiptPresent(input.Repo, goal.Number, runner)
 	childNumbers, err := discoverGoalChildNumbers(input.Repo, goal, runner)
 	if err != nil {
 		return report, err
@@ -332,6 +334,9 @@ func goalStatusNextAction(repo RepoRef, report GoalStatusReport) (string, string
 		return "start_next_child", fmt.Sprintf("gira goal next --repo %s --goal %d --json", repo.FullName(), report.Goal.Number)
 	}
 	if report.RemainingAutonomousWork == 0 {
+		if report.HandoffReceiptPresent {
+			return "human_review", fmt.Sprintf("review goal-finish-receipt/v1 handoff on #%d", report.Goal.Number)
+		}
 		return "finish_goal", fmt.Sprintf("gira goal finish --repo %s --goal %d --dry-run", repo.FullName(), report.Goal.Number)
 	}
 	return "inspect_goal", fmt.Sprintf("gira goal status --repo %s --goal %d --json", repo.FullName(), report.Goal.Number)

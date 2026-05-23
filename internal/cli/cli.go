@@ -4212,6 +4212,7 @@ func runTicketSupersede(args []string, stdout io.Writer, stderr io.Writer) int {
 	result.NextStep = shortenTicketNextStep(result.NextStep, result.Repo, result.Replacement.Number)
 	if err != nil {
 		if *jsonOutput {
+			gira.EnsureTicketSupersedeReportSchema(&result)
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
@@ -4219,6 +4220,10 @@ func runTicketSupersede(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		gira.EnsureTicketSupersedeReportSchema(&result)
+		if *dryRun {
+			result.Approval = gira.TicketSupersedeApprovalEvidence(result)
+		}
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0

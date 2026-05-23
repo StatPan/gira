@@ -8,6 +8,7 @@ import (
 )
 
 const supersededResolutionLabel = "resolution:superseded"
+const TicketSupersedeReportSchemaVersion = "ticket-supersede-report/v1"
 
 type TicketSupersedeInput struct {
 	Repo             RepoRef  `json:"-"`
@@ -22,14 +23,19 @@ type TicketSupersedeInput struct {
 }
 
 type TicketSupersedeReport struct {
-	Command     string                  `json:"command"`
-	Repo        string                  `json:"repo"`
-	DryRun      bool                    `json:"dry_run"`
-	Original    TicketSupersedeIssue    `json:"original"`
-	Replacement TicketSupersedeIssue    `json:"replacement"`
-	DraftPR     TicketSupersedeDraftPR  `json:"draft_pr,omitempty"`
-	Actions     []TicketSupersedeAction `json:"actions"`
-	NextStep    string                  `json:"next_step"`
+	SchemaVersion string                  `json:"schema_version,omitempty"`
+	Command       string                  `json:"command"`
+	Repo          string                  `json:"repo"`
+	DryRun        bool                    `json:"dry_run"`
+	Body          string                  `json:"body,omitempty"`
+	Labels        []string                `json:"labels,omitempty"`
+	Milestone     string                  `json:"milestone,omitempty"`
+	Original      TicketSupersedeIssue    `json:"original"`
+	Replacement   TicketSupersedeIssue    `json:"replacement"`
+	DraftPR       TicketSupersedeDraftPR  `json:"draft_pr,omitempty"`
+	Actions       []TicketSupersedeAction `json:"actions"`
+	NextStep      string                  `json:"next_step"`
+	Approval      *ApprovalEvidence       `json:"approval,omitempty"`
 }
 
 type TicketSupersedeIssue struct {
@@ -65,6 +71,12 @@ type ticketSupersedeOriginal struct {
 	Milestone string
 }
 
+func EnsureTicketSupersedeReportSchema(report *TicketSupersedeReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = TicketSupersedeReportSchemaVersion
+	}
+}
+
 func BuildTicketSupersedeReport(input TicketSupersedeInput, runner CommandRunner) (TicketSupersedeReport, error) {
 	if runner == nil {
 		runner = ExecCommandRunner{}
@@ -81,9 +93,13 @@ func BuildTicketSupersedeReport(input TicketSupersedeInput, runner CommandRunner
 	}
 	original, err := fetchTicketSupersedeOriginal(input.Repo, input.Ticket, runner)
 	report := TicketSupersedeReport{
-		Command: "ticket supersede",
-		Repo:    input.Repo.FullName(),
-		DryRun:  input.DryRun,
+		SchemaVersion: TicketSupersedeReportSchemaVersion,
+		Command:       "ticket supersede",
+		Repo:          input.Repo.FullName(),
+		DryRun:        input.DryRun,
+		Body:          strings.TrimSpace(input.Body),
+		Labels:        dedupeSupersedeLabels(input.Labels),
+		Milestone:     strings.TrimSpace(input.Milestone),
 		Original: TicketSupersedeIssue{
 			Number:    input.Ticket,
 			Title:     original.Title,
@@ -137,6 +153,7 @@ func BuildTicketSupersedeReport(input TicketSupersedeInput, runner CommandRunner
 	}
 
 	if input.DryRun {
+		report.Approval = TicketSupersedeApprovalEvidence(report)
 		return report, nil
 	}
 

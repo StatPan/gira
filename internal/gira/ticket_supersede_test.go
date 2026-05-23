@@ -66,6 +66,18 @@ func TestBuildTicketSupersedeReportDryRunPlansReplacement(t *testing.T) {
 	if !strings.Contains(report.Replacement.Body, "Supersedes #64") {
 		t.Fatalf("replacement body missing original link:\n%s", report.Replacement.Body)
 	}
+	if report.SchemaVersion != TicketSupersedeReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("expected supersede schema and approval evidence: %+v", report)
+	}
+	if report.Approval.SchemaVersion != ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira ticket supersede" || report.Approval.OutputSchema != TicketSupersedeReportSchemaVersion {
+		t.Fatalf("unexpected supersede approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira ticket supersede 64 --repo StatPan/gira --replacement-title 'New gate' --body '## Goal\nDefine release gate.' --apply" || report.Approval.PostApplyVerification != "gira ticket status 64 --repo StatPan/gira --json" {
+		t.Fatalf("unexpected supersede approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil || !approvalHasAction(report.Approval.PlannedActions, "replacement:create") || !approvalHasAction(report.Approval.PlannedActions, "original:close") {
+		t.Fatalf("unexpected supersede approval plan: %+v", report.Approval)
+	}
 	for _, call := range runner.calls {
 		if strings.Contains(call, "issue create") || strings.Contains(call, "issue close") || strings.Contains(call, "issue comment") {
 			t.Fatalf("dry-run mutated GitHub: %v", runner.calls)
@@ -90,6 +102,9 @@ func TestBuildTicketSupersedeReportApplyCreatesLinksAndCloses(t *testing.T) {
 	}
 	if report.Replacement.Number != 94 || report.Original.State != "closed" || report.DraftPR.Action != "close" {
 		t.Fatalf("unexpected apply report: %+v", report)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 	for _, want := range []string{
 		"gh api repos/StatPan/gira/issues/64/labels/status:ready -X DELETE",

@@ -269,3 +269,77 @@ func stableStringSlice(values []string) []string {
 	}
 	return append([]string(nil), values...)
 }
+
+func TicketSupersedeApprovalEvidence(report TicketSupersedeReport) *ApprovalEvidence {
+	applyCommand := ticketSupersedeApprovalCommand(report, "--apply")
+	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira ticket supersede",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		Issue:                 report.Original.Number,
+		OutputSchema:          TicketSupersedeReportSchemaVersion,
+		PlannedActions:        ticketSupersedeApprovalActions(report),
+		Blockers:              []string{},
+		Warnings:              []string{},
+		PostApplyVerification: fmt.Sprintf("gira ticket status %d --repo %s --json", report.Original.Number, report.Repo),
+	}
+}
+
+func ticketSupersedeApprovalCommand(report TicketSupersedeReport, mode string) string {
+	args := []string{
+		"gira ticket supersede",
+		fmt.Sprintf("%d", report.Original.Number),
+		"--repo", report.Repo,
+		"--replacement-title", shellQuoteArg(report.Replacement.Title),
+	}
+	if strings.TrimSpace(report.Body) != "" {
+		args = append(args, "--body", shellQuoteArg(report.Body))
+	}
+	for _, label := range report.Labels {
+		args = append(args, "--label", shellQuoteArg(label))
+	}
+	if strings.TrimSpace(report.Milestone) != "" {
+		args = append(args, "--milestone", shellQuoteArg(report.Milestone))
+	}
+	if report.DraftPR.Action == "close" {
+		args = append(args, "--close-draft-pr")
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func ticketSupersedeApprovalActions(report TicketSupersedeReport) []ApprovalPlannedAction {
+	actions := make([]ApprovalPlannedAction, 0, len(report.Actions))
+	for _, action := range report.Actions {
+		if strings.TrimSpace(action.Action) == "" {
+			continue
+		}
+		target := ""
+		switch {
+		case strings.HasPrefix(action.Action, "original:"):
+			target = fmt.Sprintf("#%d", report.Original.Number)
+		case strings.HasPrefix(action.Action, "replacement:"):
+			if report.Replacement.Number > 0 {
+				target = fmt.Sprintf("#%d", report.Replacement.Number)
+			} else {
+				target = report.Replacement.Title
+			}
+		case strings.HasPrefix(action.Action, "draft_pr:") && report.DraftPR.Number > 0:
+			target = fmt.Sprintf("#%d", report.DraftPR.Number)
+		}
+		detail := strings.TrimSpace(action.Detail)
+		if action.Status != "" {
+			if detail == "" {
+				detail = action.Status
+			} else {
+				detail = action.Status + ": " + detail
+			}
+		}
+		actions = append(actions, ApprovalPlannedAction{Action: action.Action, Target: target, Detail: detail})
+	}
+	return actions
+}

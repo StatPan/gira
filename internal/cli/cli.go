@@ -7456,6 +7456,10 @@ func runSprint(args []string, stdout io.Writer, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "%v\n", err)
 			return 1
 		}
+		gira.EnsureSprintPlanReportSchema(&report)
+		if report.Mode == "dry-run" {
+			report.Approval = gira.SprintPlanApprovalEvidence(report)
+		}
 		output, _ := json.MarshalIndent(report, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", output)
 		return 0
@@ -7486,6 +7490,10 @@ func runSprint(args []string, stdout io.Writer, stderr io.Writer) int {
 		if err != nil {
 			fmt.Fprintf(stderr, "%v\n", err)
 			return 1
+		}
+		gira.EnsureSprintStartReportSchema(&report)
+		if report.Mode == "dry-run" {
+			report.Approval = gira.SprintStartApprovalEvidence(report)
 		}
 		output, _ := json.MarshalIndent(report, "", "  ")
 		if *jsonOutput {
@@ -7530,6 +7538,10 @@ func runSprint(args []string, stdout io.Writer, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "%v\n", err)
 			return 1
 		}
+		gira.EnsureSprintCloseReportSchema(&report)
+		if report.Mode == "dry-run" {
+			report.Approval = gira.SprintCloseApprovalEvidence(report)
+		}
 		output, _ := json.MarshalIndent(report, "", "  ")
 		if *jsonOutput {
 			fmt.Fprintf(stdout, "%s\n", output)
@@ -7564,6 +7576,10 @@ func runSprint(args []string, stdout io.Writer, stderr io.Writer) int {
 		if err != nil {
 			fmt.Fprintf(stderr, "%v\n", err)
 			return 1
+		}
+		gira.EnsureSprintRolloverReportSchema(&report)
+		if report.Mode == "dry-run" {
+			report.Approval = gira.SprintRolloverApprovalEvidence(report)
 		}
 		output, _ := json.MarshalIndent(report, "", "  ")
 		if *jsonOutput {

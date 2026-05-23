@@ -28,38 +28,77 @@ type Sprint struct {
 	ClosedAt             string `json:"closed_at,omitempty"`
 }
 
+const (
+	SprintPlanReportSchemaVersion     = "sprint-plan-report/v1"
+	SprintStartReportSchemaVersion    = "sprint-start-report/v1"
+	SprintCloseReportSchemaVersion    = "sprint-close-report/v1"
+	SprintRolloverReportSchemaVersion = "sprint-rollover-report/v1"
+)
+
 type SprintPlanReport struct {
-	Repo           string `json:"repo"`
-	Iteration      string `json:"iteration"`
-	Mode           string `json:"mode"`
-	Capacity       int    `json:"capacity_target"`
-	CommitCount    int    `json:"commit_count"`
-	CapacityBreach bool   `json:"capacity_breach"`
-	Sprint         Sprint `json:"sprint"`
+	SchemaVersion  string            `json:"schema_version,omitempty"`
+	Repo           string            `json:"repo"`
+	Iteration      string            `json:"iteration"`
+	Mode           string            `json:"mode"`
+	Capacity       int               `json:"capacity_target"`
+	CommitCount    int               `json:"commit_count"`
+	CapacityBreach bool              `json:"capacity_breach"`
+	Sprint         Sprint            `json:"sprint"`
+	Approval       *ApprovalEvidence `json:"approval,omitempty"`
 }
 
 type SprintStartReport struct {
-	Repo      string `json:"repo"`
-	Iteration string `json:"iteration"`
-	Mode      string `json:"mode"`
-	Frozen    bool   `json:"commitment_frozen"`
-	StartedAt string `json:"started_at"`
+	SchemaVersion string            `json:"schema_version,omitempty"`
+	Repo          string            `json:"repo"`
+	Iteration     string            `json:"iteration"`
+	Mode          string            `json:"mode"`
+	Frozen        bool              `json:"commitment_frozen"`
+	StartedAt     string            `json:"started_at"`
+	Approval      *ApprovalEvidence `json:"approval,omitempty"`
 }
 
 type SprintCloseReport struct {
-	Repo      string `json:"repo"`
-	Iteration string `json:"iteration"`
-	Mode      string `json:"mode"`
-	Summary   Sprint `json:"summary"`
+	SchemaVersion string            `json:"schema_version,omitempty"`
+	Repo          string            `json:"repo"`
+	Iteration     string            `json:"iteration"`
+	Mode          string            `json:"mode"`
+	Summary       Sprint            `json:"summary"`
+	Approval      *ApprovalEvidence `json:"approval,omitempty"`
 }
 
 type SprintRolloverReport struct {
+	SchemaVersion    string                `json:"schema_version,omitempty"`
 	Repo             string                `json:"repo"`
 	Mode             string                `json:"mode"`
 	TargetMilestone  *SprintRolloverTarget `json:"target_milestone,omitempty"`
 	TargetResolution string                `json:"target_resolution"`
 	Summary          SprintRolloverSummary `json:"summary"`
 	Items            []SprintRolloverItem  `json:"items"`
+	Approval         *ApprovalEvidence     `json:"approval,omitempty"`
+}
+
+func EnsureSprintPlanReportSchema(report *SprintPlanReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = SprintPlanReportSchemaVersion
+	}
+}
+
+func EnsureSprintStartReportSchema(report *SprintStartReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = SprintStartReportSchemaVersion
+	}
+}
+
+func EnsureSprintCloseReportSchema(report *SprintCloseReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = SprintCloseReportSchemaVersion
+	}
+}
+
+func EnsureSprintRolloverReportSchema(report *SprintRolloverReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = SprintRolloverReportSchemaVersion
+	}
 }
 
 type SprintRolloverTarget struct {
@@ -115,7 +154,11 @@ func PlanSprint(path string, repo RepoRef, iteration string, capacity int, commi
 			return SprintPlanReport{}, err
 		}
 	}
-	return SprintPlanReport{Repo: repo.FullName(), Iteration: iteration, Mode: mode, Capacity: capacity, CommitCount: len(committed), CapacityBreach: breach, Sprint: sprint}, nil
+	report := SprintPlanReport{SchemaVersion: SprintPlanReportSchemaVersion, Repo: repo.FullName(), Iteration: iteration, Mode: mode, Capacity: capacity, CommitCount: len(committed), CapacityBreach: breach, Sprint: sprint}
+	if !apply {
+		report.Approval = SprintPlanApprovalEvidence(report)
+	}
+	return report, nil
 }
 
 func StartSprint(path string, repo RepoRef, iteration string, apply bool, now time.Time) (SprintStartReport, error) {
@@ -141,7 +184,11 @@ func StartSprint(path string, repo RepoRef, iteration string, apply bool, now ti
 			return SprintStartReport{}, err
 		}
 	}
-	return SprintStartReport{Repo: repo.FullName(), Iteration: iteration, Mode: mode, Frozen: true, StartedAt: started}, nil
+	report := SprintStartReport{SchemaVersion: SprintStartReportSchemaVersion, Repo: repo.FullName(), Iteration: iteration, Mode: mode, Frozen: true, StartedAt: started}
+	if !apply {
+		report.Approval = SprintStartApprovalEvidence(report)
+	}
+	return report, nil
 }
 
 func CloseSprint(path string, repo RepoRef, iteration string, completed []int, disposition string, reason string, apply bool, now time.Time) (SprintCloseReport, error) {
@@ -179,7 +226,11 @@ func CloseSprint(path string, repo RepoRef, iteration string, completed []int, d
 			return SprintCloseReport{}, err
 		}
 	}
-	return SprintCloseReport{Repo: repo.FullName(), Iteration: iteration, Mode: mode, Summary: summary}, nil
+	report := SprintCloseReport{SchemaVersion: SprintCloseReportSchemaVersion, Repo: repo.FullName(), Iteration: iteration, Mode: mode, Summary: summary}
+	if !apply {
+		report.Approval = SprintCloseApprovalEvidence(report)
+	}
+	return report, nil
 }
 
 func SprintRollover(repo RepoRef, toMilestone string, apply bool, now time.Time, runner CommandRunner) (SprintRolloverReport, error) {
@@ -206,7 +257,7 @@ func SprintRolloverForClient(client StatusClient, runner CommandRunner, toMilest
 	if apply {
 		mode = "apply"
 	}
-	report := SprintRolloverReport{Repo: client.Repo().FullName(), Mode: mode, Items: make([]SprintRolloverItem, 0)}
+	report := SprintRolloverReport{SchemaVersion: SprintRolloverReportSchemaVersion, Repo: client.Repo().FullName(), Mode: mode, Items: make([]SprintRolloverItem, 0)}
 	target, resolution := resolveRolloverTarget(milestones, strings.TrimSpace(toMilestone), now)
 	report.TargetResolution = resolution
 	if target != nil {
@@ -268,6 +319,9 @@ func SprintRolloverForClient(client StatusClient, runner CommandRunner, toMilest
 	}
 
 	sort.Slice(report.Items, func(i, j int) bool { return report.Items[i].IssueNumber < report.Items[j].IssueNumber })
+	if !apply {
+		report.Approval = SprintRolloverApprovalEvidence(report)
+	}
 	return report, nil
 }
 

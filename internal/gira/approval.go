@@ -1099,3 +1099,211 @@ func cachePruneApprovalBlockers(report CachePruneReport) []string {
 	}
 	return stableStringSlice(blockers)
 }
+
+func SprintPlanApprovalEvidence(report SprintPlanReport) *ApprovalEvidence {
+	applyCommand := sprintPlanApprovalCommand(report, "--apply")
+	dryRunCommand := sprintPlanApprovalCommand(report, "--dry-run")
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira sprint plan",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		OutputSchema:          SprintPlanReportSchemaVersion,
+		PlannedActions:        sprintPlanApprovalActions(report),
+		Blockers:              []string{},
+		Warnings:              sprintPlanApprovalWarnings(report),
+		PostApplyVerification: sprintStartApprovalCommand(SprintStartReport{Repo: report.Repo, Iteration: report.Iteration}, "--dry-run") + " --json",
+	}
+}
+
+func sprintPlanApprovalCommand(report SprintPlanReport, mode string) string {
+	args := []string{
+		"gira sprint plan",
+		"--repo", QuoteShellArg(report.Repo),
+		"--iteration", QuoteShellArg(report.Iteration),
+		"--capacity", fmt.Sprintf("%d", report.Capacity),
+	}
+	if len(report.Sprint.CommittedItems) > 0 {
+		args = append(args, "--issues", joinIssueNumbers(report.Sprint.CommittedItems))
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func sprintPlanApprovalActions(report SprintPlanReport) []ApprovalPlannedAction {
+	return []ApprovalPlannedAction{{
+		Action: "sprint:plan",
+		Target: report.Iteration,
+		Detail: fmt.Sprintf("persist sprint plan capacity=%d committed=%s", report.Capacity, joinIssueNumbers(report.Sprint.CommittedItems)),
+	}}
+}
+
+func sprintPlanApprovalWarnings(report SprintPlanReport) []string {
+	if report.CapacityBreach {
+		return []string{"sprint_capacity_breach"}
+	}
+	return []string{}
+}
+
+func SprintStartApprovalEvidence(report SprintStartReport) *ApprovalEvidence {
+	applyCommand := sprintStartApprovalCommand(report, "--apply")
+	dryRunCommand := sprintStartApprovalCommand(report, "--dry-run")
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira sprint start",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		OutputSchema:          SprintStartReportSchemaVersion,
+		PlannedActions:        sprintStartApprovalActions(report),
+		Blockers:              []string{},
+		Warnings:              []string{},
+		PostApplyVerification: dryRunCommand + " --json",
+	}
+}
+
+func sprintStartApprovalCommand(report SprintStartReport, mode string) string {
+	args := []string{
+		"gira sprint start",
+		"--repo", QuoteShellArg(report.Repo),
+		"--iteration", QuoteShellArg(report.Iteration),
+		mode,
+	}
+	return strings.Join(args, " ")
+}
+
+func sprintStartApprovalActions(report SprintStartReport) []ApprovalPlannedAction {
+	return []ApprovalPlannedAction{{
+		Action: "sprint:start",
+		Target: report.Iteration,
+		Detail: "freeze sprint commitment and record started_at",
+	}}
+}
+
+func SprintCloseApprovalEvidence(report SprintCloseReport) *ApprovalEvidence {
+	applyCommand := sprintCloseApprovalCommand(report, "--apply")
+	dryRunCommand := sprintCloseApprovalCommand(report, "--dry-run")
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira sprint close",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		OutputSchema:          SprintCloseReportSchemaVersion,
+		PlannedActions:        sprintCloseApprovalActions(report),
+		Blockers:              sprintCloseApprovalBlockers(report),
+		Warnings:              []string{},
+		PostApplyVerification: dryRunCommand + " --json",
+	}
+}
+
+func sprintCloseApprovalCommand(report SprintCloseReport, mode string) string {
+	args := []string{
+		"gira sprint close",
+		"--repo", QuoteShellArg(report.Repo),
+		"--iteration", QuoteShellArg(report.Iteration),
+	}
+	if len(report.Summary.CompletedItems) > 0 {
+		args = append(args, "--completed", joinIssueNumbers(report.Summary.CompletedItems))
+	}
+	if strings.TrimSpace(report.Summary.SpilloverDisposition) != "" {
+		args = append(args, "--spillover-disposition", QuoteShellArg(report.Summary.SpilloverDisposition))
+	}
+	if strings.TrimSpace(report.Summary.RolloverReason) != "" {
+		args = append(args, "--rollover-reason", QuoteShellArg(report.Summary.RolloverReason))
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func sprintCloseApprovalActions(report SprintCloseReport) []ApprovalPlannedAction {
+	detail := fmt.Sprintf("completed=%s spillover=%s disposition=%s", joinIssueNumbers(report.Summary.CompletedItems), joinIssueNumbers(report.Summary.SpilloverItems), report.Summary.SpilloverDisposition)
+	if strings.TrimSpace(report.Summary.RolloverReason) != "" {
+		detail = appendApprovalDetail(detail, "reason="+report.Summary.RolloverReason)
+	}
+	return []ApprovalPlannedAction{{
+		Action: "sprint:close",
+		Target: report.Iteration,
+		Detail: detail,
+	}}
+}
+
+func sprintCloseApprovalBlockers(report SprintCloseReport) []string {
+	blockers := []string{}
+	if strings.TrimSpace(report.Summary.SpilloverDisposition) == "" {
+		blockers = appendUniqueStrings(blockers, "sprint_close_missing_spillover_disposition")
+	}
+	if strings.TrimSpace(report.Summary.RolloverReason) == "" {
+		blockers = appendUniqueStrings(blockers, "sprint_close_missing_rollover_reason")
+	}
+	return stableStringSlice(blockers)
+}
+
+func SprintRolloverApprovalEvidence(report SprintRolloverReport) *ApprovalEvidence {
+	applyCommand := sprintRolloverApprovalCommand(report, "--apply")
+	dryRunCommand := sprintRolloverApprovalCommand(report, "--dry-run")
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira sprint rollover",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		OutputSchema:          SprintRolloverReportSchemaVersion,
+		PlannedActions:        sprintRolloverApprovalActions(report),
+		Blockers:              sprintRolloverApprovalBlockers(report),
+		Warnings:              []string{},
+		PostApplyVerification: dryRunCommand + " --json",
+	}
+}
+
+func sprintRolloverApprovalCommand(report SprintRolloverReport, mode string) string {
+	args := []string{
+		"gira sprint rollover",
+		"--repo", QuoteShellArg(report.Repo),
+	}
+	if report.TargetMilestone != nil && report.TargetResolution == "explicit --to" {
+		args = append(args, "--to", QuoteShellArg(report.TargetMilestone.Title))
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func sprintRolloverApprovalActions(report SprintRolloverReport) []ApprovalPlannedAction {
+	actions := []ApprovalPlannedAction{}
+	for _, item := range report.Items {
+		if item.Action != "would-apply" {
+			continue
+		}
+		detail := item.FromMilestone + " -> " + item.TargetMilestone
+		if strings.TrimSpace(item.CandidateReason) != "" {
+			detail = appendApprovalDetail(detail, "reason="+item.CandidateReason)
+		}
+		actions = append(actions, ApprovalPlannedAction{
+			Action: "issue:rollover-milestone",
+			Target: fmt.Sprintf("#%d", item.IssueNumber),
+			Detail: detail,
+		})
+	}
+	return actions
+}
+
+func sprintRolloverApprovalBlockers(report SprintRolloverReport) []string {
+	blockers := []string{}
+	if report.Mode == "dry-run" && len(sprintRolloverApprovalActions(report)) == 0 {
+		blockers = appendUniqueStrings(blockers, "sprint_rollover_no_planned_actions")
+	}
+	for _, item := range report.Items {
+		if item.Action == "skipped" && item.SkipReason == "no target open milestone" {
+			blockers = appendUniqueStrings(blockers, "sprint_rollover_no_target_milestone")
+		}
+		if item.Action == "skipped" && strings.HasPrefix(item.SkipReason, "apply failed:") {
+			blockers = appendUniqueStrings(blockers, "sprint_rollover_apply_failed")
+		}
+	}
+	return stableStringSlice(blockers)
+}

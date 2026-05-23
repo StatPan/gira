@@ -4439,14 +4439,55 @@ func TestSprintPlanStartCloseJSONLifecycle(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(cwd) })
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"sprint", "plan", "--repo", "StatPan/gira", "--iteration", "2026-W18", "--capacity", "2", "--issues", "3,1,2", "--apply", "--json"}, &stdout, &stderr)
+	code := Run([]string{"sprint", "plan", "--repo", "StatPan/gira", "--iteration", "2026-W18", "--capacity", "2", "--issues", "3,1,2", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("plan dry-run exit code=%d stderr=%s", code, stderr.String())
+	}
+	var dryPlan gira.SprintPlanReport
+	if err := json.Unmarshal(stdout.Bytes(), &dryPlan); err != nil {
+		t.Fatalf("decode sprint plan dry-run JSON: %v\n%s", err, stdout.String())
+	}
+	if dryPlan.SchemaVersion != gira.SprintPlanReportSchemaVersion || dryPlan.Approval == nil {
+		t.Fatalf("sprint plan dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if dryPlan.Approval.ApplyCommand != "gira sprint plan --repo StatPan/gira --iteration 2026-W18 --capacity 2 --issues 1,2,3 --apply" || dryPlan.Approval.OutputSchema != gira.SprintPlanReportSchemaVersion {
+		t.Fatalf("unexpected sprint plan approval evidence: %+v", dryPlan.Approval)
+	}
+	if dryPlan.Approval.Blockers == nil || dryPlan.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", dryPlan.Approval)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"sprint", "plan", "--repo", "StatPan/gira", "--iteration", "2026-W18", "--capacity", "2", "--issues", "3,1,2", "--apply", "--json"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("plan exit code=%d stderr=%s", code, stderr.String())
+	}
+	var applyPlan gira.SprintPlanReport
+	if err := json.Unmarshal(stdout.Bytes(), &applyPlan); err != nil {
+		t.Fatalf("decode sprint plan apply JSON: %v\n%s", err, stdout.String())
+	}
+	if applyPlan.SchemaVersion != gira.SprintPlanReportSchemaVersion || applyPlan.Approval != nil {
+		t.Fatalf("sprint plan apply JSON should have schema and omit approval: %+v", applyPlan)
 	}
 	for _, want := range []string{`"mode": "apply"`, `"capacity_target": 2`, `"commit_count": 3`, `"capacity_breach": true`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("sprint plan JSON missing %q:\n%s", want, stdout.String())
 		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"sprint", "start", "--repo", "StatPan/gira", "--iteration", "2026-W18", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("start dry-run exit code=%d stderr=%s", code, stderr.String())
+	}
+	var dryStart gira.SprintStartReport
+	if err := json.Unmarshal(stdout.Bytes(), &dryStart); err != nil {
+		t.Fatalf("decode sprint start dry-run JSON: %v\n%s", err, stdout.String())
+	}
+	if dryStart.SchemaVersion != gira.SprintStartReportSchemaVersion || dryStart.Approval == nil || dryStart.Approval.ApplyCommand != "gira sprint start --repo StatPan/gira --iteration 2026-W18 --apply" {
+		t.Fatalf("unexpected sprint start approval evidence: %+v", dryStart)
 	}
 
 	stdout.Reset()
@@ -4463,6 +4504,23 @@ func TestSprintPlanStartCloseJSONLifecycle(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
+	code = Run([]string{"sprint", "close", "--repo", "StatPan/gira", "--iteration", "2026-W18", "--completed", "1,3", "--spillover-disposition", "carry", "--rollover-reason", "dependency blocked", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("close dry-run exit code=%d stderr=%s", code, stderr.String())
+	}
+	var dryClose gira.SprintCloseReport
+	if err := json.Unmarshal(stdout.Bytes(), &dryClose); err != nil {
+		t.Fatalf("decode sprint close dry-run JSON: %v\n%s", err, stdout.String())
+	}
+	if dryClose.SchemaVersion != gira.SprintCloseReportSchemaVersion || dryClose.Approval == nil {
+		t.Fatalf("sprint close dry-run JSON missing schema or approval: %+v", dryClose)
+	}
+	if dryClose.Approval.ApplyCommand != "gira sprint close --repo StatPan/gira --iteration 2026-W18 --completed 1,3 --spillover-disposition carry --rollover-reason 'dependency blocked' --apply" {
+		t.Fatalf("unexpected sprint close approval command: %+v", dryClose.Approval)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
 	code = Run([]string{"sprint", "close", "--repo", "StatPan/gira", "--iteration", "2026-W18", "--completed", "1,3", "--spillover-disposition", "carry", "--rollover-reason", "dependency blocked", "--apply", "--json"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("close exit code=%d stderr=%s", code, stderr.String())
@@ -4473,6 +4531,9 @@ func TestSprintPlanStartCloseJSONLifecycle(t *testing.T) {
 	}
 	if closeReport.Mode != "apply" || fmt.Sprint(closeReport.Summary.CompletedItems) != "[1 3]" || fmt.Sprint(closeReport.Summary.SpilloverItems) != "[2]" || closeReport.Summary.SpilloverDisposition != "carry" || closeReport.Summary.RolloverReason != "dependency blocked" {
 		t.Fatalf("unexpected sprint close report: %+v", closeReport)
+	}
+	if closeReport.SchemaVersion != gira.SprintCloseReportSchemaVersion || closeReport.Approval != nil {
+		t.Fatalf("sprint close apply JSON should have schema and omit approval: %+v", closeReport)
 	}
 }
 
@@ -4502,6 +4563,50 @@ func TestSprintRolloverJSONUsesInjectedReport(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("sprint rollover JSON missing %q:\n%s", want, stdout.String())
 		}
+	}
+	var report gira.SprintRolloverReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode sprint rollover JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.SprintRolloverReportSchemaVersion || report.Approval != nil {
+		t.Fatalf("sprint rollover apply JSON should have schema and omit approval: %+v", report)
+	}
+}
+
+func TestSprintRolloverDryRunJSONUsesInjectedApproval(t *testing.T) {
+	restore := newSprintRolloverReport
+	t.Cleanup(func() { newSprintRolloverReport = restore })
+	newSprintRolloverReport = func(repo gira.RepoRef, toMilestone string, apply bool) (gira.SprintRolloverReport, error) {
+		if repo.FullName() != "StatPan/gira" || toMilestone != "W18" || apply {
+			t.Fatalf("unexpected rollover args repo=%s to=%s apply=%t", repo.FullName(), toMilestone, apply)
+		}
+		return gira.SprintRolloverReport{
+			Repo:             repo.FullName(),
+			Mode:             "dry-run",
+			TargetMilestone:  &gira.SprintRolloverTarget{Number: 2, Title: "W18"},
+			TargetResolution: "explicit --to",
+			Summary:          gira.SprintRolloverSummary{Candidates: 1, Applied: 1},
+			Items:            []gira.SprintRolloverItem{{IssueNumber: 10, IssueTitle: "Carry me", FromMilestone: "W17", CandidateReason: "source milestone due date passed", Action: "would-apply", TargetMilestone: "W18"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"sprint", "rollover", "--repo", "StatPan/gira", "--to", "W18", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("rollover exit code=%d stderr=%s", code, stderr.String())
+	}
+	var report gira.SprintRolloverReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode sprint rollover JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.SprintRolloverReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("sprint rollover dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.ApplyCommand != "gira sprint rollover --repo StatPan/gira --to W18 --apply" || report.Approval.OutputSchema != gira.SprintRolloverReportSchemaVersion {
+		t.Fatalf("unexpected sprint rollover approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
 	}
 }
 

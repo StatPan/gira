@@ -827,9 +827,11 @@ const goalHelp = `Goal-mode commands for long-running AI-assisted work.
 
 Usage:
   gira goal status [GOAL] [--repo OWNER/REPO] [--json]
+  gira goal next [GOAL] [--repo OWNER/REPO] [--json]
 
 Commands:
   status  Summarize a goal issue, child ticket graph, blockers, and next safe action
+  next    Select the next safe child ticket or explain why the goal must stop
 
 Flags:
   --repo string  Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
@@ -1385,6 +1387,10 @@ var newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHan
 
 var newGoalStatusReport = func(input gira.GoalStatusInput) (gira.GoalStatusReport, error) {
 	return gira.BuildGoalStatusReport(input, devCommandRunner)
+}
+
+var newGoalNextReport = func(input gira.GoalNextInput) (gira.GoalNextReport, error) {
+	return gira.BuildGoalNextReport(input, devCommandRunner)
 }
 
 var newJiraMirrorIssueResolver = func(repo gira.RepoRef, key string) (gira.JiraMirrorIssue, error) {
@@ -2955,6 +2961,8 @@ func runGoal(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "status":
 		return runGoalStatus(args[1:], stdout, stderr)
+	case "next":
+		return runGoalNext(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown goal command: %s\n\n", args[0])
 		_, _ = io.WriteString(stderr, goalHelp)
@@ -3021,6 +3029,68 @@ func runGoalStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatGoalStatus(report))
+	return 0
+}
+
+func runGoalNext(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalGoal, positionalOK := extractNumericPositional(args, "goal", stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("goal next", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	goal := fs.Int("goal", 0, "Goal issue number")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, goalHelp)
+		return 0
+	}
+	if positionalGoal > 0 {
+		if *goal > 0 && *goal != positionalGoal {
+			fmt.Fprint(stderr, "--goal and positional goal must refer to the same number\n\n")
+			_, _ = io.WriteString(stderr, goalHelp)
+			return 2
+		}
+		*goal = positionalGoal
+	}
+	if *goal <= 0 {
+		fmt.Fprint(stderr, "--goal or positional goal is required\n\n")
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newGoalNextReport(gira.GoalNextInput{Repo: repo, Goal: *goal})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode goal next JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatGoalNext(report))
 	return 0
 }
 

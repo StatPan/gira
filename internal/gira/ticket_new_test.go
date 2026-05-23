@@ -69,6 +69,23 @@ func TestTicketNewDryRunRendersStructuredBody(t *testing.T) {
 	if report.TicketReadiness.SchemaVersion != TicketReadinessSchemaVersion || report.TicketReadiness.Readiness != "ready" {
 		t.Fatalf("expected ticket readiness report, got %+v", report.TicketReadiness)
 	}
+	if report.SchemaVersion != TicketNewReportSchemaVersion || report.Type != "bug" || report.Priority != "p1" || report.Approval == nil {
+		t.Fatalf("expected ticket new schema/type/approval evidence: %+v", report)
+	}
+	if report.Approval.SchemaVersion != ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira ticket new" || report.Approval.OutputSchema != TicketNewReportSchemaVersion {
+		t.Fatalf("unexpected ticket new approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.PostApplyVerification != "gira ticket status <created-ticket> --repo StatPan/gira --json" {
+		t.Fatalf("unexpected ticket new approval commands: %+v", report.Approval)
+	}
+	for _, want := range []string{"gira ticket new 'Add retry' --repo StatPan/gira --body '## Goal\nRetry transient auth failures", "--type bug", "--priority p1", "--label area:backend", "--apply"} {
+		if !strings.Contains(report.Approval.ApplyCommand, want) {
+			t.Fatalf("ticket new approval command missing %q: %+v", want, report.Approval)
+		}
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil || !approvalHasAction(report.Approval.PlannedActions, "issue:create") {
+		t.Fatalf("unexpected ticket new approval plan: %+v", report.Approval)
+	}
 }
 
 func TestTicketNewApplyCreatesIssue(t *testing.T) {
@@ -83,6 +100,9 @@ func TestTicketNewApplyCreatesIssue(t *testing.T) {
 	}
 	if report.Created.Number != 224 || report.NextStep != "gira ticket start 224 --apply" {
 		t.Fatalf("unexpected report: %+v", report)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 }
 

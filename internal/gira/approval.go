@@ -343,3 +343,83 @@ func ticketSupersedeApprovalActions(report TicketSupersedeReport) []ApprovalPlan
 	}
 	return actions
 }
+
+func TicketNewApprovalEvidence(report TicketNewReport) *ApprovalEvidence {
+	applyCommand := ticketNewApprovalCommand(report, "--apply")
+	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira ticket new",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		OutputSchema:          TicketNewReportSchemaVersion,
+		PlannedActions:        ticketNewApprovalActions(report),
+		Blockers:              []string{},
+		Warnings:              ticketNewApprovalWarnings(report),
+		PostApplyVerification: "gira ticket status <created-ticket> --repo " + report.Repo + " --json",
+	}
+}
+
+func ticketNewApprovalCommand(report TicketNewReport, mode string) string {
+	args := []string{
+		"gira ticket new",
+		shellQuoteArg(report.Title),
+		"--repo", report.Repo,
+		"--body", shellQuoteArg(report.Body),
+	}
+	if strings.TrimSpace(report.Type) != "" && report.Type != "task" {
+		args = append(args, "--type", report.Type)
+	}
+	if strings.TrimSpace(report.Priority) != "" {
+		args = append(args, "--priority", report.Priority)
+	}
+	for _, label := range ticketNewApprovalExtraLabels(report) {
+		args = append(args, "--label", shellQuoteArg(label))
+	}
+	if strings.TrimSpace(report.Milestone) != "" {
+		args = append(args, "--milestone", shellQuoteArg(report.Milestone))
+	}
+	if report.Start {
+		args = append(args, "--start")
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func ticketNewApprovalActions(report TicketNewReport) []ApprovalPlannedAction {
+	actions := []ApprovalPlannedAction{
+		{Action: "issue:create", Target: report.Repo, Detail: report.Title},
+	}
+	if report.Start {
+		actions = append(actions, ApprovalPlannedAction{Action: "ticket:start", Target: "<created-ticket>", Detail: "start created ticket after issue creation"})
+	}
+	return actions
+}
+
+func ticketNewApprovalWarnings(report TicketNewReport) []string {
+	if report.TicketReadiness.Readiness == "ready" {
+		return []string{}
+	}
+	warnings := []string{}
+	for _, finding := range report.TicketReadiness.Findings {
+		if strings.TrimSpace(finding.Kind) != "" {
+			warnings = appendUniqueStrings(warnings, finding.Kind)
+		}
+	}
+	return stableStringSlice(warnings)
+}
+
+func ticketNewApprovalExtraLabels(report TicketNewReport) []string {
+	labels := []string{}
+	for _, label := range report.Labels {
+		trimmed := strings.TrimSpace(label)
+		lower := strings.ToLower(trimmed)
+		if trimmed == "" || lower == "status:ready" || strings.HasPrefix(lower, "type:") || strings.HasPrefix(lower, "priority:") {
+			continue
+		}
+		labels = append(labels, trimmed)
+	}
+	return labels
+}

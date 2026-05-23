@@ -112,7 +112,8 @@ does not support JSON yet, the adapter may store text output but must mark
 ## Shared Approval Plan
 
 Mutating dry-run JSON reports should include a common `approval` object.
-Implemented producers include `gira ticket start --dry-run --json` and
+Implemented producers include `gira ticket new --dry-run --json` and
+`gira ticket start --dry-run --json` and
 `gira ticket pr --dry-run --json` and
 `gira ticket note --dry-run --json` and
 `gira ticket finish --dry-run --json` and

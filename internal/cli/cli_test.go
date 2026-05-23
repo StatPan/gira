@@ -2320,7 +2320,7 @@ func TestTicketNewDryRunJSON(t *testing.T) {
 		if input.Type != "bug" || input.Priority != "p1" || len(input.Acceptance) != 2 || len(input.Labels) != 1 {
 			t.Fatalf("unexpected structured input: %+v", input)
 		}
-		return gira.TicketNewReport{Repo: input.Repo.FullName(), Title: input.Title, DryRun: true, Labels: []string{"type:bug", "status:ready", "priority:p1"}, Body: "## Goal\nRetry\n", NextStep: "gira ticket new --apply"}, nil
+		return gira.TicketNewReport{Repo: input.Repo.FullName(), Title: input.Title, DryRun: true, Type: input.Type, Priority: input.Priority, Labels: []string{"type:bug", "status:ready", "priority:p1", "area:backend"}, Body: "## Goal\nRetry\n", NextStep: "gira ticket new --apply"}, nil
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -2330,6 +2330,24 @@ func TestTicketNewDryRunJSON(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"title": "Add retry"`) || !strings.Contains(stdout.String(), `"type:bug"`) {
 		t.Fatalf("ticket new JSON missing expected fields:\n%s", stdout.String())
+	}
+	var report gira.TicketNewReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket new dry-run JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.TicketNewReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("ticket new dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.OutputSchema != gira.TicketNewReportSchemaVersion {
+		t.Fatalf("unexpected approval evidence: %+v", report.Approval)
+	}
+	for _, want := range []string{"gira ticket new 'Add retry'", "--body '## Goal\nRetry\n'", "--type bug", "--priority p1", "--label area:backend", "--apply"} {
+		if !strings.Contains(report.Approval.ApplyCommand, want) {
+			t.Fatalf("ticket new approval command missing %q: %+v", want, report.Approval)
+		}
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
 	}
 }
 
@@ -2408,6 +2426,30 @@ func TestTicketNewApplyStart(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "ticket #224") || !strings.Contains(stdout.String(), "gira ticket pr --dry-run") {
 		t.Fatalf("ticket new output missing created ticket:\n%s", stdout.String())
+	}
+}
+
+func TestTicketNewApplyJSONOmitsApprovalEvidence(t *testing.T) {
+	restore := newTicketNewReport
+	t.Cleanup(func() { newTicketNewReport = restore })
+	newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Title != "Add retry" || input.DryRun || !input.Start {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		return gira.TicketNewReport{Repo: input.Repo.FullName(), Title: input.Title, Start: true, Created: gira.TicketCreatedIssue{Repo: input.Repo.FullName(), Number: 224}, NextStep: "gira ticket pr --dry-run"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "new", "--repo", "StatPan/gira", "--title", "Add retry", "--apply", "--start", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.TicketNewReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket new apply JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 }
 

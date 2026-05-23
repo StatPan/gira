@@ -4053,6 +4053,9 @@ func runTicketPR(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		if *dryRun {
+			result.Approval = gira.WorkPRApprovalEvidence(result, "gira ticket pr")
+		}
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0
@@ -4479,6 +4482,9 @@ func runWorkPR(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		if *dryRun {
+			result.Approval = gira.WorkPRApprovalEvidence(result, "gira work pr")
+		}
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0

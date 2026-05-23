@@ -405,6 +405,21 @@ func TestOpenWorkPRDryRunReportsMissingLinkedPR(t *testing.T) {
 	if !containsCall(result.Blockers, "branch_push_required") || result.BranchPush != "planned" {
 		t.Fatalf("expected planned branch push blocker, got %+v", result)
 	}
+	if result.Approval == nil {
+		t.Fatalf("expected PR approval evidence: %+v", result)
+	}
+	if result.Approval.SchemaVersion != ApprovalPlanSchemaVersion || result.Approval.CanonicalCommand != "gira work pr" || result.Approval.OutputSchema != WorkPRResultSchemaVersion {
+		t.Fatalf("unexpected PR approval evidence: %+v", result.Approval)
+	}
+	if result.Approval.ApplyCommand != "gira work pr --repo StatPan/gira --issue 126 --apply" || result.Approval.DryRunCommand != "gira work pr --repo StatPan/gira --issue 126 --dry-run" {
+		t.Fatalf("unexpected PR approval commands: %+v", result.Approval)
+	}
+	if !approvalHasAction(result.Approval.PlannedActions, "branch:push") || !approvalHasAction(result.Approval.PlannedActions, "pr:create") {
+		t.Fatalf("approval missing PR planned actions: %+v", result.Approval.PlannedActions)
+	}
+	if !containsCall(result.Approval.Blockers, "branch_push_required") || result.Approval.Warnings == nil || result.Approval.PostApplyVerification != "gira ticket status 126 --repo StatPan/gira --json" {
+		t.Fatalf("unexpected PR approval verification fields: %+v", result.Approval)
+	}
 	if result.PushRemote != "origin" || result.LocalGit != "git push -u origin <validated-ticket-branch>" {
 		t.Fatalf("expected explicit local git boundary, got %+v", result)
 	}

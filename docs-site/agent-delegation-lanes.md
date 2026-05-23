@@ -74,6 +74,11 @@ The first Closure Funnel implementation does not need exact agent attribution. D
 
 Evidence sources include issue labels, assignees, PR and commit authors, branch names, linked issue references, Gira lifecycle notes, review states, check states, merge state, and escalation comments. When evidence conflicts, prefer lower confidence and explain why.
 
+For the broader product boundary and optional trace-oriented provenance
+envelope, see [Worker Boundary](/worker-boundary). Exact implementation tool
+names, model names, trace IDs, prompt IDs, and attempt IDs belong in
+telemetry/provenance metadata, not high-cardinality labels.
+
 ## Safety Boundary
 
 Delegation Quality reports should describe workflow safety by repository, workspace, milestone, lane, or time window. They should not rank individual humans or agents, infer productivity from time online, token spend, or commit counts, or turn human intervention into a failure score.

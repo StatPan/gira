@@ -2740,6 +2740,59 @@ func TestMilestonePlanJSON(t *testing.T) {
 			t.Fatalf("milestone plan JSON missing %q:\n%s", want, stdout.String())
 		}
 	}
+	var report gira.MilestoneReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode milestone plan JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.MilestoneReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("milestone plan dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira milestone plan" || report.Approval.OutputSchema != gira.MilestoneReportSchemaVersion {
+		t.Fatalf("unexpected milestone approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira milestone plan '2.0 Alpha' --repo StatPan/gira --state open --label status:ready --label area:backend --limit 5 --apply" || report.Approval.PostApplyVerification != "gira milestone status '2.0 Alpha' --repo StatPan/gira --json" {
+		t.Fatalf("unexpected milestone approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
+	}
+}
+
+func TestMilestoneNewApplyJSONOmitsApprovalEvidence(t *testing.T) {
+	restore := newMilestoneNewReport
+	t.Cleanup(func() { newMilestoneNewReport = restore })
+	newMilestoneNewReport = func(input gira.MilestoneNewInput) (gira.MilestoneReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Title != "2.0 Alpha" || !input.Apply || input.DryRun {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		return gira.MilestoneReport{
+			Command: "milestone new",
+			Repo:    input.Repo.FullName(),
+			Apply:   true,
+			Milestone: &gira.MilestoneItem{
+				Number: 1,
+				Title:  input.Title,
+				State:  "open",
+			},
+			Actions: []gira.MilestoneAction{{Action: "milestone:create", Status: "applied", Milestone: input.Title}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"milestone", "new", "2.0 Alpha", "--repo", "StatPan/gira", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.MilestoneReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode milestone new JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.MilestoneReportSchemaVersion || !report.Apply {
+		t.Fatalf("unexpected milestone apply report: %+v", report)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
+	}
 }
 
 func TestTicketListHumanOutput(t *testing.T) {

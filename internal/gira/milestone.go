@@ -46,18 +46,37 @@ type MilestonePlanInput struct {
 	Apply     bool     `json:"apply"`
 }
 
+const MilestoneReportSchemaVersion = "milestone-report/v1"
+
 type MilestoneReport struct {
-	Command    string              `json:"command"`
-	Repo       string              `json:"repo"`
-	DryRun     bool                `json:"dry_run,omitempty"`
-	Apply      bool                `json:"apply,omitempty"`
-	Milestone  *MilestoneItem      `json:"milestone,omitempty"`
-	Milestones []MilestoneItem     `json:"milestones,omitempty"`
-	Filters    MilestoneFilters    `json:"filters,omitempty"`
-	Counts     MilestoneWorkCounts `json:"counts,omitempty"`
-	Tickets    []MilestoneTicket   `json:"tickets,omitempty"`
-	Actions    []MilestoneAction   `json:"actions,omitempty"`
-	NextStep   string              `json:"next_step,omitempty"`
+	SchemaVersion string              `json:"schema_version,omitempty"`
+	Command       string              `json:"command"`
+	Repo          string              `json:"repo"`
+	DryRun        bool                `json:"dry_run,omitempty"`
+	Apply         bool                `json:"apply,omitempty"`
+	Milestone     *MilestoneItem      `json:"milestone,omitempty"`
+	Milestones    []MilestoneItem     `json:"milestones,omitempty"`
+	Filters       MilestoneFilters    `json:"filters,omitempty"`
+	Counts        MilestoneWorkCounts `json:"counts,omitempty"`
+	Tickets       []MilestoneTicket   `json:"tickets,omitempty"`
+	Actions       []MilestoneAction   `json:"actions,omitempty"`
+	NextStep      string              `json:"next_step,omitempty"`
+	Approval      *ApprovalEvidence   `json:"approval,omitempty"`
+}
+
+func EnsureMilestoneReportSchema(report *MilestoneReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = MilestoneReportSchemaVersion
+	}
+}
+
+func MilestoneReportSupportsApproval(report MilestoneReport) bool {
+	switch report.Command {
+	case "milestone new", "milestone assign", "milestone plan":
+		return true
+	default:
+		return false
+	}
 }
 
 type MilestoneFilters struct {
@@ -126,7 +145,7 @@ func BuildMilestoneNewReport(input MilestoneNewInput, runner CommandRunner) (Mil
 		return MilestoneReport{}, fmt.Errorf("milestone title is required")
 	}
 	dueOn := normalizeMilestoneDueOn(input.DueOn)
-	report := MilestoneReport{Command: "milestone new", Repo: input.Repo.FullName(), DryRun: input.DryRun, Apply: input.Apply}
+	report := MilestoneReport{SchemaVersion: MilestoneReportSchemaVersion, Command: "milestone new", Repo: input.Repo.FullName(), DryRun: input.DryRun, Apply: input.Apply}
 	existing, err := fetchMilestonesForRepo(input.Repo, runner)
 	if err != nil {
 		return report, err
@@ -136,6 +155,9 @@ func BuildMilestoneNewReport(input MilestoneNewInput, runner CommandRunner) (Mil
 		report.Milestone = &item
 		report.Actions = []MilestoneAction{{Action: "milestone:create", Status: "skipped", Milestone: title, Reason: "milestone already exists"}}
 		report.NextStep = fmt.Sprintf("gira milestone status %s --repo %s", QuoteShellArg(title), QuoteShellArg(input.Repo.FullName()))
+		if input.DryRun {
+			report.Approval = MilestoneApprovalEvidence(report)
+		}
 		return report, nil
 	}
 	item := MilestoneItem{Title: title, State: "open", Description: strings.TrimSpace(input.Description)}
@@ -155,6 +177,7 @@ func BuildMilestoneNewReport(input MilestoneNewInput, runner CommandRunner) (Mil
 	report.Actions = []MilestoneAction{action}
 	if input.DryRun {
 		report.NextStep = fmt.Sprintf("gira milestone new %s --repo %s --apply", QuoteShellArg(title), QuoteShellArg(input.Repo.FullName()))
+		report.Approval = MilestoneApprovalEvidence(report)
 	} else {
 		report.NextStep = fmt.Sprintf("gira milestone status %s --repo %s", QuoteShellArg(title), QuoteShellArg(input.Repo.FullName()))
 	}
@@ -185,12 +208,13 @@ func BuildMilestoneListReport(options MilestoneListOptions, runner CommandRunner
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Number < items[j].Number })
 	return MilestoneReport{
-		Command:    "milestone list",
-		Repo:       options.Repo.FullName(),
-		Milestones: items,
-		Filters:    MilestoneFilters{State: state},
-		Counts:     MilestoneWorkCounts{Milestones: len(items)},
-		NextStep:   "gira milestone status MILESTONE",
+		SchemaVersion: MilestoneReportSchemaVersion,
+		Command:       "milestone list",
+		Repo:          options.Repo.FullName(),
+		Milestones:    items,
+		Filters:       MilestoneFilters{State: state},
+		Counts:        MilestoneWorkCounts{Milestones: len(items)},
+		NextStep:      "gira milestone status MILESTONE",
 	}, nil
 }
 
@@ -216,7 +240,7 @@ func BuildMilestoneStatusReport(options MilestoneStatusOptions, runner CommandRu
 		return MilestoneReport{}, err
 	}
 	item := milestoneItem(milestone)
-	report := MilestoneReport{Command: "milestone status", Repo: options.Repo.FullName(), Milestone: &item, Filters: MilestoneFilters{Milestone: milestone.Title}}
+	report := MilestoneReport{SchemaVersion: MilestoneReportSchemaVersion, Command: "milestone status", Repo: options.Repo.FullName(), Milestone: &item, Filters: MilestoneFilters{Milestone: milestone.Title}}
 	for _, issue := range issues {
 		if issue.Milestone == nil || *issue.Milestone != milestone.Title {
 			continue
@@ -272,15 +296,20 @@ func BuildMilestonePlanReport(input MilestonePlanInput, runner CommandRunner) (M
 			return MilestoneReport{}, err
 		}
 		item := milestoneItem(milestone)
-		return MilestoneReport{
-			Command:   "milestone plan",
-			Repo:      input.Repo.FullName(),
-			DryRun:    input.DryRun,
-			Apply:     input.Apply,
-			Milestone: &item,
-			Filters:   MilestoneFilters{Milestone: milestone.Title, State: state, Labels: labels, Limit: limit},
-			NextStep:  "no matching tickets found",
-		}, nil
+		report := MilestoneReport{
+			SchemaVersion: MilestoneReportSchemaVersion,
+			Command:       "milestone plan",
+			Repo:          input.Repo.FullName(),
+			DryRun:        input.DryRun,
+			Apply:         input.Apply,
+			Milestone:     &item,
+			Filters:       MilestoneFilters{Milestone: milestone.Title, State: state, Labels: labels, Limit: limit},
+			NextStep:      "no matching tickets found",
+		}
+		if input.DryRun {
+			report.Approval = MilestoneApprovalEvidence(report)
+		}
+		return report, nil
 	}
 	report, err := buildMilestoneAssignment(input.Repo, input.Milestone, tickets, input.DryRun, input.Apply, runner, "milestone plan")
 	if err != nil {
@@ -296,6 +325,7 @@ func BuildMilestonePlanReport(input MilestonePlanInput, runner CommandRunner) (M
 		}
 		next += fmt.Sprintf(" --limit %d --apply", limit)
 		report.NextStep = next
+		report.Approval = MilestoneApprovalEvidence(report)
 	}
 	return report, nil
 }
@@ -323,7 +353,7 @@ func buildMilestoneAssignment(repo RepoRef, title string, tickets []int, dryRun 
 		return MilestoneReport{}, err
 	}
 	item := milestoneItem(milestone)
-	report := MilestoneReport{Command: command, Repo: repo.FullName(), DryRun: dryRun, Apply: apply, Milestone: &item, Filters: MilestoneFilters{Milestone: milestone.Title}}
+	report := MilestoneReport{SchemaVersion: MilestoneReportSchemaVersion, Command: command, Repo: repo.FullName(), DryRun: dryRun, Apply: apply, Milestone: &item, Filters: MilestoneFilters{Milestone: milestone.Title}}
 	seen := map[int]struct{}{}
 	for _, ticket := range tickets {
 		if ticket <= 0 {
@@ -348,6 +378,7 @@ func buildMilestoneAssignment(repo RepoRef, title string, tickets []int, dryRun 
 	report.Counts.Tickets = len(report.Actions)
 	if dryRun {
 		report.NextStep = fmt.Sprintf("gira %s %s --repo %s --tickets %s --apply", command, QuoteShellArg(milestone.Title), QuoteShellArg(repo.FullName()), joinIssueNumbers(tickets))
+		report.Approval = MilestoneApprovalEvidence(report)
 	} else {
 		report.NextStep = fmt.Sprintf("gira milestone status %s --repo %s", QuoteShellArg(milestone.Title), QuoteShellArg(repo.FullName()))
 	}

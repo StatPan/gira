@@ -7748,6 +7748,10 @@ func splitLeadingMilestoneTitle(args []string) (string, []string) {
 func writeMilestoneReport(report gira.MilestoneReport, err error, jsonOutput bool, stdout io.Writer, stderr io.Writer) int {
 	if err != nil {
 		if jsonOutput {
+			gira.EnsureMilestoneReportSchema(&report)
+			if report.DryRun && strings.TrimSpace(report.Repo) != "" && gira.MilestoneReportSupportsApproval(report) {
+				report.Approval = gira.MilestoneApprovalEvidence(report)
+			}
 			out, _ := json.MarshalIndent(report, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
@@ -7755,6 +7759,10 @@ func writeMilestoneReport(report gira.MilestoneReport, err error, jsonOutput boo
 		return 1
 	}
 	if jsonOutput {
+		gira.EnsureMilestoneReportSchema(&report)
+		if report.DryRun && gira.MilestoneReportSupportsApproval(report) {
+			report.Approval = gira.MilestoneApprovalEvidence(report)
+		}
 		out, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			fmt.Fprintf(stderr, "encode milestone JSON: %v\n", err)

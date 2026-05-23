@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const WorkFinishResultSchemaVersion = "work-finish-result/v1"
+
 type WorkFinishAction struct {
 	Action string `json:"action"`
 	Status string `json:"status"`
@@ -133,11 +135,13 @@ type WorkFinishJiraTransition struct {
 }
 
 type WorkFinishResult struct {
+	SchemaVersion    string                    `json:"schema_version,omitempty"`
 	Repo             string                    `json:"repo"`
 	Issue            int                       `json:"issue"`
 	JiraKey          string                    `json:"jira_key,omitempty"`
 	DryRun           bool                      `json:"dry_run"`
 	Wait             string                    `json:"wait"`
+	SyncLocal        bool                      `json:"sync_local,omitempty"`
 	PRLookupAttempts int                       `json:"pr_lookup_attempts,omitempty"`
 	PRNumber         int                       `json:"pr_number,omitempty"`
 	PRURL            string                    `json:"pr_url,omitempty"`
@@ -152,6 +156,7 @@ type WorkFinishResult struct {
 	Readiness        WorkFinishReadinessReport `json:"readiness"`
 	Receipt          WorkFinishReceipt         `json:"receipt"`
 	NextStep         string                    `json:"next_step"`
+	Approval         *ApprovalEvidence         `json:"approval,omitempty"`
 }
 
 type WorkFinishOptions struct {
@@ -161,6 +166,12 @@ type WorkFinishOptions struct {
 var finishMissingPRRetryAttempts = 3
 var finishMissingPRRetryDelay = time.Second
 var finishReceiptNow = func() time.Time { return time.Now().UTC() }
+
+func EnsureWorkFinishResultSchema(result *WorkFinishResult) {
+	if result != nil && strings.TrimSpace(result.SchemaVersion) == "" {
+		result.SchemaVersion = WorkFinishResultSchemaVersion
+	}
+}
 
 func FinishWork(repo RepoRef, issueNumber int, dryRun bool, wait time.Duration, runner CommandRunner) (WorkFinishResult, error) {
 	return FinishWorkWithOptions(repo, issueNumber, dryRun, wait, WorkFinishOptions{}, runner)
@@ -174,13 +185,15 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		return WorkFinishResult{}, fmt.Errorf("ticket must be > 0")
 	}
 	result := WorkFinishResult{
-		Repo:     repo.FullName(),
-		Issue:    issueNumber,
-		DryRun:   dryRun,
-		Wait:     wait.String(),
-		Actions:  []WorkFinishAction{},
-		Blockers: []string{},
-		NextStep: fmt.Sprintf("gira ticket status --repo %s --ticket %d", repo.FullName(), issueNumber),
+		SchemaVersion: WorkFinishResultSchemaVersion,
+		Repo:          repo.FullName(),
+		Issue:         issueNumber,
+		DryRun:        dryRun,
+		Wait:          wait.String(),
+		SyncLocal:     options.SyncLocal,
+		Actions:       []WorkFinishAction{},
+		Blockers:      []string{},
+		NextStep:      fmt.Sprintf("gira ticket status --repo %s --ticket %d", repo.FullName(), issueNumber),
 	}
 
 	var status DevPRStatusResult
@@ -571,6 +584,10 @@ func finishWithStatus(repo RepoRef, issueNumber int, runner CommandRunner, resul
 		}
 	}
 	result.Actions = append(result.Actions, WorkFinishAction{Action: "projects:sync", Status: "planned", Detail: "gira projects sync --dry-run"})
+	EnsureWorkFinishResultSchema(&result)
+	if result.DryRun {
+		result.Approval = WorkFinishApprovalEvidence(result)
+	}
 	return result, err
 }
 

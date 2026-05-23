@@ -95,7 +95,7 @@ func WorkPRApprovalEvidence(result WorkPRResult, canonicalCommand string) *Appro
 		Issue:                 result.Issue,
 		OutputSchema:          WorkPRResultSchemaVersion,
 		PlannedActions:        workPRApprovalActions(result),
-		Blockers:              append([]string(nil), result.Blockers...),
+		Blockers:              stableStringSlice(result.Blockers),
 		Warnings:              []string{},
 		PostApplyVerification: fmt.Sprintf("gira ticket status %d --repo %s --json", result.Issue, result.Repo),
 	}
@@ -189,4 +189,83 @@ func shellQuoteArg(value string) string {
 		return value
 	}
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func WorkFinishApprovalEvidence(result WorkFinishResult) *ApprovalEvidence {
+	applyCommand := workFinishApprovalCommand(result, "--apply")
+	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira ticket finish",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  result.Repo,
+		Issue:                 result.Issue,
+		OutputSchema:          WorkFinishResultSchemaVersion,
+		PlannedActions:        workFinishApprovalActions(result),
+		Blockers:              stableStringSlice(result.Blockers),
+		Warnings:              workFinishApprovalWarnings(result),
+		PostApplyVerification: fmt.Sprintf("gira ticket status %d --repo %s --json", result.Issue, result.Repo),
+	}
+}
+
+func workFinishApprovalCommand(result WorkFinishResult, mode string) string {
+	args := []string{
+		"gira ticket finish",
+		fmt.Sprintf("%d", result.Issue),
+		"--repo", result.Repo,
+	}
+	if strings.TrimSpace(result.Wait) != "" && result.Wait != "0s" {
+		args = append(args, "--wait", result.Wait)
+	}
+	if result.SyncLocal {
+		args = append(args, "--sync-local")
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func workFinishApprovalActions(result WorkFinishResult) []ApprovalPlannedAction {
+	actions := make([]ApprovalPlannedAction, 0, len(result.Actions))
+	for _, action := range result.Actions {
+		if strings.TrimSpace(action.Action) == "" {
+			continue
+		}
+		target := ""
+		switch {
+		case strings.HasPrefix(action.Action, "pr:") && result.PRNumber > 0:
+			target = fmt.Sprintf("#%d", result.PRNumber)
+		case strings.HasPrefix(action.Action, "ticket:") || strings.HasPrefix(action.Action, "finish:"):
+			target = fmt.Sprintf("#%d", result.Issue)
+		case strings.HasPrefix(action.Action, "jira:") && result.JiraKey != "":
+			target = result.JiraKey
+		case strings.HasPrefix(action.Action, "local:") && result.LocalSync.TargetBranch != "":
+			target = result.LocalSync.TargetBranch
+		}
+		detail := strings.TrimSpace(action.Detail)
+		if action.Status != "" {
+			if detail == "" {
+				detail = action.Status
+			} else {
+				detail = action.Status + ": " + detail
+			}
+		}
+		actions = append(actions, ApprovalPlannedAction{Action: action.Action, Target: target, Detail: detail})
+	}
+	return actions
+}
+
+func workFinishApprovalWarnings(result WorkFinishResult) []string {
+	warnings := []string{}
+	warnings = appendUniqueStrings(warnings, result.Readiness.Warnings...)
+	warnings = appendUniqueStrings(warnings, result.Receipt.Warnings...)
+	return warnings
+}
+
+func stableStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), values...)
 }

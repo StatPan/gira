@@ -335,6 +335,21 @@ func TestFinishWorkDryRunReadySuggestsFinishApply(t *testing.T) {
 	if result.Receipt.SchemaVersion != "finish-receipt/v1" || !strings.Contains(result.Receipt.RenderedBody, "## Finish Receipt") || !finishActionStatus(result.Actions, "finish:receipt", "planned") {
 		t.Fatalf("expected dry-run finish receipt preview and planned action: receipt=%+v actions=%+v", result.Receipt, result.Actions)
 	}
+	if result.SchemaVersion != WorkFinishResultSchemaVersion || result.Approval == nil {
+		t.Fatalf("expected finish schema and approval evidence: %+v", result)
+	}
+	if result.Approval.SchemaVersion != ApprovalPlanSchemaVersion || result.Approval.CanonicalCommand != "gira ticket finish" || result.Approval.OutputSchema != WorkFinishResultSchemaVersion {
+		t.Fatalf("unexpected finish approval evidence: %+v", result.Approval)
+	}
+	if result.Approval.ApplyCommand != "gira ticket finish 219 --repo StatPan/gira --apply" || result.Approval.PostApplyVerification != "gira ticket status 219 --repo StatPan/gira --json" {
+		t.Fatalf("unexpected finish approval commands: %+v", result.Approval)
+	}
+	if !approvalHasAction(result.Approval.PlannedActions, "pr:merge") || !approvalHasAction(result.Approval.PlannedActions, "finish:receipt") {
+		t.Fatalf("finish approval missing planned actions: %+v", result.Approval.PlannedActions)
+	}
+	if result.Approval.Blockers == nil || result.Approval.Warnings == nil {
+		t.Fatalf("finish approval blockers and warnings must be stable arrays: %+v", result.Approval)
+	}
 }
 
 func TestFinishWorkApplyReviewRequiredBlocksMerge(t *testing.T) {

@@ -4337,9 +4337,16 @@ func runTicketFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 	result, err := newWorkFinishResult(repo, ticketNumber, *dryRun, *wait, gira.WorkFinishOptions{SyncLocal: *syncLocal})
+	if result.Wait == "" {
+		result.Wait = wait.String()
+	}
+	if *syncLocal {
+		result.SyncLocal = true
+	}
 	result = normalizeTicketFinishResult(result)
 	if err != nil {
 		if *jsonOutput {
+			gira.EnsureWorkFinishResultSchema(&result)
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
@@ -4347,6 +4354,10 @@ func runTicketFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		gira.EnsureWorkFinishResultSchema(&result)
+		if *dryRun {
+			result.Approval = gira.WorkFinishApprovalEvidence(result)
+		}
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0

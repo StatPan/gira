@@ -43,7 +43,7 @@ func WorkStartApprovalEvidence(result WorkStartResult, canonicalCommand string) 
 		ApplyCommand:          applyCommand,
 		Repo:                  result.Repo,
 		Issue:                 result.Issue,
-		OutputSchema:          "work-start-result/v1",
+		OutputSchema:          WorkStartResultSchemaVersion,
 		PlannedActions:        workStartApprovalActions(result),
 		Blockers:              []string{},
 		Warnings:              []string{},

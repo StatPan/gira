@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
+const WorkStartResultSchemaVersion = "work-start-result/v1"
+
 type WorkStartResult struct {
+	SchemaVersion string            `json:"schema_version"`
 	Repo          string            `json:"repo"`
 	Issue         int               `json:"issue"`
 	JiraKey       string            `json:"jira_key,omitempty"`
@@ -26,6 +29,12 @@ type WorkStartResult struct {
 	NextStep      string            `json:"next_step,omitempty"`
 	Checks        map[string]bool   `json:"checks"`
 	Approval      *ApprovalEvidence `json:"approval,omitempty"`
+}
+
+func EnsureWorkStartResultSchema(result *WorkStartResult) {
+	if result != nil && strings.TrimSpace(result.SchemaVersion) == "" {
+		result.SchemaVersion = WorkStartResultSchemaVersion
+	}
 }
 
 type WorkStartOptions struct {
@@ -271,15 +280,16 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 	if !alreadyStarted && (!strings.EqualFold(issue.State, "open") || !hasReadyLabel(issue.Labels)) {
 		start, err := StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: DefaultDevBranchPattern, DryRun: options.DryRun}, runner)
 		result := WorkStartResult{
-			Repo:       repo.FullName(),
-			Issue:      issueNumber,
-			Title:      start.Title,
-			Branch:     start.Branch,
-			DryRun:     options.DryRun,
-			Status:     status,
-			NextStatus: "In progress",
-			NextStep:   workStartNextStep(repo.FullName(), issueNumber, issue.State, status, options.DryRun),
-			Checks:     start.Checked,
+			SchemaVersion: WorkStartResultSchemaVersion,
+			Repo:          repo.FullName(),
+			Issue:         issueNumber,
+			Title:         start.Title,
+			Branch:        start.Branch,
+			DryRun:        options.DryRun,
+			Status:        status,
+			NextStatus:    "In progress",
+			NextStep:      workStartNextStep(repo.FullName(), issueNumber, issue.State, status, options.DryRun),
+			Checks:        start.Checked,
 		}
 		return result, err
 	}
@@ -290,6 +300,7 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 	}
 	start, err := StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: DefaultDevBranchPattern, Base: base.BaseBranch, DryRun: options.DryRun, Force: alreadyStarted, RequireCleanWorktree: true}, runner)
 	result := WorkStartResult{
+		SchemaVersion: WorkStartResultSchemaVersion,
 		Repo:          repo.FullName(),
 		Issue:         issueNumber,
 		Title:         start.Title,

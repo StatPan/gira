@@ -113,6 +113,9 @@ does not support JSON yet, the adapter may store text output but must mark
 
 Mutating dry-run JSON reports should include a common `approval` object. The
 first implemented producer is `gira ticket start --dry-run --json`.
+The surrounding ticket/work start report emits
+`schema_version: work-start-result/v1`, and `approval.output_schema` references
+that same version.
 
 `approval.schema_version` is `gira-approval-plan/v1`.
 
@@ -227,7 +230,6 @@ before broad adapter use:
 | Not every mutating dry-run emits the shared approval evidence envelope yet. | `agent-kernel` can use `gira-approval-plan/v1` for `ticket start`, but must still normalize other dry-run reports command by command. | Extend the shared `approval` object to ticket pr/note/finish/supersede and config/workspace mutation dry-runs. |
 | Some command families remain text-first or partially JSON-covered. | Automation confidence drops and adapters need fragile parsing. | Add JSON contracts or mark those commands unsupported for adapters. |
 | No explicit post-apply verification link in every apply report. | Adapters need command-specific knowledge to know which read command proves completion. | Add `post_apply_verification` fields to apply reports. |
-| `ticket start --dry-run` has no `schema_version`. | Durable parsers cannot version the start plan cleanly. | Add `ticket-start/v1` or a broader lifecycle dry-run schema. |
 
 ## Follow-Up Issue Candidates
 

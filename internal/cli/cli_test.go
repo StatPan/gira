@@ -2190,6 +2190,9 @@ func TestTicketStartDryRunJSON(t *testing.T) {
 	if report.Approval == nil {
 		t.Fatalf("ticket start dry-run JSON missing approval evidence:\n%s", stdout.String())
 	}
+	if report.SchemaVersion != gira.WorkStartResultSchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", report.SchemaVersion, gira.WorkStartResultSchemaVersion)
+	}
 	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira ticket start" {
 		t.Fatalf("unexpected approval evidence: %+v", report.Approval)
 	}
@@ -2221,6 +2224,33 @@ func TestTicketStartDryRunJSONPreservesApplyTicketNumber(t *testing.T) {
 	want := `"next_step": "gira ticket start 33 --apply"`
 	if !strings.Contains(stdout.String(), want) {
 		t.Fatalf("ticket start dry-run JSON missing apply next step:\n%s", stdout.String())
+	}
+}
+
+func TestTicketStartApplyJSONIncludesSchemaVersion(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 || dryRun {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t", repo.FullName(), issue, dryRun)
+		}
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-126-work-command", DryRun: false, NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "--repo", "StatPan/gira", "--ticket", "126", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkStartResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket start apply JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.WorkStartResultSchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", report.SchemaVersion, gira.WorkStartResultSchemaVersion)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 }
 
@@ -2893,6 +2923,40 @@ func TestWorkStartDryRunJSON(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "next step:") {
 		t.Fatalf("JSON stdout contains human prose:\n%s", stdout.String())
+	}
+	var report gira.WorkStartResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode work start JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.WorkStartResultSchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", report.SchemaVersion, gira.WorkStartResultSchemaVersion)
+	}
+}
+
+func TestWorkStartApplyJSONIncludesSchemaVersion(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 || dryRun {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t", repo.FullName(), issue, dryRun)
+		}
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-126-work-command", DryRun: false, NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"work", "start", "--repo", "StatPan/gira", "--issue", "126", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkStartResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode work start apply JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.WorkStartResultSchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", report.SchemaVersion, gira.WorkStartResultSchemaVersion)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 }
 

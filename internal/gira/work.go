@@ -82,6 +82,7 @@ type WorkStatusResult struct {
 	Acceptance       *TicketStatusAcceptance   `json:"acceptance_criteria,omitempty"`
 	Telemetry        *TicketStatusTelemetry    `json:"telemetry,omitempty"`
 	TicketReadiness  *TicketReadinessReport    `json:"ticket_readiness,omitempty"`
+	PRReadiness      *PRReadinessReport        `json:"pr_readiness,omitempty"`
 	Warnings         []string                  `json:"warnings,omitempty"`
 }
 
@@ -510,6 +511,8 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 		Warnings:         ticketStatusWarnings(issue, prStatus),
 	}
 	result.NextStep = workStatusNextStep(result)
+	prReadiness := EvaluatePRReadinessFromStatus(result)
+	result.PRReadiness = &prReadiness
 	return result
 }
 
@@ -969,6 +972,9 @@ func FormatWorkStatus(result WorkStatusResult) string {
 	)
 	if result.TicketReadiness != nil {
 		b.WriteString(formatTicketReadinessHuman(*result.TicketReadiness))
+	}
+	if result.PRReadiness != nil {
+		b.WriteString(formatPRReadinessHuman(*result.PRReadiness))
 	}
 	fmt.Fprintf(&b, "next step: %s\n", workStatusNextStep(result))
 	return b.String()

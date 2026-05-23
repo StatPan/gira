@@ -36,6 +36,7 @@ type AgentPromptReport struct {
 	PR       *AgentPromptPR         `json:"pr,omitempty"`
 	Evidence *AgentPromptEvidence   `json:"evidence,omitempty"`
 	Packet   *AgentPromptRolePacket `json:"packet,omitempty"`
+	PRReady  *PRReadinessReport     `json:"pr_readiness,omitempty"`
 	Review   *AgentReviewContract   `json:"review,omitempty"`
 	Prompt   string                 `json:"prompt"`
 	NextStep string                 `json:"next_step"`
@@ -174,6 +175,8 @@ func BuildAgentPromptReport(input AgentPromptInput, runner CommandRunner) (Agent
 			report.PR = pr
 			report.Evidence = agentPromptEvidence(pr)
 		}
+		prReady := EvaluatePRReadinessFromAgentReview(report)
+		report.PRReady = &prReady
 		report.Review = buildAgentReviewContract(report)
 	}
 	report.Prompt = RenderAgentPrompt(report)
@@ -307,6 +310,20 @@ func RenderAgentPrompt(report AgentPromptReport) string {
 		}
 		if strings.TrimSpace(report.PR.Body) != "" {
 			fmt.Fprintf(&b, "\n### PR Body\n%s\n", fencedOrNone(report.PR.Body))
+		}
+		b.WriteString("\n")
+	}
+
+	if report.PRReady != nil {
+		b.WriteString("## PR Readiness\n")
+		fmt.Fprintf(&b, "- Schema: `%s`\n", report.PRReady.SchemaVersion)
+		fmt.Fprintf(&b, "- Readiness: `%s`\n", report.PRReady.Readiness)
+		fmt.Fprintf(&b, "- Next Action: `%s`\n", report.PRReady.NextAction)
+		if len(report.PRReady.Findings) > 0 {
+			b.WriteString("- Findings:\n")
+			for _, finding := range report.PRReady.Findings {
+				fmt.Fprintf(&b, "  - %s/%s: %s\n", finding.Severity, finding.Kind, finding.Message)
+			}
 		}
 		b.WriteString("\n")
 	}

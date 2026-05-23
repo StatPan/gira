@@ -74,6 +74,9 @@ func TestBuildAgentPromptReportReviewerWithExplicitPR(t *testing.T) {
 	if report.PR.FinishReady || !containsString(report.PR.Blockers, "review") {
 		t.Fatalf("expected review blocker and not finish ready: %+v", report.PR)
 	}
+	if report.PRReady == nil || report.PRReady.SchemaVersion != PRReadinessSchemaVersion || report.PRReady.Readiness != "needs_revision" || !prReadinessHasFinding(*report.PRReady, "review_blocked") {
+		t.Fatalf("unexpected PR readiness: %+v", report.PRReady)
+	}
 	for _, want := range []string{
 		"do not modify files, commit, push, or resolve comments",
 		"Inspect the actual diff",
@@ -93,6 +96,7 @@ func TestBuildAgentPromptReportReviewerWithExplicitPR(t *testing.T) {
 		"Changed Files:",
 		"internal/gira/agent_prompt.go",
 		"Closes #436",
+		"PR Readiness",
 		"Findings first",
 	} {
 		if !strings.Contains(report.Prompt, want) {
@@ -103,7 +107,7 @@ func TestBuildAgentPromptReportReviewerWithExplicitPR(t *testing.T) {
 
 func TestBuildAgentPromptReportReviewerResolvesLinkedPRAndAcceptance(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	body := "## Goal\nRender prompts\n\n## Scope\nPrompt UX\n\n## Acceptance Criteria\n- includes issue goal\n- includes PR evidence\n\n" + RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default"})
+	body := "## Goal\nRender prompts\n\n## Scope\nPrompt UX\n\n## Acceptance Criteria\n- [x] includes issue goal\n- [x] includes PR evidence\n\n" + RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default"})
 	runner := onboardFakeRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/436": `{"number":436,"title":"Add prompts","state":"open","body":` + strconv.Quote(body) + `,"labels":[{"name":"type:story"},{"name":"status:in-review"}]}`,
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 436 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[{"number":45,"title":"feat: prompts","body":"Closes #436","state":"OPEN","url":"https://github.com/StatPan/gira/pull/45","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-436-add-prompts","baseRefName":"main","statusCheckRollup":[{"name":"test","workflowName":"ci","status":"completed","conclusion":"success","detailsUrl":"https://ci.example"}]}]`,
@@ -123,6 +127,9 @@ func TestBuildAgentPromptReportReviewerResolvesLinkedPRAndAcceptance(t *testing.
 	}
 	if report.PR.RecordedBase != "main" || report.PR.RecordedBaseSource != "branch_policy.default" || report.PR.BaseMismatch {
 		t.Fatalf("unexpected branch base context: %+v", report.PR)
+	}
+	if report.PRReady == nil || report.PRReady.Readiness != "ready_for_finish" || report.PRReady.NextAction != "finish_ticket" {
+		t.Fatalf("unexpected PR readiness: %+v", report.PRReady)
 	}
 	if report.Evidence == nil || !report.Evidence.FinishReady || len(report.Evidence.ClosingIssues) != 1 || report.Evidence.ClosingIssues[0] != 436 || len(report.Evidence.ChangedFiles) != 1 {
 		t.Fatalf("unexpected evidence: %+v", report.Evidence)
@@ -154,6 +161,9 @@ func TestBuildAgentPromptReportReviewerSurfacesBaseMismatch(t *testing.T) {
 	if report.Evidence == nil || !containsString(report.Evidence.Blockers, "pr_base_mismatch") {
 		t.Fatalf("expected base mismatch evidence blocker: %+v", report.Evidence)
 	}
+	if report.PRReady == nil || report.PRReady.Readiness != "needs_revision" || !prReadinessHasFinding(*report.PRReady, "base_mismatch") {
+		t.Fatalf("expected base mismatch PR readiness: %+v", report.PRReady)
+	}
 	for _, want := range []string{"Base: `develop`", "Recorded Base: `main`", "Base Matches Recorded: `false`"} {
 		if !strings.Contains(report.Prompt, want) {
 			t.Fatalf("reviewer prompt missing %q:\n%s", want, report.Prompt)
@@ -177,6 +187,9 @@ func TestBuildAgentPromptReportReviewerEmitsPacketWhenNoLinkedPR(t *testing.T) {
 	}
 	if report.Evidence == nil || !containsString(report.Evidence.Blockers, "missing_linked_pr") {
 		t.Fatalf("expected missing linked PR evidence: %+v", report.Evidence)
+	}
+	if report.PRReady == nil || report.PRReady.Readiness != "blocked" || !prReadinessHasFinding(*report.PRReady, "missing_linked_pr") {
+		t.Fatalf("expected missing linked PR readiness: %+v", report.PRReady)
 	}
 	if report.Review == nil || len(report.Review.DiffReferences) != 0 || len(report.Review.VerdictSchema.GoalFulfilled) == 0 {
 		t.Fatalf("expected review packet without PR evidence: %+v", report.Review)

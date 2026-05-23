@@ -65,6 +65,10 @@ lifecycle, safety, or evidence rules defined here.
    - Prefer `gira ticket checks TICKET --repo OWNER/REPO`.
    - Prefer `gira ticket wait TICKET --repo OWNER/REPO --timeout 5m`.
    - Investigate failed checks before requesting finish.
+   - Treat `pr-readiness/v1` from `gira ticket status --json` or
+     `gira ticket review --json` as the PR handoff gate. Revise PRs with
+     missing closing links, base mismatches, draft state, failed checks,
+     review blockers, or required telemetry gaps before finish.
    - For review handoff, use `gira ticket review` or
      `gira ticket prompt --role reviewer`; the reviewer prompt is read-only,
      points to the actual PR diff, and reminds reviewers to check repo-local

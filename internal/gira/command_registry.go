@@ -101,6 +101,23 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"goal", "plan"},
+			Summary: "Propose dry-run child ticket packets from a goal issue without mutation.",
+			Usage:   "gira goal plan [GOAL] --dry-run [--repo OWNER/REPO] [--json]",
+			Since:   "v1.17.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional."},
+				{Name: "--dry-run", Summary: "Required. Preview proposed child tickets without mutation."},
+				{Name: "--json", Summary: "Emit stable goal-plan/v1 JSON."},
+			},
+			Docs:        []string{"docs/goal-operating-model.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "ticket"},
+			Examples: []CommandExample{
+				{Summary: "Preview child ticket plan", Command: "gira goal plan 521 --repo OWNER/app --dry-run --json"},
+			},
+		},
+		{
 			Path:    []string{"goal", "next"},
 			Summary: "Select the next safe child ticket for a goal or explain why work must stop.",
 			Usage:   "gira goal next [GOAL] [--repo OWNER/REPO] [--json]",

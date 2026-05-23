@@ -99,6 +99,7 @@ This generated section contains command facts for the agent lifecycle. Update `i
 - `gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--sync-local]`: Merge the linked PR when policy allows and close the ticket loop without local checkout sync by default.
 - `gira ticket status [TICKET] [--repo OWNER/REPO] [--json]`: Report ticket status, linked PR blockers, and next action.
 - `gira goal next [GOAL] [--repo OWNER/REPO] [--json]`: Select the next safe child ticket for a goal or explain why work must stop.
+- `gira goal plan [GOAL] --dry-run [--repo OWNER/REPO] [--json]`: Propose dry-run child ticket packets from a goal issue without mutation.
 - `gira goal status [GOAL] [--repo OWNER/REPO] [--json]`: Summarize a goal issue, child ticket graph, blockers, and next safe action.
 
 <!-- gira:agent-skill:end -->

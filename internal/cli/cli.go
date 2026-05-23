@@ -826,17 +826,20 @@ Flags:
 const goalHelp = `Goal-mode commands for long-running AI-assisted work.
 
 Usage:
+  gira goal plan [GOAL] --dry-run [--repo OWNER/REPO] [--json]
   gira goal status [GOAL] [--repo OWNER/REPO] [--json]
   gira goal next [GOAL] [--repo OWNER/REPO] [--json]
 
 Commands:
+  plan    Propose dry-run child ticket packets from a goal issue
   status  Summarize a goal issue, child ticket graph, blockers, and next safe action
   next    Select the next safe child ticket or explain why the goal must stop
 
 Flags:
   --repo string  Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
   --goal int     Goal issue number. Can also be numeric positional
-  --json         Emit stable goal-status/v1 JSON
+  --dry-run      Preview proposed child tickets without mutation
+  --json         Emit stable goal JSON
   -h, --help     Show help
 `
 
@@ -1391,6 +1394,10 @@ var newGoalStatusReport = func(input gira.GoalStatusInput) (gira.GoalStatusRepor
 
 var newGoalNextReport = func(input gira.GoalNextInput) (gira.GoalNextReport, error) {
 	return gira.BuildGoalNextReport(input, devCommandRunner)
+}
+
+var newGoalPlanReport = func(input gira.GoalPlanInput) (gira.GoalPlanReport, error) {
+	return gira.BuildGoalPlanReport(input, devCommandRunner)
 }
 
 var newJiraMirrorIssueResolver = func(repo gira.RepoRef, key string) (gira.JiraMirrorIssue, error) {
@@ -2959,6 +2966,8 @@ func runGoal(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	switch args[0] {
+	case "plan":
+		return runGoalPlan(args[1:], stdout, stderr)
 	case "status":
 		return runGoalStatus(args[1:], stdout, stderr)
 	case "next":
@@ -2968,6 +2977,74 @@ func runGoal(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, goalHelp)
 		return 2
 	}
+}
+
+func runGoalPlan(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalGoal, positionalOK := extractNumericPositional(args, "goal", stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("goal plan", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	goal := fs.Int("goal", 0, "Goal issue number")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, goalHelp)
+		return 0
+	}
+	if positionalGoal > 0 {
+		if *goal > 0 && *goal != positionalGoal {
+			fmt.Fprint(stderr, "--goal and positional goal must refer to the same number\n\n")
+			_, _ = io.WriteString(stderr, goalHelp)
+			return 2
+		}
+		*goal = positionalGoal
+	}
+	if *goal <= 0 {
+		fmt.Fprint(stderr, "--goal or positional goal is required\n\n")
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	if !*dryRun {
+		fmt.Fprint(stderr, "goal plan is read-only in this release; pass --dry-run\n\n")
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newGoalPlanReport(gira.GoalPlanInput{Repo: repo, Goal: *goal, DryRun: *dryRun})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode goal plan JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatGoalPlan(report))
+	return 0
 }
 
 func runGoalStatus(args []string, stdout io.Writer, stderr io.Writer) int {

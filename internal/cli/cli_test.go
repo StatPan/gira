@@ -3491,7 +3491,7 @@ func TestTicketNoteParsesBodyAndDryRunJSON(t *testing.T) {
 		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 126 || input.Body != "Parser path works" || input.Kind != "decision" || input.Target != "both" || !input.DryRun {
 			t.Fatalf("unexpected input: %+v repo=%s", input, input.Repo.FullName())
 		}
-		return gira.TicketNoteReport{Command: "ticket note", Repo: input.Repo.FullName(), Ticket: input.Ticket, Kind: input.Kind, Target: input.Target, DryRun: true, Targets: []gira.TicketNoteSink{{Type: "issue", Number: 126, Status: "planned"}, {Type: "pr", Number: 127, Status: "planned"}}, RenderedBody: "## Decision\n\nParser path works\n", NextStep: "gira ticket note --apply"}, nil
+		return gira.TicketNoteReport{Command: "ticket note", Repo: input.Repo.FullName(), Ticket: input.Ticket, Body: input.Body, Kind: input.Kind, Target: input.Target, DryRun: true, Targets: []gira.TicketNoteSink{{Type: "issue", Number: 126, Status: "planned"}, {Type: "pr", Number: 127, Status: "planned"}}, RenderedBody: "## Decision\n\nParser path works\n", NextStep: "gira ticket note --apply"}, nil
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -3501,6 +3501,46 @@ func TestTicketNoteParsesBodyAndDryRunJSON(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"command": "ticket note"`) || !strings.Contains(stdout.String(), `"rendered_body": "## Decision`) {
 		t.Fatalf("ticket note JSON missing rendered body:\n%s", stdout.String())
+	}
+	var report gira.TicketNoteReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket note dry-run JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.TicketNoteReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("ticket note dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.OutputSchema != gira.TicketNoteReportSchemaVersion {
+		t.Fatalf("unexpected approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira ticket note 126 --repo StatPan/gira --kind decision --target both --body 'Parser path works' --apply" {
+		t.Fatalf("unexpected approval apply command: %+v", report.Approval)
+	}
+	if len(report.Approval.PlannedActions) != 2 || report.Approval.PlannedActions[0].Action != "issue:comment" || report.Approval.PlannedActions[1].Action != "pr:comment" {
+		t.Fatalf("unexpected approval planned actions: %+v", report.Approval.PlannedActions)
+	}
+}
+
+func TestTicketNoteApplyJSONOmitsApprovalEvidence(t *testing.T) {
+	restoreNote := newTicketNoteReport
+	t.Cleanup(func() { newTicketNoteReport = restoreNote })
+	newTicketNoteReport = func(input gira.TicketNoteInput) (gira.TicketNoteReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 126 || input.Body != "Applied note" || !input.Apply {
+			t.Fatalf("unexpected input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.TicketNoteReport{Command: "ticket note", Repo: input.Repo.FullName(), Ticket: input.Ticket, Body: input.Body, Kind: input.Kind, Target: input.Target, Targets: []gira.TicketNoteSink{{Type: "issue", Number: 126, Status: "applied"}}, RenderedBody: "## Progress Update\n\nApplied note\n", NextStep: "gira ticket view"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "note", "126", "Applied note", "--repo", "StatPan/gira", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.TicketNoteReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket note apply JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 }
 

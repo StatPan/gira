@@ -4126,6 +4126,7 @@ func runTicketNote(args []string, stdout io.Writer, stderr io.Writer) int {
 	result.NextStep = shortenTicketNextStep(result.NextStep, result.Repo, result.Ticket)
 	if err != nil {
 		if *jsonOutput {
+			gira.EnsureTicketNoteReportSchema(&result)
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
@@ -4133,6 +4134,10 @@ func runTicketNote(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		gira.EnsureTicketNoteReportSchema(&result)
+		if *dryRun {
+			result.Approval = gira.TicketNoteApprovalEvidence(result)
+		}
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0

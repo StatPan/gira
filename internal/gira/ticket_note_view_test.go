@@ -38,6 +38,21 @@ func TestTicketNoteDryRunRendersContextWithoutComment(t *testing.T) {
 	if !strings.Contains(report.RenderedBody, "## Progress Update") || !strings.Contains(report.RenderedBody, "- Ticket: #126") {
 		t.Fatalf("rendered body missing context:\n%s", report.RenderedBody)
 	}
+	if report.SchemaVersion != TicketNoteReportSchemaVersion || report.Body != "Implemented parser path." {
+		t.Fatalf("unexpected note schema/body: %+v", report)
+	}
+	if report.Approval == nil {
+		t.Fatalf("expected approval evidence: %+v", report)
+	}
+	if report.Approval.SchemaVersion != ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira ticket note" || report.Approval.OutputSchema != TicketNoteReportSchemaVersion {
+		t.Fatalf("unexpected approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira ticket note 126 --repo StatPan/gira --kind progress --target auto --body 'Implemented parser path.' --apply" {
+		t.Fatalf("unexpected approval command: %+v", report.Approval)
+	}
+	if len(report.Approval.PlannedActions) != 1 || report.Approval.PlannedActions[0].Action != "issue:comment" || report.Approval.PostApplyVerification != "gira ticket view 126 --repo StatPan/gira --json" {
+		t.Fatalf("unexpected approval planned actions: %+v", report.Approval)
+	}
 	for _, call := range runner.calls {
 		if strings.Contains(call, "comment") {
 			t.Fatalf("dry-run should not comment, calls=%v", runner.calls)
@@ -59,5 +74,8 @@ func TestTicketNoteApplyPostsToLinkedPR(t *testing.T) {
 	}
 	if len(report.Targets) != 1 || report.Targets[0].Type != "pr" || report.Targets[0].Status != "applied" {
 		t.Fatalf("unexpected targets: %+v", report.Targets)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 }

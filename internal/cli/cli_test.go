@@ -149,8 +149,14 @@ func TestSetupGlobalCommandJSON(t *testing.T) {
 			Path:       input.Path,
 			Workspace:  gira.WorkspaceSummary{Name: input.WorkspaceName, Owner: "StatPan"},
 			InboxRepo:  "StatPan/gira",
-			DryRun:     true,
-			Status:     "planned",
+			GlobalWorkspace: gira.GlobalWorkspaceRegistryEntry{Workspace: gira.WorkspaceConfig{
+				Name:      input.WorkspaceName,
+				Owner:     "StatPan",
+				InboxRepo: "StatPan/gira",
+				Project:   gira.ProjectConfig{Owner: "StatPan", Title: input.WorkspaceName},
+			}},
+			DryRun: true,
+			Status: "planned",
 			Files: []gira.SetupGlobalFilePlan{
 				{Path: "/tmp/gira/config.yaml", Action: "create"},
 			},
@@ -168,6 +174,58 @@ func TestSetupGlobalCommandJSON(t *testing.T) {
 	}
 	if report.Status != "planned" || report.Mode != "global-only" || len(report.Files) != 1 {
 		t.Fatalf("unexpected setup global report: %+v", report)
+	}
+	if report.SchemaVersion != gira.SetupGlobalReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("setup global dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira setup global" || report.Approval.OutputSchema != gira.SetupGlobalReportSchemaVersion {
+		t.Fatalf("unexpected setup global approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira setup global --repo StatPan/gira --path /repo --config-root /tmp/gira --workspace personal --owner StatPan --inbox-repo StatPan/gira --mode global-only --project-owner StatPan --project-title personal --apply" || report.Approval.PostApplyVerification != "gira config doctor --repo StatPan/gira --config-root /tmp/gira --json" {
+		t.Fatalf("unexpected setup global approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
+	}
+}
+
+func TestSetupGlobalApplyJSONOmitsApprovalEvidence(t *testing.T) {
+	original := newSetupGlobalReport
+	t.Cleanup(func() { newSetupGlobalReport = original })
+	newSetupGlobalReport = func(input gira.SetupGlobalInput) (gira.SetupGlobalReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Path != "/repo" || input.ConfigRoot != "/tmp/gira" || input.WorkspaceName != "personal" || input.Mode != "global-only" || !input.Apply || input.DryRun {
+			t.Fatalf("unexpected setup global input: %+v", input)
+		}
+		return gira.SetupGlobalReport{
+			Command:    "setup global",
+			Mode:       input.Mode,
+			ConfigRoot: input.ConfigRoot,
+			Repo:       input.Repo.FullName(),
+			Path:       input.Path,
+			Workspace:  gira.WorkspaceSummary{Name: input.WorkspaceName, Owner: "StatPan"},
+			InboxRepo:  "StatPan/gira",
+			Applied:    true,
+			Status:     "applied",
+			Files: []gira.SetupGlobalFilePlan{
+				{Path: "/tmp/gira/config.yaml", Action: "create"},
+			},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"setup", "global", "--repo", "StatPan/gira", "--path", "/repo", "--config-root", "/tmp/gira", "--workspace", "personal", "--mode", "global-only", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.SetupGlobalReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode setup global JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.SetupGlobalReportSchemaVersion || !report.Applied {
+		t.Fatalf("unexpected setup global apply report: %+v", report)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 }
 

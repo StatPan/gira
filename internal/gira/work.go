@@ -10,6 +10,7 @@ import (
 )
 
 const WorkStartResultSchemaVersion = "work-start-result/v1"
+const WorkPRResultSchemaVersion = "work-pr-result/v1"
 
 type WorkStartResult struct {
 	SchemaVersion string            `json:"schema_version"`
@@ -61,8 +62,9 @@ type WorkPRResult struct {
 	ActualBase         string `json:"actual_base,omitempty"`
 	BaseMismatch       bool   `json:"base_mismatch,omitempty"`
 
-	Blockers    []string `json:"blockers"`
-	ClosingBody string   `json:"closing_body"`
+	Blockers    []string          `json:"blockers"`
+	ClosingBody string            `json:"closing_body"`
+	Approval    *ApprovalEvidence `json:"approval,omitempty"`
 }
 
 type WorkStatusResult struct {
@@ -388,6 +390,7 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 			return result, fmt.Errorf("existing PR base %q does not match recorded ticket base %q", result.ActualBase, result.RecordedBase)
 		}
 		if dryRun {
+			result.Approval = WorkPRApprovalEvidence(result, "gira work pr")
 			return result, nil
 		}
 		if err := setIssueStatus(repo, issueNumber, issue.Labels, statusLabelForDraft(actualDraft), runner); err != nil {
@@ -410,6 +413,7 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 		if push.Status == "planned" {
 			result.Blockers = appendMissingWorkBlocker(result.Blockers, "branch_push_required")
 		}
+		result.Approval = WorkPRApprovalEvidence(result, "gira work pr")
 		return result, nil
 	}
 

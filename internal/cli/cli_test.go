@@ -3070,6 +3070,13 @@ func TestWorkPRApplyDraftJSON(t *testing.T) {
 	if !strings.Contains(stdout.String(), `"draft": true`) {
 		t.Fatalf("stdout missing draft JSON:\n%s", stdout.String())
 	}
+	var report gira.WorkPRResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode work PR apply JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
+	}
 }
 
 func TestTicketPRApplyDraftJSON(t *testing.T) {
@@ -3089,6 +3096,43 @@ func TestTicketPRApplyDraftJSON(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"draft": true`) {
 		t.Fatalf("stdout missing draft JSON:\n%s", stdout.String())
+	}
+	var report gira.WorkPRResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket PR apply JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
+	}
+}
+
+func TestTicketPRDryRunJSONIncludesApprovalEvidence(t *testing.T) {
+	restore := newWorkPRResult
+	t.Cleanup(func() { newWorkPRResult = restore })
+	newWorkPRResult = func(repo gira.RepoRef, issue int, dryRun bool, draft bool) (gira.WorkPRResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 || !dryRun || draft {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t draft=%t", repo.FullName(), issue, dryRun, draft)
+		}
+		return gira.WorkPRResult{Repo: repo.FullName(), Issue: issue, DryRun: true, Branch: "issue-126-work-command", BranchPush: "planned", LocalGit: "git push -u origin <validated-ticket-branch>", Blockers: []string{"missing_linked_pr", "branch_push_required"}, ClosingBody: "Closes #126", NextStatus: "In review"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "pr", "--repo", "StatPan/gira", "--ticket", "126", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkPRResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket PR dry-run JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Approval == nil {
+		t.Fatalf("ticket PR dry-run JSON missing approval evidence:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira ticket pr" || report.Approval.OutputSchema != gira.WorkPRResultSchemaVersion {
+		t.Fatalf("unexpected approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira ticket pr 126 --repo StatPan/gira --apply" || report.Approval.PostApplyVerification != "gira ticket status 126 --repo StatPan/gira --json" {
+		t.Fatalf("unexpected approval commands: %+v", report.Approval)
 	}
 }
 
@@ -3121,6 +3165,36 @@ func TestTicketPRInfersTicketFromBranch(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"issue": 219`) {
 		t.Fatalf("stdout missing inferred issue:\n%s", stdout.String())
+	}
+}
+
+func TestWorkPRDryRunJSONIncludesApprovalEvidence(t *testing.T) {
+	restore := newWorkPRResult
+	t.Cleanup(func() { newWorkPRResult = restore })
+	newWorkPRResult = func(repo gira.RepoRef, issue int, dryRun bool, draft bool) (gira.WorkPRResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 || !dryRun || !draft {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t draft=%t", repo.FullName(), issue, dryRun, draft)
+		}
+		return gira.WorkPRResult{Repo: repo.FullName(), Issue: issue, DryRun: true, Draft: true, Branch: "issue-126-work-command", BranchPush: "planned", LocalGit: "git push -u origin <validated-ticket-branch>", Blockers: []string{"missing_linked_pr", "branch_push_required"}, ClosingBody: "Closes #126", NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"work", "pr", "--repo", "StatPan/gira", "--issue", "126", "--dry-run", "--draft", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkPRResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode work PR dry-run JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Approval == nil {
+		t.Fatalf("work PR dry-run JSON missing approval evidence:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira work pr" || report.Approval.OutputSchema != gira.WorkPRResultSchemaVersion {
+		t.Fatalf("unexpected approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira work pr --repo StatPan/gira --issue 126 --draft --apply" {
+		t.Fatalf("unexpected approval apply command: %+v", report.Approval)
 	}
 }
 

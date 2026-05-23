@@ -64,4 +64,5 @@ historical evidence, or duplicate an existing handoff receipt.
 
 Use `gira epic list` for numberless discovery of `type:epic` issues. Use
 [Sprint And Release](/sprint-release) when the boundary is a GitHub milestone
-rather than a goal issue.
+rather than a goal issue. Use [State Model](/state-model) for the distinction
+between labels, computed goal state, receipts, and local cache.

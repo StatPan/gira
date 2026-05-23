@@ -74,5 +74,6 @@ finish mutations.
 
 - [Global Config](/global-config)
 - [Ticket Workflow](/ticket-workflow)
+- [State Model](/state-model)
 - [Readiness And Audit](/readiness-audit)
 - [Command Reference](/command-reference)

@@ -102,9 +102,34 @@ func TestBuildGoalStatusReportAllDoneFromGoalBody(t *testing.T) {
 }
 
 func TestIssueRefsFromText(t *testing.T) {
-	got := issueRefsFromText("Created child issues #572, #573 and #574")
-	if len(got) != 3 || got[0] != 572 || got[1] != 573 || got[2] != 574 {
-		t.Fatalf("issue refs = %+v", got)
+	tests := []struct {
+		name string
+		body string
+		want []int
+	}{
+		{
+			name: "child refs",
+			body: "Created child issues #572, #573 and #574",
+			want: []int{572, 573, 574},
+		},
+		{
+			name: "skip PR refs",
+			body: "Child tickets #573 and #574 landed via PR #579 and pull request #578",
+			want: []int{573, 574},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := issueRefsFromText(tt.body)
+			if len(got) != len(tt.want) {
+				t.Fatalf("issue refs = %+v, want %+v", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Fatalf("issue refs = %+v, want %+v", got, tt.want)
+				}
+			}
+		})
 	}
 }
 

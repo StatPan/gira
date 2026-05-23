@@ -41,6 +41,11 @@ lifecycle, safety, or evidence rules defined here.
    - Run `gh auth status`.
    - Run `gira status --repo OWNER/REPO` or inspect the specific issue.
    - Confirm the issue exists, is open, and is ready for implementation.
+   - Treat `ticket-readiness/v1` findings from `gira ticket status --json`
+     or `gira ticket new --dry-run` as the work-order gate before worker
+     handoff. Refine tickets with missing goal, scope, acceptance criteria,
+     required labels, doctor impact, or evidence expectations before starting
+     implementation.
 2. Start ticket.
    - Prefer `gira ticket start TICKET --repo OWNER/REPO --dry-run`.
    - Apply only after the dry-run is understood: `gira ticket start TICKET --repo OWNER/REPO --apply`.

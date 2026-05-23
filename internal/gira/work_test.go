@@ -275,9 +275,9 @@ func TestOpenWorkPRApplyUsesRecordedLifecycleBase(t *testing.T) {
 
 func TestGetWorkStatusIncludesDeterministicJSONContractFields(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	body := RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default", BranchPolicyMode: BranchPolicyModeGitHubFlow, WorkBranch: "issue-126-work-command"})
+	body := "## Goal\nShip status contract\n\n## Scope\nTicket status JSON\n\n## Acceptance Criteria\n- exposes PR state\n\n## Doctor Impact\nUpdates status JSON only.\n\n## Expected Evidence\n- go test ./internal/gira\n\n" + RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default", BranchPolicyMode: BranchPolicyModeGitHubFlow, WorkBranch: "issue-126-work-command"})
 	runner := &workRunner{outputs: map[string][]byte{
-		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","body":` + strconv.Quote(body) + `,"milestone":{"title":"2.0 Alpha"},"labels":[{"name":"status:in-review"},{"name":"priority:p1"}]}`),
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","body":` + strconv.Quote(body) + `,"milestone":{"title":"2.0 Alpha"},"labels":[{"name":"type:task"},{"name":"status:in-review"},{"name":"priority:p1"}]}`),
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": []byte(`[
 			{"number":201,"title":"feat: work","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/201","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-126-work-command","baseRefName":"main","statusCheckRollup":[{"name":"test","workflowName":"ci","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://ci.example"}]}
 		]`),
@@ -304,6 +304,9 @@ func TestGetWorkStatusIncludesDeterministicJSONContractFields(t *testing.T) {
 	}
 	if result.Evidence == nil || !result.Evidence.ClosingReference || !result.Evidence.BranchTrusted || !containsString(result.Evidence.Sources, "checks") {
 		t.Fatalf("missing evidence contract: %+v", result.Evidence)
+	}
+	if result.TicketReadiness == nil || result.TicketReadiness.SchemaVersion != TicketReadinessSchemaVersion || result.TicketReadiness.Readiness != "ready" {
+		t.Fatalf("missing ticket readiness contract: %+v", result.TicketReadiness)
 	}
 }
 

@@ -1942,6 +1942,10 @@ func runSetupGlobal(args []string, stdout io.Writer, stderr io.Writer) int {
 	})
 	if err != nil {
 		if *jsonOutput {
+			gira.EnsureSetupGlobalReportSchema(&report)
+			if *dryRun && strings.TrimSpace(report.Command) != "" {
+				report.Approval = gira.SetupGlobalApprovalEvidence(report)
+			}
 			out, _ := json.MarshalIndent(report, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
@@ -1949,6 +1953,10 @@ func runSetupGlobal(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		gira.EnsureSetupGlobalReportSchema(&report)
+		if *dryRun {
+			report.Approval = gira.SetupGlobalApprovalEvidence(report)
+		}
 		out, _ := json.MarshalIndent(report, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0

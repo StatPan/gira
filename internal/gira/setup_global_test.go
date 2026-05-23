@@ -28,6 +28,19 @@ func TestBuildSetupGlobalReportDryRunGlobalOnly(t *testing.T) {
 	if report.Status != "planned" || report.Mode != SetupGlobalModeGlobalOnly {
 		t.Fatalf("unexpected report status/mode: %+v", report)
 	}
+	if report.SchemaVersion != SetupGlobalReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("expected setup global schema and approval evidence: %+v", report)
+	}
+	expectedApply := "gira setup global --repo StatPan/gira --path " + QuoteShellArg(filepath.Clean(checkout)) + " --config-root " + QuoteShellArg(root) + " --workspace personal --owner StatPan --inbox-repo StatPan/gira --mode global-only --project-owner StatPan --project-title personal --agent codex --assignee ilgukim --apply"
+	if report.Approval.SchemaVersion != ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira setup global" || report.Approval.OutputSchema != SetupGlobalReportSchemaVersion {
+		t.Fatalf("unexpected setup global approval identity: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != expectedApply || report.Approval.PostApplyVerification != "gira config doctor --repo StatPan/gira --config-root "+QuoteShellArg(root)+" --json" {
+		t.Fatalf("unexpected setup global approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil || !approvalHasAction(report.Approval.PlannedActions, "file:create") {
+		t.Fatalf("unexpected setup global approval plan: %+v", report.Approval)
+	}
 	if !report.RepoContract.Exists || report.GlobalRepo.Contract != "" {
 		t.Fatalf("expected detected but unreferenced contract: %+v", report)
 	}
@@ -92,6 +105,9 @@ func TestBuildSetupGlobalReportApplyHybrid(t *testing.T) {
 	if !report.Applied || report.Status != "applied" {
 		t.Fatalf("unexpected apply report: %+v", report)
 	}
+	if report.SchemaVersion != SetupGlobalReportSchemaVersion || report.Approval != nil {
+		t.Fatalf("apply report should have schema and omit dry-run approval: %+v", report)
+	}
 	cfg, err := LoadGlobalConfig(root)
 	if err != nil {
 		t.Fatalf("LoadGlobalConfig returned error: %v", err)
@@ -134,6 +150,9 @@ func TestBuildSetupGlobalReportConflictAndOverwrite(t *testing.T) {
 	}
 	if report.Status != "blocked" || report.Files[0].Action != "conflict" {
 		t.Fatalf("expected blocked conflict report: %+v", report)
+	}
+	if report.Approval == nil || !containsCall(report.Approval.Blockers, "setup_global_file_conflict") || !containsCall(report.Approval.Blockers, "setup_global_blocked") {
+		t.Fatalf("blocked dry-run should include approval blockers: %+v", report.Approval)
 	}
 
 	input.DryRun = false

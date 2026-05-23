@@ -561,3 +561,119 @@ func repoMigratePostApplyVerification(report RepoMigrateReport) string {
 	}
 	return "gira config doctor --config-root " + QuoteShellArg(report.ConfigRoot) + " --json"
 }
+
+func SetupGlobalApprovalEvidence(report SetupGlobalReport) *ApprovalEvidence {
+	applyCommand := setupGlobalApprovalCommand(report, "--apply")
+	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira setup global",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		OutputSchema:          SetupGlobalReportSchemaVersion,
+		PlannedActions:        setupGlobalApprovalActions(report),
+		Blockers:              setupGlobalApprovalBlockers(report),
+		Warnings:              stableStringSlice(report.Notes),
+		PostApplyVerification: setupGlobalPostApplyVerification(report),
+	}
+}
+
+func setupGlobalApprovalCommand(report SetupGlobalReport, mode string) string {
+	args := []string{"gira setup global"}
+	if strings.TrimSpace(report.Repo) != "" {
+		args = append(args, "--repo", QuoteShellArg(report.Repo))
+	}
+	if strings.TrimSpace(report.Path) != "" {
+		args = append(args, "--path", QuoteShellArg(report.Path))
+	}
+	if strings.TrimSpace(report.ConfigRoot) != "" {
+		args = append(args, "--config-root", QuoteShellArg(report.ConfigRoot))
+	}
+	if strings.TrimSpace(report.Workspace.Name) != "" {
+		args = append(args, "--workspace", QuoteShellArg(report.Workspace.Name))
+	}
+	if strings.TrimSpace(report.Workspace.Owner) != "" {
+		args = append(args, "--owner", QuoteShellArg(report.Workspace.Owner))
+	}
+	if strings.TrimSpace(report.InboxRepo) != "" {
+		args = append(args, "--inbox-repo", QuoteShellArg(report.InboxRepo))
+	}
+	if strings.TrimSpace(report.Mode) != "" {
+		args = append(args, "--mode", QuoteShellArg(report.Mode))
+	}
+	project := report.GlobalWorkspace.Workspace.Project
+	if strings.TrimSpace(project.Owner) != "" {
+		args = append(args, "--project-owner", QuoteShellArg(project.Owner))
+	}
+	if strings.TrimSpace(project.Title) != "" {
+		args = append(args, "--project-title", QuoteShellArg(project.Title))
+	}
+	if project.Number > 0 {
+		args = append(args, "--project-number", fmt.Sprintf("%d", project.Number))
+	}
+	if strings.TrimSpace(report.Defaults.Agent) != "" {
+		args = append(args, "--agent", QuoteShellArg(report.Defaults.Agent))
+	}
+	if strings.TrimSpace(report.Defaults.Assignee) != "" {
+		args = append(args, "--assignee", QuoteShellArg(report.Defaults.Assignee))
+	}
+	for _, label := range report.Defaults.AgentLabels {
+		args = append(args, "--agent-label", QuoteShellArg(label))
+	}
+	if setupGlobalHasOverwrite(report) {
+		args = append(args, "--overwrite")
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func setupGlobalHasOverwrite(report SetupGlobalReport) bool {
+	for _, plan := range report.Files {
+		if plan.Action == "overwrite" {
+			return true
+		}
+	}
+	return false
+}
+
+func setupGlobalApprovalActions(report SetupGlobalReport) []ApprovalPlannedAction {
+	actions := make([]ApprovalPlannedAction, 0, len(report.Files))
+	for _, plan := range report.Files {
+		action := "file:" + strings.TrimSpace(plan.Action)
+		if action == "file:" {
+			action = "file:update"
+		}
+		detail := "setup global " + report.Mode
+		if plan.Exists {
+			detail += "; file exists"
+		}
+		actions = append(actions, ApprovalPlannedAction{
+			Action: action,
+			Target: plan.Path,
+			Detail: detail,
+		})
+	}
+	return actions
+}
+
+func setupGlobalApprovalBlockers(report SetupGlobalReport) []string {
+	blockers := []string{}
+	for _, plan := range report.Files {
+		if plan.Action == "conflict" {
+			blockers = appendUniqueStrings(blockers, "setup_global_file_conflict")
+		}
+	}
+	if strings.EqualFold(report.Status, "blocked") {
+		blockers = appendUniqueStrings(blockers, "setup_global_blocked")
+	}
+	return stableStringSlice(blockers)
+}
+
+func setupGlobalPostApplyVerification(report SetupGlobalReport) string {
+	if strings.TrimSpace(report.Repo) != "" {
+		return fmt.Sprintf("gira config doctor --repo %s --config-root %s --json", QuoteShellArg(report.Repo), QuoteShellArg(report.ConfigRoot))
+	}
+	return "gira config doctor --config-root " + QuoteShellArg(report.ConfigRoot) + " --json"
+}

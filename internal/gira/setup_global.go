@@ -13,6 +13,8 @@ const (
 	SetupGlobalModeHybrid     = "hybrid"
 )
 
+const SetupGlobalReportSchemaVersion = "setup-global-report/v1"
+
 type SetupGlobalInput struct {
 	Repo          RepoRef  `json:"repo,omitempty"`
 	Path          string   `json:"path,omitempty"`
@@ -40,6 +42,7 @@ type SetupGlobalFilePlan struct {
 }
 
 type SetupGlobalReport struct {
+	SchemaVersion   string                       `json:"schema_version,omitempty"`
 	Command         string                       `json:"command"`
 	Mode            string                       `json:"mode"`
 	ConfigRoot      string                       `json:"config_root"`
@@ -59,6 +62,13 @@ type SetupGlobalReport struct {
 	Status          string                       `json:"status"`
 	Notes           []string                     `json:"notes,omitempty"`
 	NextStep        string                       `json:"next_step,omitempty"`
+	Approval        *ApprovalEvidence            `json:"approval,omitempty"`
+}
+
+func EnsureSetupGlobalReportSchema(report *SetupGlobalReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = SetupGlobalReportSchemaVersion
+	}
 }
 
 func BuildSetupGlobalReport(input SetupGlobalInput, runner CommandRunner) (SetupGlobalReport, error) {
@@ -187,6 +197,7 @@ func BuildSetupGlobalReport(input SetupGlobalInput, runner CommandRunner) (Setup
 	}
 	plans = append(plans, buildSetupFilePlan(repoFile, renderSetupGlobalRepoEntry(repoEntry), input.Overwrite))
 	report := SetupGlobalReport{
+		SchemaVersion:   SetupGlobalReportSchemaVersion,
 		Command:         "setup global",
 		Mode:            mode,
 		ConfigRoot:      root,
@@ -210,6 +221,7 @@ func BuildSetupGlobalReport(input SetupGlobalInput, runner CommandRunner) (Setup
 		if setupPlansHaveConflict(plans) {
 			report.NextStep = "review conflicts or rerun with --overwrite"
 		}
+		report.Approval = SetupGlobalApprovalEvidence(report)
 		return report, nil
 	}
 	if setupPlansHaveConflict(plans) {

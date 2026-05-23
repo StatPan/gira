@@ -480,6 +480,7 @@ func TestDocsAliasAndGuideTopics(t *testing.T) {
 		{[]string{"guide", "stats"}, "Closure Funnel reports"},
 		{[]string{"guide", "jira"}, "gira jira export"},
 		{[]string{"guide", "concepts"}, "Jira terms on GitHub"},
+		{[]string{"guide", "capabilities"}, "gira-command-capabilities/v1"},
 		{[]string{"guide", "--help"}, "Topics:"},
 	}
 	for _, tc := range cases {
@@ -491,6 +492,33 @@ func TestDocsAliasAndGuideTopics(t *testing.T) {
 		if !strings.Contains(stdout.String(), tc.want) {
 			t.Fatalf("%v output missing %q:\n%s", tc.args, tc.want, stdout.String())
 		}
+	}
+}
+
+func TestGuideCapabilitiesJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"guide", "capabilities", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.CommandCapabilityReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode guide capabilities JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.CommandCapabilitySchemaVersion {
+		t.Fatalf("schema version = %q, want %q", report.SchemaVersion, gira.CommandCapabilitySchemaVersion)
+	}
+	foundTicketStart := false
+	for _, command := range report.Commands {
+		if command.Canonical == "gira ticket start" {
+			foundTicketStart = true
+			if command.Capability != gira.AdapterCapabilityApplyMutation || command.JSONSupport != gira.JSONSupportStable {
+				t.Fatalf("unexpected ticket start capability: %+v", command)
+			}
+		}
+	}
+	if !foundTicketStart {
+		t.Fatalf("capability report missing gira ticket start: %+v", report.Commands)
 	}
 }
 
@@ -517,7 +545,7 @@ func TestGuideUnknownTopic(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
-	if !strings.Contains(stderr.String(), "unknown guide topic: missing") || !strings.Contains(stderr.String(), "gira guide [quickstart|ticket|stats|jira|agent|skill|concepts]") {
+	if !strings.Contains(stderr.String(), "unknown guide topic: missing") || !strings.Contains(stderr.String(), "gira guide [quickstart|ticket|stats|jira|agent|skill|concepts|capabilities]") {
 		t.Fatalf("stderr missing guide remediation:\n%s", stderr.String())
 	}
 }

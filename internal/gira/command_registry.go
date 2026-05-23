@@ -16,6 +16,7 @@ type CommandSpec struct {
 	GuideTopics []string
 	GuideOrder  int
 	Examples    []CommandExample
+	Adapter     AdapterCommandCapability
 }
 
 type FlagSpec struct {
@@ -28,8 +29,47 @@ type CommandExample struct {
 	Command string
 }
 
+type AdapterCapabilityClass string
+
+const (
+	AdapterCapabilityRead           AdapterCapabilityClass = "read"
+	AdapterCapabilityDryRunMutation AdapterCapabilityClass = "dry_run_mutation"
+	AdapterCapabilityApplyMutation  AdapterCapabilityClass = "apply_mutation"
+	AdapterCapabilityUnsupported    AdapterCapabilityClass = "unsupported"
+
+	CommandCapabilitySchemaVersion = "gira-command-capabilities/v1"
+	JSONSupportStable              = "stable_json"
+	JSONSupportPlanned             = "planned"
+)
+
+type AdapterCommandCapability struct {
+	Class            AdapterCapabilityClass
+	MutationBoundary string
+	JSONSupport      string
+	Aliases          []string
+	Notes            string
+}
+
+type CommandCapabilityReport struct {
+	SchemaVersion string                   `json:"schema_version"`
+	Commands      []CommandCapabilityEntry `json:"commands"`
+}
+
+type CommandCapabilityEntry struct {
+	Path             []string               `json:"path"`
+	Canonical        string                 `json:"canonical"`
+	Summary          string                 `json:"summary"`
+	Capability       AdapterCapabilityClass `json:"capability"`
+	MutationBoundary string                 `json:"mutation_boundary,omitempty"`
+	JSONSupport      string                 `json:"json_support"`
+	Aliases          []string               `json:"aliases,omitempty"`
+	Docs             []string               `json:"docs"`
+	Since            string                 `json:"since,omitempty"`
+	Notes            string                 `json:"notes,omitempty"`
+}
+
 func CoreCommandSpecs() []CommandSpec {
-	return []CommandSpec{
+	specs := []CommandSpec{
 		{
 			Path:    []string{"setup", "global"},
 			Summary: "Create or update the OS-user global config, workspace registry, and repo registry.",
@@ -602,6 +642,99 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 	}
+	applyAdapterCapabilities(specs)
+	return specs
+}
+
+func applyAdapterCapabilities(specs []CommandSpec) {
+	for i := range specs {
+		switch commandSpecKey(specs[i].Path) {
+		case "setup global":
+			specs[i].Adapter = adapterApply("writes global config and repo registry files; --dry-run previews file changes", JSONSupportStable)
+		case "workspace repos sync":
+			specs[i].Adapter = adapterApply("updates workspace repo allowlist; --dry-run previews selected repositories", JSONSupportStable)
+		case "workspace status":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "goal status":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "goal plan":
+			specs[i].Adapter = adapterDryRun("computes child ticket proposals only; no apply surface exists for this command", JSONSupportStable)
+		case "goal next":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "goal finish":
+			specs[i].Adapter = adapterApply("posts an idempotent goal finish handoff receipt when run with --apply; --dry-run previews readiness and receipt", JSONSupportStable)
+		case "stats repo":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "stats workspace":
+			specs[i].Adapter = adapterUnsupported("planned command; adapters should not expose it until implemented", JSONSupportPlanned)
+		case "milestone new":
+			specs[i].Adapter = adapterApply("creates a GitHub milestone; --dry-run previews payload and target repo", JSONSupportStable)
+		case "milestone list":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "milestone status":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "milestone assign":
+			specs[i].Adapter = adapterApply("assigns selected issues to a milestone; --dry-run previews issue updates", JSONSupportStable)
+		case "milestone plan":
+			specs[i].Adapter = adapterApply("selects and assigns candidate tickets; --dry-run previews candidate set and mutations", JSONSupportStable)
+		case "jira init":
+			specs[i].Adapter = adapterApply("writes reviewed non-secret Jira provider config; --dry-run previews discovered config", JSONSupportStable)
+		case "jira doctor":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "jira mirror":
+			specs[i].Adapter = adapterApply("creates or reuses a GitHub mirror issue; --dry-run previews mirror resolution", JSONSupportStable)
+		case "jira transition":
+			specs[i].Adapter = adapterDryRun("plans Jira transition reachability only; adapters must not treat it as Jira mutation approval", JSONSupportStable)
+		case "jira import":
+			specs[i].Adapter = adapterApply("creates GitHub issues from Jira import sources; --dry-run previews created and skipped issues", JSONSupportStable)
+		case "jira export":
+			specs[i].Adapter = adapterApply("writes Jira-friendly export artifacts to the requested output path", JSONSupportStable)
+		case "ticket new":
+			specs[i].Adapter = adapterApply("creates a GitHub issue and may optionally start it; --dry-run previews issue body and labels", JSONSupportStable)
+		case "ticket view":
+			specs[i].Adapter = adapterRead(JSONSupportStable, "gira ticket show")
+		case "ticket prompt":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "ticket handoff":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "ticket review":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "ticket start":
+			specs[i].Adapter = adapterApply("creates or reuses a branch, records lifecycle state, and moves the issue to in-progress; --dry-run previews readiness and branch plan", JSONSupportStable, "gira start")
+		case "ticket pr":
+			specs[i].Adapter = adapterApply("creates or validates a linked PR; --dry-run previews PR body and branch binding", JSONSupportStable)
+		case "ticket note":
+			specs[i].Adapter = adapterApply("posts issue or PR comments; --dry-run previews resolved targets and rendered note", JSONSupportStable)
+		case "ticket supersede":
+			specs[i].Adapter = adapterApply("creates a replacement ticket, posts cross-links, and closes the original; --dry-run previews all planned mutations", JSONSupportStable)
+		case "ticket checks":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "ticket wait":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "ticket finish":
+			specs[i].Adapter = adapterApply("may merge the linked PR, post receipts, normalize labels, and close the issue; --dry-run previews readiness and actions", JSONSupportStable)
+		case "ticket status":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		default:
+			specs[i].Adapter = adapterUnsupported("missing adapter capability metadata", "")
+		}
+	}
+}
+
+func adapterRead(jsonSupport string, aliases ...string) AdapterCommandCapability {
+	return AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: jsonSupport, Aliases: aliases}
+}
+
+func adapterDryRun(boundary string, jsonSupport string, aliases ...string) AdapterCommandCapability {
+	return AdapterCommandCapability{Class: AdapterCapabilityDryRunMutation, MutationBoundary: boundary, JSONSupport: jsonSupport, Aliases: aliases}
+}
+
+func adapterApply(boundary string, jsonSupport string, aliases ...string) AdapterCommandCapability {
+	return AdapterCommandCapability{Class: AdapterCapabilityApplyMutation, MutationBoundary: boundary, JSONSupport: jsonSupport, Aliases: aliases}
+}
+
+func adapterUnsupported(reason string, jsonSupport string, aliases ...string) AdapterCommandCapability {
+	return AdapterCommandCapability{Class: AdapterCapabilityUnsupported, JSONSupport: jsonSupport, Aliases: aliases, Notes: reason}
 }
 
 func FindCommandSpec(path ...string) (CommandSpec, bool) {
@@ -612,6 +745,59 @@ func FindCommandSpec(path ...string) (CommandSpec, bool) {
 		}
 	}
 	return CommandSpec{}, false
+}
+
+func BuildCommandCapabilityReport(specs []CommandSpec) CommandCapabilityReport {
+	specs = append([]CommandSpec(nil), specs...)
+	sort.Slice(specs, func(i, j int) bool {
+		return commandSpecKey(specs[i].Path) < commandSpecKey(specs[j].Path)
+	})
+	report := CommandCapabilityReport{SchemaVersion: CommandCapabilitySchemaVersion}
+	for _, spec := range specs {
+		adapter := spec.Adapter
+		if adapter.Class == "" {
+			adapter = adapterUnsupported("missing adapter capability metadata", "")
+		}
+		report.Commands = append(report.Commands, CommandCapabilityEntry{
+			Path:             append([]string(nil), spec.Path...),
+			Canonical:        "gira " + strings.Join(spec.Path, " "),
+			Summary:          spec.Summary,
+			Capability:       adapter.Class,
+			MutationBoundary: adapter.MutationBoundary,
+			JSONSupport:      adapter.JSONSupport,
+			Aliases:          append([]string(nil), adapter.Aliases...),
+			Docs:             append([]string(nil), spec.Docs...),
+			Since:            spec.Since,
+			Notes:            adapter.Notes,
+		})
+	}
+	return report
+}
+
+func RenderCommandCapabilitiesMarkdown(specs []CommandSpec) string {
+	report := BuildCommandCapabilityReport(specs)
+	var b strings.Builder
+	b.WriteString("# Command Capabilities\n\n")
+	b.WriteString("This page is generated from Gira's command metadata registry. Update `internal/gira/command_registry.go` first, then refresh this page.\n\n")
+	fmt.Fprintf(&b, "Schema version: `%s`\n\n", report.SchemaVersion)
+	b.WriteString("| Command | Aliases | Capability | JSON support | Mutation boundary | Docs |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | --- |\n")
+	for _, command := range report.Commands {
+		boundary := command.MutationBoundary
+		if boundary == "" {
+			boundary = "none"
+		}
+		aliases := strings.Join(command.Aliases, ", ")
+		if aliases == "" {
+			aliases = "none"
+		}
+		docs := strings.Join(command.Docs, ", ")
+		if docs == "" {
+			docs = "none"
+		}
+		fmt.Fprintf(&b, "| `%s` | %s | `%s` | `%s` | %s | %s |\n", command.Canonical, aliases, command.Capability, command.JSONSupport, boundary, docs)
+	}
+	return b.String()
 }
 
 func RenderCommandReferenceMarkdown(specs []CommandSpec) string {

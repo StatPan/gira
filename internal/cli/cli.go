@@ -829,19 +829,20 @@ Usage:
   gira goal plan [GOAL] --dry-run [--repo OWNER/REPO] [--json]
   gira goal status [GOAL] [--repo OWNER/REPO] [--json]
   gira goal next [GOAL] [--repo OWNER/REPO] [--json]
-  gira goal finish [GOAL] --dry-run [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]
+  gira goal finish [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]
 
 Commands:
   plan    Propose dry-run child ticket packets from a goal issue
   status  Summarize a goal issue, child ticket graph, blockers, and next safe action
   next    Select the next safe child ticket or explain why the goal must stop
-  finish  Preview goal finish readiness and receipt evidence
+  finish  Preview goal finish readiness and apply human-review handoff receipts
 
 Flags:
   --repo string  Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
   --goal int     Goal issue number. Can also be numeric positional
   --dry-run      Preview without mutation
-  --terminal string Goal terminal recommendation override for finish dry-run
+  --apply        Apply supported goal finish handoff mutations
+  --terminal string Goal terminal recommendation override for finish
   --json         Emit stable goal JSON
   -h, --help     Show help
 `
@@ -3067,6 +3068,7 @@ func runGoalFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	goal := fs.Int("goal", 0, "Goal issue number")
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply supported human-review handoff")
 	terminal := fs.String("terminal", "", "Terminal recommendation: done|human_review|blocked|superseded|abandoned")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
@@ -3093,8 +3095,8 @@ func runGoalFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, goalHelp)
 		return 2
 	}
-	if !*dryRun {
-		fmt.Fprint(stderr, "goal finish is dry-run-only in this release; pass --dry-run\n\n")
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required\n\n")
 		_, _ = io.WriteString(stderr, goalHelp)
 		return 2
 	}
@@ -3103,7 +3105,7 @@ func runGoalFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	report, err := newGoalFinishReport(gira.GoalFinishInput{Repo: repo, Goal: *goal, DryRun: *dryRun, Terminal: *terminal})
+	report, err := newGoalFinishReport(gira.GoalFinishInput{Repo: repo, Goal: *goal, DryRun: *dryRun, Apply: *apply, Terminal: *terminal})
 	if err != nil {
 		if *jsonOutput {
 			out, _ := json.MarshalIndent(report, "", "  ")

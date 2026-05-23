@@ -148,6 +148,13 @@ The receipt should be posted as a GitHub comment before closing the goal. If
 the safe terminal state is not `done`, the goal should remain open or close
 with an explicit non-done resolution label.
 
+`gira goal finish --terminal human_review --apply` is the first apply-safe
+handoff path. It posts the `goal-finish-receipt/v1` comment when blockers remain
+and preserves those blockers in the receipt. It does not close the goal, mark it
+done, waive missing child evidence, or invent historical PR/check/receipt
+evidence. This path is for completed goal graphs that need a maintainer to
+accept or decide how to handle historical evidence gaps.
+
 ## CLI Slices
 
 Suggested implementation order:
@@ -157,7 +164,7 @@ Suggested implementation order:
 | `gira goal plan` | Read a goal issue and print proposed child ticket packets. Optional `--apply` creates linked child issues. |
 | `gira goal next` | Select the next safe child ticket or explain the stop condition. |
 | `gira goal status` | Summarize goal, child tickets, PR evidence, blockers, drift, and remaining autonomous work. |
-| `gira goal finish` | Verify child ticket convergence, post a receipt, and close or hand off the goal. |
+| `gira goal finish` | Verify child ticket convergence, post a human-review receipt when blockers remain, and later close or hand off the goal. |
 
 Each command should support `--dry-run|--apply` for mutations and `--json` for
 automation. The commands should reuse `ticket start`, `ticket pr`,

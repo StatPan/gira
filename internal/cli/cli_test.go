@@ -4499,7 +4499,7 @@ func TestGoalFinishJSONUsesInjectedBuilder(t *testing.T) {
 	restore := newGoalFinishReport
 	t.Cleanup(func() { newGoalFinishReport = restore })
 	newGoalFinishReport = func(input gira.GoalFinishInput) (gira.GoalFinishReport, error) {
-		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 || !input.DryRun || input.Terminal != "human_review" {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 || !input.DryRun || input.Apply || input.Terminal != "human_review" {
 			t.Fatalf("unexpected goal finish input: %+v repo=%s", input, input.Repo.FullName())
 		}
 		return gira.GoalFinishReport{
@@ -4533,14 +4533,53 @@ func TestGoalFinishJSONUsesInjectedBuilder(t *testing.T) {
 	}
 }
 
-func TestGoalFinishRequiresDryRun(t *testing.T) {
+func TestGoalFinishApplyUsesInjectedBuilder(t *testing.T) {
+	restore := newGoalFinishReport
+	t.Cleanup(func() { newGoalFinishReport = restore })
+	newGoalFinishReport = func(input gira.GoalFinishInput) (gira.GoalFinishReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 || input.DryRun || !input.Apply || input.Terminal != "human_review" {
+			t.Fatalf("unexpected goal finish input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.GoalFinishReport{
+			Command: "goal finish",
+			Repo:    input.Repo.FullName(),
+			Goal:    input.Goal,
+			Apply:   input.Apply,
+			Readiness: gira.GoalFinishReadiness{
+				SchemaVersion:          gira.GoalFinishReadinessSchemaVersion,
+				Repository:             input.Repo.FullName(),
+				Goal:                   gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 2.0", State: "open", Status: "Ready"},
+				TerminalRecommendation: "human_review",
+				Blockers:               []string{"child_575_missing_finish_receipt"},
+				NextAction:             "human_review",
+				NextStep:               "review blockers",
+			},
+			Actions:    []gira.GoalFinishAction{{Action: "goal:comment", Status: "applied", Detail: "posted receipt"}},
+			NextAction: "human_review",
+			NextStep:   "human review handoff receipt posted",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "finish", "521", "--repo", "StatPan/gira", "--apply", "--terminal", "human_review", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"apply": true`, `"action": "goal:comment"`, `"status": "applied"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("goal finish apply JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestGoalFinishRequiresDryRunOrApply(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"goal", "finish", "521", "--repo", "StatPan/gira"}, &stdout, &stderr)
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "pass --dry-run") {
-		t.Fatalf("stderr missing dry-run requirement:\n%s", stderr.String())
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply") {
+		t.Fatalf("stderr missing dry-run/apply requirement:\n%s", stderr.String())
 	}
 }
 

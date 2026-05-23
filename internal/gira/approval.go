@@ -423,3 +423,62 @@ func ticketNewApprovalExtraLabels(report TicketNewReport) []string {
 	}
 	return labels
 }
+
+func RepoRegisterApprovalEvidence(report RepoRegisterReport) *ApprovalEvidence {
+	applyCommand := repoRegisterApprovalCommand(report, "--apply")
+	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira repo register",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		OutputSchema:          RepoRegisterReportSchemaVersion,
+		PlannedActions:        repoRegisterApprovalActions(report),
+		Blockers:              repoRegisterApprovalBlockers(report),
+		Warnings:              []string{},
+		PostApplyVerification: fmt.Sprintf("gira config repo --repo %s --config-root %s --json", QuoteShellArg(report.Repo), QuoteShellArg(report.ConfigRoot)),
+	}
+}
+
+func repoRegisterApprovalCommand(report RepoRegisterReport, mode string) string {
+	args := []string{
+		"gira repo register",
+		QuoteShellArg(report.Repo),
+	}
+	if strings.TrimSpace(report.Path) != "" {
+		args = append(args, "--path", QuoteShellArg(report.Path))
+	}
+	if strings.TrimSpace(report.ConfigRoot) != "" {
+		args = append(args, "--config-root", QuoteShellArg(report.ConfigRoot))
+	}
+	if report.Action == "overwrite" {
+		args = append(args, "--overwrite")
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func repoRegisterApprovalActions(report RepoRegisterReport) []ApprovalPlannedAction {
+	action := "registry:" + strings.TrimSpace(report.Action)
+	if action == "registry:" {
+		action = "registry:update"
+	}
+	detail := "register " + report.Repo
+	if strings.TrimSpace(report.Path) != "" {
+		detail += " at " + report.Path
+	}
+	return []ApprovalPlannedAction{{
+		Action: action,
+		Target: report.File,
+		Detail: detail,
+	}}
+}
+
+func repoRegisterApprovalBlockers(report RepoRegisterReport) []string {
+	if strings.EqualFold(report.Status, "blocked") || report.Action == "conflict" {
+		return []string{"repo_registry_conflict"}
+	}
+	return []string{}
+}

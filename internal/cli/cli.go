@@ -2012,6 +2012,10 @@ func runRepoRegister(args []string, stdout io.Writer, stderr io.Writer) int {
 	report, err := newRepoRegisterReport(gira.RepoRegisterInput{Repo: repo, Path: *pathValue, ConfigRoot: *configRoot, Overwrite: *overwrite, DryRun: *dryRun, Apply: *apply})
 	if err != nil {
 		if *jsonOutput {
+			gira.EnsureRepoRegisterReportSchema(&report)
+			if *dryRun && strings.TrimSpace(report.Repo) != "" {
+				report.Approval = gira.RepoRegisterApprovalEvidence(report)
+			}
 			out, _ := json.MarshalIndent(report, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
@@ -2019,6 +2023,10 @@ func runRepoRegister(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		gira.EnsureRepoRegisterReportSchema(&report)
+		if *dryRun {
+			report.Approval = gira.RepoRegisterApprovalEvidence(report)
+		}
 		out, _ := json.MarshalIndent(report, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0

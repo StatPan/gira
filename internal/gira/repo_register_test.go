@@ -23,6 +23,19 @@ func TestBuildRepoRegisterReportDryRun(t *testing.T) {
 	if report.Action != "create" || report.Status != "planned" || report.File == "" {
 		t.Fatalf("unexpected dry-run report: %+v", report)
 	}
+	if report.SchemaVersion != RepoRegisterReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("expected repo register schema and approval evidence: %+v", report)
+	}
+	expectedApply := "gira repo register StatPan/gira --path " + QuoteShellArg(filepath.Clean(checkout)) + " --config-root " + QuoteShellArg(report.ConfigRoot) + " --apply"
+	if report.Approval.SchemaVersion != ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira repo register" || report.Approval.OutputSchema != RepoRegisterReportSchemaVersion {
+		t.Fatalf("unexpected repo register approval identity: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != expectedApply || report.Approval.PostApplyVerification != "gira config repo --repo StatPan/gira --config-root "+QuoteShellArg(report.ConfigRoot)+" --json" {
+		t.Fatalf("unexpected repo register approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil || !approvalHasAction(report.Approval.PlannedActions, "registry:create") {
+		t.Fatalf("unexpected repo register approval plan: %+v", report.Approval)
+	}
 	if _, err := os.Stat(report.File); !os.IsNotExist(err) {
 		t.Fatalf("dry-run wrote file or unexpected stat error: %v", err)
 	}
@@ -40,6 +53,9 @@ func TestBuildRepoRegisterReportApplyAndIdempotent(t *testing.T) {
 	}
 	if !report.Applied || report.Status != "applied" {
 		t.Fatalf("unexpected apply report: %+v", report)
+	}
+	if report.SchemaVersion != RepoRegisterReportSchemaVersion || report.Approval != nil {
+		t.Fatalf("apply report should have schema and omit dry-run approval: %+v", report)
 	}
 	loaded, err := LoadGlobalRepoRegistryEntry(root, ParseRepoRefMust("StatPan/gira"))
 	if err != nil {
@@ -117,6 +133,9 @@ func TestBuildRepoRegisterReportInvalidExistingRegistryDeterministic(t *testing.
 	}
 	if report.Action != "conflict" || report.Status != "blocked" {
 		t.Fatalf("report = %+v, want deterministic blocked conflict", report)
+	}
+	if report.Approval == nil || !containsCall(report.Approval.Blockers, "repo_registry_conflict") {
+		t.Fatalf("blocked dry-run should include approval blockers: %+v", report.Approval)
 	}
 }
 

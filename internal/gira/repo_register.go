@@ -11,6 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const RepoRegisterReportSchemaVersion = "repo-register-report/v1"
+
 type RepoRegisterInput struct {
 	Repo          RepoRef `json:"repo"`
 	Path          string  `json:"path,omitempty"`
@@ -23,17 +25,25 @@ type RepoRegisterInput struct {
 }
 
 type RepoRegisterReport struct {
-	Command    string                  `json:"command"`
-	Repo       string                  `json:"repo"`
-	ConfigRoot string                  `json:"config_root"`
-	Path       string                  `json:"path,omitempty"`
-	File       string                  `json:"file"`
-	DryRun     bool                    `json:"dry_run"`
-	Applied    bool                    `json:"applied"`
-	Status     string                  `json:"status"`
-	Action     string                  `json:"action"`
-	Entry      GlobalRepoRegistryEntry `json:"entry"`
-	NextStep   string                  `json:"next_step,omitempty"`
+	SchemaVersion string                  `json:"schema_version,omitempty"`
+	Command       string                  `json:"command"`
+	Repo          string                  `json:"repo"`
+	ConfigRoot    string                  `json:"config_root"`
+	Path          string                  `json:"path,omitempty"`
+	File          string                  `json:"file"`
+	DryRun        bool                    `json:"dry_run"`
+	Applied       bool                    `json:"applied"`
+	Status        string                  `json:"status"`
+	Action        string                  `json:"action"`
+	Entry         GlobalRepoRegistryEntry `json:"entry"`
+	NextStep      string                  `json:"next_step,omitempty"`
+	Approval      *ApprovalEvidence       `json:"approval,omitempty"`
+}
+
+func EnsureRepoRegisterReportSchema(report *RepoRegisterReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = RepoRegisterReportSchemaVersion
+	}
 }
 
 func BuildRepoRegisterReport(input RepoRegisterInput, runner CommandRunner) (RepoRegisterReport, error) {
@@ -72,16 +82,17 @@ func BuildRepoRegisterReport(input RepoRegisterInput, runner CommandRunner) (Rep
 		return RepoRegisterReport{}, err
 	}
 	report := RepoRegisterReport{
-		Command:    "repo register",
-		Repo:       input.Repo.FullName(),
-		ConfigRoot: root,
-		Path:       storedPath,
-		File:       file,
-		DryRun:     input.DryRun,
-		Status:     actionStatus(input.DryRun),
-		Action:     "create",
-		Entry:      entry,
-		NextStep:   fmt.Sprintf("gira repo register %s --apply", QuoteShellArg(input.Repo.FullName())),
+		SchemaVersion: RepoRegisterReportSchemaVersion,
+		Command:       "repo register",
+		Repo:          input.Repo.FullName(),
+		ConfigRoot:    root,
+		Path:          storedPath,
+		File:          file,
+		DryRun:        input.DryRun,
+		Status:        actionStatus(input.DryRun),
+		Action:        "create",
+		Entry:         entry,
+		NextStep:      fmt.Sprintf("gira repo register %s --apply", QuoteShellArg(input.Repo.FullName())),
 	}
 	existing, err := os.ReadFile(file)
 	if err == nil {
@@ -89,23 +100,35 @@ func BuildRepoRegisterReport(input RepoRegisterInput, runner CommandRunner) (Rep
 		if loadErr != nil && !input.Overwrite {
 			report.Action = "conflict"
 			report.Status = "blocked"
+			if input.DryRun {
+				report.Approval = RepoRegisterApprovalEvidence(report)
+			}
 			return report, loadErr
 		}
 		if loadErr == nil && repoRegistryEntriesEqual(existingEntry, entry) {
 			report.Action = "skip"
 			report.Status = "skipped"
 			report.NextStep = "repo already registered"
+			if input.DryRun {
+				report.Approval = RepoRegisterApprovalEvidence(report)
+			}
 			return report, nil
 		}
 		if !input.Overwrite {
 			report.Action = "conflict"
 			report.Status = "blocked"
+			if input.DryRun {
+				report.Approval = RepoRegisterApprovalEvidence(report)
+			}
 			return report, fmt.Errorf("%s already exists with different content; pass --overwrite to replace it", file)
 		}
 		if bytes.Equal(bytes.TrimSpace(existing), bytes.TrimSpace(content)) {
 			report.Action = "skip"
 			report.Status = "skipped"
 			report.NextStep = "repo already registered"
+			if input.DryRun {
+				report.Approval = RepoRegisterApprovalEvidence(report)
+			}
 			return report, nil
 		}
 		report.Action = "overwrite"
@@ -113,6 +136,7 @@ func BuildRepoRegisterReport(input RepoRegisterInput, runner CommandRunner) (Rep
 		return report, fmt.Errorf("read repo registry %q: %w", file, err)
 	}
 	if input.DryRun {
+		report.Approval = RepoRegisterApprovalEvidence(report)
 		return report, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {

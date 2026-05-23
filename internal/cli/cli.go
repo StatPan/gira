@@ -3994,6 +3994,9 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	if *jsonOutput {
 		result.NextStep = ticketWorkStartNextStep(result)
+		if *dryRun {
+			result.Approval = gira.WorkStartApprovalEvidence(result, "gira ticket start")
+		}
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0
@@ -4427,6 +4430,9 @@ func runWorkStart(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		if *dryRun {
+			result.Approval = gira.WorkStartApprovalEvidence(result, "gira work start")
+		}
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0

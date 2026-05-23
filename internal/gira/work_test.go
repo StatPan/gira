@@ -90,6 +90,9 @@ func TestStartWorkApplyReadyIssueCreatesBranchAndMovesInProgress(t *testing.T) {
 	if result.Status != "In progress" || !result.CreatedBranch {
 		t.Fatalf("unexpected result: %+v", result)
 	}
+	if result.SchemaVersion != WorkStartResultSchemaVersion {
+		t.Fatalf("schema version = %q, want %q", result.SchemaVersion, WorkStartResultSchemaVersion)
+	}
 	if result.BaseBranch != "main" || result.BaseSource != "branch_policy.default" {
 		t.Fatalf("unexpected base resolution: %+v", result)
 	}
@@ -120,6 +123,9 @@ func TestStartWorkDryRunAcceptsExplicitReleaseAndHotfixBase(t *testing.T) {
 			if result.BaseBranch != base || result.BaseSource != "explicit --base" {
 				t.Fatalf("unexpected base result: %+v", result)
 			}
+			if result.SchemaVersion != WorkStartResultSchemaVersion {
+				t.Fatalf("schema version = %q, want %q", result.SchemaVersion, WorkStartResultSchemaVersion)
+			}
 			if !result.Checks["base_branch_exists"] {
 				t.Fatalf("expected base branch check: %+v", result.Checks)
 			}
@@ -147,10 +153,13 @@ func TestStartWorkDryRunIncludesApprovalEvidence(t *testing.T) {
 	if approval.SchemaVersion != ApprovalPlanSchemaVersion || approval.CanonicalCommand != "gira work start" || approval.Capability != AdapterCapabilityApplyMutation {
 		t.Fatalf("unexpected approval identity: %+v", approval)
 	}
+	if result.SchemaVersion != WorkStartResultSchemaVersion {
+		t.Fatalf("schema version = %q, want %q", result.SchemaVersion, WorkStartResultSchemaVersion)
+	}
 	if approval.ApplyCommand != "gira work start --repo StatPan/gira --issue 126 --apply" || approval.DryRunCommand != "gira work start --repo StatPan/gira --issue 126 --dry-run" {
 		t.Fatalf("unexpected approval commands: %+v", approval)
 	}
-	if approval.OutputSchema != "work-start-result/v1" || approval.PostApplyVerification != "gira ticket status 126 --repo StatPan/gira --json" {
+	if approval.OutputSchema != WorkStartResultSchemaVersion || approval.PostApplyVerification != "gira ticket status 126 --repo StatPan/gira --json" {
 		t.Fatalf("unexpected approval verification fields: %+v", approval)
 	}
 	if len(approval.PlannedActions) < 3 || !approvalHasAction(approval.PlannedActions, "branch:create_or_reuse") || !approvalHasAction(approval.PlannedActions, "issue_status:update") {

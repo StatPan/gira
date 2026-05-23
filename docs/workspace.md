@@ -160,6 +160,79 @@ gira ticket pr --repo OWNER/app --ticket 34 --apply --draft
 gira ticket status --repo OWNER/app --ticket 34
 ```
 
+## Workspace Queues
+
+`workspace-queues/v1` is the read-only contract for turning ticket and PR
+evidence into operator queues. It does not fetch new evidence by itself. It maps
+existing `ticket status` evidence, including `ticket_readiness`, `pr_readiness`,
+checks, review state, labels, blockers, and next actions, into stable queue
+items.
+
+The JSON report shape is:
+
+```json
+{
+  "schema_version": "workspace-queues/v1",
+  "workspace": {"name": "personal", "owner": "OWNER"},
+  "queues": {
+    "agent_ready": [],
+    "review_needed": [],
+    "finish_ready": [],
+    "blocked": [],
+    "failed_check": [],
+    "human_decision": []
+  },
+  "counts": {
+    "agent_ready": 0,
+    "review_needed": 0,
+    "finish_ready": 0,
+    "blocked": 0,
+    "failed_check": 0,
+    "human_decision": 0
+  },
+  "privacy_boundary": {
+    "scope": "work_item_state_only",
+    "prohibited": [
+      "personal_productivity_ranking",
+      "agent_productivity_ranking",
+      "time_online_scoring",
+      "token_spend_scoring"
+    ]
+  }
+}
+```
+
+Each queued item has:
+
+| Field | Meaning |
+| --- | --- |
+| `queue` | Queue name that emitted the item. |
+| `repo`, `issue`, `title`, `state`, `status`, `labels`, `milestone` | GitHub issue identity and workflow labels. |
+| `pull_request` | PR number, URL, state, draft flag, and review decision when known. |
+| `evidence` | Normalized evidence names: `ticket_readiness`, `pr_readiness`, `checks_status`, `review_status`, `next_action`, and `blockers`. |
+| `reason_codes` | Stable machine-readable reasons for membership. |
+| `next_safe_command` | The next Gira command an operator can run without mutating hidden state unexpectedly. |
+
+Queue membership rules:
+
+| Queue | Membership evidence | Next safe command |
+| --- | --- | --- |
+| `agent_ready` | Open issue with `status:ready`, no linked PR, no blockers, no human-decision label, and missing or `ready` `ticket_readiness`. | `gira ticket start --repo OWNER/REPO --ticket N --apply` |
+| `review_needed` | Open non-draft PR with `status:in-review`, missing or required review state, or `pr_readiness.next_action=request_review`. | `gira ticket review --repo OWNER/REPO --ticket N --json` |
+| `finish_ready` | Open non-draft PR with `pr_readiness=ready_for_finish`, `next_action=merge_when_policy_allows` or `finish_ticket`, or finish-ready evidence, with passed checks, approved review, and no blockers. | `gira ticket finish --repo OWNER/REPO --ticket N --dry-run` |
+| `blocked` | `status:blocked`, explicit blockers, or error findings from ticket or PR readiness. | `gira ticket status --repo OWNER/REPO --ticket N --json` |
+| `failed_check` | Failed or failing checks, a checks blocker, or PR readiness check-failure findings. | `gira ticket status --repo OWNER/REPO --ticket N --json` |
+| `human_decision` | Labels such as `agent:human`, `needs:human`, `needs:decision`, `type:decision`, or readiness `next_action=ask_human`. | `gira ticket handoff --repo OWNER/REPO --ticket N planner --json` |
+
+Queues are not mutually exclusive. For example, a PR with failed checks can
+appear in both `blocked` and `failed_check` so a dashboard can show both the
+general blocker lane and the specialized CI lane without losing evidence.
+
+The privacy boundary is part of the contract: workspace queues describe
+work-item state and safe next commands only. They must not rank people or
+agents, score productivity, infer availability from time online, or turn token
+spend into an execution metric.
+
 ## Boundary
 
 This is not a separate Jira import/export database. Workspace commands operate on issues, labels, milestones, and links that remain visible in GitHub. `gira projects sync` links and mirrors repository issue state into an existing GitHub Project; repo issues, labels, and milestones remain the source of truth. It mirrors `priority:*` labels to `Priority`, `area:*` labels to `Layer / workstream`, `agent:*` labels to `Owner / agent`, status labels to `Status`, and milestone due dates to `Target date`.

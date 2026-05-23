@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const TicketNoteReportSchemaVersion = "ticket-note-report/v1"
+
 type TicketNoteInput struct {
 	Repo   RepoRef `json:"-"`
 	Ticket int     `json:"ticket"`
@@ -16,22 +18,31 @@ type TicketNoteInput struct {
 }
 
 type TicketNoteReport struct {
-	Command      string           `json:"command"`
-	Repo         string           `json:"repo"`
-	Ticket       int              `json:"ticket"`
-	Kind         string           `json:"kind"`
-	Target       string           `json:"target"`
-	Targets      []TicketNoteSink `json:"targets"`
-	DryRun       bool             `json:"dry_run"`
-	RenderedBody string           `json:"rendered_body"`
-	Status       WorkStatusResult `json:"status"`
-	NextStep     string           `json:"next_step"`
+	SchemaVersion string            `json:"schema_version,omitempty"`
+	Command       string            `json:"command"`
+	Repo          string            `json:"repo"`
+	Ticket        int               `json:"ticket"`
+	Body          string            `json:"body,omitempty"`
+	Kind          string            `json:"kind"`
+	Target        string            `json:"target"`
+	Targets       []TicketNoteSink  `json:"targets"`
+	DryRun        bool              `json:"dry_run"`
+	RenderedBody  string            `json:"rendered_body"`
+	Status        WorkStatusResult  `json:"status"`
+	NextStep      string            `json:"next_step"`
+	Approval      *ApprovalEvidence `json:"approval,omitempty"`
 }
 
 type TicketNoteSink struct {
 	Type   string `json:"type"`
 	Number int    `json:"number"`
 	Status string `json:"status"`
+}
+
+func EnsureTicketNoteReportSchema(report *TicketNoteReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = TicketNoteReportSchemaVersion
+	}
 }
 
 func BuildTicketNoteReport(input TicketNoteInput, runner CommandRunner) (TicketNoteReport, error) {
@@ -58,13 +69,15 @@ func BuildTicketNoteReport(input TicketNoteInput, runner CommandRunner) (TicketN
 	}
 	status, err := GetWorkStatus(input.Repo, input.Ticket, runner)
 	report := TicketNoteReport{
-		Command: "ticket note",
-		Repo:    input.Repo.FullName(),
-		Ticket:  input.Ticket,
-		Kind:    kind,
-		Target:  target,
-		DryRun:  input.DryRun,
-		Status:  status,
+		SchemaVersion: TicketNoteReportSchemaVersion,
+		Command:       "ticket note",
+		Repo:          input.Repo.FullName(),
+		Ticket:        input.Ticket,
+		Body:          body,
+		Kind:          kind,
+		Target:        target,
+		DryRun:        input.DryRun,
+		Status:        status,
 	}
 	if err != nil {
 		return report, err
@@ -80,6 +93,7 @@ func BuildTicketNoteReport(input TicketNoteInput, runner CommandRunner) (TicketN
 	report.RenderedBody = RenderTicketNoteBody(kind, body, status)
 	report.NextStep = ticketNoteNextStep(report)
 	if input.DryRun {
+		report.Approval = TicketNoteApprovalEvidence(report)
 		return report, nil
 	}
 	for i := range targets {

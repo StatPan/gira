@@ -133,3 +133,60 @@ func workPRApprovalActions(result WorkPRResult) []ApprovalPlannedAction {
 	}
 	return actions
 }
+
+func TicketNoteApprovalEvidence(report TicketNoteReport) *ApprovalEvidence {
+	applyCommand := ticketNoteApprovalCommand(report, "--apply")
+	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira ticket note",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		Issue:                 report.Ticket,
+		OutputSchema:          TicketNoteReportSchemaVersion,
+		PlannedActions:        ticketNoteApprovalActions(report),
+		Blockers:              []string{},
+		Warnings:              []string{},
+		PostApplyVerification: fmt.Sprintf("gira ticket view %d --repo %s --json", report.Ticket, report.Repo),
+	}
+}
+
+func ticketNoteApprovalCommand(report TicketNoteReport, mode string) string {
+	args := []string{
+		"gira ticket note",
+		fmt.Sprintf("%d", report.Ticket),
+		"--repo", report.Repo,
+		"--kind", report.Kind,
+		"--target", report.Target,
+	}
+	if strings.TrimSpace(report.Body) != "" {
+		args = append(args, "--body", shellQuoteArg(report.Body))
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func ticketNoteApprovalActions(report TicketNoteReport) []ApprovalPlannedAction {
+	actions := make([]ApprovalPlannedAction, 0, len(report.Targets))
+	for _, target := range report.Targets {
+		action := target.Type + ":comment"
+		actions = append(actions, ApprovalPlannedAction{
+			Action: action,
+			Target: fmt.Sprintf("#%d", target.Number),
+			Detail: "post " + report.Kind + " note",
+		})
+	}
+	return actions
+}
+
+func shellQuoteArg(value string) string {
+	if value == "" {
+		return "''"
+	}
+	if !strings.ContainsAny(value, " \t\n'\"`$\\") {
+		return value
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}

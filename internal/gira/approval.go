@@ -2,6 +2,7 @@ package gira
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -906,6 +907,139 @@ func adoptIssuesApprovalBlockers(report AdoptIssuesReport) []string {
 		if action.Status == "blocked" || action.Status == "conflict" {
 			blockers = appendUniqueStrings(blockers, "adopt_issues_blocked_action")
 		}
+	}
+	return stableStringSlice(blockers)
+}
+
+func MilestoneApprovalEvidence(report MilestoneReport) *ApprovalEvidence {
+	applyCommand := milestoneApprovalCommand(report, "--apply")
+	dryRunCommand := milestoneApprovalCommand(report, "--dry-run")
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira " + report.Command,
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		OutputSchema:          MilestoneReportSchemaVersion,
+		PlannedActions:        milestoneApprovalActions(report),
+		Blockers:              milestoneApprovalBlockers(report),
+		Warnings:              []string{},
+		PostApplyVerification: fmt.Sprintf("gira milestone status %s --repo %s --json", QuoteShellArg(milestoneApprovalTitle(report)), QuoteShellArg(report.Repo)),
+	}
+}
+
+func milestoneApprovalCommand(report MilestoneReport, mode string) string {
+	title := milestoneApprovalTitle(report)
+	args := []string{"gira " + report.Command}
+	if title != "" {
+		args = append(args, QuoteShellArg(title))
+	}
+	args = append(args, "--repo", QuoteShellArg(report.Repo))
+	switch report.Command {
+	case "milestone new":
+		if report.Milestone != nil {
+			if strings.TrimSpace(report.Milestone.Description) != "" {
+				args = append(args, "--description", QuoteShellArg(report.Milestone.Description))
+			}
+			if report.Milestone.DueOn != nil && strings.TrimSpace(*report.Milestone.DueOn) != "" {
+				args = append(args, "--due-on", QuoteShellArg(*report.Milestone.DueOn))
+			}
+		}
+	case "milestone assign":
+		if tickets := milestoneApprovalTickets(report); len(tickets) > 0 {
+			args = append(args, "--tickets", joinIssueNumbers(tickets))
+		}
+	case "milestone plan":
+		if strings.TrimSpace(report.Filters.State) != "" {
+			args = append(args, "--state", QuoteShellArg(report.Filters.State))
+		}
+		for _, label := range report.Filters.Labels {
+			args = append(args, "--label", QuoteShellArg(label))
+		}
+		if report.Filters.Limit > 0 {
+			args = append(args, "--limit", fmt.Sprintf("%d", report.Filters.Limit))
+		}
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func milestoneApprovalTitle(report MilestoneReport) string {
+	if report.Milestone != nil && strings.TrimSpace(report.Milestone.Title) != "" {
+		return strings.TrimSpace(report.Milestone.Title)
+	}
+	if strings.TrimSpace(report.Filters.Milestone) != "" {
+		return strings.TrimSpace(report.Filters.Milestone)
+	}
+	for _, action := range report.Actions {
+		if strings.TrimSpace(action.Milestone) != "" {
+			return strings.TrimSpace(action.Milestone)
+		}
+	}
+	return ""
+}
+
+func milestoneApprovalTickets(report MilestoneReport) []int {
+	seen := map[int]struct{}{}
+	tickets := []int{}
+	for _, action := range report.Actions {
+		if action.Issue <= 0 {
+			continue
+		}
+		if _, ok := seen[action.Issue]; ok {
+			continue
+		}
+		seen[action.Issue] = struct{}{}
+		tickets = append(tickets, action.Issue)
+	}
+	sort.Ints(tickets)
+	return tickets
+}
+
+func milestoneApprovalActions(report MilestoneReport) []ApprovalPlannedAction {
+	actions := make([]ApprovalPlannedAction, 0, len(report.Actions))
+	for _, action := range report.Actions {
+		if strings.TrimSpace(action.Action) == "" {
+			continue
+		}
+		target := action.Milestone
+		if action.Issue > 0 {
+			target = fmt.Sprintf("#%d", action.Issue)
+		}
+		detail := strings.TrimSpace(action.Reason)
+		if strings.TrimSpace(action.Status) != "" {
+			if detail == "" {
+				detail = action.Status
+			} else {
+				detail = action.Status + ": " + detail
+			}
+		}
+		if action.Issue > 0 && strings.TrimSpace(action.Milestone) != "" {
+			detail = appendApprovalDetail(detail, "milestone="+action.Milestone)
+		}
+		actions = append(actions, ApprovalPlannedAction{
+			Action: action.Action,
+			Target: target,
+			Detail: detail,
+		})
+	}
+	return actions
+}
+
+func milestoneApprovalBlockers(report MilestoneReport) []string {
+	blockers := []string{}
+	hasPlanned := false
+	for _, action := range report.Actions {
+		if action.Status == "planned" {
+			hasPlanned = true
+		}
+		if action.Status == "blocked" || action.Status == "conflict" {
+			blockers = appendUniqueStrings(blockers, "milestone_blocked_action")
+		}
+	}
+	if report.DryRun && !hasPlanned {
+		blockers = appendUniqueStrings(blockers, "milestone_no_planned_actions")
 	}
 	return stableStringSlice(blockers)
 }

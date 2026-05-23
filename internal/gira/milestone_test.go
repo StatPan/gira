@@ -20,6 +20,19 @@ func TestBuildMilestoneNewReportDryRunAndApply(t *testing.T) {
 	if dry.Milestone == nil || dry.Milestone.Title != "2.0 Alpha" || dry.Actions[0].Status != "planned" {
 		t.Fatalf("unexpected dry-run report: %+v", dry)
 	}
+	if dry.SchemaVersion != MilestoneReportSchemaVersion || dry.Approval == nil {
+		t.Fatalf("expected milestone schema and approval evidence: %+v", dry)
+	}
+	if dry.Approval.SchemaVersion != ApprovalPlanSchemaVersion || dry.Approval.CanonicalCommand != "gira milestone new" || dry.Approval.OutputSchema != MilestoneReportSchemaVersion {
+		t.Fatalf("unexpected milestone approval identity: %+v", dry.Approval)
+	}
+	expectedApply := "gira milestone new '2.0 Alpha' --repo StatPan/gira --description 'State runtime' --due-on 2026-06-01T23:59:59Z --apply"
+	if dry.Approval.ApplyCommand != expectedApply || dry.Approval.PostApplyVerification != "gira milestone status '2.0 Alpha' --repo StatPan/gira --json" {
+		t.Fatalf("unexpected milestone approval commands: %+v", dry.Approval)
+	}
+	if dry.Approval.Blockers == nil || dry.Approval.Warnings == nil || !approvalHasAction(dry.Approval.PlannedActions, "milestone:create") {
+		t.Fatalf("unexpected milestone approval plan: %+v", dry.Approval)
+	}
 	if !strings.Contains(dry.NextStep, "gira milestone new") || !strings.Contains(dry.NextStep, "--apply") {
 		t.Fatalf("unexpected dry-run next step: %s", dry.NextStep)
 	}
@@ -30,6 +43,9 @@ func TestBuildMilestoneNewReportDryRunAndApply(t *testing.T) {
 	}
 	if applied.Milestone == nil || applied.Milestone.Number != 12 || applied.Actions[0].Status != "applied" {
 		t.Fatalf("unexpected apply report: %+v", applied)
+	}
+	if applied.SchemaVersion != MilestoneReportSchemaVersion || applied.Approval != nil {
+		t.Fatalf("apply report should have schema and omit dry-run approval: %+v", applied)
 	}
 }
 
@@ -81,6 +97,12 @@ func TestBuildMilestoneAssignReportDryRunAndApply(t *testing.T) {
 	if dry.Counts.WouldAssign != 1 || dry.Actions[0].Status != "planned" {
 		t.Fatalf("unexpected dry-run report: %+v", dry)
 	}
+	if dry.SchemaVersion != MilestoneReportSchemaVersion || dry.Approval == nil {
+		t.Fatalf("expected milestone assign schema and approval evidence: %+v", dry)
+	}
+	if dry.Approval.ApplyCommand != "gira milestone assign '2.0 Alpha' --repo StatPan/gira --tickets 10 --apply" || !approvalHasAction(dry.Approval.PlannedActions, "issue:assign-milestone") {
+		t.Fatalf("unexpected milestone assign approval evidence: %+v", dry.Approval)
+	}
 
 	applied, err := BuildMilestoneAssignReport(MilestoneAssignInput{Repo: repo, Milestone: "2.0 Alpha", Tickets: []int{10}, Apply: true}, runner)
 	if err != nil {
@@ -88,6 +110,9 @@ func TestBuildMilestoneAssignReportDryRunAndApply(t *testing.T) {
 	}
 	if applied.Counts.AppliedAssign != 1 || applied.Actions[0].Status != "applied" {
 		t.Fatalf("unexpected apply report: %+v", applied)
+	}
+	if applied.SchemaVersion != MilestoneReportSchemaVersion || applied.Approval != nil {
+		t.Fatalf("apply report should have schema and omit dry-run approval: %+v", applied)
 	}
 }
 
@@ -104,6 +129,12 @@ func TestBuildMilestonePlanReportSelectsReadyTickets(t *testing.T) {
 	}
 	if report.Filters.Labels[0] != "status:ready" || report.Counts.WouldAssign != 1 || report.Actions[0].Issue != 10 {
 		t.Fatalf("unexpected plan report: %+v", report)
+	}
+	if report.SchemaVersion != MilestoneReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("expected milestone plan schema and approval evidence: %+v", report)
+	}
+	if report.Approval.ApplyCommand != "gira milestone plan '2.0 Alpha' --repo StatPan/gira --state open --label status:ready --limit 20 --apply" || !approvalHasAction(report.Approval.PlannedActions, "issue:assign-milestone") {
+		t.Fatalf("unexpected milestone plan approval evidence: %+v", report.Approval)
 	}
 }
 

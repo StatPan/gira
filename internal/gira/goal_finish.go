@@ -15,6 +15,7 @@ type GoalFinishInput struct {
 	Repo     RepoRef `json:"repo"`
 	Goal     int     `json:"goal"`
 	DryRun   bool    `json:"dry_run"`
+	Apply    bool    `json:"apply,omitempty"`
 	Terminal string  `json:"terminal,omitempty"`
 }
 
@@ -23,10 +24,18 @@ type GoalFinishReport struct {
 	Repo       string              `json:"repo"`
 	Goal       int                 `json:"goal"`
 	DryRun     bool                `json:"dry_run"`
+	Apply      bool                `json:"apply,omitempty"`
 	Readiness  GoalFinishReadiness `json:"readiness"`
 	Receipt    GoalFinishReceipt   `json:"receipt"`
+	Actions    []GoalFinishAction  `json:"actions,omitempty"`
 	NextAction string              `json:"next_action"`
 	NextStep   string              `json:"next_step"`
+}
+
+type GoalFinishAction struct {
+	Action string `json:"action"`
+	Status string `json:"status"`
+	Detail string `json:"detail"`
 }
 
 type GoalFinishReadiness struct {
@@ -85,8 +94,8 @@ func BuildGoalFinishReport(input GoalFinishInput, runner CommandRunner) (GoalFin
 	if input.Goal <= 0 {
 		return GoalFinishReport{}, fmt.Errorf("goal must be > 0")
 	}
-	if !input.DryRun {
-		return GoalFinishReport{}, fmt.Errorf("goal finish is dry-run-only in this release")
+	if input.DryRun == input.Apply {
+		return GoalFinishReport{}, fmt.Errorf("exactly one of --dry-run or --apply is required")
 	}
 	terminal := strings.TrimSpace(input.Terminal)
 	if terminal == "" {
@@ -101,16 +110,30 @@ func BuildGoalFinishReport(input GoalFinishInput, runner CommandRunner) (GoalFin
 	}
 	readiness := buildGoalFinishReadiness(input.Repo, status, terminal, runner)
 	receipt := buildGoalFinishReceipt(readiness)
-	return GoalFinishReport{
+	report := GoalFinishReport{
 		Command:    "goal finish",
 		Repo:       input.Repo.FullName(),
 		Goal:       input.Goal,
 		DryRun:     input.DryRun,
+		Apply:      input.Apply,
 		Readiness:  readiness,
 		Receipt:    receipt,
+		Actions:    goalFinishActions(input, readiness),
 		NextAction: readiness.NextAction,
 		NextStep:   readiness.NextStep,
-	}, nil
+	}
+	if input.Apply {
+		if err := applyGoalFinishHandoff(input, readiness, receipt, runner); err != nil {
+			return report, err
+		}
+		for i := range report.Actions {
+			if report.Actions[i].Action == "goal:comment" {
+				report.Actions[i].Status = "applied"
+			}
+		}
+		report.NextStep = "human review handoff receipt posted"
+	}
+	return report, nil
 }
 
 func validGoalTerminalRecommendation(value string) bool {
@@ -257,6 +280,37 @@ func goalFinishNextStep(repo RepoRef, readiness GoalFinishReadiness) (string, st
 	}
 }
 
+func goalFinishActions(input GoalFinishInput, readiness GoalFinishReadiness) []GoalFinishAction {
+	if input.DryRun && readiness.TerminalRecommendation == "human_review" && len(readiness.Blockers) > 0 {
+		return []GoalFinishAction{{
+			Action: "goal:comment",
+			Status: "planned",
+			Detail: fmt.Sprintf("post goal-finish-receipt/v1 human review handoff to issue #%d", readiness.Goal.Number),
+		}}
+	}
+	if input.Apply && readiness.TerminalRecommendation == "human_review" && len(readiness.Blockers) > 0 {
+		return []GoalFinishAction{{
+			Action: "goal:comment",
+			Status: "planned",
+			Detail: fmt.Sprintf("post goal-finish-receipt/v1 human review handoff to issue #%d", readiness.Goal.Number),
+		}}
+	}
+	return nil
+}
+
+func applyGoalFinishHandoff(input GoalFinishInput, readiness GoalFinishReadiness, receipt GoalFinishReceipt, runner CommandRunner) error {
+	if strings.TrimSpace(input.Terminal) != "human_review" {
+		return fmt.Errorf("goal finish --apply currently supports only explicit --terminal human_review")
+	}
+	if readiness.TerminalRecommendation != "human_review" || len(readiness.Blockers) == 0 {
+		return fmt.Errorf("goal finish --apply requires terminal human_review with blockers to preserve a handoff instead of closing the goal")
+	}
+	if _, err := runner.Run("gh", "issue", "comment", strconv.Itoa(input.Goal), "--repo", input.Repo.FullName(), "--body", receipt.RenderedBody); err != nil {
+		return fmt.Errorf("post goal finish receipt: %w", err)
+	}
+	return nil
+}
+
 func buildGoalFinishReceipt(readiness GoalFinishReadiness) GoalFinishReceipt {
 	receipt := GoalFinishReceipt{
 		SchemaVersion:          GoalFinishReceiptSchemaVersion,
@@ -280,7 +334,7 @@ func renderGoalFinishReceipt(receipt GoalFinishReceipt) string {
 	if blockers == "" {
 		blockers = "none"
 	}
-	return fmt.Sprintf("## Goal Finish Receipt\n\n- Finished at: %s\n- Goal: #%d status=%s state=%s\n- Ready: %t\n- Terminal recommendation: %s\n- Children: total=%d done=%d ready=%d in_progress=%d in_review=%d blocked=%d\n- Blockers: %s\n- Next: %s\n", receipt.FinishedAt, receipt.Goal.Number, receipt.Goal.Status, receipt.Goal.State, receipt.Ready, receipt.TerminalRecommendation, receipt.ChildSummary["total"], receipt.ChildSummary["done"], receipt.ChildSummary["ready"], receipt.ChildSummary["in_progress"], receipt.ChildSummary["in_review"], receipt.ChildSummary["blocked"], blockers, receipt.FinalState)
+	return fmt.Sprintf("## Goal Finish Receipt\n\n- Schema: %s\n- Finished at: %s\n- Goal: #%d status=%s state=%s\n- Ready: %t\n- Terminal recommendation: %s\n- Children: total=%d done=%d ready=%d in_progress=%d in_review=%d blocked=%d\n- Blockers: %s\n- Next: %s\n", receipt.SchemaVersion, receipt.FinishedAt, receipt.Goal.Number, receipt.Goal.Status, receipt.Goal.State, receipt.Ready, receipt.TerminalRecommendation, receipt.ChildSummary["total"], receipt.ChildSummary["done"], receipt.ChildSummary["ready"], receipt.ChildSummary["in_progress"], receipt.ChildSummary["in_review"], receipt.ChildSummary["blocked"], blockers, receipt.FinalState)
 }
 
 func FormatGoalFinish(report GoalFinishReport) string {

@@ -135,13 +135,14 @@ func CoreCommandSpecs() []CommandSpec {
 		},
 		{
 			Path:    []string{"goal", "finish"},
-			Summary: "Preview goal finish readiness and receipt evidence without closing the goal.",
-			Usage:   "gira goal finish [GOAL] --dry-run [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]",
+			Summary: "Preview goal finish readiness and apply human-review handoff receipts.",
+			Usage:   "gira goal finish [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]",
 			Since:   "v1.17.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
 				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional."},
-				{Name: "--dry-run", Summary: "Required. Preview readiness and receipt without mutation."},
+				{Name: "--dry-run", Summary: "Preview readiness and receipt without mutation."},
+				{Name: "--apply", Summary: "Post a goal-finish-receipt/v1 human-review handoff when blockers remain."},
 				{Name: "--terminal", Summary: "Optional terminal recommendation override: done, human_review, blocked, superseded, or abandoned."},
 				{Name: "--json", Summary: "Emit stable goal-finish-readiness/v1 JSON."},
 			},

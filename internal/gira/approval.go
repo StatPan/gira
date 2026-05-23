@@ -747,3 +747,67 @@ func workspaceReposSyncApprovalBlockers(report WorkspaceRepoSyncReport) []string
 	}
 	return stableStringSlice(blockers)
 }
+
+func AdoptRepoApprovalEvidence(report AdoptRepoReport) *ApprovalEvidence {
+	applyCommand := adoptRepoApprovalCommand(report, "--apply")
+	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira adopt repo",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		OutputSchema:          AdoptRepoReportSchemaVersion,
+		PlannedActions:        adoptRepoApprovalActions(report),
+		Blockers:              adoptRepoApprovalBlockers(report),
+		Warnings:              stableStringSlice(report.Warnings),
+		PostApplyVerification: fmt.Sprintf("gira config repo --repo %s --json", QuoteShellArg(report.Repo)),
+	}
+}
+
+func adoptRepoApprovalCommand(report AdoptRepoReport, mode string) string {
+	args := []string{
+		"gira adopt repo",
+		"--repo", QuoteShellArg(report.Repo),
+		"--path", QuoteShellArg(report.Path),
+	}
+	if strings.TrimSpace(report.Strategy) != "" {
+		args = append(args, "--strategy", QuoteShellArg(report.Strategy))
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func adoptRepoApprovalActions(report AdoptRepoReport) []ApprovalPlannedAction {
+	actions := make([]ApprovalPlannedAction, 0, len(report.Actions))
+	for _, action := range report.Actions {
+		if strings.TrimSpace(action.Action) == "" {
+			continue
+		}
+		detail := strings.TrimSpace(action.Reason)
+		if strings.TrimSpace(action.Status) != "" {
+			if detail == "" {
+				detail = action.Status
+			} else {
+				detail = action.Status + ": " + detail
+			}
+		}
+		actions = append(actions, ApprovalPlannedAction{
+			Action: action.Action,
+			Target: action.Target,
+			Detail: detail,
+		})
+	}
+	return actions
+}
+
+func adoptRepoApprovalBlockers(report AdoptRepoReport) []string {
+	blockers := []string{}
+	for _, action := range report.Actions {
+		if action.Status == "conflict" {
+			blockers = appendUniqueStrings(blockers, "adopt_repo_conflict_action")
+		}
+	}
+	return stableStringSlice(blockers)
+}

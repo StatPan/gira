@@ -17,6 +17,8 @@ const (
 	AdoptRepoStrategyNormalize AdoptRepoStrategy = "normalize"
 )
 
+const AdoptRepoReportSchemaVersion = "adopt-repo-report/v1"
+
 type AdoptRepoInput struct {
 	Repo     RepoRef `json:"repo"`
 	Path     string  `json:"path"`
@@ -27,6 +29,7 @@ type AdoptRepoInput struct {
 }
 
 type AdoptRepoReport struct {
+	SchemaVersion  string               `json:"schema_version,omitempty"`
 	Repo           string               `json:"repo"`
 	Path           string               `json:"path"`
 	DryRun         bool                 `json:"dry_run"`
@@ -42,6 +45,13 @@ type AdoptRepoReport struct {
 	Warnings       []string             `json:"warnings,omitempty"`
 	NextStep       string               `json:"next_step"`
 	WorkspaceStep  string               `json:"workspace_step,omitempty"`
+	Approval       *ApprovalEvidence    `json:"approval,omitempty"`
+}
+
+func EnsureAdoptRepoReportSchema(report *AdoptRepoReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = AdoptRepoReportSchemaVersion
+	}
 }
 
 type AdoptRepoCounts struct {
@@ -104,6 +114,7 @@ func BuildAdoptRepoReport(input AdoptRepoInput, runner CommandRunner) (AdoptRepo
 	}
 	absPath, _ := filepath.Abs(path)
 	report := AdoptRepoReport{
+		SchemaVersion:  AdoptRepoReportSchemaVersion,
 		Repo:           input.Repo.FullName(),
 		Path:           absPath,
 		DryRun:         input.DryRun,
@@ -172,6 +183,9 @@ func BuildAdoptRepoReport(input AdoptRepoInput, runner CommandRunner) (AdoptRepo
 	}
 	report.NextStep = adoptRepoNextStep(report)
 	report.WorkspaceStep = adoptRepoWorkspaceStep(report)
+	if input.DryRun {
+		report.Approval = AdoptRepoApprovalEvidence(report)
+	}
 	return report, nil
 }
 

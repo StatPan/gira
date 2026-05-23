@@ -121,7 +121,8 @@ Implemented producers include `gira ticket new --dry-run --json` and
 `gira repo register --dry-run --json` and
 `gira repo migrate --dry-run --json` and
 `gira setup global --dry-run --json` and
-`gira workspace repos sync --dry-run --json`.
+`gira workspace repos sync --dry-run --json` and
+`gira adopt repo --dry-run --json`.
 The surrounding report emits a versioned `schema_version`, and
 `approval.output_schema` references that same version.
 
@@ -235,7 +236,7 @@ before broad adapter use:
 
 | Gap | Impact | Follow-up |
 | --- | --- | --- |
-| Not every mutating dry-run emits the shared approval evidence envelope yet. | `agent-kernel` can use `gira-approval-plan/v1` for ticket lifecycle, core config/registry, and workspace repo-sync dry-runs, but must still normalize adoption mutation dry-run reports command by command. | Extend the shared `approval` object to adoption mutation dry-runs. |
+| Not every mutating dry-run emits the shared approval evidence envelope yet. | `agent-kernel` can use `gira-approval-plan/v1` for ticket lifecycle, core config/registry, workspace repo-sync, and repo-adoption dry-runs, but must still normalize issue-adoption mutation dry-run reports command by command. | Extend the shared `approval` object to `adopt issues` dry-runs. |
 | Some command families remain text-first or partially JSON-covered. | Automation confidence drops and adapters need fragile parsing. | Add JSON contracts or mark those commands unsupported for adapters. |
 | No explicit post-apply verification link in every apply report. | Adapters need command-specific knowledge to know which read command proves completion. | Add `post_apply_verification` fields to apply reports. |
 

@@ -109,6 +109,32 @@ The adapter should prefer `--json` outputs when Gira supports them. If a command
 does not support JSON yet, the adapter may store text output but must mark
 `stdout_json` as absent and lower automation confidence.
 
+## Shared Approval Plan
+
+Mutating dry-run JSON reports should include a common `approval` object. The
+first implemented producer is `gira ticket start --dry-run --json`.
+
+`approval.schema_version` is `gira-approval-plan/v1`.
+
+| Field | Meaning |
+| --- | --- |
+| `schema_version` | Approval evidence schema version. |
+| `capability` | Capability class for the eventual apply command, usually `apply_mutation`. |
+| `canonical_command` | Canonical Gira command family, for example `gira ticket start`. |
+| `dry_run_command` | Dry-run command whose output produced this evidence. |
+| `apply_command` | Exact apply command this evidence can approve. |
+| `repo` | Target `OWNER/REPO` when repo-scoped. |
+| `issue` | Target issue or ticket number when present. |
+| `output_schema` | Versioned shape of the surrounding dry-run report. |
+| `planned_actions` | Stable action list the apply command is expected to perform. |
+| `blockers` | Stable blockers array. Empty means the dry-run did not block approval. |
+| `warnings` | Stable warnings array. Empty means no warnings were emitted. |
+| `post_apply_verification` | Read command the adapter should run after apply. |
+
+Adapters must compare the approved `apply_command`, `repo`, `issue`, and
+planned action evidence before executing apply. A matching approval does not
+authorize a different command, repo, issue, or additional flags.
+
 ## Stable JSON Fields Needed By The First Flow
 
 The first safe flow can run with existing Gira commands if these fields are
@@ -198,20 +224,15 @@ before broad adapter use:
 
 | Gap | Impact | Follow-up |
 | --- | --- | --- |
-| Dry-run outputs do not share a common approval evidence envelope. | `agent-kernel` must normalize per-command JSON shapes before it can compare dry-run to apply safely. | Define `gira-approval-plan/v1` or embed a common `approval` object in mutating dry-run reports. |
+| Not every mutating dry-run emits the shared approval evidence envelope yet. | `agent-kernel` can use `gira-approval-plan/v1` for `ticket start`, but must still normalize other dry-run reports command by command. | Extend the shared `approval` object to ticket pr/note/finish/supersede and config/workspace mutation dry-runs. |
 | Some command families remain text-first or partially JSON-covered. | Automation confidence drops and adapters need fragile parsing. | Add JSON contracts or mark those commands unsupported for adapters. |
 | No explicit post-apply verification link in every apply report. | Adapters need command-specific knowledge to know which read command proves completion. | Add `post_apply_verification` fields to apply reports. |
 | `ticket start --dry-run` has no `schema_version`. | Durable parsers cannot version the start plan cleanly. | Add `ticket-start/v1` or a broader lifecycle dry-run schema. |
 
 ## Follow-Up Issue Candidates
 
-Concrete follow-up issues created from this spike:
-
-- #595 Define shared approval evidence envelope for Gira dry-runs.
-
-A later issue may add `schema_version` and post-apply verification hints across
-ticket lifecycle start/pr/note/finish reports after #595 defines the shared
-shape.
+A later issue may add full top-level `schema_version` coverage and shared
+approval evidence across ticket lifecycle pr/note/finish reports.
 
 Do not create issues for hosted UI, autonomous code execution, model routing, or
 background sync as part of this contract.

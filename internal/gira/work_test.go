@@ -127,6 +127,40 @@ func TestStartWorkDryRunAcceptsExplicitReleaseAndHotfixBase(t *testing.T) {
 	}
 }
 
+func TestStartWorkDryRunIncludesApprovalEvidence(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`),
+	}, errs: map[string]error{
+		"git show-ref --verify --quiet refs/heads/issue-126-work-command": fmt.Errorf("exit status 1"),
+		"git ls-remote --exit-code --heads origin issue-126-work-command": fmt.Errorf("exit status 2"),
+	}}
+
+	result, err := StartWork(repo, 126, true, runner)
+	if err != nil {
+		t.Fatalf("StartWork error: %v", err)
+	}
+	approval := result.Approval
+	if approval == nil {
+		t.Fatalf("expected approval evidence: %+v", result)
+	}
+	if approval.SchemaVersion != ApprovalPlanSchemaVersion || approval.CanonicalCommand != "gira work start" || approval.Capability != AdapterCapabilityApplyMutation {
+		t.Fatalf("unexpected approval identity: %+v", approval)
+	}
+	if approval.ApplyCommand != "gira work start --repo StatPan/gira --issue 126 --apply" || approval.DryRunCommand != "gira work start --repo StatPan/gira --issue 126 --dry-run" {
+		t.Fatalf("unexpected approval commands: %+v", approval)
+	}
+	if approval.OutputSchema != "work-start-result/v1" || approval.PostApplyVerification != "gira ticket status 126 --repo StatPan/gira --json" {
+		t.Fatalf("unexpected approval verification fields: %+v", approval)
+	}
+	if len(approval.PlannedActions) < 3 || !approvalHasAction(approval.PlannedActions, "branch:create_or_reuse") || !approvalHasAction(approval.PlannedActions, "issue_status:update") {
+		t.Fatalf("approval missing planned actions: %+v", approval.PlannedActions)
+	}
+	if approval.Blockers == nil || approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", approval)
+	}
+}
+
 func TestStartWorkApplyRejectsDirtyWorktreeBeforeBranchMutation(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
@@ -144,6 +178,15 @@ func TestStartWorkApplyRejectsDirtyWorktreeBeforeBranchMutation(t *testing.T) {
 	if containsCall(runner.calls, "git checkout -b issue-126-work-command origin/main") {
 		t.Fatalf("dirty worktree should block checkout, calls=%v", runner.calls)
 	}
+}
+
+func approvalHasAction(actions []ApprovalPlannedAction, action string) bool {
+	for _, item := range actions {
+		if item.Action == action {
+			return true
+		}
+	}
+	return false
 }
 
 func TestStartWorkFailsMissingReady(t *testing.T) {

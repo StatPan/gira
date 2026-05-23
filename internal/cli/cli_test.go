@@ -2169,7 +2169,7 @@ func TestTicketStartDryRunJSON(t *testing.T) {
 		if repo.FullName() != "StatPan/gira" || issue != 126 || !dryRun {
 			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t", repo.FullName(), issue, dryRun)
 		}
-		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-126-work-command", DryRun: true, NextStatus: "In progress"}, nil
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-126-work-command", DryRun: true, NextStatus: "In progress", NextStep: "gira work start --repo StatPan/gira --issue 126 --apply"}, nil
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -2182,6 +2182,19 @@ func TestTicketStartDryRunJSON(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "next step:") {
 		t.Fatalf("JSON stdout contains human prose:\n%s", stdout.String())
+	}
+	var report gira.WorkStartResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket start JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Approval == nil {
+		t.Fatalf("ticket start dry-run JSON missing approval evidence:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira ticket start" {
+		t.Fatalf("unexpected approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira ticket start 126 --repo StatPan/gira --apply" || report.Approval.PostApplyVerification != "gira ticket status 126 --repo StatPan/gira --json" {
+		t.Fatalf("unexpected approval commands: %+v", report.Approval)
 	}
 }
 

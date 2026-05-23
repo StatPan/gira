@@ -7008,6 +7008,98 @@ func TestInitInvalidConfigFails(t *testing.T) {
 	}
 }
 
+func TestAdoptIssuesJSONUsesInjectedReport(t *testing.T) {
+	original := newAdoptIssuesReport
+	t.Cleanup(func() { newAdoptIssuesReport = original })
+	newAdoptIssuesReport = func(input gira.AdoptIssueInput) (gira.AdoptIssuesReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || !input.DryRun || input.Apply || input.State != "all" || !input.NormalizeStatus {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		if len(input.Issues) != 1 || input.Issues[0] != 7 || input.Milestone != "MVP" {
+			t.Fatalf("unexpected issue mapping input: %+v", input)
+		}
+		return gira.AdoptIssuesReport{
+			Repo:            input.Repo.FullName(),
+			DryRun:          true,
+			State:           input.State,
+			Issues:          append([]int(nil), input.Issues...),
+			Milestone:       input.Milestone,
+			Labels:          append([]string(nil), input.Labels...),
+			NormalizeStatus: input.NormalizeStatus,
+			Actions: []gira.AdoptIssuesAction{{
+				Issue:     7,
+				Title:     "Normalize me",
+				Action:    "issue:update",
+				Status:    "planned",
+				Milestone: "MVP",
+				Labels:    []string{"type:task"},
+				Reason:    "explicit issue adoption mapping",
+			}},
+			NextStep: "gira adopt issues --repo StatPan/gira --issues 7 --apply",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"adopt", "issues", "--repo", "StatPan/gira", "--state", "all", "--issues", "7", "--milestone", "MVP", "--label", "type:task", "--normalize-status", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	var report gira.AdoptIssuesReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode adopt issues JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.AdoptIssuesReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("adopt issues dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira adopt issues" || report.Approval.OutputSchema != gira.AdoptIssuesReportSchemaVersion {
+		t.Fatalf("unexpected adopt issues approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira adopt issues --repo StatPan/gira --state all --issues 7 --milestone MVP --label type:task --normalize-status --apply" || report.Approval.PostApplyVerification != "gira status --repo StatPan/gira --json" {
+		t.Fatalf("unexpected adopt issues approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
+	}
+}
+
+func TestAdoptIssuesApplyJSONOmitsApprovalEvidence(t *testing.T) {
+	original := newAdoptIssuesReport
+	t.Cleanup(func() { newAdoptIssuesReport = original })
+	newAdoptIssuesReport = func(input gira.AdoptIssueInput) (gira.AdoptIssuesReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || !input.Apply || input.DryRun {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		return gira.AdoptIssuesReport{
+			Repo:  input.Repo.FullName(),
+			Apply: true,
+			State: "open",
+			Actions: []gira.AdoptIssuesAction{{
+				Issue:  7,
+				Action: "issue:update",
+				Status: "applied",
+				Reason: "explicit issue adoption mapping",
+			}},
+			NextStep: "gira status --repo StatPan/gira",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"adopt", "issues", "--repo", "StatPan/gira", "--issues", "7", "--label", "type:task", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	var report gira.AdoptIssuesReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode adopt issues JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.AdoptIssuesReportSchemaVersion || !report.Apply {
+		t.Fatalf("unexpected adopt issues apply report: %+v", report)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
+	}
+}
+
 func TestAdoptRepoJSONUsesInjectedReport(t *testing.T) {
 	original := newAdoptRepoReport
 	t.Cleanup(func() { newAdoptRepoReport = original })

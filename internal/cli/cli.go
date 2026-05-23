@@ -6373,6 +6373,10 @@ func runAdopt(args []string, stdout io.Writer, stderr io.Writer) int {
 	report, err := newAdoptIssuesReport(gira.AdoptIssueInput{Repo: repo, Issues: issueNumbers, Milestone: *milestone, Labels: labels, State: *state, NormalizeStatus: *normalizeStatus, DryRun: *dryRun, Apply: *apply})
 	if err != nil {
 		if *jsonOutput {
+			gira.EnsureAdoptIssuesReportSchema(&report)
+			if *dryRun && strings.TrimSpace(report.Repo) != "" {
+				report.Approval = gira.AdoptIssuesApprovalEvidence(report)
+			}
 			out, _ := json.MarshalIndent(report, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
@@ -6380,6 +6384,10 @@ func runAdopt(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		gira.EnsureAdoptIssuesReportSchema(&report)
+		if *dryRun {
+			report.Approval = gira.AdoptIssuesApprovalEvidence(report)
+		}
 		out, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			fmt.Fprintf(stderr, "encode adopt JSON: %v\n", err)

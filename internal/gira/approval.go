@@ -811,3 +811,101 @@ func adoptRepoApprovalBlockers(report AdoptRepoReport) []string {
 	}
 	return stableStringSlice(blockers)
 }
+
+func AdoptIssuesApprovalEvidence(report AdoptIssuesReport) *ApprovalEvidence {
+	applyCommand := adoptIssuesApprovalCommand(report, "--apply")
+	dryRunCommand := adoptIssuesApprovalCommand(report, "--dry-run")
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira adopt issues",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		OutputSchema:          AdoptIssuesReportSchemaVersion,
+		PlannedActions:        adoptIssuesApprovalActions(report),
+		Blockers:              adoptIssuesApprovalBlockers(report),
+		Warnings:              []string{},
+		PostApplyVerification: fmt.Sprintf("gira status --repo %s --json", QuoteShellArg(report.Repo)),
+	}
+}
+
+func adoptIssuesApprovalCommand(report AdoptIssuesReport, mode string) string {
+	args := []string{
+		"gira adopt issues",
+		"--repo", QuoteShellArg(report.Repo),
+	}
+	if strings.TrimSpace(report.State) != "" {
+		args = append(args, "--state", QuoteShellArg(report.State))
+	}
+	if len(report.Issues) > 0 {
+		args = append(args, "--issues", joinIssueNumbers(report.Issues))
+	}
+	if strings.TrimSpace(report.Milestone) != "" {
+		args = append(args, "--milestone", QuoteShellArg(report.Milestone))
+	}
+	for _, label := range report.Labels {
+		args = append(args, "--label", QuoteShellArg(label))
+	}
+	if report.NormalizeStatus {
+		args = append(args, "--normalize-status")
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func adoptIssuesApprovalActions(report AdoptIssuesReport) []ApprovalPlannedAction {
+	actions := make([]ApprovalPlannedAction, 0, len(report.Actions))
+	for _, action := range report.Actions {
+		if strings.TrimSpace(action.Action) == "" {
+			continue
+		}
+		detail := strings.TrimSpace(action.Reason)
+		if strings.TrimSpace(action.Status) != "" {
+			if detail == "" {
+				detail = action.Status
+			} else {
+				detail = action.Status + ": " + detail
+			}
+		}
+		if strings.TrimSpace(action.Milestone) != "" {
+			detail = appendApprovalDetail(detail, "milestone="+action.Milestone)
+		}
+		if len(action.Labels) > 0 {
+			detail = appendApprovalDetail(detail, "labels="+strings.Join(action.Labels, ","))
+		}
+		if len(action.RemoveLabels) > 0 {
+			detail = appendApprovalDetail(detail, "remove_labels="+strings.Join(action.RemoveLabels, ","))
+		}
+		actions = append(actions, ApprovalPlannedAction{
+			Action: action.Action,
+			Target: fmt.Sprintf("#%d", action.Issue),
+			Detail: detail,
+		})
+	}
+	return actions
+}
+
+func appendApprovalDetail(detail string, suffix string) string {
+	suffix = strings.TrimSpace(suffix)
+	if suffix == "" {
+		return detail
+	}
+	if strings.TrimSpace(detail) == "" {
+		return suffix
+	}
+	return detail + "; " + suffix
+}
+
+func adoptIssuesApprovalBlockers(report AdoptIssuesReport) []string {
+	blockers := []string{}
+	if report.DryRun && len(report.Actions) == 0 {
+		blockers = appendUniqueStrings(blockers, "adopt_issues_no_planned_actions")
+	}
+	for _, action := range report.Actions {
+		if action.Status == "blocked" || action.Status == "conflict" {
+			blockers = appendUniqueStrings(blockers, "adopt_issues_blocked_action")
+		}
+	}
+	return stableStringSlice(blockers)
+}

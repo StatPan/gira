@@ -19,17 +19,31 @@ type AdoptIssueInput struct {
 	Apply           bool     `json:"apply"`
 }
 
+const AdoptIssuesReportSchemaVersion = "adopt-issues-report/v1"
+
 type AdoptIssuesReport struct {
-	Repo           string              `json:"repo"`
-	DryRun         bool                `json:"dry_run"`
-	Apply          bool                `json:"apply"`
-	State          string              `json:"state"`
-	Counts         AdoptIssuesCounts   `json:"counts"`
-	Unmapped       []AdoptIssueItem    `json:"unmapped,omitempty"`
-	BeforeUnmapped []AdoptIssueItem    `json:"before_unmapped"`
-	AfterUnmapped  []AdoptIssueItem    `json:"after_unmapped"`
-	Actions        []AdoptIssuesAction `json:"actions,omitempty"`
-	NextStep       string              `json:"next_step"`
+	SchemaVersion   string              `json:"schema_version,omitempty"`
+	Repo            string              `json:"repo"`
+	DryRun          bool                `json:"dry_run"`
+	Apply           bool                `json:"apply"`
+	State           string              `json:"state"`
+	Issues          []int               `json:"issues,omitempty"`
+	Milestone       string              `json:"milestone,omitempty"`
+	Labels          []string            `json:"labels,omitempty"`
+	NormalizeStatus bool                `json:"normalize_status,omitempty"`
+	Counts          AdoptIssuesCounts   `json:"counts"`
+	Unmapped        []AdoptIssueItem    `json:"unmapped,omitempty"`
+	BeforeUnmapped  []AdoptIssueItem    `json:"before_unmapped"`
+	AfterUnmapped   []AdoptIssueItem    `json:"after_unmapped"`
+	Actions         []AdoptIssuesAction `json:"actions,omitempty"`
+	NextStep        string              `json:"next_step"`
+	Approval        *ApprovalEvidence   `json:"approval,omitempty"`
+}
+
+func EnsureAdoptIssuesReportSchema(report *AdoptIssuesReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = AdoptIssuesReportSchemaVersion
+	}
 }
 
 type AdoptIssuesCounts struct {
@@ -95,7 +109,20 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 	if err != nil {
 		return AdoptIssuesReport{}, err
 	}
-	report := AdoptIssuesReport{Repo: input.Repo.FullName(), DryRun: input.DryRun, Apply: input.Apply, State: state, BeforeUnmapped: []AdoptIssueItem{}, AfterUnmapped: []AdoptIssueItem{}}
+	labels := normalizeAdoptLabels(input.Labels)
+	report := AdoptIssuesReport{
+		SchemaVersion:   AdoptIssuesReportSchemaVersion,
+		Repo:            input.Repo.FullName(),
+		DryRun:          input.DryRun,
+		Apply:           input.Apply,
+		State:           state,
+		Issues:          append([]int(nil), input.Issues...),
+		Milestone:       strings.TrimSpace(input.Milestone),
+		Labels:          labels,
+		NormalizeStatus: input.NormalizeStatus,
+		BeforeUnmapped:  []AdoptIssueItem{},
+		AfterUnmapped:   []AdoptIssueItem{},
+	}
 	report.Counts.Scanned = len(issues)
 	for _, issue := range issues {
 		item, unmapped := adoptIssueItem(issue)
@@ -117,6 +144,9 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 	if len(selected) == 0 {
 		if !input.NormalizeStatus {
 			report.NextStep = fmt.Sprintf("gira adopt issues --repo %s --issues 1-3 --milestone TITLE --label type:task --dry-run", QuoteShellArg(input.Repo.FullName()))
+			if input.DryRun {
+				report.Approval = AdoptIssuesApprovalEvidence(report)
+			}
 			return report, nil
 		}
 		for _, issue := range issues {
@@ -131,7 +161,6 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 		item, _ := adoptIssueItem(issue)
 		byNumber[item.Number] = item
 	}
-	labels := normalizeAdoptLabels(input.Labels)
 	statusDoneExists := false
 	if input.NormalizeStatus {
 		statusDoneExists, err = repoHasLabel(input.Repo, "status:done", runner)
@@ -198,6 +227,7 @@ func BuildAdoptIssuesReport(input AdoptIssueInput, runner CommandRunner) (AdoptI
 			report.NextStep += " --normalize-status"
 		}
 		report.NextStep += " --apply"
+		report.Approval = AdoptIssuesApprovalEvidence(report)
 	} else {
 		report.NextStep = fmt.Sprintf("gira status --repo %s", QuoteShellArg(input.Repo.FullName()))
 	}

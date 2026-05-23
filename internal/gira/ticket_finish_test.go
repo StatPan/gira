@@ -347,6 +347,9 @@ func TestFinishWorkDryRunReadySuggestsFinishApply(t *testing.T) {
 	if !approvalHasAction(result.Approval.PlannedActions, "pr:merge") || !approvalHasAction(result.Approval.PlannedActions, "finish:receipt") {
 		t.Fatalf("finish approval missing planned actions: %+v", result.Approval.PlannedActions)
 	}
+	if result.Approval.Blockers == nil || result.Approval.Warnings == nil {
+		t.Fatalf("finish approval blockers and warnings must be stable arrays: %+v", result.Approval)
+	}
 }
 
 func TestFinishWorkApplyReviewRequiredBlocksMerge(t *testing.T) {

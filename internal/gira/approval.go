@@ -95,7 +95,7 @@ func WorkPRApprovalEvidence(result WorkPRResult, canonicalCommand string) *Appro
 		Issue:                 result.Issue,
 		OutputSchema:          WorkPRResultSchemaVersion,
 		PlannedActions:        workPRApprovalActions(result),
-		Blockers:              append([]string(nil), result.Blockers...),
+		Blockers:              stableStringSlice(result.Blockers),
 		Warnings:              []string{},
 		PostApplyVerification: fmt.Sprintf("gira ticket status %d --repo %s --json", result.Issue, result.Repo),
 	}
@@ -204,7 +204,7 @@ func WorkFinishApprovalEvidence(result WorkFinishResult) *ApprovalEvidence {
 		Issue:                 result.Issue,
 		OutputSchema:          WorkFinishResultSchemaVersion,
 		PlannedActions:        workFinishApprovalActions(result),
-		Blockers:              append([]string(nil), result.Blockers...),
+		Blockers:              stableStringSlice(result.Blockers),
 		Warnings:              workFinishApprovalWarnings(result),
 		PostApplyVerification: fmt.Sprintf("gira ticket status %d --repo %s --json", result.Issue, result.Repo),
 	}
@@ -261,4 +261,11 @@ func workFinishApprovalWarnings(result WorkFinishResult) []string {
 	warnings = appendUniqueStrings(warnings, result.Readiness.Warnings...)
 	warnings = appendUniqueStrings(warnings, result.Receipt.Warnings...)
 	return warnings
+}
+
+func stableStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), values...)
 }

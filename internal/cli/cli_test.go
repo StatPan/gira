@@ -3635,6 +3635,9 @@ func TestTicketFinishDryRunJSON(t *testing.T) {
 	if report.Approval.ApplyCommand != "gira ticket finish 219 --repo StatPan/gira --apply" || report.Approval.PostApplyVerification != "gira ticket status 219 --repo StatPan/gira --json" {
 		t.Fatalf("unexpected approval commands: %+v", report.Approval)
 	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
+	}
 }
 
 func TestTicketFinishSyncLocalFlagPassesOption(t *testing.T) {

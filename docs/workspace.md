@@ -163,10 +163,15 @@ gira ticket status --repo OWNER/app --ticket 34
 ## Workspace Queues
 
 `workspace-queues/v1` is the read-only contract for turning ticket and PR
-evidence into operator queues. It does not fetch new evidence by itself. It maps
-existing `ticket status` evidence, including `ticket_readiness`, `pr_readiness`,
-checks, review state, labels, blockers, and next actions, into stable queue
-items.
+evidence into operator queues. `gira workspace status --json` includes it under
+`workspace_queues`. The contract maps existing `ticket status` evidence,
+including `ticket_readiness`, `pr_readiness`, checks, review state, labels,
+blockers, and next actions, into stable queue items.
+
+For compact workspace reads, Gira builds ready, blocked, and human-decision
+queues from the normal workspace issue summary. It reads detailed ticket status
+for `status:in-review` candidates so review, finish, and failed-check queues can
+use PR, checks, and review evidence without scanning every issue deeply.
 
 The JSON report shape is:
 
@@ -232,6 +237,11 @@ The privacy boundary is part of the contract: workspace queues describe
 work-item state and safe next commands only. They must not rank people or
 agents, score productivity, infer availability from time online, or turn token
 spend into an execution metric.
+
+This is the CLI/read-only shape for the hosted control-plane direction: a future
+hosted view can render the same queues across workspaces, but GitHub issues and
+PRs remain the source of truth and mutation still flows through explicit Gira
+commands.
 
 ## Boundary
 

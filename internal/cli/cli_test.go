@@ -1451,6 +1451,7 @@ func TestWorkspaceStatusJSON(t *testing.T) {
 			Inbox:     gira.WorkspaceInbox{Repo: "StatPan/backlog", Open: 1, NeedsRouting: 1},
 			Repos:     []gira.WorkspaceRepo{{Repo: "StatPan/gira", Open: 2, Ready: 1}},
 			Counts:    gira.WorkspaceCounts{Backlog: 3, InboxOpen: 1, RepoOpen: 2, Ready: 1},
+			Queues:    gira.BuildWorkspaceQueues(gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}, []gira.WorkStatusResult{{Repo: "StatPan/gira", Issue: 10, Title: "Ready issue", State: "open", Status: "Ready"}}),
 			Backlog:   []gira.WorkspaceBacklogItem{{Source: "inbox", Repo: "StatPan/backlog", Number: 7, Title: "Route later", State: "open", NeedsRouting: true}},
 			NextSteps: []string{"gira workspace ticket route --ticket 7 --repo OWNER/REPO --dry-run"},
 			FetchedAt: "2026-05-06T00:00:00Z",
@@ -1462,7 +1463,7 @@ func TestWorkspaceStatusJSON(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"workspace"`, `"repo": "StatPan/backlog"`, `"needs_routing": true`} {
+	for _, want := range []string{`"workspace"`, `"repo": "StatPan/backlog"`, `"needs_routing": true`, `"workspace_queues"`, `"agent_ready": 1`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("workspace status JSON missing %q:\n%s", want, stdout.String())
 		}

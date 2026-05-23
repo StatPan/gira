@@ -32,6 +32,15 @@ type WorkspaceClient interface {
 	UpdateInboxTicketChildIssue(inboxRepo RepoRef, ticket PortfolioTicket, childIssue string) error
 }
 
+type WorkspaceQueueStatusClient interface {
+	FetchQueueStatuses(repo RepoRef, summary StatusSummary, now time.Time, staleDays int) (WorkspaceQueueStatusSnapshot, error)
+}
+
+type WorkspaceQueueStatusSnapshot struct {
+	Statuses []WorkStatusResult `json:"statuses"`
+	Warnings []string           `json:"warnings,omitempty"`
+}
+
 type GHWorkspaceClient struct {
 	runner CommandRunner
 }
@@ -50,6 +59,7 @@ type WorkspaceReport struct {
 	Inbox      WorkspaceInbox         `json:"inbox"`
 	Repos      []WorkspaceRepo        `json:"repos"`
 	Counts     WorkspaceCounts        `json:"counts"`
+	Queues     WorkspaceQueuesReport  `json:"workspace_queues"`
 	Backlog    []WorkspaceBacklogItem `json:"backlog,omitempty"`
 	RateLimit  *WorkspaceRateLimit    `json:"rate_limit,omitempty"`
 	Cache      WorkspaceStatusCache   `json:"cache,omitempty"`
@@ -415,6 +425,23 @@ func (c GHWorkspaceClient) FetchStatus(repo RepoRef, now time.Time, staleDays in
 	return summary, nil
 }
 
+func (c GHWorkspaceClient) FetchQueueStatuses(repo RepoRef, summary StatusSummary, _ time.Time, _ int) (WorkspaceQueueStatusSnapshot, error) {
+	snapshot := WorkspaceQueueStatusSnapshot{}
+	for _, issue := range summary.Issues.Open {
+		status := workspaceQueueStatusFromIssue(summary.Repo, issue)
+		if workspaceQueueStatusIs(status, "in-review") {
+			detailed, err := GetWorkStatus(repo, issue.Number, c.runner)
+			if err != nil {
+				snapshot.Warnings = append(snapshot.Warnings, fmt.Sprintf("workspace queue detail unavailable for %s#%d: %v", repo.FullName(), issue.Number, err))
+			} else {
+				status = detailed
+			}
+		}
+		snapshot.Statuses = append(snapshot.Statuses, status)
+	}
+	return snapshot, nil
+}
+
 func (c GHWorkspaceClient) FetchRateLimit() (WorkspaceRateLimit, error) {
 	var raw struct {
 		Resources struct {
@@ -531,12 +558,25 @@ func BuildWorkspaceStatusReportWithOptions(config WorkspaceConfigResolved, clien
 		return WorkspaceReport{}, err
 	}
 	report.Cache = cache.summary()
+	queueStatuses := []WorkStatusResult{}
+	queueDetailRequests := 0
 	for _, summary := range summaries {
 		repoView := workspaceRepoFromStatus(summary)
 		if options.ActiveOnly && !workspaceRepoIsActive(repoView) {
 			continue
 		}
 		addWorkspaceStatusSummary(&report, summary, repoView)
+		if _, ok := client.(WorkspaceQueueStatusClient); ok {
+			queueDetailRequests += estimateWorkspaceQueueDetailRequests(summary)
+		}
+		statuses, warnings := workspaceQueueStatuses(client, summary, now, staleDays)
+		queueStatuses = append(queueStatuses, statuses...)
+		report.Warnings = append(report.Warnings, warnings...)
+	}
+	report.Queues = BuildWorkspaceQueues(report.Workspace, queueStatuses)
+	if report.RateLimit != nil && queueDetailRequests > 0 {
+		report.RateLimit.EstimatedRequests += queueDetailRequests
+		report.RateLimit.BudgetOK = report.RateLimit.Limit == 0 || report.RateLimit.Remaining >= report.RateLimit.EstimatedRequests
 	}
 	sortWorkspaceBacklog(report.Backlog)
 	report.Counts.InboxOpen = report.Inbox.Open
@@ -742,6 +782,16 @@ func FormatWorkspaceReport(report WorkspaceReport) string {
 		}
 		b.WriteString("\n")
 	}
+	if report.Queues.SchemaVersion != "" {
+		fmt.Fprintf(&b, "queues:   agent-ready=%d review-needed=%d finish-ready=%d blocked=%d failed-check=%d human-decision=%d\n",
+			report.Queues.Counts.AgentReady,
+			report.Queues.Counts.ReviewNeeded,
+			report.Queues.Counts.FinishReady,
+			report.Queues.Counts.Blocked,
+			report.Queues.Counts.FailedCheck,
+			report.Queues.Counts.HumanDecision,
+		)
+	}
 	if len(report.Backlog) > 0 {
 		b.WriteString("backlog:\n")
 		for _, item := range report.Backlog {
@@ -872,6 +922,75 @@ func workspaceBacklogFromIssue(repo string, issue IssueStats) WorkspaceBacklogIt
 		milestone = *issue.Milestone
 	}
 	return WorkspaceBacklogItem{Source: "repo", Repo: repo, Number: issue.Number, Title: issue.Title, State: issue.State, Status: status, Priority: priority, Milestone: milestone, URL: issue.URL}
+}
+
+func workspaceQueueStatuses(client WorkspaceClient, summary StatusSummary, now time.Time, staleDays int) ([]WorkStatusResult, []string) {
+	if provider, ok := client.(WorkspaceQueueStatusClient); ok {
+		repo, err := ParseRepoRef(summary.Repo)
+		if err != nil {
+			return workspaceQueueStatusesFromSummary(summary), []string{fmt.Sprintf("workspace queue repo parse failed for %q: %v", summary.Repo, err)}
+		}
+		snapshot, err := provider.FetchQueueStatuses(repo, summary, now, staleDays)
+		if err != nil {
+			return workspaceQueueStatusesFromSummary(summary), []string{fmt.Sprintf("workspace queue detail unavailable for %s: %v", summary.Repo, err)}
+		}
+		return snapshot.Statuses, snapshot.Warnings
+	}
+	return workspaceQueueStatusesFromSummary(summary), nil
+}
+
+func workspaceQueueStatusesFromSummary(summary StatusSummary) []WorkStatusResult {
+	statuses := make([]WorkStatusResult, 0, len(summary.Issues.Open))
+	for _, issue := range summary.Issues.Open {
+		statuses = append(statuses, workspaceQueueStatusFromIssue(summary.Repo, issue))
+	}
+	return statuses
+}
+
+func estimateWorkspaceQueueDetailRequests(summary StatusSummary) int {
+	count := 0
+	for _, issue := range summary.Issues.Open {
+		if workspaceQueueStatusIs(workspaceQueueStatusFromIssue(summary.Repo, issue), "in-review") {
+			count += 3
+		}
+	}
+	return count
+}
+
+func workspaceQueueStatusFromIssue(repo string, issue IssueStats) WorkStatusResult {
+	milestone := ""
+	if issue.Milestone != nil {
+		milestone = *issue.Milestone
+	}
+	status := statusFromLabels(issue.Labels)
+	result := WorkStatusResult{
+		Command:    "workspace status",
+		Repo:       repo,
+		Issue:      issue.Number,
+		Title:      issue.Title,
+		State:      issue.State,
+		Status:     status,
+		Labels:     append([]string(nil), issue.Labels...),
+		Milestone:  milestone,
+		NextAction: workspaceQueueSummaryNextAction(status),
+	}
+	if strings.EqualFold(status, "blocked") {
+		result.Blockers = []string{"status_blocked"}
+	}
+	return result
+}
+
+func workspaceQueueSummaryNextAction(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "ready":
+		return "start_work"
+	case "blocked":
+		return "inspect_blocker"
+	case "in-review":
+		return "inspect_review"
+	default:
+		return "inspect_status"
+	}
 }
 
 func statusFromLabels(labels []string) string {

@@ -134,6 +134,24 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"goal", "finish"},
+			Summary: "Preview goal finish readiness and receipt evidence without closing the goal.",
+			Usage:   "gira goal finish [GOAL] --dry-run [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]",
+			Since:   "v1.17.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional."},
+				{Name: "--dry-run", Summary: "Required. Preview readiness and receipt without mutation."},
+				{Name: "--terminal", Summary: "Optional terminal recommendation override: done, human_review, blocked, superseded, or abandoned."},
+				{Name: "--json", Summary: "Emit stable goal-finish-readiness/v1 JSON."},
+			},
+			Docs:        []string{"docs/goal-operating-model.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "ticket"},
+			Examples: []CommandExample{
+				{Summary: "Preview goal finish evidence", Command: "gira goal finish 521 --repo OWNER/app --dry-run --json"},
+			},
+		},
+		{
 			Path:    []string{"stats", "repo"},
 			Summary: "Show a read-only Closure Funnel report for one GitHub repo.",
 			Usage:   "gira stats repo [OWNER/REPO] [--repo OWNER/REPO] [--since 90d] [--stale-days 14] [--limit 100] [--json]",

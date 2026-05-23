@@ -829,16 +829,19 @@ Usage:
   gira goal plan [GOAL] --dry-run [--repo OWNER/REPO] [--json]
   gira goal status [GOAL] [--repo OWNER/REPO] [--json]
   gira goal next [GOAL] [--repo OWNER/REPO] [--json]
+  gira goal finish [GOAL] --dry-run [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]
 
 Commands:
   plan    Propose dry-run child ticket packets from a goal issue
   status  Summarize a goal issue, child ticket graph, blockers, and next safe action
   next    Select the next safe child ticket or explain why the goal must stop
+  finish  Preview goal finish readiness and receipt evidence
 
 Flags:
   --repo string  Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
   --goal int     Goal issue number. Can also be numeric positional
-  --dry-run      Preview proposed child tickets without mutation
+  --dry-run      Preview without mutation
+  --terminal string Goal terminal recommendation override for finish dry-run
   --json         Emit stable goal JSON
   -h, --help     Show help
 `
@@ -1398,6 +1401,10 @@ var newGoalNextReport = func(input gira.GoalNextInput) (gira.GoalNextReport, err
 
 var newGoalPlanReport = func(input gira.GoalPlanInput) (gira.GoalPlanReport, error) {
 	return gira.BuildGoalPlanReport(input, devCommandRunner)
+}
+
+var newGoalFinishReport = func(input gira.GoalFinishInput) (gira.GoalFinishReport, error) {
+	return gira.BuildGoalFinishReport(input, devCommandRunner)
 }
 
 var newJiraMirrorIssueResolver = func(repo gira.RepoRef, key string) (gira.JiraMirrorIssue, error) {
@@ -2972,6 +2979,8 @@ func runGoal(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runGoalStatus(args[1:], stdout, stderr)
 	case "next":
 		return runGoalNext(args[1:], stdout, stderr)
+	case "finish":
+		return runGoalFinish(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown goal command: %s\n\n", args[0])
 		_, _ = io.WriteString(stderr, goalHelp)
@@ -3044,6 +3053,75 @@ func runGoalPlan(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatGoalPlan(report))
+	return 0
+}
+
+func runGoalFinish(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalGoal, positionalOK := extractNumericPositional(args, "goal", stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("goal finish", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	goal := fs.Int("goal", 0, "Goal issue number")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	terminal := fs.String("terminal", "", "Terminal recommendation: done|human_review|blocked|superseded|abandoned")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, goalHelp)
+		return 0
+	}
+	if positionalGoal > 0 {
+		if *goal > 0 && *goal != positionalGoal {
+			fmt.Fprint(stderr, "--goal and positional goal must refer to the same number\n\n")
+			_, _ = io.WriteString(stderr, goalHelp)
+			return 2
+		}
+		*goal = positionalGoal
+	}
+	if *goal <= 0 {
+		fmt.Fprint(stderr, "--goal or positional goal is required\n\n")
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	if !*dryRun {
+		fmt.Fprint(stderr, "goal finish is dry-run-only in this release; pass --dry-run\n\n")
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newGoalFinishReport(gira.GoalFinishInput{Repo: repo, Goal: *goal, DryRun: *dryRun, Terminal: *terminal})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode goal finish JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatGoalFinish(report))
 	return 0
 }
 
@@ -4458,7 +4536,7 @@ func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bo
 func extractNumericPositional(args []string, noun string, stderr io.Writer) ([]string, int, bool) {
 	cleaned := make([]string, 0, len(args))
 	positional := 0
-	valueFlags := map[string]struct{}{"--repo": {}, "--goal": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--goal": {}, "--terminal": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)

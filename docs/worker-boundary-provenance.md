@@ -123,6 +123,12 @@ execution mechanics such as approval gates, retries, event logs, trace IDs, and
 worker leases. Gira should consume its GitHub-visible results or provenance
 metadata, but Gira should still be able to operate without it.
 
+The Gira-side adapter contract is defined in
+[Agent-Kernel Adapter Contract](agent-kernel-adapter-contract.md). That contract
+classifies Gira commands as read, dry-run mutation, apply mutation, or
+unsupported, and defines the evidence an adapter should preserve before any
+approved apply.
+
 The durable stack should look like this:
 
 ```text

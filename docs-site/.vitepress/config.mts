@@ -31,6 +31,7 @@ export default defineConfig({
           { text: 'Global Config', link: '/global-config' },
           { text: 'Jira-Primary Provider', link: '/jira-primary-provider' },
           { text: 'Ticket Workflow', link: '/ticket-workflow' },
+          { text: 'Worker Boundary', link: '/worker-boundary' },
           { text: 'Branch Policy', link: '/branch-policy' },
           { text: 'Closure Funnel Stats', link: '/closure-funnel-stats' },
           { text: 'Command Reference', link: '/command-reference' },

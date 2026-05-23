@@ -167,6 +167,12 @@ identity inference. If a provenance block is absent, Gira may use `agent:*`
 labels as a low-friction implementation actor hint, but it must not treat
 `lane:*` labels as proof of execution.
 
+For the broader product boundary and the optional trace-oriented provenance
+envelope, see [Worker Boundary And Provenance](worker-boundary-provenance.md).
+Exact implementation tool names, model names, trace IDs, prompt IDs, and
+attempt IDs belong in telemetry/provenance metadata, not high-cardinality
+labels.
+
 ## Safety And Privacy Boundary
 
 Delegation Quality is an operating safety report. It is not a scorecard for individual productivity.

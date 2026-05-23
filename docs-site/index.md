@@ -44,3 +44,7 @@ Gira is a Go-built CLI. Package managers are distribution channels for the same 
 Use [Jira-primary provider mode](/jira-primary-provider) only when Jira already owns planning and status for a repo. GitHub-native mode remains the default.
 
 The future hosted direction is documented as a bounded [control-plane roadmap](/hosted-control-plane), not as a replacement for the CLI.
+
+Gira's [worker boundary](/worker-boundary) keeps the product focused on
+contracts, readiness, review packets, provenance, and finish convergence while
+external coding agents execute the work.

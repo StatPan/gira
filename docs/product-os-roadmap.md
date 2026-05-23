@@ -8,6 +8,39 @@ This roadmap keeps three constraints fixed:
 2. All new Product OS automation is dry-run-first.
 3. Capability/permission checks gate apply behavior before any mutation.
 
+## 2.0 Control-Plane Readiness
+
+As of 2026-05-23, the 2.0 core is implemented as a CLI-first control-plane
+contract rather than a UI or hosted service. The public product framing is:
+
+> A GitHub-native control plane that turns human and AI work into reviewable,
+> auditable, evidence-backed completion.
+
+The stable 2.0 contract areas are:
+
+| Area | Ready surface |
+| --- | --- |
+| State-aware ticket runtime | Current ticket/PR resolution, structured ticket status JSON, action-oriented next steps, role packets, review packets, and lifecycle dry-run/apply commands. |
+| Evidence-based finish and audit | Ticket readiness, PR readiness, finish readiness, finish receipts, telemetry/provenance guidance, and workflow drift audit reports. |
+| Goal mode | `goal-status/v1`, `goal-next/v1`, `goal-plan/v1`, `goal-finish-readiness/v1`, and idempotent human-review handoff receipts over child ticket graphs. |
+| Workspace health | `workspace-queues/v1` in `workspace status --json`, covering agent-ready, review-needed, finish-ready, blocked, failed-check, and human-decision queues. |
+| Agent adapter boundary | Command capability metadata, schema-versioned JSON surfaces, and shared `gira-approval-plan/v1` approval evidence for matching Gira apply boundaries. |
+
+Remaining hardening is intentionally narrower than the 2.0 feature definition:
+
+- Add JSON contracts or explicit adapter-unsupported markings to legacy
+  text-first command families.
+- Add explicit `post_apply_verification` fields to apply reports that still
+  require command-specific follow-up knowledge.
+- Keep Jira transition planning as `jira-transition-plan/v1` read-only evidence
+  unless a future, explicitly approved Jira mutation boundary is designed.
+- Leave hosted dashboards, broad background sync, and UI workflows to the 3.0
+  and hosted-control-plane tracks.
+
+Historical child tickets that predate finish receipts still require maintainer
+judgment in #521. Do not invent backfilled evidence for those issues; use the
+existing goal-finish human-review handoff when closing the planning loop.
+
 ## Current Baseline
 
 Shipped before this roadmap:

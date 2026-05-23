@@ -80,7 +80,13 @@ delegated to an agent without prior chat state:
 gira ticket prompt --role planner
 gira ticket prompt --role implementer --profile default
 gira ticket prompt --role reviewer --pr PR_NUMBER
+gira ticket handoff --json
 ```
+
+Use `gira ticket handoff --json` when a Jules/Codex/Claude/OpenHands-style
+adapter needs the `worker-handoff/v1` contract instead of a prose prompt. The
+packet keeps Gira on the contract/readiness side of the boundary and leaves code
+execution to the external worker.
 
 Use structured ticket notes instead of raw issue or PR comments when the update
 fits a Gira work-log shape:

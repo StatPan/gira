@@ -4311,6 +4311,72 @@ func TestTicketPromptRejectsConflictingPositionalRole(t *testing.T) {
 	}
 }
 
+func TestTicketHandoffJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newTicketHandoffReport
+	t.Cleanup(func() { newTicketHandoffReport = restore })
+	newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 436 || input.Role != "planner" || input.Profile != "python" {
+			t.Fatalf("unexpected handoff input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.TicketHandoffReport{
+			Command:         "ticket handoff",
+			SchemaVersion:   gira.WorkerHandoffSchemaVersion,
+			Repo:            input.Repo.FullName(),
+			Issue:           input.Ticket,
+			Role:            input.Role,
+			Profile:         input.Profile,
+			Readiness:       gira.TicketReadinessReport{SchemaVersion: gira.TicketReadinessSchemaVersion, Readiness: "ready", NextAction: "start_ticket"},
+			NextAction:      "plan",
+			NextSafeCommand: "gira ticket prompt --repo StatPan/gira --ticket 436 --role planner --json",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "handoff", "436", "planner", "--repo", "StatPan/gira", "--profile", "python", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "ticket handoff"`, `"schema_version": "worker-handoff/v1"`, `"role": "planner"`, `"next_action": "plan"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket handoff JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestTicketHandoffTextDefaultsImplementerRole(t *testing.T) {
+	restore := newTicketHandoffReport
+	t.Cleanup(func() { newTicketHandoffReport = restore })
+	newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+		if input.Role != "implementer" {
+			t.Fatalf("role = %q, want implementer", input.Role)
+		}
+		return gira.TicketHandoffReport{
+			Command:         "ticket handoff",
+			SchemaVersion:   gira.WorkerHandoffSchemaVersion,
+			Repo:            input.Repo.FullName(),
+			Issue:           input.Ticket,
+			IssueURL:        "https://github.com/StatPan/gira/issues/436",
+			Role:            input.Role,
+			Profile:         input.Profile,
+			Readiness:       gira.TicketReadinessReport{SchemaVersion: gira.TicketReadinessSchemaVersion, Readiness: "ready", NextAction: "start_ticket"},
+			BranchPolicy:    gira.TicketHandoffBranchPolicy{Base: "main", Source: "branch_policy.default", WorkBranch: "issue-436-add-prompts"},
+			NextAction:      "implement",
+			NextSafeCommand: "gira ticket pr --repo StatPan/gira --ticket 436 --dry-run",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "handoff", "436", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"ticket handoff: #436 role=implementer", "branch: base=main", "next safe command:"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket handoff output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestTicketReviewInfersTicketAndDefaultsReviewerRole(t *testing.T) {
 	restorePrompt := newTicketPromptReport
 	restoreRunner := devCommandRunner

@@ -465,6 +465,40 @@ gira ticket finish --dry-run
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
+## `ticket handoff`
+
+Compile a worker-neutral handoff packet from ticket context.
+
+Usage:
+
+```bash
+gira ticket handoff [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--json]
+```
+
+Since: `v1.17.0`
+
+Flags:
+
+- `--role`: Handoff role: planner, implementer, or reviewer. Default: implementer.
+- `--profile`: Handoff profile: default or python. Default: default.
+- `--json`: Emit stable worker-handoff/v1 JSON.
+
+Examples:
+
+- Compile an implementer handoff packet
+
+```bash
+gira ticket handoff 42 --json
+```
+
+- Compile a reviewer handoff packet
+
+```bash
+gira ticket handoff 42 reviewer --json
+```
+
+Documented in: `docs-site/ticket-workflow.md`, `docs-site/command-reference.md`, `docs/dogfood.md`
+
 ## `ticket new`
 
 Create a repo-bound executable GitHub issue with structured or full Markdown body input.

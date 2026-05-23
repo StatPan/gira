@@ -261,7 +261,7 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 			Docs:        []string{"README.md", "docs/jira-primary-provider.md", "docs-site/jira-primary-provider.md"},
 			GuideTopics: []string{"jira"},
-			GuideOrder:  20,
+			GuideOrder:  21,
 			Examples: []CommandExample{
 				{Summary: "Preview one Jira mirror", Command: "gira jira mirror ABC-123 --repo OWNER/app --dry-run"},
 			},
@@ -380,6 +380,24 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"ticket", "handoff"},
+			Summary: "Compile a worker-neutral handoff packet from ticket context.",
+			Usage:   "gira ticket handoff [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--json]",
+			Since:   "v1.17.0",
+			Flags: []FlagSpec{
+				{Name: "--role", Summary: "Handoff role: planner, implementer, or reviewer. Default: implementer."},
+				{Name: "--profile", Summary: "Handoff profile: default or python. Default: default."},
+				{Name: "--json", Summary: "Emit stable worker-handoff/v1 JSON."},
+			},
+			Docs:        []string{"docs-site/ticket-workflow.md", "docs-site/command-reference.md", "docs/dogfood.md"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  19,
+			Examples: []CommandExample{
+				{Summary: "Compile an implementer handoff packet", Command: "gira ticket handoff 42 --json"},
+				{Summary: "Compile a reviewer handoff packet", Command: "gira ticket handoff 42 reviewer --json"},
+			},
+		},
+		{
 			Path:    []string{"ticket", "review"},
 			Summary: "Render a reviewer packet from current ticket and linked PR state.",
 			Usage:   "gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--json]",
@@ -390,7 +408,7 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 			Docs:        []string{"docs-site/ticket-workflow.md", "docs-site/command-reference.md", "docs/dogfood.md"},
 			GuideTopics: []string{"ticket", "agent"},
-			GuideOrder:  19,
+			GuideOrder:  20,
 			Examples: []CommandExample{
 				{Summary: "Render reviewer packet for current branch ticket", Command: "gira ticket review"},
 				{Summary: "Render reviewer packet with an explicit PR override", Command: "gira ticket review --ticket 42 --pr 77 --json"},

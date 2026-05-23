@@ -766,6 +766,7 @@ Usage:
   gira ticket list [--repo OWNER/REPO] [--state open|closed|all] [--label LABEL] [--assignee LOGIN] [--milestone TITLE] [--limit N] [--json]
   gira ticket view|show [TICKET|JIRA-KEY] [--repo OWNER/REPO] [--json]
   gira ticket prompt [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]
+  gira ticket handoff [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--json]
   gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--json]
   gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
@@ -781,6 +782,7 @@ Commands:
   list    List repo tickets with compact GitHub issue-backed filters
   view    Show an operating card for the ticket, linked PR, blockers, and next action. Alias: show
   prompt  Render a stateless planner, implementer, or reviewer prompt from ticket context
+  handoff Compile a worker-neutral handoff packet from ticket context
   review  Render a reviewer packet from current ticket and linked PR state
   start   Verify a ready ticket, create/reuse its branch, and move to in-progress on apply. Alias: gira start
   pr      Validate or create a linked PR with Closes #N and update review status on apply
@@ -801,8 +803,8 @@ Flags:
   --body-file string Read full issue body from file, or "-" for stdin
   --kind string    Ticket note kind: progress, blocker, decision, handoff, summary, or check. Default: progress
   --target string  Ticket note target: auto, issue, pr, or both. Default: auto
-  --role string    Ticket prompt role: planner, implementer, or reviewer
-  --profile string Ticket prompt profile: default or python. Default: default
+  --role string    Ticket prompt/handoff role: planner, implementer, or reviewer
+  --profile string Ticket prompt/handoff profile: default or python. Default: default
   --pr int         Optional PR number for reviewer prompt context
   --replacement-title string Replacement ticket title for ticket supersede
   --close-draft-pr   Close a linked draft PR when superseding
@@ -1359,6 +1361,10 @@ var newTicketViewReport = func(repo gira.RepoRef, issue int) (gira.TicketViewRep
 
 var newTicketPromptReport = func(input gira.AgentPromptInput) (gira.AgentPromptReport, error) {
 	return gira.BuildAgentPromptReport(input, devCommandRunner)
+}
+
+var newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+	return gira.BuildTicketHandoffReport(input, devCommandRunner)
 }
 
 var newJiraMirrorIssueResolver = func(repo gira.RepoRef, key string) (gira.JiraMirrorIssue, error) {
@@ -2892,6 +2898,8 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTicketView(args[1:], stdout, stderr)
 	case "prompt":
 		return runTicketPrompt(args[1:], stdout, stderr)
+	case "handoff":
+		return runTicketHandoff(args[1:], stdout, stderr)
 	case "review":
 		return runTicketReview(args[1:], stdout, stderr)
 	case "start":
@@ -3116,6 +3124,88 @@ func runTicketPrompt(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatAgentPrompt(result))
+	return 0
+}
+
+func runTicketHandoff(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalRole, roleOK := extractTicketPromptRolePositional(args, stderr)
+	if !roleOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	args, positionalIdentifier, positionalOK := extractTicketIdentifierPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("ticket handoff", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	role := fs.String("role", "", "Handoff role: planner|implementer|reviewer. Default: implementer")
+	profile := fs.String("profile", "default", "Handoff profile: default|python")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	if positionalRole != "" {
+		if strings.TrimSpace(*role) != "" && !strings.EqualFold(*role, positionalRole) {
+			fmt.Fprint(stderr, "positional role and --role must match when both are provided\n\n")
+			_, _ = io.WriteString(stderr, ticketHelp)
+			return 2
+		}
+		*role = positionalRole
+	}
+	if strings.TrimSpace(*role) == "" {
+		*role = gira.AgentPromptRoleImplementer
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	ticketNumber, _, resolved, resolveErr := resolveTicketIdentifierContext(repo, *ticket, *issue, positionalIdentifier, true, stderr)
+	if resolveErr != nil {
+		fmt.Fprintf(stderr, "%v\n", resolveErr)
+		return 1
+	}
+	if !resolved {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	result, err := newTicketHandoffReport(gira.TicketHandoffInput{
+		Repo:    repo,
+		Ticket:  ticketNumber,
+		Role:    *role,
+		Profile: *profile,
+	})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode ticket handoff JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatTicketHandoff(result))
 	return 0
 }
 
@@ -7242,7 +7332,7 @@ func runWorkerClaim(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	claim := gira.WorkerClaim{Repo: repo.FullName(), IssueNumber: *issue, Worker: *worker, LeaseUntilUTC: time.Now().UTC().Add(time.Duration(*leaseMinutes) * time.Minute), Version: gira.WorkerHandoffSchemaVersion}
+	claim := gira.WorkerClaim{Repo: repo.FullName(), IssueNumber: *issue, Worker: *worker, LeaseUntilUTC: time.Now().UTC().Add(time.Duration(*leaseMinutes) * time.Minute), Version: gira.WorkerStateHandoffSchemaVersion}
 	path := gira.WorkerStatePath(repo, *issue)
 	if err := gira.ClaimWorkerLease(path, claim, time.Now().UTC()); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -7282,7 +7372,7 @@ func runWorkerHandoff(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	payload := gira.WorkerHandoffPayload{SchemaVersion: gira.WorkerHandoffSchemaVersion, Goal: *goal, Context: *context, AcceptanceCriteria: splitList(*acceptance), VerificationCommands: splitList(*verify), RollbackNotes: *rollback}
+	payload := gira.WorkerHandoffPayload{SchemaVersion: gira.WorkerStateHandoffSchemaVersion, Goal: *goal, Context: *context, AcceptanceCriteria: splitList(*acceptance), VerificationCommands: splitList(*verify), RollbackNotes: *rollback}
 	path := gira.WorkerStatePath(repo, *issue)
 	if err := gira.WriteWorkerHandoff(path, payload); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)

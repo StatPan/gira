@@ -83,6 +83,12 @@ func BuildGoalNextReportFromStatus(repo RepoRef, status GoalStatusReport) GoalNe
 	}
 	report.SkippedCandidates = goalNextSkippedCandidates(status.Children, nil)
 	if status.RemainingAutonomousWork == 0 {
+		if status.HandoffReceiptPresent {
+			report.StopReasons = []string{"human_review_handoff_present"}
+			report.NextAction = "human_review"
+			report.NextStep = fmt.Sprintf("review goal-finish-receipt/v1 handoff on #%d", status.Goal.Number)
+			return report
+		}
 		report.StopReasons = []string{"no_remaining_child_work"}
 		report.NextAction = "finish_goal"
 		report.NextStep = fmt.Sprintf("gira goal finish --repo %s --goal %d --dry-run", repo.FullName(), status.Goal.Number)

@@ -126,6 +126,9 @@ human-decision state instead of generating speculative tickets.
 - Drift: closed child without merged PR, merged PR without closed issue, stale
   labels, missing close references, or missing final comments.
 - Remaining autonomous work and human decisions required.
+- Existing `goal-finish-receipt/v1` handoff receipt state, so completed goals
+  that already moved to human review do not keep recommending another finish
+  command.
 
 ## Finish Receipt
 

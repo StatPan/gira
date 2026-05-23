@@ -98,6 +98,23 @@ func TestBuildGoalNextReportNoRemainingWorkFinishesGoal(t *testing.T) {
 	}
 }
 
+func TestBuildGoalNextReportNoRemainingWorkWithHandoffStopsForHumanReview(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	status := goalNextTestStatus([]GoalStatusChild{
+		{Number: 201, Title: "Done", State: "closed", Status: "Done", Category: "done", NextAction: "done"},
+	})
+	status.RemainingAutonomousWork = 0
+	status.HandoffReceiptPresent = true
+
+	report := BuildGoalNextReportFromStatus(repo, status)
+	if report.SelectedTicket != nil || report.NextAction != "human_review" || !containsString(report.StopReasons, "human_review_handoff_present") {
+		t.Fatalf("unexpected handoff report: %+v", report)
+	}
+	if !strings.Contains(report.NextStep, "goal-finish-receipt/v1") {
+		t.Fatalf("next step should point to handoff receipt: %q", report.NextStep)
+	}
+}
+
 func goalNextTestStatus(children []GoalStatusChild) GoalStatusReport {
 	counts := map[string]int{"total": len(children)}
 	remaining := 0

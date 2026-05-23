@@ -101,6 +101,28 @@ func TestBuildGoalStatusReportAllDoneFromGoalBody(t *testing.T) {
 	}
 }
 
+func TestBuildGoalStatusReportAllDoneWithHandoffStopsForHumanReview(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := onboardFakeRunner{responses: map[string]string{
+		"gh api repos/StatPan/gira/issues/100": `{"number":100,"title":"Goal mode","state":"open","body":"## Goal\nShip goal mode\n\n## Child tickets\n- #201","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
+		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
+		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"## Goal Finish Receipt\n\n- Schema: goal-finish-receipt/v1"}]}`,
+		"gh api repos/StatPan/gira/issues/201":                  `{"number":201,"title":"Done one","state":"closed","body":"## Goal\nDone\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+	}}
+
+	report, err := BuildGoalStatusReport(GoalStatusInput{Repo: repo, Goal: 100}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalStatusReport error: %v", err)
+	}
+	if !report.HandoffReceiptPresent || report.RemainingAutonomousWork != 0 || report.NextAction != "human_review" {
+		t.Fatalf("unexpected handoff summary: %+v", report)
+	}
+	if !strings.Contains(report.NextStep, "goal-finish-receipt/v1") {
+		t.Fatalf("next step should point to handoff receipt: %q", report.NextStep)
+	}
+}
+
 func TestIssueRefsFromText(t *testing.T) {
 	tests := []struct {
 		name string

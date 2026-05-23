@@ -4377,6 +4377,47 @@ func TestTicketHandoffTextDefaultsImplementerRole(t *testing.T) {
 	}
 }
 
+func TestGoalStatusJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newGoalStatusReport
+	t.Cleanup(func() { newGoalStatusReport = restore })
+	newGoalStatusReport = func(input gira.GoalStatusInput) (gira.GoalStatusReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 {
+			t.Fatalf("unexpected goal status input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.GoalStatusReport{
+			Command:       "goal status",
+			SchemaVersion: gira.GoalStatusSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			Goal:          gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 2.0", State: "open", Status: "Ready"},
+			Counts:        map[string]int{"total": 0},
+			NextAction:    "plan_children",
+			NextStep:      "gira goal plan --repo StatPan/gira --goal 521 --dry-run",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "status", "521", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "goal status"`, `"schema_version": "goal-status/v1"`, `"next_action": "plan_children"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("goal status JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestGoalStatusTextRequiresGoal(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "status", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--goal or positional goal is required") {
+		t.Fatalf("stderr missing goal requirement:\n%s", stderr.String())
+	}
+}
+
 func TestTicketReviewInfersTicketAndDefaultsReviewerRole(t *testing.T) {
 	restorePrompt := newTicketPromptReport
 	restoreRunner := devCommandRunner

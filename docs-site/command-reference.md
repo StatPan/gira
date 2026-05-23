@@ -2,6 +2,34 @@
 
 This page is generated from Gira's command metadata registry. Update `internal/gira/command_registry.go` first, then refresh this page.
 
+## `goal status`
+
+Summarize a goal issue, child ticket graph, blockers, and next safe action.
+
+Usage:
+
+```bash
+gira goal status [GOAL] [--repo OWNER/REPO] [--json]
+```
+
+Since: `v1.17.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--goal`: Goal issue number. Can also be numeric positional.
+- `--json`: Emit stable goal-status/v1 JSON.
+
+Examples:
+
+- Inspect goal graph status
+
+```bash
+gira goal status 521 --repo OWNER/app --json
+```
+
+Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
+
 ## `jira doctor`
 
 Diagnose Jira-primary provider compatibility without mutating Jira or GitHub.

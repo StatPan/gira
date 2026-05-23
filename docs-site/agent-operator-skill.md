@@ -30,6 +30,7 @@ summarize that skill instead of redefining it.
 - `gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s]`: Wait for pending linked PR checks without merging.
 - `gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--sync-local]`: Merge the linked PR when policy allows and close the ticket loop without local checkout sync by default.
 - `gira ticket status [TICKET] [--repo OWNER/REPO] [--json]`: Report ticket status, linked PR blockers, and next action.
+- `gira goal status [GOAL] [--repo OWNER/REPO] [--json]`: Summarize a goal issue, child ticket graph, blockers, and next safe action.
 
 ## Rules
 

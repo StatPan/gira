@@ -85,6 +85,22 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"goal", "status"},
+			Summary: "Summarize a goal issue, child ticket graph, blockers, and next safe action.",
+			Usage:   "gira goal status [GOAL] [--repo OWNER/REPO] [--json]",
+			Since:   "v1.17.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional."},
+				{Name: "--json", Summary: "Emit stable goal-status/v1 JSON."},
+			},
+			Docs:        []string{"docs/goal-operating-model.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "ticket"},
+			Examples: []CommandExample{
+				{Summary: "Inspect goal graph status", Command: "gira goal status 521 --repo OWNER/app --json"},
+			},
+		},
+		{
 			Path:    []string{"stats", "repo"},
 			Summary: "Show a read-only Closure Funnel report for one GitHub repo.",
 			Usage:   "gira stats repo [OWNER/REPO] [--repo OWNER/REPO] [--since 90d] [--stale-days 14] [--limit 100] [--json]",

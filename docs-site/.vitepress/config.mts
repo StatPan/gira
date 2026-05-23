@@ -13,40 +13,58 @@ export default defineConfig({
       provider: 'local'
     },
     nav: [
-      { text: 'Guide', link: '/quickstart' },
-      { text: 'Mapping', link: '/jira-mapping' },
-      { text: 'Jira Provider', link: '/jira-primary-provider' },
+      { text: 'Quick Start', link: '/quickstart' },
+      { text: 'Workspace', link: '/workspace' },
       { text: 'Workflow', link: '/ticket-workflow' },
-      { text: 'Branch Policy', link: '/branch-policy' },
-      { text: 'Config', link: '/global-config' },
-      { text: 'Distribution', link: '/distribution' },
+      { text: 'Goal Mode', link: '/goal-mode' },
+      { text: 'Readiness', link: '/readiness-audit' },
+      { text: 'Jira Provider', link: '/jira-primary-provider' },
+      { text: 'Install', link: '/install' },
       { text: 'GitHub', link: 'https://github.com/StatPan/gira' }
     ],
     sidebar: [
       {
-        text: 'Get Started',
+        text: 'Start',
         items: [
           { text: 'Install', link: '/install' },
           { text: 'Quick Start', link: '/quickstart' },
+          { text: 'Distribution', link: '/distribution' },
+          { text: 'Troubleshooting', link: '/troubleshooting' }
+        ]
+      },
+      {
+        text: 'Configure',
+        items: [
           { text: 'Global Config', link: '/global-config' },
-          { text: 'Jira-Primary Provider', link: '/jira-primary-provider' },
-          { text: 'Ticket Workflow', link: '/ticket-workflow' },
-          { text: 'Worker Boundary', link: '/worker-boundary' },
           { text: 'Branch Policy', link: '/branch-policy' },
-          { text: 'Closure Funnel Stats', link: '/closure-funnel-stats' },
-          { text: 'Command Reference', link: '/command-reference' },
-          { text: 'Agent Operator Skill', link: '/agent-operator-skill' },
-          { text: 'Agent Delegation Lanes', link: '/agent-delegation-lanes' }
+          { text: 'Jira To GitHub Mapping', link: '/jira-mapping' },
+          { text: 'Jira-Primary Provider', link: '/jira-primary-provider' }
         ]
       },
       {
         text: 'Operate',
         items: [
+          { text: 'Workspace', link: '/workspace' },
+          { text: 'Ticket Workflow', link: '/ticket-workflow' },
+          { text: 'Goal Mode', link: '/goal-mode' },
           { text: 'Sprint And Release', link: '/sprint-release' },
-          { text: 'Jira To GitHub Mapping', link: '/jira-mapping' },
-          { text: 'Jira-Primary Provider', link: '/jira-primary-provider' },
-          { text: 'Distribution', link: '/distribution' },
-          { text: 'Troubleshooting', link: '/troubleshooting' }
+          { text: 'Readiness And Audit', link: '/readiness-audit' },
+          { text: 'Closure Funnel Stats', link: '/closure-funnel-stats' }
+        ]
+      },
+      {
+        text: 'Agents And Contracts',
+        items: [
+          { text: 'Worker Boundary', link: '/worker-boundary' },
+          { text: 'Agent Operator Skill', link: '/agent-operator-skill' },
+          { text: 'Agent Delegation Lanes', link: '/agent-delegation-lanes' },
+          { text: 'Hosted Control Plane', link: '/hosted-control-plane' }
+        ]
+      },
+      {
+        text: 'Reference',
+        items: [
+          { text: 'Command Reference', link: '/command-reference' }
         ]
       }
     ],

@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+const TicketNewReportSchemaVersion = "ticket-new-report/v1"
+
 type TicketNewInput struct {
 	Repo       RepoRef  `json:"repo"`
 	Title      string   `json:"title"`
@@ -31,10 +33,13 @@ type TicketCreatedIssue struct {
 }
 
 type TicketNewReport struct {
+	SchemaVersion   string                `json:"schema_version,omitempty"`
 	Repo            string                `json:"repo"`
 	Title           string                `json:"title"`
 	DryRun          bool                  `json:"dry_run"`
 	Start           bool                  `json:"start"`
+	Type            string                `json:"type,omitempty"`
+	Priority        string                `json:"priority,omitempty"`
 	Labels          []string              `json:"labels"`
 	Milestone       string                `json:"milestone,omitempty"`
 	Body            string                `json:"body"`
@@ -42,6 +47,13 @@ type TicketNewReport struct {
 	Created         TicketCreatedIssue    `json:"created,omitempty"`
 	StartResult     WorkStartResult       `json:"start_result,omitempty"`
 	NextStep        string                `json:"next_step"`
+	Approval        *ApprovalEvidence     `json:"approval,omitempty"`
+}
+
+func EnsureTicketNewReportSchema(report *TicketNewReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = TicketNewReportSchemaVersion
+	}
 }
 
 func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNewReport, error) {
@@ -69,10 +81,13 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 	}
 	labels := ticketNewLabels(ticketType, priority, input.Labels)
 	report := TicketNewReport{
+		SchemaVersion:   TicketNewReportSchemaVersion,
 		Repo:            input.Repo.FullName(),
 		Title:           input.Title,
 		DryRun:          input.DryRun,
 		Start:           input.Start,
+		Type:            ticketType,
+		Priority:        priority,
 		Labels:          labels,
 		Milestone:       strings.TrimSpace(input.Milestone),
 		Body:            body,
@@ -83,6 +98,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		return report, err
 	}
 	if input.DryRun {
+		report.Approval = TicketNewApprovalEvidence(report)
 		return report, nil
 	}
 	created, err := createRepoTicket(input.Repo, input.Title, body, labels, report.Milestone, runner)

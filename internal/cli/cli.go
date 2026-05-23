@@ -3904,6 +3904,7 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 	})
 	if err != nil {
 		if *jsonOutput {
+			gira.EnsureTicketNewReportSchema(&report)
 			out, _ := json.MarshalIndent(report, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
@@ -3911,6 +3912,10 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		gira.EnsureTicketNewReportSchema(&report)
+		if *dryRun {
+			report.Approval = gira.TicketNewApprovalEvidence(report)
+		}
 		out, _ := json.MarshalIndent(report, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0

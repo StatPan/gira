@@ -18,6 +18,19 @@ func TestBuildRepoMigrateReportDryRunPreservesContract(t *testing.T) {
 	if report.Repo != "StatPan/gira" || report.Entry.Contract != ".gira/config.yaml" || report.Entry.Workspace.Name != "personal" {
 		t.Fatalf("unexpected migrate report: %+v", report)
 	}
+	if report.SchemaVersion != RepoMigrateReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("expected repo migrate schema and approval evidence: %+v", report)
+	}
+	expectedApply := "gira repo migrate --repo StatPan/gira --path " + QuoteShellArg(repo) + " --config-root " + QuoteShellArg(root) + " --apply"
+	if report.Approval.SchemaVersion != ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira repo migrate" || report.Approval.OutputSchema != RepoMigrateReportSchemaVersion {
+		t.Fatalf("unexpected repo migrate approval identity: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != expectedApply || report.Approval.PostApplyVerification != "gira config repo --repo StatPan/gira --config-root "+QuoteShellArg(root)+" --json" {
+		t.Fatalf("unexpected repo migrate approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil || !approvalHasAction(report.Approval.PlannedActions, "contract:preserve") || !approvalHasAction(report.Approval.PlannedActions, "registry:create") {
+		t.Fatalf("unexpected repo migrate approval plan: %+v", report.Approval)
+	}
 	if _, err := os.Stat(report.File); !os.IsNotExist(err) {
 		t.Fatalf("dry-run wrote registry file or unexpected stat error: %v", err)
 	}
@@ -38,6 +51,9 @@ func TestBuildRepoMigrateReportApplyAndAlreadyRegistered(t *testing.T) {
 	if !report.Applied || report.Entry.Contract != ".gira/config.yaml" {
 		t.Fatalf("unexpected apply report: %+v", report)
 	}
+	if report.SchemaVersion != RepoMigrateReportSchemaVersion || report.Approval != nil {
+		t.Fatalf("apply report should have schema and omit dry-run approval: %+v", report)
+	}
 
 	second, err := BuildRepoMigrateReport(input, fakeRegisterRunner{origin: "https://github.com/StatPan/gira.git"})
 	if err != nil {
@@ -49,9 +65,12 @@ func TestBuildRepoMigrateReportApplyAndAlreadyRegistered(t *testing.T) {
 }
 
 func TestBuildRepoMigrateReportNoRepoLocalConfig(t *testing.T) {
-	_, err := BuildRepoMigrateReport(RepoMigrateInput{Path: t.TempDir(), ConfigRoot: t.TempDir(), DryRun: true}, fakeRegisterRunner{})
+	report, err := BuildRepoMigrateReport(RepoMigrateInput{Path: t.TempDir(), ConfigRoot: t.TempDir(), DryRun: true}, fakeRegisterRunner{})
 	if err == nil || !strings.Contains(err.Error(), "repo-local contract") {
 		t.Fatalf("error = %v, want missing repo-local contract", err)
+	}
+	if report.Approval == nil || !containsCall(report.Approval.Blockers, "repo_migrate_blocked") {
+		t.Fatalf("blocked dry-run should include approval blockers: %+v", report.Approval)
 	}
 }
 

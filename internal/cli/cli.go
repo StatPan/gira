@@ -2099,6 +2099,10 @@ func runRepoMigrate(args []string, stdout io.Writer, stderr io.Writer) int {
 	report, err := newRepoMigrateReport(gira.RepoMigrateInput{Repo: repo, Path: *pathValue, ConfigRoot: *configRoot, Overwrite: *overwrite, DryRun: *dryRun, Apply: *apply})
 	if err != nil {
 		if *jsonOutput {
+			gira.EnsureRepoMigrateReportSchema(&report)
+			if *dryRun && strings.TrimSpace(report.Command) != "" {
+				report.Approval = gira.RepoMigrateApprovalEvidence(report)
+			}
 			out, _ := json.MarshalIndent(report, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
@@ -2106,6 +2110,10 @@ func runRepoMigrate(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		gira.EnsureRepoMigrateReportSchema(&report)
+		if *dryRun {
+			report.Approval = gira.RepoMigrateApprovalEvidence(report)
+		}
 		out, _ := json.MarshalIndent(report, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0

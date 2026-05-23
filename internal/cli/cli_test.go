@@ -313,6 +313,58 @@ func TestRepoMigrateCommandJSON(t *testing.T) {
 	if report.Entry.Contract != ".gira/config.yaml" || report.Action != "create" {
 		t.Fatalf("unexpected repo migrate report: %+v", report)
 	}
+	if report.SchemaVersion != gira.RepoMigrateReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("repo migrate dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira repo migrate" || report.Approval.OutputSchema != gira.RepoMigrateReportSchemaVersion {
+		t.Fatalf("unexpected repo migrate approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira repo migrate --repo StatPan/gira --path /repo --config-root /tmp/gira --apply" || report.Approval.PostApplyVerification != "gira config repo --repo StatPan/gira --config-root /tmp/gira --json" {
+		t.Fatalf("unexpected repo migrate approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
+	}
+}
+
+func TestRepoMigrateApplyJSONOmitsApprovalEvidence(t *testing.T) {
+	original := newRepoMigrateReport
+	t.Cleanup(func() { newRepoMigrateReport = original })
+	newRepoMigrateReport = func(input gira.RepoMigrateInput) (gira.RepoMigrateReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Path != "/repo" || input.ConfigRoot != "/tmp/gira" || !input.Apply || input.DryRun {
+			t.Fatalf("unexpected repo migrate input: %+v", input)
+		}
+		return gira.RepoMigrateReport{
+			Command:      "repo migrate",
+			Repo:         input.Repo.FullName(),
+			ConfigRoot:   input.ConfigRoot,
+			Path:         input.Path,
+			Contract:     ".gira/config.yaml",
+			ContractFile: "/repo/.gira/config.yaml",
+			File:         "/tmp/gira/repos/StatPan/gira.yaml",
+			Applied:      true,
+			Status:       "applied",
+			Action:       "create",
+			Entry:        gira.GlobalRepoRegistryEntry{Repo: input.Repo.FullName(), Path: input.Path, Contract: ".gira/config.yaml"},
+			NextStep:     "gira config repo --repo StatPan/gira --config-root /tmp/gira",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"repo", "migrate", "--repo", "StatPan/gira", "--path", "/repo", "--config-root", "/tmp/gira", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.RepoMigrateReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode repo migrate JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.RepoMigrateReportSchemaVersion || !report.Applied {
+		t.Fatalf("unexpected repo migrate apply report: %+v", report)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
+	}
 }
 
 func TestRepoMigrateRejectsUnexpectedArgument(t *testing.T) {

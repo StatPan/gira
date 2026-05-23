@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+const RepoMigrateReportSchemaVersion = "repo-migrate-report/v1"
+
 type RepoMigrateInput struct {
 	Repo       RepoRef `json:"repo"`
 	Path       string  `json:"path,omitempty"`
@@ -17,21 +19,29 @@ type RepoMigrateInput struct {
 }
 
 type RepoMigrateReport struct {
-	Command      string                  `json:"command"`
-	Repo         string                  `json:"repo,omitempty"`
-	ConfigRoot   string                  `json:"config_root"`
-	Path         string                  `json:"path"`
-	Contract     string                  `json:"contract"`
-	ContractFile string                  `json:"contract_file"`
-	File         string                  `json:"file,omitempty"`
-	DryRun       bool                    `json:"dry_run"`
-	Applied      bool                    `json:"applied"`
-	Status       string                  `json:"status"`
-	Action       string                  `json:"action"`
-	Entry        GlobalRepoRegistryEntry `json:"entry,omitempty"`
-	Register     *RepoRegisterReport     `json:"register,omitempty"`
-	Notes        []string                `json:"notes,omitempty"`
-	NextStep     string                  `json:"next_step,omitempty"`
+	SchemaVersion string                  `json:"schema_version,omitempty"`
+	Command       string                  `json:"command"`
+	Repo          string                  `json:"repo,omitempty"`
+	ConfigRoot    string                  `json:"config_root"`
+	Path          string                  `json:"path"`
+	Contract      string                  `json:"contract"`
+	ContractFile  string                  `json:"contract_file"`
+	File          string                  `json:"file,omitempty"`
+	DryRun        bool                    `json:"dry_run"`
+	Applied       bool                    `json:"applied"`
+	Status        string                  `json:"status"`
+	Action        string                  `json:"action"`
+	Entry         GlobalRepoRegistryEntry `json:"entry,omitempty"`
+	Register      *RepoRegisterReport     `json:"register,omitempty"`
+	Notes         []string                `json:"notes,omitempty"`
+	NextStep      string                  `json:"next_step,omitempty"`
+	Approval      *ApprovalEvidence       `json:"approval,omitempty"`
+}
+
+func EnsureRepoMigrateReportSchema(report *RepoMigrateReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = RepoMigrateReportSchemaVersion
+	}
 }
 
 func BuildRepoMigrateReport(input RepoMigrateInput, runner CommandRunner) (RepoMigrateReport, error) {
@@ -52,14 +62,15 @@ func BuildRepoMigrateReport(input RepoMigrateInput, runner CommandRunner) (RepoM
 	contract := filepath.ToSlash(filepath.Join(".gira", "config.yaml"))
 	contractFile := filepath.Join(checkoutPath, filepath.FromSlash(contract))
 	report := RepoMigrateReport{
-		Command:      "repo migrate",
-		ConfigRoot:   root,
-		Path:         checkoutPath,
-		Contract:     contract,
-		ContractFile: contractFile,
-		DryRun:       input.DryRun,
-		Status:       actionStatus(input.DryRun),
-		Action:       "plan",
+		SchemaVersion: RepoMigrateReportSchemaVersion,
+		Command:       "repo migrate",
+		ConfigRoot:    root,
+		Path:          checkoutPath,
+		Contract:      contract,
+		ContractFile:  contractFile,
+		DryRun:        input.DryRun,
+		Status:        actionStatus(input.DryRun),
+		Action:        "plan",
 		Notes: []string{
 			"repo-local .gira/config.yaml is preserved as the shared contract",
 			"global registry imports personal metadata and references the repo-local contract",
@@ -69,6 +80,9 @@ func BuildRepoMigrateReport(input RepoMigrateInput, runner CommandRunner) (RepoM
 	if _, err := os.Stat(contractFile); err != nil {
 		report.Status = "blocked"
 		report.Action = "none"
+		if input.DryRun {
+			report.Approval = RepoMigrateApprovalEvidence(report)
+		}
 		if os.IsNotExist(err) {
 			return report, fmt.Errorf("repo-local contract %s was not found", contractFile)
 		}
@@ -78,6 +92,9 @@ func BuildRepoMigrateReport(input RepoMigrateInput, runner CommandRunner) (RepoM
 	if err != nil {
 		report.Status = "blocked"
 		report.Action = "none"
+		if input.DryRun {
+			report.Approval = RepoMigrateApprovalEvidence(report)
+		}
 		return report, err
 	}
 	report.Repo = repo.FullName()
@@ -112,12 +129,18 @@ func BuildRepoMigrateReport(input RepoMigrateInput, runner CommandRunner) (RepoM
 			report.NextStep = next
 		}
 	}
+	if input.DryRun {
+		report.Approval = RepoMigrateApprovalEvidence(report)
+	}
 	if err != nil {
 		if report.Status == "" || report.Status == actionStatus(input.DryRun) {
 			report.Status = "blocked"
 		}
 		if report.Action == "" || report.Action == "plan" {
 			report.Action = "none"
+		}
+		if input.DryRun {
+			report.Approval = RepoMigrateApprovalEvidence(report)
 		}
 		return report, err
 	}

@@ -3548,18 +3548,22 @@ func TestTicketSupersedeParsesReplacementBodyAndJSON(t *testing.T) {
 	restore := newTicketSupersedeReport
 	t.Cleanup(func() { newTicketSupersedeReport = restore })
 	newTicketSupersedeReport = func(input gira.TicketSupersedeInput) (gira.TicketSupersedeReport, error) {
-		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 64 || input.ReplacementTitle != "New gate" || input.Body != "## Goal\nBody" || !input.DryRun || input.CloseDraftPR {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 64 || input.ReplacementTitle != "New gate" || input.Body != "## Goal\nBody" || !input.DryRun || !input.CloseDraftPR || input.Milestone != "2.0" || len(input.Labels) != 1 || input.Labels[0] != "area:ai" {
 			t.Fatalf("unexpected input: %+v repo=%s", input, input.Repo.FullName())
 		}
 		return gira.TicketSupersedeReport{
-			Command:  "ticket supersede",
-			Repo:     input.Repo.FullName(),
-			DryRun:   true,
-			Original: gira.TicketSupersedeIssue{Number: input.Ticket, Title: "Old gate"},
+			Command:   "ticket supersede",
+			Repo:      input.Repo.FullName(),
+			DryRun:    true,
+			Body:      input.Body,
+			Labels:    []string{"area:ai"},
+			Milestone: "2.0",
+			Original:  gira.TicketSupersedeIssue{Number: input.Ticket, Title: "Old gate"},
 			Replacement: gira.TicketSupersedeIssue{
 				Title: input.ReplacementTitle,
 				Body:  input.Body + "\n\n## Supersedes\n- Supersedes #64\n",
 			},
+			DraftPR:  gira.TicketSupersedeDraftPR{Number: 65, Draft: true, Action: "close"},
 			Actions:  []gira.TicketSupersedeAction{{Action: "replacement:create", Status: "planned"}},
 			NextStep: "gira ticket supersede --apply",
 		}, nil
@@ -3572,12 +3576,66 @@ func TestTicketSupersedeParsesReplacementBodyAndJSON(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"ticket", "supersede", "64", "--repo", "StatPan/gira", "--replacement-title", "New gate", "--body-file", bodyPath, "--dry-run", "--json"}, &stdout, &stderr)
+	code := Run([]string{"ticket", "supersede", "64", "--repo", "StatPan/gira", "--replacement-title", "New gate", "--body-file", bodyPath, "--label", "area:ai", "--milestone", "2.0", "--close-draft-pr", "--dry-run", "--json"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), `"command": "ticket supersede"`) || !strings.Contains(stdout.String(), `"replacement"`) {
 		t.Fatalf("ticket supersede JSON missing fields:\n%s", stdout.String())
+	}
+	var report gira.TicketSupersedeReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket supersede dry-run JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.TicketSupersedeReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("ticket supersede dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.OutputSchema != gira.TicketSupersedeReportSchemaVersion {
+		t.Fatalf("unexpected approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira ticket supersede 64 --repo StatPan/gira --replacement-title 'New gate' --body '## Goal\nBody' --label area:ai --milestone 2.0 --close-draft-pr --apply" {
+		t.Fatalf("unexpected approval apply command: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
+	}
+}
+
+func TestTicketSupersedeApplyJSONOmitsApprovalEvidence(t *testing.T) {
+	restore := newTicketSupersedeReport
+	t.Cleanup(func() { newTicketSupersedeReport = restore })
+	newTicketSupersedeReport = func(input gira.TicketSupersedeInput) (gira.TicketSupersedeReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 64 || input.ReplacementTitle != "New gate" || !input.Apply {
+			t.Fatalf("unexpected input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.TicketSupersedeReport{
+			Command:     "ticket supersede",
+			Repo:        input.Repo.FullName(),
+			DryRun:      false,
+			Original:    gira.TicketSupersedeIssue{Number: input.Ticket, Title: "Old gate", State: "closed"},
+			Replacement: gira.TicketSupersedeIssue{Number: 94, Title: input.ReplacementTitle},
+			Actions:     []gira.TicketSupersedeAction{{Action: "replacement:create", Status: "applied"}},
+			NextStep:    "gira ticket start 94 --apply",
+		}, nil
+	}
+
+	tmp := t.TempDir()
+	bodyPath := filepath.Join(tmp, "replacement.md")
+	if err := os.WriteFile(bodyPath, []byte("## Goal\nBody\n"), 0o644); err != nil {
+		t.Fatalf("write body file: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "supersede", "64", "--repo", "StatPan/gira", "--replacement-title", "New gate", "--body-file", bodyPath, "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.TicketSupersedeReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket supersede apply JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 }
 

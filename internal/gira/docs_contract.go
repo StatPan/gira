@@ -20,6 +20,7 @@ func RefreshDocsContract(root string) (DocsContractRefreshReport, error) {
 	report := DocsContractRefreshReport{Root: root}
 	writes := map[string]string{
 		filepath.Join(root, "docs-site", "command-reference.md"):    RenderCommandReferenceMarkdown(CoreCommandSpecs()),
+		filepath.Join(root, "docs-site", "command-capabilities.md"): RenderCommandCapabilitiesMarkdown(CoreCommandSpecs()),
 		filepath.Join(root, "docs-site", "agent-operator-skill.md"): RenderAgentOperatorDocsSiteMarkdown(CoreAgentGuidanceSpec(), CoreCommandSpecs()),
 	}
 	for path, content := range writes {

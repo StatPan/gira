@@ -61,6 +61,62 @@ func TestCommandReferenceDocsSiteIsGeneratedFromRegistry(t *testing.T) {
 	}
 }
 
+func TestCommandCapabilitiesCoverAdapterClasses(t *testing.T) {
+	report := BuildCommandCapabilityReport(CoreCommandSpecs())
+	if report.SchemaVersion != CommandCapabilitySchemaVersion {
+		t.Fatalf("schema version = %q, want %q", report.SchemaVersion, CommandCapabilitySchemaVersion)
+	}
+	classes := map[AdapterCapabilityClass]bool{}
+	byCanonical := map[string]CommandCapabilityEntry{}
+	for _, command := range report.Commands {
+		if command.Capability == "" {
+			t.Fatalf("%s missing capability class", command.Canonical)
+		}
+		if command.JSONSupport == "" {
+			t.Fatalf("%s missing JSON support metadata", command.Canonical)
+		}
+		if len(command.Docs) == 0 {
+			t.Fatalf("%s missing docs references", command.Canonical)
+		}
+		classes[command.Capability] = true
+		byCanonical[command.Canonical] = command
+	}
+	for _, class := range []AdapterCapabilityClass{AdapterCapabilityRead, AdapterCapabilityDryRunMutation, AdapterCapabilityApplyMutation, AdapterCapabilityUnsupported} {
+		if !classes[class] {
+			t.Fatalf("capability report missing class %q", class)
+		}
+	}
+	assertCapability := func(canonical string, want AdapterCapabilityClass) {
+		t.Helper()
+		got, ok := byCanonical[canonical]
+		if !ok {
+			t.Fatalf("missing capability entry for %s", canonical)
+		}
+		if got.Capability != want {
+			t.Fatalf("%s capability = %q, want %q", canonical, got.Capability, want)
+		}
+	}
+	assertCapability("gira ticket status", AdapterCapabilityRead)
+	assertCapability("gira goal plan", AdapterCapabilityDryRunMutation)
+	assertCapability("gira ticket start", AdapterCapabilityApplyMutation)
+	assertCapability("gira stats workspace", AdapterCapabilityUnsupported)
+	if !containsString(byCanonical["gira ticket view"].Aliases, "gira ticket show") {
+		t.Fatalf("ticket view capability must expose ticket show alias: %+v", byCanonical["gira ticket view"])
+	}
+}
+
+func TestCommandCapabilitiesDocsSiteIsGeneratedFromRegistry(t *testing.T) {
+	want := RenderCommandCapabilitiesMarkdown(CoreCommandSpecs())
+	path := filepath.Join("..", "..", "docs-site", "command-capabilities.md")
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read command capabilities: %v", err)
+	}
+	if string(got) != want {
+		t.Fatalf("%s is out of sync with command registry; regenerate it from RenderCommandCapabilitiesMarkdown(CoreCommandSpecs())", path)
+	}
+}
+
 func TestRenderGuideCommandSectionUsesRegistryExamples(t *testing.T) {
 	out := RenderGuideCommandSection("ticket", []CommandSpec{
 		{

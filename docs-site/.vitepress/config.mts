@@ -65,7 +65,8 @@ export default defineConfig({
       {
         text: 'Reference',
         items: [
-          { text: 'Command Reference', link: '/command-reference' }
+          { text: 'Command Reference', link: '/command-reference' },
+          { text: 'Command Capabilities', link: '/command-capabilities' }
         ]
       }
     ],

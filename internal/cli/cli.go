@@ -61,8 +61,8 @@ Flags:
 const guideHelp = `Built-in Gira guides for installed CLI users.
 
 Usage:
-  gira guide [quickstart|ticket|stats|jira|agent|skill|concepts]
-  gira docs [quickstart|ticket|stats|jira|agent|skill|concepts]
+  gira guide [quickstart|ticket|stats|jira|agent|skill|concepts|capabilities]
+  gira docs [quickstart|ticket|stats|jira|agent|skill|concepts|capabilities]
 
 Topics:
   quickstart  First successful flow from auth to merged PR
@@ -72,6 +72,7 @@ Topics:
   agent       Minimal rules for AI/coding agents
   skill       Alias for the canonical agent operator summary
   concepts    Jira terms mapped to Gira and GitHub
+  capabilities Adapter command capability map
 
 Start here:
   gira guide quickstart
@@ -1583,6 +1584,9 @@ func runGuide(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stdout, guideQuickstart)
 		return 0
 	}
+	if args[0] == "capabilities" {
+		return runGuideCapabilities(args[1:], stdout, stderr)
+	}
 	if len(args) > 1 {
 		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", args[1])
 		fmt.Fprint(stderr, guideHelp)
@@ -1608,6 +1612,31 @@ func runGuide(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, guideHelp)
 		return 2
 	}
+	return 0
+}
+
+func runGuideCapabilities(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("guide capabilities", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON capability map")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "guide capabilities: %v\n\n", err)
+		fmt.Fprint(stderr, guideHelp)
+		return 2
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, guideHelp)
+		return 2
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(gira.BuildCommandCapabilityReport(gira.CoreCommandSpecs())); err != nil {
+			fmt.Fprintf(stderr, "encode command capabilities JSON: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	fmt.Fprint(stdout, gira.RenderCommandCapabilitiesMarkdown(gira.CoreCommandSpecs()))
 	return 0
 }
 

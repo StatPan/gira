@@ -44,6 +44,23 @@ classes.
 Compatibility aliases such as `work`, `dev`, `docs`, `update`, and `start`
 should normalize to their canonical command family before policy evaluation.
 
+## Generated Capability Source
+
+The machine-readable adapter map is generated from Gira's command metadata
+registry:
+
+```bash
+gira guide capabilities --json
+```
+
+The generated docs-site view is
+[`docs-site/command-capabilities.md`](../docs-site/command-capabilities.md).
+Adapters should treat `schema_version: gira-command-capabilities/v1`,
+`canonical`, `capability`, `mutation_boundary`, `json_support`, `aliases`, and
+`docs` as the policy input. The table below remains a narrative overview for
+the first dogfood flow; do not hand-maintain adapter policy from the prose when
+the generated capability map is available.
+
 ## Initial Command Capability Map
 
 This map covers the first adapter flow. It is intentionally conservative.
@@ -54,7 +71,7 @@ This map covers the first adapter flow. It is intentionally conservative.
 | `gira status`, `gira workspace status`, `gira ticket list`, `gira ticket view`, `gira ticket status`, `gira ticket checks`, `gira ticket review`, `gira ticket handoff`, `gira ticket prompt` | `read` | Primary state, work-order, review, and handoff surfaces. Prefer JSON where available. Prompt output is evidence, not an instruction to bypass policy. |
 | `gira goal status`, `gira goal next`, `gira goal plan --dry-run`, `gira goal finish --dry-run` | `read` or `dry_run_mutation` | `goal plan` and `goal finish --dry-run` prepare plans or receipts but do not apply. `goal next` can select work or stop. |
 | `gira audit readiness`, `gira audit drift`, `gira audit workflow`, `gira audit verify`, `gira stats repo` | `read` | Use for workflow convergence and integrity evidence. |
-| `gira jira doctor`, `gira jira transition --dry-run`, `gira jira export` | `read` | Provider diagnostics and migration export. Do not treat Jira transition planning as approval to mutate Jira. |
+| `gira jira doctor`, `gira jira transition --dry-run`, `gira jira export` | `read`, `dry_run_mutation`, or `apply_mutation` | Provider diagnostics and migration export. Do not treat Jira transition planning as approval to mutate Jira. `jira export` writes local export artifacts and therefore needs an approved or sandboxed output boundary. |
 | `gira ticket new --dry-run`, `gira ticket start --dry-run`, `gira ticket pr --dry-run`, `gira ticket note --dry-run`, `gira ticket finish --dry-run`, `gira ticket supersede --dry-run` | `dry_run_mutation` | These are approval evidence surfaces for issue, branch, PR, comment, merge, close, and supersede mutations. |
 | `gira adopt repo --dry-run`, `gira adopt issues --dry-run`, `gira setup global --dry-run`, `gira workspace repos sync --dry-run`, `gira repo register --dry-run`, `gira repo migrate --dry-run` | `dry_run_mutation` | Local config, repo metadata, or issue adoption plans. |
 | `gira milestone new --dry-run`, `gira milestone assign --dry-run`, `gira milestone plan --dry-run`, `gira sprint plan`, `gira sprint rollover --dry-run`, `gira release readiness` | `dry_run_mutation` or `read` | Release readiness is read-only. Sprint and milestone plans need approval before apply. |
@@ -181,7 +198,6 @@ before broad adapter use:
 
 | Gap | Impact | Follow-up |
 | --- | --- | --- |
-| No first-class command capability registry for adapters. | Adapters must hand-maintain the read/dry-run/apply/unsupported map and can drift from Gira command metadata. | Add machine-readable adapter capability metadata to the command registry or expose `gira guide capabilities --json`. |
 | Dry-run outputs do not share a common approval evidence envelope. | `agent-kernel` must normalize per-command JSON shapes before it can compare dry-run to apply safely. | Define `gira-approval-plan/v1` or embed a common `approval` object in mutating dry-run reports. |
 | Some command families remain text-first or partially JSON-covered. | Automation confidence drops and adapters need fragile parsing. | Add JSON contracts or mark those commands unsupported for adapters. |
 | No explicit post-apply verification link in every apply report. | Adapters need command-specific knowledge to know which read command proves completion. | Add `post_apply_verification` fields to apply reports. |
@@ -191,7 +207,6 @@ before broad adapter use:
 
 Concrete follow-up issues created from this spike:
 
-- #594 Add adapter capability metadata to command registry.
 - #595 Define shared approval evidence envelope for Gira dry-runs.
 
 A later issue may add `schema_version` and post-apply verification hints across

@@ -482,3 +482,82 @@ func repoRegisterApprovalBlockers(report RepoRegisterReport) []string {
 	}
 	return []string{}
 }
+
+func RepoMigrateApprovalEvidence(report RepoMigrateReport) *ApprovalEvidence {
+	applyCommand := repoMigrateApprovalCommand(report, "--apply")
+	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira repo migrate",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		OutputSchema:          RepoMigrateReportSchemaVersion,
+		PlannedActions:        repoMigrateApprovalActions(report),
+		Blockers:              repoMigrateApprovalBlockers(report),
+		Warnings:              stableStringSlice(report.Notes),
+		PostApplyVerification: repoMigratePostApplyVerification(report),
+	}
+}
+
+func repoMigrateApprovalCommand(report RepoMigrateReport, mode string) string {
+	args := []string{"gira repo migrate"}
+	if strings.TrimSpace(report.Repo) != "" {
+		args = append(args, "--repo", QuoteShellArg(report.Repo))
+	}
+	if strings.TrimSpace(report.Path) != "" {
+		args = append(args, "--path", QuoteShellArg(report.Path))
+	}
+	if strings.TrimSpace(report.ConfigRoot) != "" {
+		args = append(args, "--config-root", QuoteShellArg(report.ConfigRoot))
+	}
+	if report.Action == "overwrite" {
+		args = append(args, "--overwrite")
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func repoMigrateApprovalActions(report RepoMigrateReport) []ApprovalPlannedAction {
+	actions := []ApprovalPlannedAction{}
+	if strings.TrimSpace(report.ContractFile) != "" {
+		actions = append(actions, ApprovalPlannedAction{
+			Action: "contract:preserve",
+			Target: report.ContractFile,
+			Detail: "preserve repo-local .gira/config.yaml as shared contract",
+		})
+	}
+	action := "registry:" + strings.TrimSpace(report.Action)
+	if action == "registry:" || action == "registry:plan" {
+		action = "registry:update"
+	}
+	detail := "import repo metadata into global registry"
+	if strings.TrimSpace(report.Repo) != "" {
+		detail = "import " + report.Repo + " metadata into global registry"
+	}
+	actions = append(actions, ApprovalPlannedAction{
+		Action: action,
+		Target: report.File,
+		Detail: detail,
+	})
+	return actions
+}
+
+func repoMigrateApprovalBlockers(report RepoMigrateReport) []string {
+	blockers := []string{}
+	if report.Register != nil && report.Register.Approval != nil {
+		blockers = appendUniqueStrings(blockers, report.Register.Approval.Blockers...)
+	}
+	if strings.EqualFold(report.Status, "blocked") {
+		blockers = appendUniqueStrings(blockers, "repo_migrate_blocked")
+	}
+	return stableStringSlice(blockers)
+}
+
+func repoMigratePostApplyVerification(report RepoMigrateReport) string {
+	if strings.TrimSpace(report.Repo) != "" {
+		return fmt.Sprintf("gira config repo --repo %s --config-root %s --json", QuoteShellArg(report.Repo), QuoteShellArg(report.ConfigRoot))
+	}
+	return "gira config doctor --config-root " + QuoteShellArg(report.ConfigRoot) + " --json"
+}

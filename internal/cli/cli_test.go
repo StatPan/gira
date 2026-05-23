@@ -215,6 +215,56 @@ func TestRepoRegisterCommandJSON(t *testing.T) {
 	if report.Action != "create" || report.Status != "planned" {
 		t.Fatalf("unexpected repo register report: %+v", report)
 	}
+	if report.SchemaVersion != gira.RepoRegisterReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("repo register dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira repo register" || report.Approval.OutputSchema != gira.RepoRegisterReportSchemaVersion {
+		t.Fatalf("unexpected repo register approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira repo register StatPan/gira --path /repo --config-root /tmp/gira --apply" || report.Approval.PostApplyVerification != "gira config repo --repo StatPan/gira --config-root /tmp/gira --json" {
+		t.Fatalf("unexpected repo register approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
+	}
+}
+
+func TestRepoRegisterApplyJSONOmitsApprovalEvidence(t *testing.T) {
+	original := newRepoRegisterReport
+	t.Cleanup(func() { newRepoRegisterReport = original })
+	newRepoRegisterReport = func(input gira.RepoRegisterInput) (gira.RepoRegisterReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Path != "/repo" || input.ConfigRoot != "/tmp/gira" || !input.Apply || input.DryRun {
+			t.Fatalf("unexpected repo register input: %+v", input)
+		}
+		return gira.RepoRegisterReport{
+			Command:    "repo register",
+			Repo:       input.Repo.FullName(),
+			ConfigRoot: input.ConfigRoot,
+			Path:       input.Path,
+			File:       "/tmp/gira/repos/StatPan/gira.yaml",
+			Applied:    true,
+			Status:     "applied",
+			Action:     "create",
+			Entry:      gira.GlobalRepoRegistryEntry{Repo: input.Repo.FullName(), Path: input.Path},
+			NextStep:   "gira config repo --repo StatPan/gira --config-root /tmp/gira",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"repo", "register", "StatPan/gira", "--path", "/repo", "--config-root", "/tmp/gira", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.RepoRegisterReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode repo register JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.RepoRegisterReportSchemaVersion || !report.Applied {
+		t.Fatalf("unexpected repo register apply report: %+v", report)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
+	}
 }
 
 func TestRepoRegisterRequiresRepo(t *testing.T) {

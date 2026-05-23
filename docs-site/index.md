@@ -32,7 +32,7 @@ features:
 
 | Need | Start here | Main commands |
 | --- | --- | --- |
-| Install or upgrade Gira | [Install](/install), [Distribution](/distribution) | `gira version`, `gira upgrade`, `gira cache prune` |
+| Install, upgrade, or inspect adoption signals | [Install](/install), [Distribution](/distribution), [Adoption Signals](/adoption-signals) | `gira version`, `gira upgrade`, `gira cache prune` |
 | Set up a repo or personal workspace | [Quick Start](/quickstart), [Global Config](/global-config) | `gira init`, `gira setup global`, `gira repo register`, `gira adopt repo` |
 | See work across repos | [Workspace](/workspace) | `gira workspace status`, `gira workspace repos sync` |
 | Run issue to PR work | [Ticket Workflow](/ticket-workflow) | `gira ticket new`, `start`, `pr`, `review`, `checks`, `wait`, `finish` |
@@ -50,7 +50,7 @@ features:
 | `ticket`, `start`, `work`, `dev` | Daily issue to branch to PR to finish lifecycle, plus compatibility aliases and lower-level helpers. | [Ticket Workflow](/ticket-workflow) |
 | `goal`, `epic`, `milestone`, `sprint`, `release` | Larger objective tracking, child ticket selection, milestone batches, sprint planning, and release readiness. | [Goal Mode](/goal-mode), [Sprint And Release](/sprint-release) |
 | `audit`, `jira` | Drift, readiness, provider compatibility, Jira mirror, transition planning, import, and export diagnostics. | [Readiness And Audit](/readiness-audit), [Jira Provider](/jira-primary-provider) |
-| `stats`, `upgrade`, `cache`, `version` | Closure funnel metrics, release upgrade guidance, wrapper cache cleanup, and installed binary inspection. | [Closure Funnel Stats](/closure-funnel-stats), [Distribution](/distribution) |
+| `stats`, `upgrade`, `cache`, `version` | Closure funnel metrics, release upgrade guidance, wrapper cache cleanup, installed binary inspection, and manual adoption signal snapshots. | [Closure Funnel Stats](/closure-funnel-stats), [Distribution](/distribution), [Adoption Signals](/adoption-signals) |
 | `ops` | Advanced setup, migration, guardrails, portfolio, graph, review, merge, report, worker, and raw control surfaces. | [Command Reference](/command-reference) |
 
 ## Daily Loop

@@ -29,6 +29,7 @@ export default defineConfig({
           { text: 'Install', link: '/install' },
           { text: 'Quick Start', link: '/quickstart' },
           { text: 'Distribution', link: '/distribution' },
+          { text: 'Adoption Signals', link: '/adoption-signals' },
           { text: 'Troubleshooting', link: '/troubleshooting' }
         ]
       },

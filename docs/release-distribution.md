@@ -21,6 +21,9 @@ Gira ships as one Go-built binary. Package-manager channels are wrappers around 
 4. Tag `main`, for example `git tag -a v1.0.0 -m "gira v1.0.0" && git push origin v1.0.0`.
 5. The GitHub Actions release workflow builds archives, verifies checksums, publishes the GitHub Release, and then publishes configured package-manager channels.
 6. Smoke-test the tagged installer and any published package-manager channels before advertising the new version.
+7. Optionally capture an adoption signal snapshot for the release using
+   `docs/adoption-signal-model.md`. The snapshot is directional evidence only;
+   do not convert package downloads into active-user claims.
 
 The README on `main` should describe the next public release surface only after that release is tagged. If `main` documents commands that are not in the latest stable tag, cut a new minor or patch release before directing users to the installer.
 
@@ -77,3 +80,20 @@ unchecked refs into generated package metadata or release scripts.
 - npm wrapper tests pass.
 - PyPI wrapper tests pass.
 - GitHub Release assets include Linux, macOS, Windows archives and `checksums.txt`.
+
+## Adoption Snapshot
+
+After publishing or before a public announcement, maintainers may capture a
+small adoption signal snapshot:
+
+```bash
+curl -fsSL 'https://api.npmjs.org/downloads/point/last-week/@statpan/gira'
+curl -fsSL 'https://pypistats.org/api/packages/gira-cli/recent'
+gh api repos/StatPan/gira/releases --paginate
+gh api repos/StatPan/gira/traffic/views
+gh api repos/StatPan/gira/traffic/clones
+gh api repos/StatPan/gira
+```
+
+Use the snapshot to compare release channels and docs interest. It is not a
+product analytics system and must not include user-identifying telemetry.

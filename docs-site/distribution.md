@@ -36,3 +36,12 @@ gira cache prune --apply
 ```
 
 `gira cache prune` skips the active version, newer versions, malformed entries, files, symlinks, and any directory containing the current executable. Use `--root PATH` for a custom wrapper cache root or `--json` for automation.
+
+## Adoption Signals
+
+Distribution metrics are directional. npm, PyPI, and GitHub Release downloads
+show channel reach and binary pulls, not active users.
+
+Use the [Adoption Signals](/adoption-signals) model when a release needs a
+manual snapshot across npm `@statpan/gira`, PyPI `gira-cli`, GitHub Release
+assets, repository traffic, and privacy-safe docs measurement.

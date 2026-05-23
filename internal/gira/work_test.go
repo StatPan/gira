@@ -308,6 +308,9 @@ func TestGetWorkStatusIncludesDeterministicJSONContractFields(t *testing.T) {
 	if result.TicketReadiness == nil || result.TicketReadiness.SchemaVersion != TicketReadinessSchemaVersion || result.TicketReadiness.Readiness != "ready" {
 		t.Fatalf("missing ticket readiness contract: %+v", result.TicketReadiness)
 	}
+	if result.PRReadiness == nil || result.PRReadiness.SchemaVersion != PRReadinessSchemaVersion || result.PRReadiness.PullRequest != 201 {
+		t.Fatalf("missing PR readiness contract: %+v", result.PRReadiness)
+	}
 }
 
 func TestGetWorkStatusReportsBranchBaseMismatchWarning(t *testing.T) {

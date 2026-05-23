@@ -2165,6 +2165,10 @@ func runCachePrune(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		gira.EnsureCachePruneReportSchema(&report)
+		if report.DryRun {
+			report.Approval = gira.CachePruneApprovalEvidence(report)
+		}
 		out, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			fmt.Fprintf(stderr, "encode cache prune JSON: %v\n", err)

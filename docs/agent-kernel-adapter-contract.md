@@ -236,7 +236,7 @@ before broad adapter use:
 
 | Gap | Impact | Follow-up |
 | --- | --- | --- |
-| Not every mutating dry-run emits the shared approval evidence envelope yet. | `agent-kernel` can use `gira-approval-plan/v1` for ticket lifecycle, core config/registry, workspace repo-sync, repo/issue adoption, and milestone dry-runs, but sprint, Jira transition, and cache mutation plans may still need command-specific normalization. | Extend the shared `approval` object to the remaining non-ticket dry-run mutation reports. |
+| Not every mutating dry-run emits the shared approval evidence envelope yet. | `agent-kernel` can use `gira-approval-plan/v1` for ticket lifecycle, core config/registry, workspace repo-sync, repo/issue adoption, milestone, and cache prune dry-runs, but sprint and Jira transition plans may still need command-specific normalization. | Extend the shared `approval` object to the remaining non-ticket dry-run mutation reports. |
 | Some command families remain text-first or partially JSON-covered. | Automation confidence drops and adapters need fragile parsing. | Add JSON contracts or mark those commands unsupported for adapters. |
 | No explicit post-apply verification link in every apply report. | Adapters need command-specific knowledge to know which read command proves completion. | Add `post_apply_verification` fields to apply reports. |
 

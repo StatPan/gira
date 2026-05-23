@@ -5668,6 +5668,10 @@ func runWorkspaceReposSync(args []string, stdout io.Writer, stderr io.Writer) in
 	report, err := newWorkspaceRepoSyncReport(gira.WorkspaceRepoSyncInput{WorkspaceName: *workspaceName, Owner: *owner, ConfigRoot: *configRoot, Limit: *limit, IncludeArchived: *includeArchived, DryRun: *dryRun, Apply: *apply})
 	if err != nil {
 		if *jsonOutput {
+			gira.EnsureWorkspaceReposSyncReportSchema(&report)
+			if *dryRun && strings.TrimSpace(report.Command) != "" {
+				report.Approval = gira.WorkspaceReposSyncApprovalEvidence(report)
+			}
 			out, _ := json.MarshalIndent(report, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
@@ -5675,6 +5679,10 @@ func runWorkspaceReposSync(args []string, stdout io.Writer, stderr io.Writer) in
 		return 2
 	}
 	if *jsonOutput {
+		gira.EnsureWorkspaceReposSyncReportSchema(&report)
+		if *dryRun {
+			report.Approval = gira.WorkspaceReposSyncApprovalEvidence(report)
+		}
 		output, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			fmt.Fprintf(stderr, "encode workspace repos sync JSON: %v\n", err)

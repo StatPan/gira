@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+const WorkspaceReposSyncReportSchemaVersion = "workspace-repos-sync-report/v1"
+
 type WorkspaceRepoSyncInput struct {
 	WorkspaceName   string `json:"workspace,omitempty"`
 	Owner           string `json:"owner,omitempty"`
@@ -22,10 +24,13 @@ type WorkspaceRepoSyncInput struct {
 }
 
 type WorkspaceRepoSyncReport struct {
+	SchemaVersion   string                       `json:"schema_version,omitempty"`
 	Command         string                       `json:"command"`
 	ConfigRoot      string                       `json:"config_root"`
 	ConfigPath      string                       `json:"config_path"`
 	Owner           string                       `json:"owner"`
+	Limit           int                          `json:"limit,omitempty"`
+	IncludeArchived bool                         `json:"include_archived,omitempty"`
 	Workspace       WorkspaceSummary             `json:"workspace"`
 	InboxRepo       string                       `json:"inbox_repo"`
 	ExistingRepos   []string                     `json:"existing_repos"`
@@ -41,6 +46,13 @@ type WorkspaceRepoSyncReport struct {
 	Notes           []string                     `json:"notes,omitempty"`
 	NextStep        string                       `json:"next_step,omitempty"`
 	GlobalWorkspace GlobalWorkspaceRegistryEntry `json:"global_workspace"`
+	Approval        *ApprovalEvidence            `json:"approval,omitempty"`
+}
+
+func EnsureWorkspaceReposSyncReportSchema(report *WorkspaceRepoSyncReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = WorkspaceReposSyncReportSchemaVersion
+	}
 }
 
 func BuildWorkspaceRepoSyncReport(input WorkspaceRepoSyncInput, runner CommandRunner) (WorkspaceRepoSyncReport, error) {
@@ -107,10 +119,13 @@ func BuildWorkspaceRepoSyncReport(input WorkspaceRepoSyncInput, runner CommandRu
 	plan := buildWorkspaceRepoSyncFilePlan(path, content)
 	status := setupGlobalStatus(input.DryRun, []SetupGlobalFilePlan{plan})
 	report := WorkspaceRepoSyncReport{
+		SchemaVersion:   WorkspaceReposSyncReportSchemaVersion,
 		Command:         "workspace repos sync",
 		ConfigRoot:      root,
 		ConfigPath:      path,
 		Owner:           owner,
+		Limit:           input.Limit,
+		IncludeArchived: input.IncludeArchived,
 		Workspace:       WorkspaceSummary{Name: nextEntry.Workspace.Name, Owner: nextEntry.Workspace.Owner},
 		InboxRepo:       inboxRepo.FullName(),
 		ExistingRepos:   existingStrings,
@@ -133,6 +148,7 @@ func BuildWorkspaceRepoSyncReport(input WorkspaceRepoSyncInput, runner CommandRu
 		if plan.Action == "conflict" {
 			report.NextStep = "inspect workspace registry file"
 		}
+		report.Approval = WorkspaceReposSyncApprovalEvidence(report)
 		return report, nil
 	}
 	if plan.Action == "conflict" {

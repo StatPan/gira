@@ -677,3 +677,73 @@ func setupGlobalPostApplyVerification(report SetupGlobalReport) string {
 	}
 	return "gira config doctor --config-root " + QuoteShellArg(report.ConfigRoot) + " --json"
 }
+
+func WorkspaceReposSyncApprovalEvidence(report WorkspaceRepoSyncReport) *ApprovalEvidence {
+	applyCommand := workspaceReposSyncApprovalCommand(report, "--apply")
+	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira workspace repos sync",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		OutputSchema:          WorkspaceReposSyncReportSchemaVersion,
+		PlannedActions:        workspaceReposSyncApprovalActions(report),
+		Blockers:              workspaceReposSyncApprovalBlockers(report),
+		Warnings:              stableStringSlice(report.Notes),
+		PostApplyVerification: "gira workspace status --config " + QuoteShellArg(report.ConfigPath) + " --json",
+	}
+}
+
+func workspaceReposSyncApprovalCommand(report WorkspaceRepoSyncReport, mode string) string {
+	args := []string{"gira workspace repos sync"}
+	if strings.TrimSpace(report.Owner) != "" {
+		args = append(args, "--owner", QuoteShellArg(report.Owner))
+	}
+	if strings.TrimSpace(report.Workspace.Name) != "" {
+		args = append(args, "--workspace", QuoteShellArg(report.Workspace.Name))
+	}
+	if strings.TrimSpace(report.ConfigRoot) != "" {
+		args = append(args, "--config-root", QuoteShellArg(report.ConfigRoot))
+	}
+	if report.Limit > 0 {
+		args = append(args, "--limit", fmt.Sprintf("%d", report.Limit))
+	}
+	if report.IncludeArchived {
+		args = append(args, "--include-archived")
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func workspaceReposSyncApprovalActions(report WorkspaceRepoSyncReport) []ApprovalPlannedAction {
+	actions := []ApprovalPlannedAction{{
+		Action: "file:" + strings.TrimSpace(report.File.Action),
+		Target: report.File.Path,
+		Detail: "update workspace repo registry",
+	}}
+	if actions[0].Action == "file:" {
+		actions[0].Action = "file:update"
+	}
+	for _, repo := range report.AddedRepos {
+		actions = append(actions, ApprovalPlannedAction{Action: "workspace_repo:add", Target: repo, Detail: "add discovered execution repo"})
+	}
+	for _, repo := range report.RemovedRepos {
+		actions = append(actions, ApprovalPlannedAction{Action: "workspace_repo:remove", Target: repo, Detail: "remove repo missing from discovery target set"})
+	}
+	for _, repo := range report.SkippedRepos {
+		actions = append(actions, ApprovalPlannedAction{Action: "workspace_repo:skip", Target: repo, Detail: "skip workspace inbox repo"})
+	}
+	return actions
+}
+
+func workspaceReposSyncApprovalBlockers(report WorkspaceRepoSyncReport) []string {
+	blockers := []string{}
+	if report.File.Action == "conflict" {
+		blockers = appendUniqueStrings(blockers, "workspace_repos_sync_file_conflict")
+	}
+	if strings.EqualFold(report.Status, "blocked") {
+		blockers = appendUniqueStrings(blockers, "workspace_repos_sync_blocked")
+	}
+	return stableStringSlice(blockers)
+}

@@ -243,6 +243,9 @@ hosted view can render the same queues across workspaces, but GitHub issues and
 PRs remain the source of truth and mutation still flows through explicit Gira
 commands.
 
+For the broader ownership boundary between labels, computed JSON state,
+receipts, and local cache, see [Gira State Model](state-model.md).
+
 ## Boundary
 
 This is not a separate Jira import/export database. Workspace commands operate on issues, labels, milestones, and links that remain visible in GitHub. `gira projects sync` links and mirrors repository issue state into an existing GitHub Project; repo issues, labels, and milestones remain the source of truth. It mirrors `priority:*` labels to `Priority`, `area:*` labels to `Layer / workstream`, `agent:*` labels to `Owner / agent`, status labels to `Status`, and milestone due dates to `Target date`.

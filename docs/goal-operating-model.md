@@ -195,3 +195,6 @@ Minimum viable GitHub mapping:
 Future slices may add a compact machine-readable block in goal comments, but
 the readable GitHub issue should remain sufficient for humans to audit the
 goal without a Gira database.
+
+For the broader ownership boundary between GitHub labels, computed JSON state,
+durable receipts, and local cache, see [Gira State Model](state-model.md).

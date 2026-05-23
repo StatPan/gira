@@ -118,6 +118,9 @@ func TestBuildWorkspaceQueuesSkipsClosedAndKeepsPrivacyBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal report: %v", err)
 	}
+	if strings.Contains(string(payload), `"agent_ready":null`) {
+		t.Fatalf("empty queues should encode as arrays: %s", payload)
+	}
 	for _, forbiddenField := range []string{`"score"`, `"rank"`, `"velocity"`, `"assignee_score"`, `"agent_score"`} {
 		if strings.Contains(string(payload), forbiddenField) {
 			t.Fatalf("queue contract should not expose ranking field %q: %s", forbiddenField, payload)

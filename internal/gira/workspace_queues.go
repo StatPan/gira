@@ -75,6 +75,14 @@ func BuildWorkspaceQueues(workspace WorkspaceSummary, statuses []WorkStatusResul
 	report := WorkspaceQueuesReport{
 		SchemaVersion: WorkspaceQueuesSchemaVersion,
 		Workspace:     workspace,
+		Queues: WorkspaceQueues{
+			AgentReady:    []WorkspaceQueueItem{},
+			ReviewNeeded:  []WorkspaceQueueItem{},
+			FinishReady:   []WorkspaceQueueItem{},
+			Blocked:       []WorkspaceQueueItem{},
+			FailedCheck:   []WorkspaceQueueItem{},
+			HumanDecision: []WorkspaceQueueItem{},
+		},
 		PrivacyBoundary: WorkspaceQueuePrivacy{
 			Scope: "work_item_state_only",
 			Prohibited: []string{

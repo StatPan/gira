@@ -189,14 +189,91 @@ func TestBuildWorkspaceStatusReportAggregatesInboxAndRepos(t *testing.T) {
 	if report.Counts.Backlog != 4 || report.Counts.RepoOpen != 2 || report.Counts.Ready != 1 || report.Counts.Blocked != 1 || report.Counts.Stale != 1 {
 		t.Fatalf("counts = %+v", report.Counts)
 	}
+	if report.Queues.SchemaVersion != WorkspaceQueuesSchemaVersion || report.Queues.Counts.AgentReady != 1 || report.Queues.Counts.Blocked != 1 {
+		t.Fatalf("queues = %+v", report.Queues)
+	}
 	if len(report.Repos) != 1 || report.Repos[0].ActiveMilestone != milestone || report.Repos[0].ProgressPercent != 33 {
 		t.Fatalf("repos = %+v", report.Repos)
 	}
 	text := FormatWorkspaceReport(report)
-	for _, want := range []string{"workspace: personal", "inbox:", "repos:", "backlog:"} {
+	for _, want := range []string{"workspace: personal", "inbox:", "repos:", "queues:", "backlog:"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("workspace text missing %q:\n%s", want, text)
 		}
+	}
+}
+
+func TestBuildWorkspaceStatusReportIncludesEmptyQueues(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	client := fakeWorkspaceClient{
+		status: map[string]StatusSummary{
+			"StatPan/gira": {Repo: "StatPan/gira"},
+		},
+	}
+
+	report, err := BuildWorkspaceStatusReport(config, client, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC), 14)
+	if err != nil {
+		t.Fatalf("BuildWorkspaceStatusReport error: %v", err)
+	}
+	if report.Queues.SchemaVersion != WorkspaceQueuesSchemaVersion || report.Queues.Counts != (WorkspaceQueueCounts{}) {
+		t.Fatalf("empty queues = %+v", report.Queues)
+	}
+}
+
+func TestBuildWorkspaceStatusReportUsesDetailedQueueEvidence(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	client := queueWorkspaceClient{
+		fakeWorkspaceClient: fakeWorkspaceClient{
+			status: map[string]StatusSummary{
+				"StatPan/gira": {
+					Repo: "StatPan/gira",
+					Issues: StatusIssueLists{Open: []IssueStats{
+						{Number: 10, Title: "Ready issue", State: "open", Labels: []string{"status:ready"}},
+						{Number: 11, Title: "Finishable", State: "open", Labels: []string{"status:in-review"}},
+						{Number: 12, Title: "Blocked", State: "open", Labels: []string{"status:blocked"}},
+					}},
+				},
+			},
+		},
+		queues: map[string][]WorkStatusResult{
+			"StatPan/gira": {
+				{Repo: "StatPan/gira", Issue: 10, Title: "Ready issue", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+				{
+					Repo:         "StatPan/gira",
+					Issue:        11,
+					Title:        "Finishable",
+					State:        "open",
+					Status:       "In review",
+					NextAction:   "merge_when_policy_allows",
+					ChecksStatus: "passed",
+					ReviewStatus: "approved",
+					PullRequest:  &TicketStatusPullRequest{Available: true, Number: 101, State: "OPEN", ReviewDecision: "APPROVED"},
+					PRReadiness:  &PRReadinessReport{SchemaVersion: PRReadinessSchemaVersion, PullRequest: 101, Readiness: "ready_for_finish", NextAction: "finish_ticket"},
+				},
+				{Repo: "StatPan/gira", Issue: 12, Title: "Blocked", State: "open", Status: "Blocked", Labels: []string{"status:blocked"}, Blockers: []string{"status_blocked"}},
+			},
+		},
+	}
+
+	report, err := BuildWorkspaceStatusReport(config, client, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC), 14)
+	if err != nil {
+		t.Fatalf("BuildWorkspaceStatusReport error: %v", err)
+	}
+	if report.Queues.Counts.AgentReady != 1 || report.Queues.Counts.FinishReady != 1 || report.Queues.Counts.Blocked != 1 {
+		t.Fatalf("queue counts = %+v", report.Queues.Counts)
+	}
+	if got := report.Queues.Queues.FinishReady[0]; got.Issue != 11 || got.NextSafeCommand != "gira ticket finish --repo StatPan/gira --ticket 11 --dry-run" || got.Evidence.PRReadiness != "ready_for_finish" {
+		t.Fatalf("finish-ready item = %+v", got)
 	}
 }
 
@@ -442,6 +519,11 @@ type fakeWorkspaceClient struct {
 	status map[string]StatusSummary
 }
 
+type queueWorkspaceClient struct {
+	fakeWorkspaceClient
+	queues map[string][]WorkStatusResult
+}
+
 type countingWorkspaceClient struct {
 	fakeWorkspaceClient
 	status           map[string]StatusSummary
@@ -490,6 +572,10 @@ func (c fakeWorkspaceClient) FetchInboxTickets(repo RepoRef) ([]PortfolioRawTick
 
 func (c fakeWorkspaceClient) FetchStatus(repo RepoRef, now time.Time, staleDays int) (StatusSummary, error) {
 	return c.status[repo.FullName()], nil
+}
+
+func (c queueWorkspaceClient) FetchQueueStatuses(repo RepoRef, summary StatusSummary, now time.Time, staleDays int) (WorkspaceQueueStatusSnapshot, error) {
+	return WorkspaceQueueStatusSnapshot{Statuses: c.queues[repo.FullName()]}, nil
 }
 
 func (c *countingWorkspaceClient) FetchInboxTickets(repo RepoRef) ([]PortfolioRawTicket, error) {

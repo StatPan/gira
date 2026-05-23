@@ -3622,6 +3622,19 @@ func TestTicketFinishDryRunJSON(t *testing.T) {
 	if strings.Contains(stdout.String(), "gira work pr") {
 		t.Fatalf("ticket finish JSON leaked work next step:\n%s", stdout.String())
 	}
+	var report gira.WorkFinishResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket finish dry-run JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.WorkFinishResultSchemaVersion || report.Approval == nil {
+		t.Fatalf("ticket finish dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira ticket finish" || report.Approval.OutputSchema != gira.WorkFinishResultSchemaVersion {
+		t.Fatalf("unexpected approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira ticket finish 219 --repo StatPan/gira --apply" || report.Approval.PostApplyVerification != "gira ticket status 219 --repo StatPan/gira --json" {
+		t.Fatalf("unexpected approval commands: %+v", report.Approval)
+	}
 }
 
 func TestTicketFinishSyncLocalFlagPassesOption(t *testing.T) {
@@ -3641,6 +3654,37 @@ func TestTicketFinishSyncLocalFlagPassesOption(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"target_branch": "release/2.0"`) {
 		t.Fatalf("ticket finish JSON missing local sync target:\n%s", stdout.String())
+	}
+	var report gira.WorkFinishResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket finish sync-local JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Approval == nil || report.Approval.ApplyCommand != "gira ticket finish 219 --repo StatPan/gira --sync-local --apply" {
+		t.Fatalf("ticket finish approval should preserve sync-local: %+v", report.Approval)
+	}
+}
+
+func TestTicketFinishDryRunApprovalPreservesWait(t *testing.T) {
+	restore := newWorkFinishResult
+	t.Cleanup(func() { newWorkFinishResult = restore })
+	newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration, options gira.WorkFinishOptions) (gira.WorkFinishResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 219 || !dryRun || wait != 2*time.Minute {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t wait=%s", repo.FullName(), issue, dryRun, wait)
+		}
+		return gira.WorkFinishResult{Repo: repo.FullName(), Issue: issue, DryRun: true, Actions: []gira.WorkFinishAction{{Action: "checks:wait", Status: "planned", Detail: "2m0s"}}, NextStep: "gira ticket finish --repo StatPan/gira --ticket 219 --apply"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "finish", "219", "--repo", "StatPan/gira", "--dry-run", "--wait", "2m", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkFinishResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket finish wait JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Approval == nil || report.Approval.ApplyCommand != "gira ticket finish 219 --repo StatPan/gira --wait 2m0s --apply" {
+		t.Fatalf("ticket finish approval should preserve wait: %+v", report.Approval)
 	}
 }
 
@@ -3759,6 +3803,13 @@ func TestTicketFinishApplyBlockedReturnsJSONAndError(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"review"`) || !strings.Contains(stderr.String(), "ticket finish blocked") {
 		t.Fatalf("expected JSON result and error; stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	var report gira.WorkFinishResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket finish blocked apply JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 }
 

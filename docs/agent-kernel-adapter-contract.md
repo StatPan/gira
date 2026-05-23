@@ -114,7 +114,8 @@ does not support JSON yet, the adapter may store text output but must mark
 Mutating dry-run JSON reports should include a common `approval` object.
 Implemented producers include `gira ticket start --dry-run --json` and
 `gira ticket pr --dry-run --json` and
-`gira ticket note --dry-run --json`.
+`gira ticket note --dry-run --json` and
+`gira ticket finish --dry-run --json`.
 The surrounding report emits a versioned `schema_version`, and
 `approval.output_schema` references that same version.
 
@@ -228,7 +229,7 @@ before broad adapter use:
 
 | Gap | Impact | Follow-up |
 | --- | --- | --- |
-| Not every mutating dry-run emits the shared approval evidence envelope yet. | `agent-kernel` can use `gira-approval-plan/v1` for `ticket start`, `ticket pr`, and `ticket note`, but must still normalize other dry-run reports command by command. | Extend the shared `approval` object to ticket finish/supersede and config/workspace mutation dry-runs. |
+| Not every mutating dry-run emits the shared approval evidence envelope yet. | `agent-kernel` can use `gira-approval-plan/v1` for `ticket start`, `ticket pr`, `ticket note`, and `ticket finish`, but must still normalize other dry-run reports command by command. | Extend the shared `approval` object to ticket supersede and config/workspace mutation dry-runs. |
 | Some command families remain text-first or partially JSON-covered. | Automation confidence drops and adapters need fragile parsing. | Add JSON contracts or mark those commands unsupported for adapters. |
 | No explicit post-apply verification link in every apply report. | Adapters need command-specific knowledge to know which read command proves completion. | Add `post_apply_verification` fields to apply reports. |
 

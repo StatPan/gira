@@ -49,6 +49,7 @@ type GoalFinishReadiness struct {
 	Children               []GoalFinishChildEvidence `json:"children"`
 	Blockers               []string                  `json:"blockers"`
 	Warnings               []string                  `json:"warnings,omitempty"`
+	HandoffReceiptPresent  bool                      `json:"handoff_receipt_present"`
 	NextAction             string                    `json:"next_action"`
 	NextStep               string                    `json:"next_step"`
 }
@@ -123,15 +124,20 @@ func BuildGoalFinishReport(input GoalFinishInput, runner CommandRunner) (GoalFin
 		NextStep:   readiness.NextStep,
 	}
 	if input.Apply {
-		if err := applyGoalFinishHandoff(input, readiness, receipt, runner); err != nil {
+		actionStatus, err := applyGoalFinishHandoff(input, readiness, receipt, runner)
+		if err != nil {
 			return report, err
 		}
 		for i := range report.Actions {
 			if report.Actions[i].Action == "goal:comment" {
-				report.Actions[i].Status = "applied"
+				report.Actions[i].Status = actionStatus
 			}
 		}
-		report.NextStep = "human review handoff receipt posted"
+		if actionStatus == "skipped" {
+			report.NextStep = "human review handoff receipt already present"
+		} else {
+			report.NextStep = "human review handoff receipt posted"
+		}
 	}
 	return report, nil
 }
@@ -156,6 +162,7 @@ func buildGoalFinishReadiness(repo RepoRef, status GoalStatusReport, terminal st
 		Blockers:          []string{},
 		Warnings:          []string{},
 	}
+	readiness.HandoffReceiptPresent = goalFinishGoalReceiptPresent(repo, status.Goal.Number, runner)
 	for _, child := range status.Children {
 		evidence := goalFinishChildEvidence(repo, child, runner)
 		readiness.Children = append(readiness.Children, evidence)
@@ -251,6 +258,27 @@ func goalFinishReceiptPresent(repo RepoRef, issue int, runner CommandRunner) boo
 	return false
 }
 
+func goalFinishGoalReceiptPresent(repo RepoRef, goal int, runner CommandRunner) bool {
+	out, err := runner.Run("gh", "issue", "view", strconv.Itoa(goal), "--repo", repo.FullName(), "--json", "comments")
+	if err != nil {
+		return false
+	}
+	var raw struct {
+		Comments []struct {
+			Body string `json:"body"`
+		} `json:"comments"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return false
+	}
+	for _, comment := range raw.Comments {
+		if strings.Contains(strings.ToLower(comment.Body), GoalFinishReceiptSchemaVersion) {
+			return true
+		}
+	}
+	return false
+}
+
 func goalTerminalRecommendation(requested string, readiness GoalFinishReadiness) string {
 	if requested != "auto" {
 		return requested
@@ -281,34 +309,36 @@ func goalFinishNextStep(repo RepoRef, readiness GoalFinishReadiness) (string, st
 }
 
 func goalFinishActions(input GoalFinishInput, readiness GoalFinishReadiness) []GoalFinishAction {
-	if input.DryRun && readiness.TerminalRecommendation == "human_review" && len(readiness.Blockers) > 0 {
+	if readiness.TerminalRecommendation == "human_review" && len(readiness.Blockers) > 0 {
+		status := "planned"
+		detail := fmt.Sprintf("post goal-finish-receipt/v1 human review handoff to issue #%d", readiness.Goal.Number)
+		if readiness.HandoffReceiptPresent {
+			status = "skipped"
+			detail = fmt.Sprintf("goal-finish-receipt/v1 human review handoff already exists on issue #%d", readiness.Goal.Number)
+		}
 		return []GoalFinishAction{{
 			Action: "goal:comment",
-			Status: "planned",
-			Detail: fmt.Sprintf("post goal-finish-receipt/v1 human review handoff to issue #%d", readiness.Goal.Number),
-		}}
-	}
-	if input.Apply && readiness.TerminalRecommendation == "human_review" && len(readiness.Blockers) > 0 {
-		return []GoalFinishAction{{
-			Action: "goal:comment",
-			Status: "planned",
-			Detail: fmt.Sprintf("post goal-finish-receipt/v1 human review handoff to issue #%d", readiness.Goal.Number),
+			Status: status,
+			Detail: detail,
 		}}
 	}
 	return nil
 }
 
-func applyGoalFinishHandoff(input GoalFinishInput, readiness GoalFinishReadiness, receipt GoalFinishReceipt, runner CommandRunner) error {
+func applyGoalFinishHandoff(input GoalFinishInput, readiness GoalFinishReadiness, receipt GoalFinishReceipt, runner CommandRunner) (string, error) {
 	if strings.TrimSpace(input.Terminal) != "human_review" {
-		return fmt.Errorf("goal finish --apply currently supports only explicit --terminal human_review")
+		return "", fmt.Errorf("goal finish --apply currently supports only explicit --terminal human_review")
 	}
 	if readiness.TerminalRecommendation != "human_review" || len(readiness.Blockers) == 0 {
-		return fmt.Errorf("goal finish --apply requires terminal human_review with blockers to preserve a handoff instead of closing the goal")
+		return "", fmt.Errorf("goal finish --apply requires terminal human_review with blockers to preserve a handoff instead of closing the goal")
+	}
+	if readiness.HandoffReceiptPresent {
+		return "skipped", nil
 	}
 	if _, err := runner.Run("gh", "issue", "comment", strconv.Itoa(input.Goal), "--repo", input.Repo.FullName(), "--body", receipt.RenderedBody); err != nil {
-		return fmt.Errorf("post goal finish receipt: %w", err)
+		return "", fmt.Errorf("post goal finish receipt: %w", err)
 	}
-	return nil
+	return "applied", nil
 }
 
 func buildGoalFinishReceipt(readiness GoalFinishReadiness) GoalFinishReceipt {

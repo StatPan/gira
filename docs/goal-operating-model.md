@@ -152,8 +152,11 @@ with an explicit non-done resolution label.
 handoff path. It posts the `goal-finish-receipt/v1` comment when blockers remain
 and preserves those blockers in the receipt. It does not close the goal, mark it
 done, waive missing child evidence, or invent historical PR/check/receipt
-evidence. This path is for completed goal graphs that need a maintainer to
-accept or decide how to handle historical evidence gaps.
+evidence. The apply path is idempotent: if the goal issue already has a
+`goal-finish-receipt/v1` handoff comment, dry-run and apply report a skipped
+comment action instead of posting a duplicate. This path is for completed goal
+graphs that need a maintainer to accept or decide how to handle historical
+evidence gaps.
 
 ## CLI Slices
 

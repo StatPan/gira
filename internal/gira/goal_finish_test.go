@@ -92,6 +92,22 @@ func TestBuildGoalFinishReportHumanReviewDryRunPlansHandoff(t *testing.T) {
 	}
 }
 
+func TestBuildGoalFinishReportHumanReviewDryRunSkipsExistingHandoff(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := goalFinishRunnerWithGoalComments(`{"comments":[{"body":"## Goal Finish Receipt\n\n- Schema: goal-finish-receipt/v1"}]}`, `{"comments":[]}`, `[]`, goalFinishChildIssue("closed", "status:done"))
+
+	report, err := BuildGoalFinishReport(GoalFinishInput{Repo: repo, Goal: 100, DryRun: true, Terminal: "human_review"}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalFinishReport error: %v", err)
+	}
+	if !report.Readiness.HandoffReceiptPresent {
+		t.Fatalf("expected handoff receipt present: %+v", report.Readiness)
+	}
+	if len(report.Actions) != 1 || report.Actions[0].Status != "skipped" || !strings.Contains(report.Actions[0].Detail, "already exists") {
+		t.Fatalf("unexpected actions: %+v", report.Actions)
+	}
+}
+
 func TestBuildGoalFinishReportHumanReviewApplyPostsReceipt(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := goalFinishApplyRunner{responses: goalFinishRunner(`{"comments":[]}`, `[]`, goalFinishChildIssue("closed", "status:done")).responses}
@@ -105,6 +121,23 @@ func TestBuildGoalFinishReportHumanReviewApplyPostsReceipt(t *testing.T) {
 	}
 	if !report.Apply || len(report.Actions) != 1 || report.Actions[0].Status != "applied" || report.NextStep != "human review handoff receipt posted" {
 		t.Fatalf("unexpected apply report: %+v", report)
+	}
+}
+
+func TestBuildGoalFinishReportHumanReviewApplySkipsExistingReceipt(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	responses := goalFinishRunnerWithGoalComments(`{"comments":[{"body":"## Goal Finish Receipt\n\n- Schema: goal-finish-receipt/v1"}]}`, `{"comments":[]}`, `[]`, goalFinishChildIssue("closed", "status:done")).responses
+	runner := goalFinishApplyRunner{responses: responses}
+
+	report, err := BuildGoalFinishReport(GoalFinishInput{Repo: repo, Goal: 100, Apply: true, Terminal: "human_review"}, &runner)
+	if err != nil {
+		t.Fatalf("BuildGoalFinishReport error: %v", err)
+	}
+	if len(runner.comments) != 0 {
+		t.Fatalf("apply should not duplicate existing receipt: %+v", runner.comments)
+	}
+	if !report.Readiness.HandoffReceiptPresent || len(report.Actions) != 1 || report.Actions[0].Status != "skipped" || report.NextStep != "human review handoff receipt already present" {
+		t.Fatalf("unexpected no-op report: %+v", report)
 	}
 }
 
@@ -122,10 +155,14 @@ func TestBuildGoalFinishReportApplyRejectsNonHumanReviewTerminal(t *testing.T) {
 }
 
 func goalFinishRunner(childComments string, childPRs string, childIssue string) onboardFakeRunner {
+	return goalFinishRunnerWithGoalComments(`{"comments":[]}`, childComments, childPRs, childIssue)
+}
+
+func goalFinishRunnerWithGoalComments(goalComments string, childComments string, childPRs string, childIssue string) onboardFakeRunner {
 	return onboardFakeRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100": `{"number":100,"title":"Goal","state":"open","body":"## Goal\nShip\n\n## Scope\nGoal finish\n\n## Goal Plan\n- finish","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[{"number":101}]`,
-		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
+		"gh issue view 100 --repo StatPan/gira --json comments": goalComments,
 		"gh api repos/StatPan/gira/issues/101":                  childIssue,
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": childPRs,
 		"gh issue view 101 --repo StatPan/gira --json comments": childComments,

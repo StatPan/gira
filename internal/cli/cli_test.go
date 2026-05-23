@@ -7015,7 +7015,15 @@ func TestAdoptRepoJSONUsesInjectedReport(t *testing.T) {
 		if input.Repo.FullName() != "StatPan/gira" || input.Path != "." || !input.DryRun || input.Apply {
 			t.Fatalf("unexpected input: %+v", input)
 		}
-		return gira.AdoptRepoReport{Repo: input.Repo.FullName(), Path: "/repo", DryRun: true, Strategy: "merge", Recommendation: "merge", NextStep: "gira adopt repo --apply"}, nil
+		return gira.AdoptRepoReport{
+			Repo:           input.Repo.FullName(),
+			Path:           "/repo",
+			DryRun:         true,
+			Strategy:       "merge",
+			Recommendation: "merge",
+			Actions:        []gira.AdoptRepoAction{{Action: "config:create", Target: "/repo/.gira/config.yaml", Status: "planned", Reason: "minimal contract"}},
+			NextStep:       "gira adopt repo --apply",
+		}, nil
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -7025,6 +7033,49 @@ func TestAdoptRepoJSONUsesInjectedReport(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"strategy": "merge"`) || !strings.Contains(stdout.String(), `"next_step": "gira adopt repo --apply"`) {
 		t.Fatalf("unexpected JSON: %s", stdout.String())
+	}
+	var report gira.AdoptRepoReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode adopt repo JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.AdoptRepoReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("adopt repo dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira adopt repo" || report.Approval.OutputSchema != gira.AdoptRepoReportSchemaVersion {
+		t.Fatalf("unexpected adopt repo approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira adopt repo --repo StatPan/gira --path /repo --strategy merge --apply" || report.Approval.PostApplyVerification != "gira config repo --repo StatPan/gira --json" {
+		t.Fatalf("unexpected adopt repo approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
+	}
+}
+
+func TestAdoptRepoApplyJSONOmitsApprovalEvidence(t *testing.T) {
+	original := newAdoptRepoReport
+	t.Cleanup(func() { newAdoptRepoReport = original })
+	newAdoptRepoReport = func(input gira.AdoptRepoInput) (gira.AdoptRepoReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Path != "." || input.Strategy != "merge" || !input.Apply || input.DryRun {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		return gira.AdoptRepoReport{Repo: input.Repo.FullName(), Path: "/repo", Apply: true, Strategy: "merge", Recommendation: "merge", NextStep: "gira ops sync --repo StatPan/gira --dry-run"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"adopt", "repo", "--repo", "StatPan/gira", "--strategy", "merge", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	var report gira.AdoptRepoReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode adopt repo JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.AdoptRepoReportSchemaVersion || !report.Apply {
+		t.Fatalf("unexpected adopt repo apply report: %+v", report)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 }
 

@@ -6431,6 +6431,10 @@ func runAdoptRepo(args []string, stdout io.Writer, stderr io.Writer) int {
 	report, err := newAdoptRepoReport(gira.AdoptRepoInput{Repo: repo, Path: *pathValue, Strategy: *strategy, Yes: *yes, DryRun: *dryRun, Apply: *apply})
 	if err != nil {
 		if *jsonOutput {
+			gira.EnsureAdoptRepoReportSchema(&report)
+			if *dryRun && strings.TrimSpace(report.Repo) != "" {
+				report.Approval = gira.AdoptRepoApprovalEvidence(report)
+			}
 			out, _ := json.MarshalIndent(report, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
 		}
@@ -6438,6 +6442,10 @@ func runAdoptRepo(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if *jsonOutput {
+		gira.EnsureAdoptRepoReportSchema(&report)
+		if *dryRun {
+			report.Approval = gira.AdoptRepoApprovalEvidence(report)
+		}
 		out, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			fmt.Fprintf(stderr, "encode adopt repo JSON: %v\n", err)

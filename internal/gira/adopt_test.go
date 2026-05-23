@@ -168,6 +168,19 @@ func TestBuildAdoptRepoReportPlansMergeWithoutOverwritingExistingAgents(t *testi
 	if report.Strategy != "merge" || report.Recommendation != "merge" {
 		t.Fatalf("unexpected strategy: %+v", report)
 	}
+	if report.SchemaVersion != AdoptRepoReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("expected adopt repo schema and approval evidence: %+v", report)
+	}
+	expectedApply := "gira adopt repo --repo StatPan/gira --path " + QuoteShellArg(report.Path) + " --strategy merge --apply"
+	if report.Approval.SchemaVersion != ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira adopt repo" || report.Approval.OutputSchema != AdoptRepoReportSchemaVersion {
+		t.Fatalf("unexpected adopt repo approval identity: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != expectedApply || report.Approval.PostApplyVerification != "gira config repo --repo StatPan/gira --json" {
+		t.Fatalf("unexpected adopt repo approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil || !approvalHasAction(report.Approval.PlannedActions, "config:create") || !approvalHasAction(report.Approval.PlannedActions, "agents:managed-block:insert") {
+		t.Fatalf("unexpected adopt repo approval plan: %+v", report.Approval)
+	}
 	if !report.Local.AgentsExists || report.Local.AgentsManagedBlock != "missing" {
 		t.Fatalf("unexpected local agents state: %+v", report.Local)
 	}
@@ -213,6 +226,9 @@ func TestBuildAdoptRepoReportApplyMergeWritesConfigAndManagedBlock(t *testing.T)
 	}
 	if report.Counts.AppliedActions != 2 {
 		t.Fatalf("applied actions = %d, want 2: %+v", report.Counts.AppliedActions, report.Actions)
+	}
+	if report.SchemaVersion != AdoptRepoReportSchemaVersion || report.Approval != nil {
+		t.Fatalf("apply report should have schema and omit dry-run approval: %+v", report)
 	}
 	if report.ConfigScope != "repo-local" || report.WorkspaceReady {
 		t.Fatalf("adopt repo should report repo-local, not workspace-ready config: %+v", report)

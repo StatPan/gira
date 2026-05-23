@@ -1286,10 +1286,13 @@ func TestJiraTransitionJSON(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"command": "jira transition"`, `"decision": "direct_transition"`, `"key": "ABC-123"`} {
+	for _, want := range []string{`"schema_version": "jira-transition-plan/v1"`, `"command": "jira transition"`, `"decision": "direct_transition"`, `"key": "ABC-123"`, `"read_only": true`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("jira transition JSON missing %q:\n%s", want, stdout.String())
 		}
+	}
+	if strings.Contains(stdout.String(), `"approval"`) {
+		t.Fatalf("jira transition JSON must not emit approval evidence:\n%s", stdout.String())
 	}
 }
 

@@ -26,6 +26,9 @@ func TestBuildJiraTransitionPlanDirectTransition(t *testing.T) {
 	if report.Decision != "direct_transition" || report.CurrentStatus != "To Do" || report.Candidate.ID != "21" || report.Candidate.ToStatus != "In Progress" {
 		t.Fatalf("unexpected direct transition report: %+v", report)
 	}
+	if report.SchemaVersion != JiraTransitionPlanReportSchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", report.SchemaVersion, JiraTransitionPlanReportSchemaVersion)
+	}
 	if len(report.TargetStatuses) != 1 || report.TargetStatuses[0] != "In Progress" {
 		t.Fatalf("target statuses = %+v, want In Progress", report.TargetStatuses)
 	}

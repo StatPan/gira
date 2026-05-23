@@ -20,7 +20,10 @@ type JiraTransitionPlanInput struct {
 	DryRun     bool    `json:"dry_run"`
 }
 
+const JiraTransitionPlanReportSchemaVersion = "jira-transition-plan/v1"
+
 type JiraTransitionPlanReport struct {
+	SchemaVersion      string                    `json:"schema_version,omitempty"`
 	Command            string                    `json:"command"`
 	Repo               string                    `json:"repo"`
 	Key                string                    `json:"key"`
@@ -34,6 +37,12 @@ type JiraTransitionPlanReport struct {
 	Reason             string                    `json:"reason,omitempty"`
 	DryRun             bool                      `json:"dry_run"`
 	ReadOnly           bool                      `json:"read_only"`
+}
+
+func EnsureJiraTransitionPlanReportSchema(report *JiraTransitionPlanReport) {
+	if report.SchemaVersion == "" {
+		report.SchemaVersion = JiraTransitionPlanReportSchemaVersion
+	}
 }
 
 type JiraTransitionCandidate struct {
@@ -84,6 +93,7 @@ func BuildJiraTransitionPlan(input JiraTransitionPlanInput) (JiraTransitionPlanR
 		return JiraTransitionPlanReport{}, err
 	}
 	report := JiraTransitionPlanReport{
+		SchemaVersion:  JiraTransitionPlanReportSchemaVersion,
 		Command:        "jira transition",
 		Repo:           input.Repo.FullName(),
 		Key:            key,

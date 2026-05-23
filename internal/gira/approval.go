@@ -1043,3 +1043,59 @@ func milestoneApprovalBlockers(report MilestoneReport) []string {
 	}
 	return stableStringSlice(blockers)
 }
+
+func CachePruneApprovalEvidence(report CachePruneReport) *ApprovalEvidence {
+	applyCommand := cachePruneApprovalCommand(report, "--apply")
+	dryRunCommand := cachePruneApprovalCommand(report, "--dry-run")
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira cache prune",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		OutputSchema:          CachePruneReportSchemaVersion,
+		PlannedActions:        cachePruneApprovalActions(report),
+		Blockers:              cachePruneApprovalBlockers(report),
+		Warnings:              []string{},
+		PostApplyVerification: dryRunCommand + " --json",
+	}
+}
+
+func cachePruneApprovalCommand(report CachePruneReport, mode string) string {
+	args := []string{"gira cache prune"}
+	if strings.TrimSpace(report.Root) != "" {
+		args = append(args, "--root", QuoteShellArg(report.Root))
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func cachePruneApprovalActions(report CachePruneReport) []ApprovalPlannedAction {
+	actions := []ApprovalPlannedAction{}
+	for _, action := range report.Actions {
+		if action.Status != "planned" || action.Action != "prune" {
+			continue
+		}
+		detail := strings.TrimSpace(action.Reason)
+		if strings.TrimSpace(action.Version) != "" {
+			detail = appendApprovalDetail(detail, "version="+action.Version)
+		}
+		actions = append(actions, ApprovalPlannedAction{
+			Action: "cache:prune",
+			Target: action.Path,
+			Detail: detail,
+		})
+	}
+	return actions
+}
+
+func cachePruneApprovalBlockers(report CachePruneReport) []string {
+	blockers := []string{}
+	if report.DryRun && report.Counts.Planned == 0 {
+		blockers = appendUniqueStrings(blockers, "cache_prune_no_planned_actions")
+	}
+	if report.Counts.Errors > 0 {
+		blockers = appendUniqueStrings(blockers, "cache_prune_action_error")
+	}
+	return stableStringSlice(blockers)
+}

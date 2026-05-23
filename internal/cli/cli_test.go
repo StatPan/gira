@@ -585,6 +585,22 @@ func TestCachePruneJSON(t *testing.T) {
 			t.Fatalf("cache prune JSON missing %q:\n%s", want, stdout.String())
 		}
 	}
+	var report gira.CachePruneReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode cache prune JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.CachePruneReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("cache prune dry-run JSON missing schema or approval:\n%s", stdout.String())
+	}
+	if report.Approval.SchemaVersion != gira.ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira cache prune" || report.Approval.OutputSchema != gira.CachePruneReportSchemaVersion {
+		t.Fatalf("unexpected cache prune approval evidence: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != "gira cache prune --root /tmp/gira-cache --apply" || report.Approval.PostApplyVerification != "gira cache prune --root /tmp/gira-cache --dry-run --json" {
+		t.Fatalf("unexpected cache prune approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
+		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
+	}
 }
 
 func TestCachePruneApplyBuilderWiring(t *testing.T) {
@@ -613,6 +629,42 @@ func TestCachePruneApplyBuilderWiring(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "mode: apply") || !strings.Contains(stdout.String(), "applied prune: v1.1.0") {
 		t.Fatalf("cache prune text missing apply summary:\n%s", stdout.String())
+	}
+}
+
+func TestCachePruneApplyJSONOmitsApprovalEvidence(t *testing.T) {
+	restore := newCachePruneReport
+	t.Cleanup(func() { newCachePruneReport = restore })
+	newCachePruneReport = func(options gira.CachePruneOptions) (gira.CachePruneReport, error) {
+		if options.Root != "/tmp/gira-cache" || options.DryRun || !options.Apply {
+			t.Fatalf("unexpected cache prune options: %#v", options)
+		}
+		return gira.CachePruneReport{
+			Command:       "cache prune",
+			Root:          "/tmp/gira-cache",
+			ActiveVersion: "v1.2.0",
+			Apply:         true,
+			Counts:        gira.CachePruneCounts{Applied: 1},
+			Actions: []gira.CachePruneAction{
+				{Action: "prune", Status: "applied", Name: "v1.1.0", Path: "/tmp/gira-cache/v1.1.0", Reason: "removed stale version directory"},
+			},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"cache", "prune", "--root", "/tmp/gira-cache", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.CachePruneReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode cache prune JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.CachePruneReportSchemaVersion || !report.Apply {
+		t.Fatalf("unexpected cache prune apply report: %+v", report)
+	}
+	if report.Approval != nil {
+		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
 }
 

@@ -3,6 +3,7 @@ package gira
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -24,6 +25,19 @@ func TestBuildCachePruneReportSelectsOnlyOlderStableVersionDirs(t *testing.T) {
 	}
 	if report.Counts.Planned != 1 {
 		t.Fatalf("planned = %d, want 1; actions=%#v", report.Counts.Planned, report.Actions)
+	}
+	if report.SchemaVersion != CachePruneReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("expected cache prune schema and approval evidence: %+v", report)
+	}
+	expectedApply := "gira cache prune --root " + QuoteShellArg(root) + " --apply"
+	if report.Approval.SchemaVersion != ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira cache prune" || report.Approval.OutputSchema != CachePruneReportSchemaVersion {
+		t.Fatalf("unexpected cache prune approval identity: %+v", report.Approval)
+	}
+	if report.Approval.ApplyCommand != expectedApply || report.Approval.PostApplyVerification != strings.Replace(expectedApply, " --apply", " --dry-run --json", 1) {
+		t.Fatalf("unexpected cache prune approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil || !approvalHasAction(report.Approval.PlannedActions, "cache:prune") {
+		t.Fatalf("unexpected cache prune approval plan: %+v", report.Approval)
 	}
 	assertAction(t, report, "v1.0.0", "prune", "planned")
 	assertAction(t, report, "v1.2.0", "skip", "skipped")
@@ -72,6 +86,9 @@ func TestBuildCachePruneReportApplyDeletesOnlyPlannedStaleDirs(t *testing.T) {
 	}
 	if report.Counts.Applied != 1 {
 		t.Fatalf("applied = %d, want 1; actions=%#v", report.Counts.Applied, report.Actions)
+	}
+	if report.SchemaVersion != CachePruneReportSchemaVersion || !report.Apply || report.Approval != nil {
+		t.Fatalf("apply report should have schema/apply and omit dry-run approval: %+v", report)
 	}
 	assertMissing(t, stale)
 	assertExists(t, active)

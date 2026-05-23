@@ -8,6 +8,7 @@ import (
 )
 
 const cachePruneCommand = "cache prune"
+const CachePruneReportSchemaVersion = "cache-prune-report/v1"
 
 type CachePruneOptions struct {
 	Root           string
@@ -18,13 +19,22 @@ type CachePruneOptions struct {
 }
 
 type CachePruneReport struct {
+	SchemaVersion    string             `json:"schema_version,omitempty"`
 	Command          string             `json:"command"`
 	Root             string             `json:"root"`
 	ActiveVersion    string             `json:"active_version"`
 	ActiveComparable bool               `json:"active_comparable"`
 	DryRun           bool               `json:"dry_run"`
+	Apply            bool               `json:"apply"`
 	Counts           CachePruneCounts   `json:"counts"`
 	Actions          []CachePruneAction `json:"actions"`
+	Approval         *ApprovalEvidence  `json:"approval,omitempty"`
+}
+
+func EnsureCachePruneReportSchema(report *CachePruneReport) {
+	if report != nil && strings.TrimSpace(report.SchemaVersion) == "" {
+		report.SchemaVersion = CachePruneReportSchemaVersion
+	}
 }
 
 type CachePruneCounts struct {
@@ -76,16 +86,21 @@ func BuildCachePruneReport(options CachePruneOptions) (CachePruneReport, error) 
 	activeVersion := normalizeBuildValue(options.ActiveVersion, "dev")
 	_, activeComparable := semverParts(activeVersion)
 	report := CachePruneReport{
+		SchemaVersion:    CachePruneReportSchemaVersion,
 		Command:          cachePruneCommand,
 		Root:             root,
 		ActiveVersion:    activeVersion,
 		ActiveComparable: activeComparable,
 		DryRun:           options.DryRun,
+		Apply:            options.Apply,
 	}
 
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
+			if options.DryRun {
+				report.Approval = CachePruneApprovalEvidence(report)
+			}
 			return report, nil
 		}
 		return CachePruneReport{}, fmt.Errorf("read cache root: %w", err)
@@ -117,6 +132,9 @@ func BuildCachePruneReport(options CachePruneOptions) (CachePruneReport, error) 
 		}
 	}
 
+	if options.DryRun {
+		report.Approval = CachePruneApprovalEvidence(report)
+	}
 	return report, nil
 }
 

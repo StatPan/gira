@@ -13,6 +13,20 @@ func TestSprintFlowPlanStartClose(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	statePath := filepath.Join(t.TempDir(), "state.json")
 
+	dryPlan, err := PlanSprint(statePath, repo, "2026-W18", 2, []int{11, 12, 13}, false)
+	if err != nil {
+		t.Fatalf("PlanSprint dry-run error: %v", err)
+	}
+	if dryPlan.SchemaVersion != SprintPlanReportSchemaVersion || dryPlan.Approval == nil {
+		t.Fatalf("expected sprint plan schema and approval evidence: %+v", dryPlan)
+	}
+	if dryPlan.Approval.ApplyCommand != "gira sprint plan --repo StatPan/gira --iteration 2026-W18 --capacity 2 --issues 11,12,13 --apply" || dryPlan.Approval.PostApplyVerification != "gira sprint start --repo StatPan/gira --iteration 2026-W18 --dry-run --json" {
+		t.Fatalf("unexpected sprint plan approval commands: %+v", dryPlan.Approval)
+	}
+	if dryPlan.Approval.Blockers == nil || !approvalHasAction(dryPlan.Approval.PlannedActions, "sprint:plan") || len(dryPlan.Approval.Warnings) != 1 || dryPlan.Approval.Warnings[0] != "sprint_capacity_breach" {
+		t.Fatalf("unexpected sprint plan approval evidence: %+v", dryPlan.Approval)
+	}
+
 	plan, err := PlanSprint(statePath, repo, "2026-W18", 2, []int{11, 12, 13}, true)
 	if err != nil {
 		t.Fatalf("PlanSprint error: %v", err)
@@ -20,10 +34,32 @@ func TestSprintFlowPlanStartClose(t *testing.T) {
 	if !plan.CapacityBreach {
 		t.Fatalf("expected capacity breach true")
 	}
+	if plan.SchemaVersion != SprintPlanReportSchemaVersion || plan.Approval != nil {
+		t.Fatalf("apply sprint plan should include schema and omit approval: %+v", plan)
+	}
 
 	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	dryStart, err := StartSprint(statePath, repo, "2026-W18", false, now)
+	if err != nil {
+		t.Fatalf("StartSprint dry-run error: %v", err)
+	}
+	if dryStart.SchemaVersion != SprintStartReportSchemaVersion || dryStart.Approval == nil || dryStart.Approval.ApplyCommand != "gira sprint start --repo StatPan/gira --iteration 2026-W18 --apply" {
+		t.Fatalf("unexpected sprint start approval evidence: %+v", dryStart)
+	}
 	if _, err := StartSprint(statePath, repo, "2026-W18", true, now); err != nil {
 		t.Fatalf("StartSprint error: %v", err)
+	}
+
+	dryClose, err := CloseSprint(statePath, repo, "2026-W18", []int{11}, "carry", "dependency blocked", false, now)
+	if err != nil {
+		t.Fatalf("CloseSprint dry-run error: %v", err)
+	}
+	if dryClose.SchemaVersion != SprintCloseReportSchemaVersion || dryClose.Approval == nil {
+		t.Fatalf("expected sprint close schema and approval evidence: %+v", dryClose)
+	}
+	expectedCloseApply := "gira sprint close --repo StatPan/gira --iteration 2026-W18 --completed 11 --spillover-disposition carry --rollover-reason 'dependency blocked' --apply"
+	if dryClose.Approval.ApplyCommand != expectedCloseApply || !approvalHasAction(dryClose.Approval.PlannedActions, "sprint:close") {
+		t.Fatalf("unexpected sprint close approval evidence: %+v", dryClose.Approval)
 	}
 
 	closeReport, err := CloseSprint(statePath, repo, "2026-W18", []int{11}, "carry", "dependency blocked", true, now)
@@ -32,6 +68,9 @@ func TestSprintFlowPlanStartClose(t *testing.T) {
 	}
 	if len(closeReport.Summary.SpilloverItems) != 2 || closeReport.Summary.SpilloverItems[0] != 12 || closeReport.Summary.SpilloverItems[1] != 13 {
 		t.Fatalf("unexpected spillover items: %#v", closeReport.Summary.SpilloverItems)
+	}
+	if closeReport.SchemaVersion != SprintCloseReportSchemaVersion || closeReport.Approval != nil {
+		t.Fatalf("apply sprint close should include schema and omit approval: %+v", closeReport)
 	}
 }
 
@@ -65,6 +104,15 @@ func TestSprintRolloverDryRunDetectsCandidatesAndTarget(t *testing.T) {
 	}
 	if len(report.Items) != 1 || report.Items[0].Action != "would-apply" {
 		t.Fatalf("unexpected items: %#v", report.Items)
+	}
+	if report.SchemaVersion != SprintRolloverReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("expected sprint rollover schema and approval evidence: %+v", report)
+	}
+	if report.Approval.ApplyCommand != "gira sprint rollover --repo StatPan/gira --apply" || report.Approval.PostApplyVerification != "gira sprint rollover --repo StatPan/gira --dry-run --json" {
+		t.Fatalf("unexpected sprint rollover approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil || !approvalHasAction(report.Approval.PlannedActions, "issue:rollover-milestone") {
+		t.Fatalf("unexpected sprint rollover approval plan: %+v", report.Approval)
 	}
 	if report.Items[0].LifecycleStatus != "open" || report.Items[0].NextStep != "gira ticket status --repo StatPan/gira --ticket 10" {
 		t.Fatalf("missing lifecycle evidence: %#v", report.Items[0])
@@ -105,6 +153,9 @@ func TestSprintRolloverApplyCallsMilestonePatch(t *testing.T) {
 	}
 	if report.Summary.Applied != 1 {
 		t.Fatalf("applied=%d, want 1", report.Summary.Applied)
+	}
+	if report.SchemaVersion != SprintRolloverReportSchemaVersion || report.Approval != nil {
+		t.Fatalf("apply sprint rollover should include schema and omit approval: %+v", report)
 	}
 	if len(runner.calls) != 1 {
 		t.Fatalf("runner calls=%v, want 1", runner.calls)

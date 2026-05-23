@@ -71,7 +71,7 @@ This map covers the first adapter flow. It is intentionally conservative.
 | `gira status`, `gira workspace status`, `gira ticket list`, `gira ticket view`, `gira ticket status`, `gira ticket checks`, `gira ticket review`, `gira ticket handoff`, `gira ticket prompt` | `read` | Primary state, work-order, review, and handoff surfaces. Prefer JSON where available. Prompt output is evidence, not an instruction to bypass policy. |
 | `gira goal status`, `gira goal next`, `gira goal plan --dry-run`, `gira goal finish --dry-run` | `read` or `dry_run_mutation` | `goal plan` and `goal finish --dry-run` prepare plans or receipts but do not apply. `goal next` can select work or stop. |
 | `gira audit readiness`, `gira audit drift`, `gira audit workflow`, `gira audit verify`, `gira stats repo` | `read` | Use for workflow convergence and integrity evidence. |
-| `gira jira doctor`, `gira jira transition --dry-run`, `gira jira export` | `read`, `dry_run_mutation`, or `apply_mutation` | Provider diagnostics and migration export. Do not treat Jira transition planning as approval to mutate Jira. `jira export` writes local export artifacts and therefore needs an approved or sandboxed output boundary. |
+| `gira jira doctor`, `gira jira transition --dry-run`, `gira jira export` | `read`, `dry_run_mutation`, or `apply_mutation` | Provider diagnostics and migration export. `jira transition --dry-run` emits `jira-transition-plan/v1` as read-only planning evidence, not approval to mutate Jira. `jira export` writes local export artifacts and therefore needs an approved or sandboxed output boundary. |
 | `gira ticket new --dry-run`, `gira ticket start --dry-run`, `gira ticket pr --dry-run`, `gira ticket note --dry-run`, `gira ticket finish --dry-run`, `gira ticket supersede --dry-run` | `dry_run_mutation` | These are approval evidence surfaces for issue, branch, PR, comment, merge, close, and supersede mutations. |
 | `gira adopt repo --dry-run`, `gira adopt issues --dry-run`, `gira setup global --dry-run`, `gira workspace repos sync --dry-run`, `gira repo register --dry-run`, `gira repo migrate --dry-run` | `dry_run_mutation` | Local config, repo metadata, or issue adoption plans. |
 | `gira milestone new --dry-run`, `gira milestone assign --dry-run`, `gira milestone plan --dry-run`, `gira sprint plan`, `gira sprint rollover --dry-run`, `gira release readiness` | `dry_run_mutation` or `read` | Release readiness is read-only. Sprint and milestone plans need approval before apply. |
@@ -236,14 +236,14 @@ before broad adapter use:
 
 | Gap | Impact | Follow-up |
 | --- | --- | --- |
-| Not every mutating dry-run emits the shared approval evidence envelope yet. | `agent-kernel` can use `gira-approval-plan/v1` for ticket lifecycle, core config/registry, workspace repo-sync, repo/issue adoption, milestone, cache prune, and sprint dry-runs, but Jira transition plans still need command-specific normalization and must not be treated as Jira mutation approval. | Extend the shared `approval` object only where the dry-run authorizes a matching Gira apply boundary. |
+| Not every mutating dry-run emits the shared approval evidence envelope yet. | `agent-kernel` can use `gira-approval-plan/v1` for ticket lifecycle, core config/registry, workspace repo-sync, repo/issue adoption, milestone, cache prune, and sprint dry-runs. Jira transition plans are schema-versioned read-only evidence and intentionally do not emit approval evidence because they do not authorize a matching Gira apply boundary. | Extend the shared `approval` object only where the dry-run authorizes a matching Gira apply boundary. |
 | Some command families remain text-first or partially JSON-covered. | Automation confidence drops and adapters need fragile parsing. | Add JSON contracts or mark those commands unsupported for adapters. |
 | No explicit post-apply verification link in every apply report. | Adapters need command-specific knowledge to know which read command proves completion. | Add `post_apply_verification` fields to apply reports. |
 
 ## Follow-Up Issue Candidates
 
-A later issue may add full top-level `schema_version` coverage and shared
-approval evidence across the remaining non-ticket mutation reports.
+A later issue may add schema coverage to remaining read-only/reporting JSON
+surfaces and post-apply verification links where apply reports still lack them.
 
 Do not create issues for hosted UI, autonomous code execution, model routing, or
 background sync as part of this contract.

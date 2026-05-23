@@ -2713,6 +2713,7 @@ func runJiraTransition(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
+	gira.EnsureJiraTransitionPlanReportSchema(&report)
 	if *jsonOutput {
 		output, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {

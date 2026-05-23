@@ -57,6 +57,9 @@ func TestBuildAdoptIssuesReportAppliesSelectedMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildAdoptIssuesReport error: %v", err)
 	}
+	if report.SchemaVersion != AdoptIssuesReportSchemaVersion || report.Approval != nil {
+		t.Fatalf("apply report should have schema and omit dry-run approval: %+v", report)
+	}
 	if report.Counts.AppliedUpdate != 1 || report.Actions[0].Status != "applied" {
 		t.Fatalf("unexpected report: %+v", report)
 	}
@@ -98,6 +101,19 @@ func TestBuildAdoptIssuesReportQuotesDynamicNextStepArgs(t *testing.T) {
 	}, runner)
 	if err != nil {
 		t.Fatalf("BuildAdoptIssuesReport error: %v", err)
+	}
+	if report.SchemaVersion != AdoptIssuesReportSchemaVersion || report.Approval == nil {
+		t.Fatalf("expected adopt issues schema and approval evidence: %+v", report)
+	}
+	if report.Approval.SchemaVersion != ApprovalPlanSchemaVersion || report.Approval.CanonicalCommand != "gira adopt issues" || report.Approval.OutputSchema != AdoptIssuesReportSchemaVersion {
+		t.Fatalf("unexpected adopt issues approval identity: %+v", report.Approval)
+	}
+	expectedApply := "gira adopt issues --repo StatPan/gira --state open --issues 1 --milestone 'MVP; touch marker' --label status:ready --label 'type:task$(touch marker)' --apply"
+	if report.Approval.ApplyCommand != expectedApply || report.Approval.PostApplyVerification != "gira status --repo StatPan/gira --json" {
+		t.Fatalf("unexpected adopt issues approval commands: %+v", report.Approval)
+	}
+	if report.Approval.Blockers == nil || report.Approval.Warnings == nil || !approvalHasAction(report.Approval.PlannedActions, "issue:update") {
+		t.Fatalf("unexpected adopt issues approval plan: %+v", report.Approval)
 	}
 	for _, want := range []string{
 		"--milestone 'MVP; touch marker'",

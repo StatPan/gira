@@ -81,6 +81,7 @@ type WorkStatusResult struct {
 	Evidence         *TicketStatusEvidence     `json:"evidence,omitempty"`
 	Acceptance       *TicketStatusAcceptance   `json:"acceptance_criteria,omitempty"`
 	Telemetry        *TicketStatusTelemetry    `json:"telemetry,omitempty"`
+	TicketReadiness  *TicketReadinessReport    `json:"ticket_readiness,omitempty"`
 	Warnings         []string                  `json:"warnings,omitempty"`
 }
 
@@ -505,6 +506,7 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 		Evidence:         ticketStatusEvidence(prStatus, nextAction),
 		Acceptance:       ticketStatusAcceptance(issue.Body),
 		Telemetry:        ticketStatusTelemetry(issue.Body, issue.Labels),
+		TicketReadiness:  ticketStatusReadiness(issue),
 		Warnings:         ticketStatusWarnings(issue, prStatus),
 	}
 	result.NextStep = workStatusNextStep(result)
@@ -733,6 +735,11 @@ func ticketStatusWarnings(issue devStartIssue, pr DevPRStatusResult) []string {
 	return warnings
 }
 
+func ticketStatusReadiness(issue devStartIssue) *TicketReadinessReport {
+	report := EvaluateTicketReadiness(issue.Body, issue.Labels, issue.State)
+	return &report
+}
+
 func setIssueStatus(repo RepoRef, issueNumber int, labels []string, targetLabel string, runner CommandRunner) error {
 	existing := managedStatusLabels(labels)
 	if len(existing) == 1 && strings.EqualFold(existing[0], targetLabel) {
@@ -950,15 +957,21 @@ func FormatWorkStatus(result WorkStatusResult) string {
 	if blockers == "" {
 		blockers = "none"
 	}
-	return fmt.Sprintf(
-		"work status: issue #%d status=%s pr=%d blockers=%s next=%s\nnext step: %s\n",
+	var b strings.Builder
+	fmt.Fprintf(
+		&b,
+		"work status: issue #%d status=%s pr=%d blockers=%s next=%s\n",
 		result.Issue,
 		result.Status,
 		result.PRNumber,
 		blockers,
 		result.NextAction,
-		workStatusNextStep(result),
 	)
+	if result.TicketReadiness != nil {
+		b.WriteString(formatTicketReadinessHuman(*result.TicketReadiness))
+	}
+	fmt.Fprintf(&b, "next step: %s\n", workStatusNextStep(result))
+	return b.String()
 }
 
 func workStartNextStep(repo string, issue int, issueState string, status string, dryRun bool) string {

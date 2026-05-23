@@ -66,6 +66,9 @@ func TestTicketNewDryRunRendersStructuredBody(t *testing.T) {
 			t.Fatalf("labels missing %q: %+v", want, report.Labels)
 		}
 	}
+	if report.TicketReadiness.SchemaVersion != TicketReadinessSchemaVersion || report.TicketReadiness.Readiness != "ready" {
+		t.Fatalf("expected ticket readiness report, got %+v", report.TicketReadiness)
+	}
 }
 
 func TestTicketNewApplyCreatesIssue(t *testing.T) {

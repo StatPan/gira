@@ -31,16 +31,17 @@ type TicketCreatedIssue struct {
 }
 
 type TicketNewReport struct {
-	Repo        string             `json:"repo"`
-	Title       string             `json:"title"`
-	DryRun      bool               `json:"dry_run"`
-	Start       bool               `json:"start"`
-	Labels      []string           `json:"labels"`
-	Milestone   string             `json:"milestone,omitempty"`
-	Body        string             `json:"body"`
-	Created     TicketCreatedIssue `json:"created,omitempty"`
-	StartResult WorkStartResult    `json:"start_result,omitempty"`
-	NextStep    string             `json:"next_step"`
+	Repo            string                `json:"repo"`
+	Title           string                `json:"title"`
+	DryRun          bool                  `json:"dry_run"`
+	Start           bool                  `json:"start"`
+	Labels          []string              `json:"labels"`
+	Milestone       string                `json:"milestone,omitempty"`
+	Body            string                `json:"body"`
+	TicketReadiness TicketReadinessReport `json:"ticket_readiness"`
+	Created         TicketCreatedIssue    `json:"created,omitempty"`
+	StartResult     WorkStartResult       `json:"start_result,omitempty"`
+	NextStep        string                `json:"next_step"`
 }
 
 func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNewReport, error) {
@@ -68,14 +69,15 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 	}
 	labels := ticketNewLabels(ticketType, priority, input.Labels)
 	report := TicketNewReport{
-		Repo:      input.Repo.FullName(),
-		Title:     input.Title,
-		DryRun:    input.DryRun,
-		Start:     input.Start,
-		Labels:    labels,
-		Milestone: strings.TrimSpace(input.Milestone),
-		Body:      body,
-		NextStep:  "gira ticket new --apply",
+		Repo:            input.Repo.FullName(),
+		Title:           input.Title,
+		DryRun:          input.DryRun,
+		Start:           input.Start,
+		Labels:          labels,
+		Milestone:       strings.TrimSpace(input.Milestone),
+		Body:            body,
+		TicketReadiness: EvaluateTicketReadiness(body, labels, "open"),
+		NextStep:        "gira ticket new --apply",
 	}
 	if err := preflightTicketNewLabels(input.Repo, labels, runner); err != nil {
 		return report, err
@@ -312,6 +314,7 @@ func FormatTicketNew(report TicketNewReport) string {
 		if report.Start {
 			b.WriteString("after create: start ticket\n")
 		}
+		b.WriteString(formatTicketReadinessHuman(report.TicketReadiness))
 		fmt.Fprintf(&b, "body:\n%s\nnext step: %s\n", strings.TrimSpace(report.Body), report.NextStep)
 		return b.String()
 	}

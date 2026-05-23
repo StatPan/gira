@@ -2,6 +2,36 @@
 
 This page is generated from Gira's command metadata registry. Update `internal/gira/command_registry.go` first, then refresh this page.
 
+## `goal finish`
+
+Preview goal finish readiness and receipt evidence without closing the goal.
+
+Usage:
+
+```bash
+gira goal finish [GOAL] --dry-run [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]
+```
+
+Since: `v1.17.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--goal`: Goal issue number. Can also be numeric positional.
+- `--dry-run`: Required. Preview readiness and receipt without mutation.
+- `--terminal`: Optional terminal recommendation override: done, human_review, blocked, superseded, or abandoned.
+- `--json`: Emit stable goal-finish-readiness/v1 JSON.
+
+Examples:
+
+- Preview goal finish evidence
+
+```bash
+gira goal finish 521 --repo OWNER/app --dry-run --json
+```
+
+Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
+
 ## `goal next`
 
 Select the next safe child ticket for a goal or explain why work must stop.

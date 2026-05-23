@@ -4450,6 +4450,50 @@ func TestGoalNextJSONUsesInjectedBuilder(t *testing.T) {
 	}
 }
 
+func TestGoalPlanJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newGoalPlanReport
+	t.Cleanup(func() { newGoalPlanReport = restore })
+	newGoalPlanReport = func(input gira.GoalPlanInput) (gira.GoalPlanReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 || !input.DryRun {
+			t.Fatalf("unexpected goal plan input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.GoalPlanReport{
+			Command:       "goal plan",
+			SchemaVersion: gira.GoalPlanSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			DryRun:        input.DryRun,
+			Goal:          gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 2.0", State: "open", Status: "Ready"},
+			ProposedTickets: []gira.GoalPlanTicket{
+				{Title: "[Task] Add plan", ParentGoal: input.Goal, Goal: "Add plan", Scope: "CLI", Acceptance: []string{"works"}, ExpectedEvidence: []string{"go test ./..."}},
+			},
+			NextAction: "create_child_tickets",
+			NextStep:   "review proposed tickets",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "plan", "521", "--repo", "StatPan/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "goal plan"`, `"schema_version": "goal-plan/v1"`, `"proposed_tickets"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("goal plan JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestGoalPlanRequiresDryRun(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "plan", "521", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "pass --dry-run") {
+		t.Fatalf("stderr missing dry-run requirement:\n%s", stderr.String())
+	}
+}
+
 func TestTicketReviewInfersTicketAndDefaultsReviewerRole(t *testing.T) {
 	restorePrompt := newTicketPromptReport
 	restoreRunner := devCommandRunner

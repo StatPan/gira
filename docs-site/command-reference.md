@@ -30,6 +30,35 @@ gira goal next 521 --repo OWNER/app --json
 
 Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
 
+## `goal plan`
+
+Propose dry-run child ticket packets from a goal issue without mutation.
+
+Usage:
+
+```bash
+gira goal plan [GOAL] --dry-run [--repo OWNER/REPO] [--json]
+```
+
+Since: `v1.17.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--goal`: Goal issue number. Can also be numeric positional.
+- `--dry-run`: Required. Preview proposed child tickets without mutation.
+- `--json`: Emit stable goal-plan/v1 JSON.
+
+Examples:
+
+- Preview child ticket plan
+
+```bash
+gira goal plan 521 --repo OWNER/app --dry-run --json
+```
+
+Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
+
 ## `goal status`
 
 Summarize a goal issue, child ticket graph, blockers, and next safe action.

@@ -207,18 +207,35 @@ func goalChildReferenceLine(line string) bool {
 }
 
 func issueRefsFromText(value string) []int {
-	matches := goalIssueRefPattern.FindAllStringSubmatch(value, -1)
+	matches := goalIssueRefPattern.FindAllStringSubmatchIndex(value, -1)
 	out := []int{}
 	for _, match := range matches {
-		if len(match) < 2 {
+		if len(match) < 4 {
 			continue
 		}
-		number, err := strconv.Atoi(match[1])
+		if goalIssueRefHasPRPrefix(value, match[0]) {
+			continue
+		}
+		number, err := strconv.Atoi(value[match[2]:match[3]])
 		if err == nil && number > 0 {
 			out = append(out, number)
 		}
 	}
 	return out
+}
+
+func goalIssueRefHasPRPrefix(value string, hashStart int) bool {
+	start := hashStart - 24
+	if start < 0 {
+		start = 0
+	}
+	prefix := strings.ToLower(strings.TrimSpace(value[start:hashStart]))
+	for _, candidate := range []string{"pr", "pr:", "pull request", "pull-request", "pull_request"} {
+		if strings.HasSuffix(prefix, candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 func goalStatusChildFromWorkStatus(repo RepoRef, status WorkStatusResult) GoalStatusChild {

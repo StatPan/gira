@@ -6,6 +6,17 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v1.17.0 - 2026-05-24
+
+- Added optional issue-backed feature map commands with the short `gira feat`
+  alias so operators and agents can list feature records, check feature map
+  health, and inspect whether a work issue is linked to a capability.
+- Added the feature map convention docs for GitHub issue-backed capability
+  records, keeping GitHub Projects as visibility views and GitHub issues as the
+  canonical source of truth.
+- Added stable JSON contracts for `feature-map-list/v1`,
+  `feature-map-check/v1`, and `feature-map-for/v1`.
+
 ## v1.16.0 - 2026-05-19
 
 - Added milestone lifecycle commands for creating, listing, assigning, planning,

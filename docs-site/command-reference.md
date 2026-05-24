@@ -12,7 +12,7 @@ Usage:
 gira feature check [--repo OWNER/REPO] [--limit N] [--json]
 ```
 
-Since: `v1.18.0`
+Since: `v1.17.0`
 
 Flags:
 
@@ -40,7 +40,7 @@ Usage:
 gira feature for ISSUE [--repo OWNER/REPO] [--limit N] [--json]
 ```
 
-Since: `v1.18.0`
+Since: `v1.17.0`
 
 Flags:
 
@@ -69,7 +69,7 @@ Usage:
 gira feature list [--repo OWNER/REPO] [--limit N] [--json]
 ```
 
-Since: `v1.18.0`
+Since: `v1.17.0`
 
 Flags:
 

@@ -128,7 +128,7 @@ func CoreCommandSpecs() []CommandSpec {
 			Path:    []string{"feature", "list"},
 			Summary: "List optional issue-backed feature or capability records.",
 			Usage:   "gira feature list [--repo OWNER/REPO] [--limit N] [--json]",
-			Since:   "v1.18.0",
+			Since:   "v1.17.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
 				{Name: "--limit", Summary: "Max issues to inspect. Default: 1000."},
@@ -144,7 +144,7 @@ func CoreCommandSpecs() []CommandSpec {
 			Path:    []string{"feature", "check"},
 			Summary: "Validate optional feature map records and work links without mutating GitHub.",
 			Usage:   "gira feature check [--repo OWNER/REPO] [--limit N] [--json]",
-			Since:   "v1.18.0",
+			Since:   "v1.17.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
 				{Name: "--limit", Summary: "Max issues to inspect. Default: 1000."},
@@ -160,7 +160,7 @@ func CoreCommandSpecs() []CommandSpec {
 			Path:    []string{"feature", "for"},
 			Summary: "Show which feature or capability a work issue is linked to.",
 			Usage:   "gira feature for ISSUE [--repo OWNER/REPO] [--limit N] [--json]",
-			Since:   "v1.18.0",
+			Since:   "v1.17.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
 				{Name: "--issue", Summary: "Work issue number. Can also be numeric positional."},

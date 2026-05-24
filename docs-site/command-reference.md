@@ -2,6 +2,91 @@
 
 This page is generated from Gira's command metadata registry. Update `internal/gira/command_registry.go` first, then refresh this page.
 
+## `feature check`
+
+Validate optional feature map records and work links without mutating GitHub.
+
+Usage:
+
+```bash
+gira feature check [--repo OWNER/REPO] [--limit N] [--json]
+```
+
+Since: `v1.18.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--limit`: Max issues to inspect. Default: 1000.
+- `--json`: Emit stable feature-map-check/v1 JSON.
+
+Examples:
+
+- Check feature map health
+
+```bash
+gira feat check --repo OWNER/backlog
+```
+
+Documented in: `docs/feature-map.md`, `docs-site/feature-map.md`, `docs-site/command-reference.md`
+
+## `feature for`
+
+Show which feature or capability a work issue is linked to.
+
+Usage:
+
+```bash
+gira feature for ISSUE [--repo OWNER/REPO] [--limit N] [--json]
+```
+
+Since: `v1.18.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--issue`: Work issue number. Can also be numeric positional.
+- `--limit`: Max issues to inspect. Default: 1000.
+- `--json`: Emit stable feature-map-for/v1 JSON.
+
+Examples:
+
+- Inspect one work issue
+
+```bash
+gira feat for 123 --repo OWNER/app
+```
+
+Documented in: `docs/feature-map.md`, `docs-site/feature-map.md`, `docs-site/command-reference.md`
+
+## `feature list`
+
+List optional issue-backed feature or capability records.
+
+Usage:
+
+```bash
+gira feature list [--repo OWNER/REPO] [--limit N] [--json]
+```
+
+Since: `v1.18.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--limit`: Max issues to inspect. Default: 1000.
+- `--json`: Emit stable feature-map-list/v1 JSON.
+
+Examples:
+
+- List feature records
+
+```bash
+gira feat list --repo OWNER/backlog
+```
+
+Documented in: `docs/feature-map.md`, `docs-site/feature-map.md`, `docs-site/command-reference.md`
+
 ## `goal finish`
 
 Preview goal finish readiness and apply human-review handoff receipts.

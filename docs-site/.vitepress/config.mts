@@ -47,6 +47,7 @@ export default defineConfig({
         items: [
           { text: 'Workspace', link: '/workspace' },
           { text: 'Ticket Workflow', link: '/ticket-workflow' },
+          { text: 'Feature Map', link: '/feature-map' },
           { text: 'State Model', link: '/state-model' },
           { text: 'Goal Mode', link: '/goal-mode' },
           { text: 'Sprint And Release', link: '/sprint-release' },

@@ -31,6 +31,7 @@ Daily commands:
   repo        Manage global registry entries for repositories
   adopt       Plan or apply adoption for existing repositories and issues
   ticket      Jira-style ticket lifecycle commands
+  feature     Optional issue-backed feature map commands. Alias: feat
   goal        Goal-mode read-only planning and status commands
   epic        Numberless epic status and finish commands
   milestone   Milestone lifecycle and bulk ticket assignment
@@ -965,6 +966,34 @@ Flags:
   -h, --help     Show help
 `
 
+const featureHelp = `Optional issue-backed feature map commands.
+
+Usage:
+  gira feature list [--repo OWNER/REPO] [--limit N] [--json]
+  gira feature check [--repo OWNER/REPO] [--limit N] [--json]
+  gira feature for ISSUE [--repo OWNER/REPO] [--limit N] [--json]
+  gira feat list|check|for ...  (alias)
+
+Commands:
+  list   List feature/capability records backed by GitHub issues
+  check  Validate optional feature map records and work links
+  for    Show which feature/capability a work issue is linked to
+
+Conventions:
+  Feature records are GitHub issues labeled type:capability or type:feature,
+  or issues whose title starts with Capability: or Feature:.
+  Short daily keys can be recorded in the issue body as Key: VALUE.
+  Work issues can link back with Related capability: #N or Feature: #N.
+  GitHub Projects are visibility views; GitHub issues remain canonical.
+
+Flags:
+  --repo string  Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
+  --issue int    Work issue number for feature for. Can also be numeric positional
+  --limit int    Max issues to inspect. Default: 1000
+  --json         Emit stable JSON output
+  -h, --help     Show help
+`
+
 const opsHelp = `Advanced Gira controls.
 
 Usage:
@@ -1357,6 +1386,18 @@ var newTicketListReport = func(options gira.TicketListOptions) (gira.TicketListR
 	return gira.BuildTicketListReport(options, devCommandRunner)
 }
 
+var newFeatureMapListReport = func(options gira.FeatureMapOptions) (gira.FeatureMapListReport, error) {
+	return gira.BuildFeatureMapListReport(options, devCommandRunner)
+}
+
+var newFeatureMapCheckReport = func(options gira.FeatureMapOptions) (gira.FeatureMapCheckReport, error) {
+	return gira.BuildFeatureMapCheckReport(options, devCommandRunner)
+}
+
+var newFeatureMapForReport = func(options gira.FeatureForOptions) (gira.FeatureMapForReport, error) {
+	return gira.BuildFeatureMapForReport(options, devCommandRunner)
+}
+
 var newMilestoneNewReport = func(input gira.MilestoneNewInput) (gira.MilestoneReport, error) {
 	return gira.BuildMilestoneNewReport(input, devCommandRunner)
 }
@@ -1506,6 +1547,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTicketStart(args[1:], stdout, stderr)
 	case "ticket":
 		return runTicket(args[1:], stdout, stderr)
+	case "feature", "feat":
+		return runFeature(args[1:], stdout, stderr)
 	case "goal":
 		return runGoal(args[1:], stdout, stderr)
 	case "epic":
@@ -3024,6 +3067,186 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
 	}
+}
+
+func runFeature(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		_, _ = io.WriteString(stdout, featureHelp)
+		return 0
+	}
+	switch args[0] {
+	case "list":
+		return runFeatureList(args[1:], stdout, stderr)
+	case "check":
+		return runFeatureCheck(args[1:], stdout, stderr)
+	case "for":
+		return runFeatureFor(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown feature command: %s\n\n", args[0])
+		_, _ = io.WriteString(stderr, featureHelp)
+		return 2
+	}
+}
+
+func runFeatureList(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("feature list", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	limit := fs.Int("limit", 1000, "Max issues to inspect")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, featureHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, featureHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, featureHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newFeatureMapListReport(gira.FeatureMapOptions{Repo: repo, Limit: *limit})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode feature list JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatFeatureMapList(report))
+	return 0
+}
+
+func runFeatureCheck(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("feature check", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	limit := fs.Int("limit", 1000, "Max issues to inspect")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, featureHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, featureHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, featureHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newFeatureMapCheckReport(gira.FeatureMapOptions{Repo: repo, Limit: *limit})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode feature check JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatFeatureMapCheck(report))
+	return 0
+}
+
+func runFeatureFor(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalIssue, ok := extractFeatureForPositional(args, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, featureHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("feature for", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	issue := fs.Int("issue", 0, "Work issue number")
+	limit := fs.Int("limit", 1000, "Max issues to inspect")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, featureHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, featureHelp)
+		return 0
+	}
+	if positionalIssue > 0 {
+		if *issue > 0 && *issue != positionalIssue {
+			fmt.Fprint(stderr, "--issue and positional issue must refer to the same number\n\n")
+			_, _ = io.WriteString(stderr, featureHelp)
+			return 2
+		}
+		*issue = positionalIssue
+	}
+	if *issue <= 0 {
+		fmt.Fprint(stderr, "--issue or positional issue is required\n\n")
+		_, _ = io.WriteString(stderr, featureHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newFeatureMapForReport(gira.FeatureForOptions{Repo: repo, Issue: *issue, Limit: *limit})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode feature for JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatFeatureMapFor(report))
+	return 0
 }
 
 func runGoal(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -4658,6 +4881,38 @@ func extractNumericPositional(args []string, noun string, stderr io.Writer) ([]s
 		}
 		if positional > 0 && positional != n {
 			fmt.Fprintf(stderr, "only one positional %s can be provided\n\n", noun)
+			return nil, 0, false
+		}
+		positional = n
+		cleaned = cleaned[:len(cleaned)-1]
+	}
+	return cleaned, positional, true
+}
+
+func extractFeatureForPositional(args []string, stderr io.Writer) ([]string, int, bool) {
+	cleaned := make([]string, 0, len(args))
+	positional := 0
+	valueFlags := map[string]struct{}{"--repo": {}, "--issue": {}, "--limit": {}}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		cleaned = append(cleaned, arg)
+		if _, ok := valueFlags[arg]; ok {
+			if i+1 < len(args) {
+				i++
+				cleaned = append(cleaned, args[i])
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		n, err := strconv.Atoi(arg)
+		if err != nil || n <= 0 {
+			fmt.Fprintf(stderr, "unexpected positional argument %q; use a numeric issue or --issue N\n\n", arg)
+			return nil, 0, false
+		}
+		if positional > 0 && positional != n {
+			fmt.Fprint(stderr, "only one positional issue can be provided\n\n")
 			return nil, 0, false
 		}
 		positional = n

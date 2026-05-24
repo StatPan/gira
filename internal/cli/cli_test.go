@@ -134,6 +134,71 @@ func TestConfigUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestFeatureAliasCheckCommand(t *testing.T) {
+	original := newFeatureMapCheckReport
+	t.Cleanup(func() { newFeatureMapCheckReport = original })
+	newFeatureMapCheckReport = func(options gira.FeatureMapOptions) (gira.FeatureMapCheckReport, error) {
+		if options.Repo.FullName() != "StatPan/backlog" || options.Limit != 25 {
+			t.Fatalf("unexpected feature check options: %+v", options)
+		}
+		return gira.FeatureMapCheckReport{
+			SchemaVersion: gira.FeatureMapCheckSchemaVersion,
+			Command:       "feature check",
+			Repo:          options.Repo.FullName(),
+			Source:        "github_issues",
+			Mode:          "none",
+			Limit:         options.Limit,
+			Diagnostics: []gira.FeatureMapDiagnostic{
+				{Severity: "info", Code: "feature_map_not_configured", Message: "no issue-backed feature records found"},
+			},
+			NextStep: "feature map is optional; no action required",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"feat", "check", "--repo", "StatPan/backlog", "--limit", "25"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"feature map check: StatPan/backlog", "feature_map_not_configured", "feature map is optional"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("feature check output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestFeatureForCommandJSON(t *testing.T) {
+	original := newFeatureMapForReport
+	t.Cleanup(func() { newFeatureMapForReport = original })
+	newFeatureMapForReport = func(options gira.FeatureForOptions) (gira.FeatureMapForReport, error) {
+		if options.Repo.FullName() != "StatPan/backlog" || options.Issue != 41 {
+			t.Fatalf("unexpected feature for options: %+v", options)
+		}
+		feature := gira.FeatureMapFeature{Number: 31, Title: "Capability: Ticket lifecycle", Key: "tl", Maturity: "stable"}
+		return gira.FeatureMapForReport{
+			SchemaVersion: gira.FeatureMapForSchemaVersion,
+			Command:       "feature for",
+			Repo:          options.Repo.FullName(),
+			Issue:         gira.FeatureMapWorkIssue{Number: options.Issue, Title: "Add finish receipt validation", LinkedFeature: 31},
+			Feature:       &feature,
+			NextStep:      "gira ticket status 41 --repo StatPan/backlog",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"feature", "for", "41", "--repo", "StatPan/backlog", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.FeatureMapForReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode feature for JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Feature == nil || report.Feature.Key != "tl" || report.Issue.LinkedFeature != 31 {
+		t.Fatalf("unexpected feature for JSON: %+v", report)
+	}
+}
+
 func TestSetupGlobalCommandJSON(t *testing.T) {
 	original := newSetupGlobalReport
 	t.Cleanup(func() { newSetupGlobalReport = original })

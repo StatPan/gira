@@ -36,6 +36,7 @@ features:
 | Set up a repo or personal workspace | [Quick Start](/quickstart), [Global Config](/global-config) | `gira init`, `gira setup global`, `gira repo register`, `gira adopt repo` |
 | See work across repos | [Workspace](/workspace) | `gira workspace status`, `gira workspace repos sync` |
 | Run issue to PR work | [Ticket Workflow](/ticket-workflow) | `gira ticket new`, `start`, `pr`, `review`, `checks`, `wait`, `finish` |
+| Maintain an optional feature map | [Feature Map](/feature-map) | `gira feature list`, `feature check`, `feature for` |
 | Manage larger work packets | [Goal Mode](/goal-mode), [Sprint And Release](/sprint-release) | `gira goal status`, `goal next`, `goal finish`, `epic list`, `milestone plan` |
 | Diagnose readiness and drift | [Readiness And Audit](/readiness-audit), [Troubleshooting](/troubleshooting) | `gira ticket status`, `ticket review`, `audit drift`, `jira doctor` |
 | Map Jira concepts to GitHub | [Jira Mapping](/jira-mapping), [Jira Provider](/jira-primary-provider) | `gira jira init`, `jira mirror`, `jira transition`, `jira import`, `jira export` |
@@ -47,6 +48,7 @@ features:
 | `guide` | Built-in quickstart, ticket, stats, Jira, agent, skill, and concepts guides in the installed CLI. | [Quick Start](/quickstart), [Command Reference](/command-reference) |
 | `setup`, `init`, `repo`, `adopt`, `config` | First-run setup, global registry entries, repo adoption, issue adoption, and config source diagnosis. | [Global Config](/global-config), [Troubleshooting](/troubleshooting) |
 | `workspace`, `projects`, `status` | Multi-repo workspace status, repo allowlist sync, existing Project mirroring, and compact read-only repo summaries. | [Workspace](/workspace) |
+| `feature`, `feat` | Optional issue-backed feature map listing, validation, and work issue linkage checks. | [Feature Map](/feature-map) |
 | `ticket`, `start`, `work`, `dev` | Daily issue to branch to PR to finish lifecycle, plus compatibility aliases and lower-level helpers. | [Ticket Workflow](/ticket-workflow) |
 | `goal`, `epic`, `milestone`, `sprint`, `release` | Larger objective tracking, child ticket selection, milestone batches, sprint planning, and release readiness. | [Goal Mode](/goal-mode), [Sprint And Release](/sprint-release) |
 | `audit`, `jira` | Drift, readiness, provider compatibility, Jira mirror, transition planning, import, and export diagnostics. | [Readiness And Audit](/readiness-audit), [Jira Provider](/jira-primary-provider) |

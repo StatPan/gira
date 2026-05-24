@@ -125,6 +125,55 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"feature", "list"},
+			Summary: "List optional issue-backed feature or capability records.",
+			Usage:   "gira feature list [--repo OWNER/REPO] [--limit N] [--json]",
+			Since:   "v1.18.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--limit", Summary: "Max issues to inspect. Default: 1000."},
+				{Name: "--json", Summary: "Emit stable feature-map-list/v1 JSON."},
+			},
+			Docs:        []string{"docs/feature-map.md", "docs-site/feature-map.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "ticket"},
+			Examples: []CommandExample{
+				{Summary: "List feature records", Command: "gira feat list --repo OWNER/backlog"},
+			},
+		},
+		{
+			Path:    []string{"feature", "check"},
+			Summary: "Validate optional feature map records and work links without mutating GitHub.",
+			Usage:   "gira feature check [--repo OWNER/REPO] [--limit N] [--json]",
+			Since:   "v1.18.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--limit", Summary: "Max issues to inspect. Default: 1000."},
+				{Name: "--json", Summary: "Emit stable feature-map-check/v1 JSON."},
+			},
+			Docs:        []string{"docs/feature-map.md", "docs-site/feature-map.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "ticket"},
+			Examples: []CommandExample{
+				{Summary: "Check feature map health", Command: "gira feat check --repo OWNER/backlog"},
+			},
+		},
+		{
+			Path:    []string{"feature", "for"},
+			Summary: "Show which feature or capability a work issue is linked to.",
+			Usage:   "gira feature for ISSUE [--repo OWNER/REPO] [--limit N] [--json]",
+			Since:   "v1.18.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--issue", Summary: "Work issue number. Can also be numeric positional."},
+				{Name: "--limit", Summary: "Max issues to inspect. Default: 1000."},
+				{Name: "--json", Summary: "Emit stable feature-map-for/v1 JSON."},
+			},
+			Docs:        []string{"docs/feature-map.md", "docs-site/feature-map.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "ticket"},
+			Examples: []CommandExample{
+				{Summary: "Inspect one work issue", Command: "gira feat for 123 --repo OWNER/app"},
+			},
+		},
+		{
 			Path:    []string{"goal", "status"},
 			Summary: "Summarize a goal issue, child ticket graph, blockers, and next safe action.",
 			Usage:   "gira goal status [GOAL] [--repo OWNER/REPO] [--json]",
@@ -655,6 +704,12 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterApply("updates workspace repo allowlist; --dry-run previews selected repositories", JSONSupportStable)
 		case "workspace status":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "feature list":
+			specs[i].Adapter = adapterRead(JSONSupportStable, "gira feat list")
+		case "feature check":
+			specs[i].Adapter = adapterRead(JSONSupportStable, "gira feat check")
+		case "feature for":
+			specs[i].Adapter = adapterRead(JSONSupportStable, "gira feat for")
 		case "goal status":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "goal plan":

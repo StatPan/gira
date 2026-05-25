@@ -5483,6 +5483,77 @@ func TestTicketReviewInfersTicketAndDefaultsReviewerRole(t *testing.T) {
 	}
 }
 
+func TestTicketReviewDiffSummaryUsesCurrentBranchContext(t *testing.T) {
+	restorePrompt := newTicketPromptReport
+	restoreRunner := devCommandRunner
+	t.Cleanup(func() {
+		newTicketPromptReport = restorePrompt
+		devCommandRunner = restoreRunner
+	})
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"git branch --show-current": []byte("issue-646-review-ux\n"),
+	}}
+	newTicketPromptReport = func(input gira.AgentPromptInput) (gira.AgentPromptReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 646 || input.Role != "reviewer" || !input.IncludeDiffSummary || input.IncludeDiff {
+			t.Fatalf("unexpected review input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.AgentPromptReport{
+			Command: "ticket review",
+			Repo:    input.Repo.FullName(),
+			Ticket:  input.Ticket,
+			Role:    input.Role,
+			Profile: input.Profile,
+			Issue:   gira.AgentPromptIssue{Number: input.Ticket, Title: "Review UX"},
+			PR:      &gira.AgentPromptPR{Number: 647, Title: "review ux"},
+			Review: &gira.AgentReviewContract{
+				DiffSummary: &gira.AgentReviewDiffSummary{
+					ChangedFiles:    []string{"internal/cli/cli.go"},
+					Files:           []gira.AgentReviewDiffFile{{Path: "internal/cli/cli.go", Additions: 3, Deletions: 1}},
+					TotalAdditions:  3,
+					TotalDeletions:  1,
+					FullDiffCommand: "gh pr diff 647 --repo StatPan/gira",
+				},
+			},
+			Prompt: "# Gira reviewer prompt\n\n- Diff Summary:\n  - files: 1 changed, +3/-1\n",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "review", "--repo", "StatPan/gira", "--diff-summary", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"ticket": 646`, `"diff_summary"`, `"total_additions": 3`, `"full_diff_command": "gh pr diff 647 --repo StatPan/gira"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket review diff summary JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestTicketReviewIncludeDiffRequiresExplicitFlag(t *testing.T) {
+	restorePrompt := newTicketPromptReport
+	restoreRunner := devCommandRunner
+	t.Cleanup(func() {
+		newTicketPromptReport = restorePrompt
+		devCommandRunner = restoreRunner
+	})
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"git branch --show-current": []byte("issue-646-review-ux\n"),
+	}}
+	newTicketPromptReport = func(input gira.AgentPromptInput) (gira.AgentPromptReport, error) {
+		if !input.IncludeDiffSummary || !input.IncludeDiff {
+			t.Fatalf("expected include diff flags, got %+v", input)
+		}
+		return gira.AgentPromptReport{Command: "ticket review", Repo: input.Repo.FullName(), Ticket: input.Ticket, Role: input.Role, Profile: input.Profile, Prompt: "prompt\n"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "review", "--repo", "StatPan/gira", "--include-diff"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+}
+
 func TestTicketReviewMissingContextGivesActionableError(t *testing.T) {
 	restoreRunner := devCommandRunner
 	t.Cleanup(func() { devCommandRunner = restoreRunner })
@@ -5498,6 +5569,45 @@ func TestTicketReviewMissingContextGivesActionableError(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "cannot determine current ticket") || !strings.Contains(stderr.String(), "Try: gira ticket status --repo StatPan/gira --ticket N") {
 		t.Fatalf("stderr missing context guidance:\n%s", stderr.String())
+	}
+}
+
+func TestTicketSelfReviewInfersTicketAndPreviewsPRNote(t *testing.T) {
+	restoreSelfReview := newTicketSelfReviewReport
+	restoreRunner := devCommandRunner
+	t.Cleanup(func() {
+		newTicketSelfReviewReport = restoreSelfReview
+		devCommandRunner = restoreRunner
+	})
+	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
+		"git branch --show-current": []byte("issue-646-review-ux\n"),
+	}}
+	newTicketSelfReviewReport = func(input gira.TicketSelfReviewInput) (gira.TicketSelfReviewReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 646 || !input.DryRun || input.Apply || !input.DiffSummary {
+			t.Fatalf("unexpected self-review input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.TicketSelfReviewReport{
+			SchemaVersion: gira.TicketSelfReviewReportSchemaVersion,
+			Command:       "ticket self-review",
+			Repo:          input.Repo.FullName(),
+			Ticket:        input.Ticket,
+			PullRequest:   647,
+			DiffSummary:   true,
+			DryRun:        true,
+			RenderedBody:  "## Check\n\nSelf-review packet for ticket #646 and PR #647.",
+			NextStep:      "gira ticket note --apply",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "self-review", "--repo", "StatPan/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"schema_version": "ticket-self-review-report/v1"`, `"ticket": 646`, `"pull_request": 647`, `"dry_run": true`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("self-review JSON missing %q:\n%s", want, stdout.String())
+		}
 	}
 }
 

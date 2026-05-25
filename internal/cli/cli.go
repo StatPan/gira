@@ -99,6 +99,7 @@ const guideQuickstart = `Gira quickstart: first ticket to merged PR
    gira ticket pr --apply --draft
 
 6. Watch readiness through Gira.
+   gira ticket review --diff-summary
    gira ticket checks
    gira ticket wait --timeout 5m
 
@@ -116,6 +117,8 @@ const guideTicketIntro = `Gira ticket guide
 Daily loop:
   gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply --start
   gira ticket pr --apply --draft
+  gira ticket review --diff-summary
+  gira ticket self-review --diff-summary --dry-run
   gira ticket checks
   gira ticket wait --timeout 5m
   gira ticket finish --apply
@@ -123,10 +126,11 @@ Daily loop:
 Existing GitHub issue:
   gira ticket start 42 --apply
   gira ticket pr --apply --draft
+  gira ticket review --diff-summary
   gira ticket finish --apply
 
 Context rules:
-  After ticket start checks out issue-N-*, ticket pr/checks/wait/finish/status infer the ticket.
+  After ticket start checks out issue-N-*, ticket view/prompt/handoff/review/self-review/pr/checks/wait/finish/status infer the ticket.
   Use --repo OWNER/REPO and --ticket N only when outside a repo or branch context.
 
 Safety:
@@ -770,7 +774,8 @@ Usage:
   gira ticket view|show [TICKET|JIRA-KEY] [--repo OWNER/REPO] [--json]
   gira ticket prompt [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]
   gira ticket handoff [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--json]
-  gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--json]
+  gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] [--include-diff] [--json]
+  gira ticket self-review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] --dry-run|--apply [--json]
   gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
   gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both] [--body TEXT|--body-file PATH|-] [--json]
@@ -787,6 +792,7 @@ Commands:
   prompt  Render a stateless planner, implementer, or reviewer prompt from ticket context
   handoff Compile a worker-neutral handoff packet from ticket context
   review  Render a reviewer packet from current ticket and linked PR state
+  self-review Render and optionally post a self-review check note to the linked PR
   start   Verify a ready ticket, create/reuse its branch, and move to in-progress on apply. Alias: gira start
   pr      Validate or create a linked PR with Closes #N and update review status on apply
   note    Post a structured context note to the issue, linked PR, or both
@@ -809,6 +815,8 @@ Flags:
   --role string    Ticket prompt/handoff role: planner, implementer, or reviewer
   --profile string Ticket prompt/handoff profile: default or python. Default: default
   --pr int         Optional PR number for reviewer prompt context
+  --diff-summary  Include a compact PR diff summary in reviewer/self-review output
+  --include-diff  Include full PR diff in reviewer output. Use explicitly; output can be long
   --replacement-title string Replacement ticket title for ticket supersede
   --close-draft-pr   Close a linked draft PR when superseding
   --assignee string Ticket list assignee login
@@ -1456,6 +1464,10 @@ var newJiraMirrorIssueResolver = func(repo gira.RepoRef, key string) (gira.JiraM
 
 var newTicketNoteReport = func(input gira.TicketNoteInput) (gira.TicketNoteReport, error) {
 	return gira.BuildTicketNoteReport(input, devCommandRunner)
+}
+
+var newTicketSelfReviewReport = func(input gira.TicketSelfReviewInput) (gira.TicketSelfReviewReport, error) {
+	return gira.BuildTicketSelfReviewReport(input, devCommandRunner)
 }
 
 var newTicketSupersedeReport = func(input gira.TicketSupersedeInput) (gira.TicketSupersedeReport, error) {
@@ -3046,6 +3058,8 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTicketHandoff(args[1:], stdout, stderr)
 	case "review":
 		return runTicketReview(args[1:], stdout, stderr)
+	case "self-review":
+		return runTicketSelfReview(args[1:], stdout, stderr)
 	case "start":
 		return runTicketStart(args[1:], stdout, stderr)
 	case "pr":
@@ -3829,6 +3843,8 @@ func runTicketReview(args []string, stdout io.Writer, stderr io.Writer) int {
 	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
 	profile := fs.String("profile", "default", "Prompt profile: default|python")
 	prNumber := fs.Int("pr", 0, "Optional PR number for reviewer packet context")
+	diffSummary := fs.Bool("diff-summary", false, "Include compact PR diff summary")
+	includeDiff := fs.Bool("include-diff", false, "Include full PR diff")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -3856,11 +3872,13 @@ func runTicketReview(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 	result, err := newTicketPromptReport(gira.AgentPromptInput{
-		Repo:     repo,
-		Ticket:   ticketNumber,
-		Role:     gira.AgentPromptRoleReviewer,
-		Profile:  *profile,
-		PRNumber: *prNumber,
+		Repo:               repo,
+		Ticket:             ticketNumber,
+		Role:               gira.AgentPromptRoleReviewer,
+		Profile:            *profile,
+		PRNumber:           *prNumber,
+		IncludeDiffSummary: *diffSummary || *includeDiff,
+		IncludeDiff:        *includeDiff,
 	})
 	result.Command = "ticket review"
 	if err != nil {
@@ -3881,6 +3899,86 @@ func runTicketReview(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatAgentPrompt(result))
+	return 0
+}
+
+func runTicketSelfReview(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalIdentifier, positionalOK := extractTicketIdentifierPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("ticket self-review", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	prNumber := fs.Int("pr", 0, "Optional PR number for reviewer packet context")
+	diffSummary := fs.Bool("diff-summary", true, "Include compact PR diff summary")
+	dryRun := fs.Bool("dry-run", false, "Preview self-review PR note")
+	apply := fs.Bool("apply", false, "Post self-review PR note")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run/--apply is required\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	ticketNumber, _, resolved, resolveErr := resolveTicketIdentifierContext(repo, *ticket, *issue, positionalIdentifier, true, stderr)
+	if resolveErr != nil {
+		fmt.Fprintf(stderr, "%v\n", resolveErr)
+		return 1
+	}
+	if !resolved {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	result, err := newTicketSelfReviewReport(gira.TicketSelfReviewInput{
+		Repo:        repo,
+		Ticket:      ticketNumber,
+		PRNumber:    *prNumber,
+		DiffSummary: *diffSummary,
+		DryRun:      *dryRun,
+		Apply:       *apply,
+	})
+	if result.Note != nil {
+		result.Note.Status.NextStep = shortenTicketNextStep(result.Note.Status.NextStep, result.Repo, result.Ticket)
+		result.Note.NextStep = shortenTicketNextStep(result.Note.NextStep, result.Repo, result.Ticket)
+	}
+	result.NextStep = shortenTicketNextStep(result.NextStep, result.Repo, result.Ticket)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode ticket self-review JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatTicketSelfReview(result))
 	return 0
 }
 

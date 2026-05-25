@@ -532,8 +532,8 @@ func CoreCommandSpecs() []CommandSpec {
 			GuideTopics: []string{"ticket", "agent"},
 			GuideOrder:  18,
 			Examples: []CommandExample{
-				{Summary: "Render an implementation worker prompt", Command: "gira ticket prompt 42 implementer --profile python"},
-				{Summary: "Render a reviewer prompt with PR context", Command: "gira ticket prompt 42 reviewer --pr 77"},
+				{Summary: "Render an implementation worker prompt for the current branch ticket", Command: "gira ticket prompt implementer --profile python"},
+				{Summary: "Render a reviewer prompt with an explicit PR override", Command: "gira ticket prompt reviewer --pr 77"},
 			},
 		},
 		{
@@ -550,25 +550,47 @@ func CoreCommandSpecs() []CommandSpec {
 			GuideTopics: []string{"ticket", "agent"},
 			GuideOrder:  19,
 			Examples: []CommandExample{
-				{Summary: "Compile an implementer handoff packet", Command: "gira ticket handoff 42 --json"},
-				{Summary: "Compile a reviewer handoff packet", Command: "gira ticket handoff 42 reviewer --json"},
+				{Summary: "Compile an implementer handoff packet for the current branch ticket", Command: "gira ticket handoff --json"},
+				{Summary: "Compile a reviewer handoff packet for the current branch ticket", Command: "gira ticket handoff reviewer --json"},
 			},
 		},
 		{
 			Path:    []string{"ticket", "review"},
 			Summary: "Render a reviewer packet from current ticket and linked PR state.",
-			Usage:   "gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--json]",
+			Usage:   "gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] [--include-diff] [--json]",
 			Since:   "v1.15.0",
 			Flags: []FlagSpec{
 				{Name: "--pr", Summary: "Optional PR number override for reviewer packet context."},
+				{Name: "--diff-summary", Summary: "Include changed files, diff stat, hunk headers, acceptance mapping candidates, and risk hints."},
+				{Name: "--include-diff", Summary: "Include the full PR diff. Output can be long and must be requested explicitly."},
 				{Name: "--json", Summary: "Emit stable JSON including issue, PR, evidence, repo guidance, verdict schema, and prompt fields."},
 			},
 			Docs:        []string{"docs-site/ticket-workflow.md", "docs-site/command-reference.md", "docs/dogfood.md"},
 			GuideTopics: []string{"ticket", "agent"},
 			GuideOrder:  20,
 			Examples: []CommandExample{
-				{Summary: "Render reviewer packet for current branch ticket", Command: "gira ticket review"},
+				{Summary: "Render reviewer packet for current branch ticket", Command: "gira ticket review --diff-summary"},
 				{Summary: "Render reviewer packet with an explicit PR override", Command: "gira ticket review --ticket 42 --pr 77 --json"},
+			},
+		},
+		{
+			Path:    []string{"ticket", "self-review"},
+			Summary: "Post a self-review check note for the current branch ticket and linked PR.",
+			Usage:   "gira ticket self-review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] --dry-run|--apply [--json]",
+			Since:   "v1.18.0",
+			Flags: []FlagSpec{
+				{Name: "--pr", Summary: "Optional PR number override for self-review context."},
+				{Name: "--diff-summary", Summary: "Include compact PR diff summary in the check note. Default: true."},
+				{Name: "--dry-run", Summary: "Preview the self-review PR note without posting."},
+				{Name: "--apply", Summary: "Post the self-review check note to the linked PR."},
+				{Name: "--json", Summary: "Emit stable ticket-self-review-report/v1 JSON."},
+			},
+			Docs:        []string{"docs-site/ticket-workflow.md", "docs-site/command-reference.md", "docs/dogfood.md"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  32,
+			Examples: []CommandExample{
+				{Summary: "Preview current branch self-review note", Command: "gira ticket self-review --diff-summary --dry-run"},
+				{Summary: "Post current branch self-review note", Command: "gira ticket self-review --diff-summary --apply"},
 			},
 		},
 		{
@@ -754,6 +776,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "ticket review":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "ticket self-review":
+			specs[i].Adapter = adapterApply("posts a self-review check note to the linked PR; --dry-run previews the rendered note and approval evidence", JSONSupportStable)
 		case "ticket start":
 			specs[i].Adapter = adapterApply("creates or reuses a branch, records lifecycle state, and moves the issue to in-progress; --dry-run previews readiness and branch plan", JSONSupportStable, "gira start")
 		case "ticket pr":

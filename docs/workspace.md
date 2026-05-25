@@ -155,9 +155,10 @@ gira workspace ticket route --ticket 12 --repo OWNER/app --apply --config .gira/
 After routing, continue in the target repo:
 
 ```bash
-gira ticket start --repo OWNER/app --ticket 34 --apply
-gira ticket pr --repo OWNER/app --ticket 34 --apply --draft
-gira ticket status --repo OWNER/app --ticket 34
+gira ticket start 34 --repo OWNER/app --apply
+gira ticket pr --apply --draft
+gira ticket review --diff-summary
+gira ticket status
 ```
 
 ## Workspace Queues
@@ -223,7 +224,7 @@ Queue membership rules:
 | Queue | Membership evidence | Next safe command |
 | --- | --- | --- |
 | `agent_ready` | Open issue with `status:ready`, no linked PR, no blockers, no human-decision label, and missing or `ready` `ticket_readiness`. | `gira ticket start --repo OWNER/REPO --ticket N --apply` |
-| `review_needed` | Open non-draft PR with `status:in-review`, missing or required review state, or `pr_readiness.next_action=request_review`. | `gira ticket review --repo OWNER/REPO --ticket N --json` |
+| `review_needed` | Open non-draft PR with `status:in-review`, missing or required review state, or `pr_readiness.next_action=request_review`. | `gira ticket review --repo OWNER/REPO --ticket N --diff-summary --json` |
 | `finish_ready` | Open non-draft PR with `pr_readiness=ready_for_finish`, `next_action=merge_when_policy_allows` or `finish_ticket`, or finish-ready evidence, with passed checks, approved review, and no blockers. | `gira ticket finish --repo OWNER/REPO --ticket N --dry-run` |
 | `blocked` | `status:blocked`, explicit blockers, or error findings from ticket or PR readiness. | `gira ticket status --repo OWNER/REPO --ticket N --json` |
 | `failed_check` | Failed or failing checks, a checks blocker, or PR readiness check-failure findings. | `gira ticket status --repo OWNER/REPO --ticket N --json` |

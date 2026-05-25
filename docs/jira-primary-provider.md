@@ -82,10 +82,10 @@ Then use the normal ticket lifecycle with either the Jira key or GitHub mirror i
 ```bash
 gira ticket view ABC-123 --repo OWNER/REPO
 gira ticket start ABC-123 --repo OWNER/REPO --apply
-gira ticket pr --repo OWNER/REPO --apply --draft
-gira ticket checks --repo OWNER/REPO
-gira ticket finish --repo OWNER/REPO --dry-run
-gira ticket finish --repo OWNER/REPO --apply
+gira ticket pr --apply --draft
+gira ticket checks
+gira ticket finish --dry-run
+gira ticket finish --apply
 ```
 
 `ticket finish` refuses Jira Done when GitHub evidence is incomplete. Blockers include missing mirror issue, missing linked PR, draft PR, review blockers, failing or pending checks, and an unmerged PR. Apply performs the Jira Done transition only after GitHub merge evidence is clean and `--apply` is explicit.

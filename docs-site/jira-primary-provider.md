@@ -37,10 +37,10 @@ gira jira mirror ABC-123 --repo OWNER/REPO --dry-run
 gira jira mirror ABC-123 --repo OWNER/REPO --apply
 gira ticket view ABC-123 --repo OWNER/REPO
 gira ticket start ABC-123 --repo OWNER/REPO --apply
-gira ticket pr --repo OWNER/REPO --apply --draft
-gira ticket checks --repo OWNER/REPO
-gira ticket finish --repo OWNER/REPO --dry-run
-gira ticket finish --repo OWNER/REPO --apply
+gira ticket pr --apply --draft
+gira ticket checks
+gira ticket finish --dry-run
+gira ticket finish --apply
 ```
 
 `ticket finish` blocks Jira Done while any GitHub execution evidence is incomplete: missing mirror issue, missing linked PR, draft PR, review blocker, failing or pending checks, or unmerged PR.

@@ -128,6 +128,8 @@ gira ticket pr --apply --draft
 gira ticket view
 gira ticket prompt --role implementer --profile python
 gira ticket note "Parser path is implemented; local tests are next." --dry-run
+gira ticket review --diff-summary
+gira ticket self-review --diff-summary --dry-run
 gira ticket checks
 gira ticket wait --timeout 5m
 gira ticket finish --dry-run
@@ -135,11 +137,11 @@ gira ticket finish --apply
 gira ticket status
 ```
 
-`gira ticket new` creates a repo-bound executable ticket. It writes a structured issue body from `--goal`, `--scope`, `--acceptance`, and `--notes`, or accepts a complete issue packet through `--body`, `--body-file PATH`, or `--body-file -`. It applies `type:*` and `status:ready`, previews the exact payload with `--dry-run`, and can immediately start the branch with `--start`. Requested labels must already exist in the repo; `ticket new` preflights labels during dry-run/apply and reports missing taxonomy instead of creating labels implicitly. `gira ticket list` lists GitHub issue-backed tickets with compact filters: `--state open|closed|all`, repeatable or comma-separated `--label`, `--assignee`, `--milestone`, `--limit`, and `--json`. `gira ticket view` shows the ticket operating card: issue state, Gira status, linked PR, blockers, next action, and next command. `gira ticket prompt` renders stateless planner, implementer, or reviewer prompts from the ticket, with `default` and `python` profiles. `gira ticket note` renders a structured context note and posts it to the issue, linked PR, or both after `--dry-run` review. `gira ticket supersede` creates a linked replacement issue, writes decision notes on both tickets, removes active status labels from the old ticket, adds `resolution:superseded`, and closes it after dry-run review. `gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket view`, `ticket prompt`, `ticket note`, `ticket pr`, `ticket checks`, `ticket wait`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
+`gira ticket new` creates a repo-bound executable ticket. It writes a structured issue body from `--goal`, `--scope`, `--acceptance`, and `--notes`, or accepts a complete issue packet through `--body`, `--body-file PATH`, or `--body-file -`. It applies `type:*` and `status:ready`, previews the exact payload with `--dry-run`, and can immediately start the branch with `--start`. Requested labels must already exist in the repo; `ticket new` preflights labels during dry-run/apply and reports missing taxonomy instead of creating labels implicitly. `gira ticket list` lists GitHub issue-backed tickets with compact filters: `--state open|closed|all`, repeatable or comma-separated `--label`, `--assignee`, `--milestone`, `--limit`, and `--json`. `gira ticket view` shows the ticket operating card: issue state, Gira status, linked PR, blockers, next action, and next command. `gira ticket prompt` renders stateless planner, implementer, or reviewer prompts from the ticket, with `default` and `python` profiles. `gira ticket review --diff-summary` renders the current ticket's review packet with changed files, diff stat, hunk headers, acceptance mapping candidates, risk hints, and the full diff command; `--include-diff` prints the full diff only when explicitly requested. `gira ticket self-review --diff-summary --dry-run` previews a `kind=check` PR note for the current branch ticket, and `--apply` posts it to the linked PR. `gira ticket note` renders a structured context note and posts it to the issue, linked PR, or both after `--dry-run` review. `gira ticket supersede` creates a linked replacement issue, writes decision notes on both tickets, removes active status labels from the old ticket, adds `resolution:superseded`, and closes it after dry-run review. `gira ticket` resolves `--repo` from `.gira/config.yaml` or git origin. After `ticket start` checks out an `issue-N-*` branch, `ticket view`, `ticket prompt`, `ticket handoff`, `ticket review`, `ticket self-review`, `ticket note`, `ticket pr`, `ticket checks`, `ticket wait`, `ticket finish`, and `ticket status` can infer the ticket from the current branch or linked PR. Pass `--repo OWNER/REPO` and `--ticket N` when running outside that context.
 
 For an existing repository, run `gira adopt repo --dry-run` before full bootstrap. Gira detects existing issues, labels, milestones, Projects, `AGENTS.md`, and GitHub templates, then recommends an adoption strategy. The default `merge` strategy preserves user-owned files and metadata while adding only the minimal Gira contract, such as `.gira/config.yaml` and an `AGENTS.md` managed block. Bootstrap sample issues are never required for normal adoption.
 
-You can still call `gh` directly for low-level GitHub operations, but lifecycle work should use Gira ticket controls when available: `ticket view`, `ticket status`, `ticket start`, `ticket pr`, `ticket note`, `ticket supersede`, `ticket checks`, `ticket wait`, and `ticket finish`. Use raw `gh` only when Gira has no lifecycle command or when you intentionally need an unopinionated GitHub operation. The ticket commands keep the lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, render context notes, supersede stale work with linked replacement evidence, wait for pending checks, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
+You can still call `gh` directly for low-level GitHub operations, but lifecycle work should use Gira ticket controls when available: `ticket view`, `ticket status`, `ticket start`, `ticket pr`, `ticket review`, `ticket self-review`, `ticket note`, `ticket supersede`, `ticket checks`, `ticket wait`, and `ticket finish`. Use raw `gh` only when Gira has no lifecycle command or when you intentionally need an unopinionated GitHub operation. The ticket commands keep the lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, render review packets and context notes, supersede stale work with linked replacement evidence, wait for pending checks, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
 
 `gira epic list`, `gira epic status`, and `gira epic finish` close the larger planning loop without requiring raw `gh issue list` or `gh issue close`. `epic list` is a `type:epic` view over GitHub issues with the same compact list filters as ticket list. Gira can resolve an epic from the current `issue-N-*` branch, `--title`, `--slug`, `--milestone`, or a sole open `type:epic`; `--ticket N` remains the explicit fallback. `epic finish --apply` refuses to close while child issues are still open, then normalizes active status labels and closes the epic through GitHub.
 
@@ -156,8 +158,8 @@ gira jira doctor --repo OWNER/REPO --sample-key ABC-123
 gira jira mirror ABC-123 --repo OWNER/REPO --dry-run
 gira jira mirror ABC-123 --repo OWNER/REPO --apply
 gira ticket start ABC-123 --repo OWNER/REPO --apply
-gira ticket finish --repo OWNER/REPO --dry-run
-gira ticket finish --repo OWNER/REPO --apply
+gira ticket finish --dry-run
+gira ticket finish --apply
 ```
 
 Provider config is non-secret and lives in the user-global repo registry. Jira credentials come from `JIRA_EMAIL` and `JIRA_API_TOKEN`. `gira jira doctor` is read-only and reports whether a Jira-primary repo is `supported`, `partially_supported`, or `blocked` before heavier operation. `ticket finish` refuses Jira Done while GitHub evidence is incomplete, including missing mirror issue, missing linked PR, draft PR, review blocker, failing or pending checks, or unmerged PR. Jira workflow mutation, background sync, full bidirectional sync, hosted dashboards, and Jira-only completion are outside the OSS CLI slices. See [docs/jira-primary-provider.md](docs/jira-primary-provider.md) and `gira guide jira`.
@@ -179,6 +181,8 @@ If the GitHub issue already exists, start from that ticket number once. After Gi
 gira ticket start 42 --apply
 gira ticket pr --apply --draft
 gira ticket view
+gira ticket review --diff-summary
+gira ticket self-review --diff-summary --dry-run
 gira ticket note "Ready for CI review." --target pr --dry-run
 gira ticket checks
 gira ticket wait --timeout 5m
@@ -218,6 +222,8 @@ go test ./...
 gira ticket pr --dry-run
 gira ticket pr --apply --draft
 gira ticket view
+gira ticket review --diff-summary
+gira ticket self-review --diff-summary --dry-run
 gira ticket note "Ready for review." --target pr --dry-run
 gira ticket note "Ready for review." --target pr --apply
 
@@ -460,7 +466,7 @@ Wrapper packages must preserve the same command surface as the native binary:
 
 ```bash
 gira version
-gira ticket start --repo OWNER/REPO --ticket 12 --dry-run
+gira ticket start 12 --repo OWNER/REPO --dry-run
 gira ops bootstrap --repo OWNER/REPO --template default --dry-run
 gira ops sync --repo OWNER/REPO --dry-run
 gira status --repo OWNER/REPO --json
@@ -593,9 +599,10 @@ gira --help
 gira ops sync --repo OWNER/REPO --dry-run
 gira ops onboard verify --repo OWNER/REPO --stage steady-state
 gira status --repo OWNER/REPO
-gira ticket start --repo OWNER/REPO --ticket 12 --dry-run
-gira ticket pr --repo OWNER/REPO --ticket 12 --dry-run
-gira ticket status --repo OWNER/REPO --ticket 12
+gira ticket start 12 --repo OWNER/REPO --dry-run
+gira ticket start 12 --repo OWNER/REPO --apply
+gira ticket pr --dry-run
+gira ticket status
 ```
 
 This is the canonical operator path for daily use.

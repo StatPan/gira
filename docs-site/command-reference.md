@@ -686,16 +686,16 @@ Flags:
 
 Examples:
 
-- Compile an implementer handoff packet
+- Compile an implementer handoff packet for the current branch ticket
 
 ```bash
-gira ticket handoff 42 --json
+gira ticket handoff --json
 ```
 
-- Compile a reviewer handoff packet
+- Compile a reviewer handoff packet for the current branch ticket
 
 ```bash
-gira ticket handoff 42 reviewer --json
+gira ticket handoff reviewer --json
 ```
 
 Documented in: `docs-site/ticket-workflow.md`, `docs-site/command-reference.md`, `docs/dogfood.md`
@@ -819,16 +819,16 @@ Flags:
 
 Examples:
 
-- Render an implementation worker prompt
+- Render an implementation worker prompt for the current branch ticket
 
 ```bash
-gira ticket prompt 42 implementer --profile python
+gira ticket prompt implementer --profile python
 ```
 
-- Render a reviewer prompt with PR context
+- Render a reviewer prompt with an explicit PR override
 
 ```bash
-gira ticket prompt 42 reviewer --pr 77
+gira ticket prompt reviewer --pr 77
 ```
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
@@ -840,7 +840,7 @@ Render a reviewer packet from current ticket and linked PR state.
 Usage:
 
 ```bash
-gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--json]
+gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] [--include-diff] [--json]
 ```
 
 Since: `v1.15.0`
@@ -848,6 +848,8 @@ Since: `v1.15.0`
 Flags:
 
 - `--pr`: Optional PR number override for reviewer packet context.
+- `--diff-summary`: Include changed files, diff stat, hunk headers, acceptance mapping candidates, and risk hints.
+- `--include-diff`: Include the full PR diff. Output can be long and must be requested explicitly.
 - `--json`: Emit stable JSON including issue, PR, evidence, repo guidance, verdict schema, and prompt fields.
 
 Examples:
@@ -855,13 +857,49 @@ Examples:
 - Render reviewer packet for current branch ticket
 
 ```bash
-gira ticket review
+gira ticket review --diff-summary
 ```
 
 - Render reviewer packet with an explicit PR override
 
 ```bash
 gira ticket review --ticket 42 --pr 77 --json
+```
+
+Documented in: `docs-site/ticket-workflow.md`, `docs-site/command-reference.md`, `docs/dogfood.md`
+
+## `ticket self-review`
+
+Post a self-review check note for the current branch ticket and linked PR.
+
+Usage:
+
+```bash
+gira ticket self-review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] --dry-run|--apply [--json]
+```
+
+Since: `v1.18.0`
+
+Flags:
+
+- `--pr`: Optional PR number override for self-review context.
+- `--diff-summary`: Include compact PR diff summary in the check note. Default: true.
+- `--dry-run`: Preview the self-review PR note without posting.
+- `--apply`: Post the self-review check note to the linked PR.
+- `--json`: Emit stable ticket-self-review-report/v1 JSON.
+
+Examples:
+
+- Preview current branch self-review note
+
+```bash
+gira ticket self-review --diff-summary --dry-run
+```
+
+- Post current branch self-review note
+
+```bash
+gira ticket self-review --diff-summary --apply
 ```
 
 Documented in: `docs-site/ticket-workflow.md`, `docs-site/command-reference.md`, `docs/dogfood.md`

@@ -96,6 +96,13 @@ gira ticket note "Implementation is ready for CI." --dry-run
 gira ticket note "Implementation is ready for CI." --apply
 ```
 
+Review the current branch work unit without retyping ticket or PR numbers:
+
+```bash
+gira ticket review --diff-summary
+gira ticket self-review --diff-summary --dry-run
+```
+
 Finish the ticket through Gira after review and checks are ready:
 
 ```bash

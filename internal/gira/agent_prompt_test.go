@@ -105,6 +105,45 @@ func TestBuildAgentPromptReportReviewerWithExplicitPR(t *testing.T) {
 	}
 }
 
+func TestBuildAgentReviewDiffSummaryParsesUnifiedDiff(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := onboardFakeRunner{responses: map[string]string{
+		"gh pr diff 77 --repo StatPan/gira": `diff --git a/internal/cli/cli.go b/internal/cli/cli.go
+index 1111111..2222222 100644
+--- a/internal/cli/cli.go
++++ b/internal/cli/cli.go
+@@ -10,2 +10,3 @@ func runTicketReview() {
+-	old()
++new()
++more()
+diff --git a/docs/dogfood.md b/docs/dogfood.md
+index 3333333..4444444 100644
+--- a/docs/dogfood.md
++++ b/docs/dogfood.md
+@@ -1,2 +1,2 @@
+-old docs
++new docs
+`,
+	}, errors: map[string]error{}}
+
+	summary := BuildAgentReviewDiffSummary(repo, AgentPromptPR{Number: 77, ChangedFiles: []string{"internal/cli/cli.go", "docs/dogfood.md"}}, []string{"dogfood docs include review summary"}, false, runner)
+	if summary.UnsupportedMessage != "" {
+		t.Fatalf("unexpected unsupported message: %s", summary.UnsupportedMessage)
+	}
+	if summary.TotalAdditions != 3 || summary.TotalDeletions != 2 {
+		t.Fatalf("unexpected totals: +%d/-%d", summary.TotalAdditions, summary.TotalDeletions)
+	}
+	if len(summary.Files) != 2 || summary.Files[0].Path != "internal/cli/cli.go" || len(summary.Files[0].Hunks) != 1 {
+		t.Fatalf("unexpected files: %+v", summary.Files)
+	}
+	if len(summary.AcceptanceMapping) != 1 || len(summary.AcceptanceMapping[0].Files) != 1 || summary.AcceptanceMapping[0].Files[0] != "docs/dogfood.md" {
+		t.Fatalf("unexpected acceptance mapping: %+v", summary.AcceptanceMapping)
+	}
+	if !containsString(summary.RiskAreas, "Go runtime code changed") || !containsString(summary.RiskAreas, "documentation changed") {
+		t.Fatalf("unexpected risk areas: %+v", summary.RiskAreas)
+	}
+}
+
 func TestBuildAgentPromptReportReviewerResolvesLinkedPRAndAcceptance(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	body := "## Goal\nRender prompts\n\n## Scope\nPrompt UX\n\n## Acceptance Criteria\n- [x] includes issue goal\n- [x] includes PR evidence\n\n" + RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default"})

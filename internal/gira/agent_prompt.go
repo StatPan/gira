@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -19,11 +20,13 @@ const (
 )
 
 type AgentPromptInput struct {
-	Repo     RepoRef `json:"repo"`
-	Ticket   int     `json:"ticket"`
-	Role     string  `json:"role"`
-	Profile  string  `json:"profile"`
-	PRNumber int     `json:"pr_number,omitempty"`
+	Repo               RepoRef `json:"repo"`
+	Ticket             int     `json:"ticket"`
+	Role               string  `json:"role"`
+	Profile            string  `json:"profile"`
+	PRNumber           int     `json:"pr_number,omitempty"`
+	IncludeDiffSummary bool    `json:"include_diff_summary,omitempty"`
+	IncludeDiff        bool    `json:"include_diff,omitempty"`
 }
 
 type AgentPromptReport struct {
@@ -95,6 +98,7 @@ type AgentPromptRolePacket struct {
 
 type AgentReviewContract struct {
 	DiffReferences []AgentReviewReference   `json:"diff_references"`
+	DiffSummary    *AgentReviewDiffSummary  `json:"diff_summary,omitempty"`
 	Guidance       []AgentPromptGuidance    `json:"guidance"`
 	VerdictSchema  AgentReviewVerdictSchema `json:"verdict_schema"`
 }
@@ -102,6 +106,31 @@ type AgentReviewContract struct {
 type AgentReviewReference struct {
 	Kind    string `json:"kind"`
 	Command string `json:"command"`
+}
+
+type AgentReviewDiffSummary struct {
+	ChangedFiles       []string                    `json:"changed_files"`
+	Files              []AgentReviewDiffFile       `json:"files"`
+	TotalAdditions     int                         `json:"total_additions"`
+	TotalDeletions     int                         `json:"total_deletions"`
+	AcceptanceMapping  []AgentReviewAcceptanceHint `json:"acceptance_mapping,omitempty"`
+	RiskAreas          []string                    `json:"risk_areas,omitempty"`
+	FullDiffCommand    string                      `json:"full_diff_command,omitempty"`
+	FullDiff           string                      `json:"full_diff,omitempty"`
+	UnsupportedMessage string                      `json:"unsupported_message,omitempty"`
+}
+
+type AgentReviewDiffFile struct {
+	Path      string   `json:"path"`
+	Additions int      `json:"additions"`
+	Deletions int      `json:"deletions"`
+	Hunks     []string `json:"hunks,omitempty"`
+}
+
+type AgentReviewAcceptanceHint struct {
+	Criterion string   `json:"criterion"`
+	Files     []string `json:"files"`
+	Reason    string   `json:"reason"`
 }
 
 type AgentPromptGuidance struct {
@@ -178,6 +207,9 @@ func BuildAgentPromptReport(input AgentPromptInput, runner CommandRunner) (Agent
 		prReady := EvaluatePRReadinessFromAgentReview(report)
 		report.PRReady = &prReady
 		report.Review = buildAgentReviewContract(report)
+		if input.IncludeDiffSummary && report.PR != nil {
+			report.Review.DiffSummary = BuildAgentReviewDiffSummary(input.Repo, *report.PR, report.Issue.Acceptance, input.IncludeDiff, runner)
+		}
 	}
 	report.Prompt = RenderAgentPrompt(report)
 	return report, nil
@@ -365,6 +397,9 @@ func RenderAgentPrompt(report AgentPromptReport) string {
 
 	if report.Review != nil {
 		b.WriteString("## Review Packet Contract\n")
+		if report.Review.DiffSummary != nil {
+			writeAgentReviewDiffSummary(&b, *report.Review.DiffSummary)
+		}
 		if len(report.Review.DiffReferences) > 0 {
 			b.WriteString("- Diff References:\n")
 			for _, ref := range report.Review.DiffReferences {
@@ -392,6 +427,39 @@ func RenderAgentPrompt(report AgentPromptReport) string {
 	}
 	fmt.Fprintf(&b, "\nNext Gira step: `%s`\n", report.NextStep)
 	return b.String()
+}
+
+func writeAgentReviewDiffSummary(b *strings.Builder, summary AgentReviewDiffSummary) {
+	b.WriteString("- Diff Summary:\n")
+	if strings.TrimSpace(summary.UnsupportedMessage) != "" {
+		fmt.Fprintf(b, "  - unavailable: %s\n", summary.UnsupportedMessage)
+		return
+	}
+	fmt.Fprintf(b, "  - files: %d changed, +%d/-%d\n", len(summary.ChangedFiles), summary.TotalAdditions, summary.TotalDeletions)
+	for _, file := range summary.Files {
+		fmt.Fprintf(b, "  - `%s`: +%d/-%d\n", file.Path, file.Additions, file.Deletions)
+		for _, hunk := range file.Hunks {
+			fmt.Fprintf(b, "    - %s\n", hunk)
+		}
+	}
+	if len(summary.AcceptanceMapping) > 0 {
+		b.WriteString("  - acceptance mapping candidates:\n")
+		for _, mapping := range summary.AcceptanceMapping {
+			fmt.Fprintf(b, "    - %s -> %s (%s)\n", mapping.Criterion, valueOrNone(strings.Join(mapping.Files, ", ")), mapping.Reason)
+		}
+	}
+	if len(summary.RiskAreas) > 0 {
+		fmt.Fprintf(b, "  - risk areas: %s\n", strings.Join(summary.RiskAreas, ", "))
+	}
+	if strings.TrimSpace(summary.FullDiffCommand) != "" {
+		fmt.Fprintf(b, "  - full diff: `%s`\n", summary.FullDiffCommand)
+	}
+	if strings.TrimSpace(summary.FullDiff) != "" {
+		b.WriteString("  - included full diff follows:\n\n")
+		b.WriteString("```diff\n")
+		b.WriteString(strings.TrimRight(summary.FullDiff, "\n"))
+		b.WriteString("\n```\n")
+	}
 }
 
 func FormatAgentPrompt(report AgentPromptReport) string {
@@ -573,6 +641,161 @@ func buildAgentReviewContract(report AgentPromptReport) *AgentReviewContract {
 			FollowUps:                "Follow-up issues or actions that should not block this review, or none.",
 		},
 	}
+}
+
+func BuildAgentReviewDiffSummary(repo RepoRef, pr AgentPromptPR, acceptance []string, includeFullDiff bool, runner CommandRunner) *AgentReviewDiffSummary {
+	if runner == nil {
+		runner = ExecCommandRunner{}
+	}
+	summary := &AgentReviewDiffSummary{
+		ChangedFiles:    append([]string(nil), pr.ChangedFiles...),
+		FullDiffCommand: fmt.Sprintf("gh pr diff %d --repo %s", pr.Number, repo.FullName()),
+	}
+	out, err := runner.Run("gh", "pr", "diff", strconv.Itoa(pr.Number), "--repo", repo.FullName())
+	if err != nil {
+		summary.UnsupportedMessage = fmt.Sprintf("could not read PR diff: %v", err)
+		return summary
+	}
+	diff := string(out)
+	if includeFullDiff {
+		summary.FullDiff = diff
+	}
+	summary.Files = summarizeUnifiedDiff(diff)
+	if len(summary.ChangedFiles) == 0 {
+		for _, file := range summary.Files {
+			summary.ChangedFiles = append(summary.ChangedFiles, file.Path)
+		}
+	}
+	for _, file := range summary.Files {
+		summary.TotalAdditions += file.Additions
+		summary.TotalDeletions += file.Deletions
+	}
+	summary.AcceptanceMapping = mapAcceptanceToFiles(acceptance, summary.ChangedFiles)
+	summary.RiskAreas = inferReviewRiskAreas(summary.ChangedFiles)
+	return summary
+}
+
+func summarizeUnifiedDiff(diff string) []AgentReviewDiffFile {
+	files := []AgentReviewDiffFile{}
+	current := -1
+	for _, line := range strings.Split(diff, "\n") {
+		if strings.HasPrefix(line, "diff --git ") {
+			path := parseDiffGitPath(line)
+			files = append(files, AgentReviewDiffFile{Path: path})
+			current = len(files) - 1
+			continue
+		}
+		if current < 0 {
+			continue
+		}
+		if strings.HasPrefix(line, "@@ ") {
+			if len(files[current].Hunks) < 5 {
+				files[current].Hunks = append(files[current].Hunks, strings.TrimSpace(line))
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
+			continue
+		}
+		if strings.HasPrefix(line, "+") {
+			files[current].Additions++
+		} else if strings.HasPrefix(line, "-") {
+			files[current].Deletions++
+		}
+	}
+	return files
+}
+
+func parseDiffGitPath(line string) string {
+	fields := strings.Fields(line)
+	if len(fields) >= 4 {
+		path := strings.TrimPrefix(fields[3], "b/")
+		if path != "/dev/null" {
+			return path
+		}
+	}
+	if len(fields) >= 3 {
+		return strings.TrimPrefix(fields[2], "a/")
+	}
+	return strings.TrimSpace(strings.TrimPrefix(line, "diff --git "))
+}
+
+func mapAcceptanceToFiles(criteria []string, files []string) []AgentReviewAcceptanceHint {
+	hints := []AgentReviewAcceptanceHint{}
+	for _, criterion := range criteria {
+		criterion = strings.TrimSpace(strings.TrimPrefix(criterion, "-"))
+		criterion = strings.TrimSpace(strings.TrimPrefix(criterion, "[ ]"))
+		criterion = strings.TrimSpace(strings.TrimPrefix(criterion, "[x]"))
+		if criterion == "" {
+			continue
+		}
+		matches := filesMatchingAcceptance(criterion, files)
+		reason := "no direct filename token match; reviewer should verify manually"
+		if len(matches) > 0 {
+			reason = "filename token match"
+		}
+		hints = append(hints, AgentReviewAcceptanceHint{Criterion: criterion, Files: matches, Reason: reason})
+	}
+	return hints
+}
+
+func filesMatchingAcceptance(criterion string, files []string) []string {
+	tokens := acceptanceTokens(criterion)
+	matches := []string{}
+	for _, file := range files {
+		lowerFile := strings.ToLower(file)
+		base := strings.ToLower(strings.TrimSuffix(filepath.Base(file), filepath.Ext(file)))
+		for _, token := range tokens {
+			if strings.Contains(lowerFile, token) || strings.Contains(base, token) {
+				matches = append(matches, file)
+				break
+			}
+		}
+	}
+	return matches
+}
+
+func acceptanceTokens(value string) []string {
+	stop := map[string]bool{"the": true, "and": true, "for": true, "with": true, "from": true, "that": true, "this": true, "can": true, "has": true, "have": true, "into": true, "without": true}
+	fields := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+	})
+	tokens := []string{}
+	for _, field := range fields {
+		if len(field) < 4 || stop[field] {
+			continue
+		}
+		tokens = append(tokens, field)
+	}
+	return tokens
+}
+
+func inferReviewRiskAreas(files []string) []string {
+	seen := map[string]bool{}
+	add := func(area string) {
+		if !seen[area] {
+			seen[area] = true
+		}
+	}
+	for _, file := range files {
+		lower := strings.ToLower(file)
+		switch {
+		case strings.Contains(lower, "auth") || strings.Contains(lower, "permission") || strings.Contains(lower, "security"):
+			add("security-sensitive files changed")
+		case strings.Contains(lower, "install") || strings.Contains(lower, "release") || strings.Contains(lower, "package"):
+			add("distribution or release path changed")
+		case strings.HasSuffix(lower, ".go") && !strings.Contains(lower, "_test.go"):
+			add("Go runtime code changed")
+		case strings.Contains(lower, "docs") || strings.HasSuffix(lower, ".md"):
+			add("documentation changed")
+		}
+	}
+	areas := make([]string, 0, len(seen))
+	for area := range seen {
+		areas = append(areas, area)
+	}
+	sort.Strings(areas)
+	return areas
 }
 
 func loadAgentPromptGuidance() []AgentPromptGuidance {

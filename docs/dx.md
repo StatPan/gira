@@ -242,14 +242,14 @@ Status recovery:
 
 ## Issue To PR Loop
 
-1. Start from a ready ticket with `gira ticket start --repo OWNER/REPO --ticket N --apply`.
-2. Create or reuse the issue branch; `ticket start --apply` moves the issue to `status:in-progress`.
+1. Start from a ready ticket with `gira ticket start N --repo OWNER/REPO --apply`.
+2. Create or reuse the `issue-N-*` branch; after checkout, daily ticket commands infer the ticket from the current branch.
 3. Keep the change bounded to the issue body and acceptance criteria.
 4. Run the relevant local verification.
-5. Open or validate the linked PR with `gira ticket pr --repo OWNER/REPO --ticket N --apply [--draft]`.
+5. Open or validate the linked PR with `gira ticket pr --apply [--draft]`.
 6. Include `Closes #N`, `Fixes #N`, or `Resolves #N`; `ticket pr` creates PRs with `Closes #N`.
-7. Add a verification comment or test plan note when a reviewer or worker needs exact reproduction commands.
-8. Merge only after review and passing checks.
+7. Review the current branch work unit with `gira ticket review --diff-summary` and add a verification comment or test plan note when a reviewer or worker needs exact reproduction commands.
+8. Merge only after review and passing checks with `gira ticket finish --dry-run`, then `gira ticket finish --apply`.
 
 For Hermes and AI workers, the issue body should be self-contained enough to execute: goal, context, acceptance criteria, out-of-scope boundaries, verification commands, and any safety constraints. PRs should make the result auditable: summary, test plan, linked issue, and caveats.
 

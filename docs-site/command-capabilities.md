@@ -35,6 +35,7 @@ Schema version: `gira-command-capabilities/v1`
 | `gira ticket pr` | none | `apply_mutation` | `stable_json` | creates or validates a linked PR; --dry-run previews PR body and branch binding | README.md, docs-site/ticket-workflow.md, docs/dogfood.md |
 | `gira ticket prompt` | none | `read` | `stable_json` | none | README.md, docs-site/ticket-workflow.md, docs/dogfood.md |
 | `gira ticket review` | none | `read` | `stable_json` | none | docs-site/ticket-workflow.md, docs-site/command-reference.md, docs/dogfood.md |
+| `gira ticket self-review` | none | `apply_mutation` | `stable_json` | posts a self-review check note to the linked PR; --dry-run previews the rendered note and approval evidence | docs-site/ticket-workflow.md, docs-site/command-reference.md, docs/dogfood.md |
 | `gira ticket start` | gira start | `apply_mutation` | `stable_json` | creates or reuses a branch, records lifecycle state, and moves the issue to in-progress; --dry-run previews readiness and branch plan | README.md, docs-site/ticket-workflow.md, docs/dogfood.md |
 | `gira ticket status` | none | `read` | `stable_json` | none | README.md, docs-site/ticket-workflow.md, docs/dogfood.md |
 | `gira ticket supersede` | none | `apply_mutation` | `stable_json` | creates a replacement ticket, posts cross-links, and closes the original; --dry-run previews all planned mutations | README.md, docs-site/ticket-workflow.md, docs/dogfood.md |

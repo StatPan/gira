@@ -7,13 +7,15 @@ unless an explicit lifecycle command says `--apply`.
 ## Ticket Readiness
 
 ```bash
-gira ticket status 42 --repo OWNER/app --json
-gira ticket view 42 --repo OWNER/app
+gira ticket status --json
+gira ticket view
 ```
 
 `ticket status --json` emits the stable `ticket-status/v1` contract. The report
 includes labels, milestone, branch policy, linked PR, checks, review state,
 evidence, warnings, and nested readiness reports.
+Run these from the `issue-N-*` branch for the daily path. Pass an explicit
+ticket and repo only when auditing from detached context.
 
 The `ticket_readiness` object uses `ticket-readiness/v1` to say whether an issue
 is ready to start, needs refinement, is blocked, or needs human input before
@@ -22,9 +24,9 @@ handoff.
 ## PR And Review Readiness
 
 ```bash
-gira ticket review 42 --repo OWNER/app --json
-gira ticket checks 42 --repo OWNER/app
-gira ticket wait 42 --repo OWNER/app --timeout 5m
+gira ticket review --diff-summary --json
+gira ticket checks
+gira ticket wait --timeout 5m
 ```
 
 `pr-readiness/v1` checks whether worker output is reviewable or should wait,
@@ -35,7 +37,7 @@ schema for reviewer judgment.
 ## Finish Readiness And Receipts
 
 ```bash
-gira ticket finish 42 --repo OWNER/app --dry-run --json
+gira ticket finish --dry-run --json
 ```
 
 `finish-readiness/v1` is the final merge and closure gate. It verifies linked PR

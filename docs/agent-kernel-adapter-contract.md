@@ -133,8 +133,10 @@ The surrounding report emits a versioned `schema_version`, and
 | `schema_version` | Approval evidence schema version. |
 | `capability` | Capability class for the eventual apply command, usually `apply_mutation`. |
 | `canonical_command` | Canonical Gira command family, for example `gira ticket start`. |
-| `dry_run_command` | Dry-run command whose output produced this evidence. |
-| `apply_command` | Exact apply command this evidence can approve. |
+| `dry_run_argv` | Machine-readable dry-run argv whose output produced this evidence. Execute directly without a shell. |
+| `apply_argv` | Machine-readable apply argv this evidence can approve. Execute directly without a shell. |
+| `dry_run_command` | Display/backward-compatibility dry-run command string. Do not execute through a shell. |
+| `apply_command` | Display/backward-compatibility apply command string. Do not execute through a shell. |
 | `repo` | Target `OWNER/REPO` when repo-scoped. |
 | `issue` | Target issue or ticket number when present. |
 | `output_schema` | Versioned shape of the surrounding dry-run report. |
@@ -143,8 +145,11 @@ The surrounding report emits a versioned `schema_version`, and
 | `warnings` | Stable warnings array. Empty means no warnings were emitted. |
 | `post_apply_verification` | Read command the adapter should run after apply. |
 
-Adapters must compare the approved `apply_command`, `repo`, `issue`, and
-planned action evidence before executing apply. A matching approval does not
+Adapters must compare the approved `apply_argv`, `repo`, `issue`, and planned
+action evidence before executing apply. Execute the approved argv directly with
+no shell interpolation. The command string fields exist for human display and
+older consumers only; they must not be passed to `sh -c`, `bash -c`, CI shell
+steps, or equivalent command-string execution. A matching approval does not
 authorize a different command, repo, issue, or additional flags.
 
 ## Stable JSON Fields Needed By The First Flow
@@ -192,8 +197,8 @@ The smallest adapter dogfood flow should use existing Gira commands:
 8. For an approved start, run
    `gira ticket start TICKET --repo OWNER/REPO --dry-run --json`.
 9. Store the dry-run output as approval evidence.
-10. After approval, run the matching
-    `gira ticket start TICKET --repo OWNER/REPO --apply --json`.
+10. After approval, run the matching `approval.apply_argv` plus `--json` using
+    direct argv execution.
 11. Verify with `gira ticket status TICKET --repo OWNER/REPO --json`.
 12. Stop at handoff. The first adapter flow should not implement code, open
     PRs, merge, close, or publish without a later approved flow.

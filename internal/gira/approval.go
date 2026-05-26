@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -14,6 +15,8 @@ type ApprovalEvidence struct {
 	CanonicalCommand      string                  `json:"canonical_command"`
 	DryRunCommand         string                  `json:"dry_run_command"`
 	ApplyCommand          string                  `json:"apply_command"`
+	DryRunArgv            []string                `json:"dry_run_argv,omitempty"`
+	ApplyArgv             []string                `json:"apply_argv,omitempty"`
 	Repo                  string                  `json:"repo,omitempty"`
 	Issue                 int                     `json:"issue,omitempty"`
 	OutputSchema          string                  `json:"output_schema"`
@@ -21,6 +24,83 @@ type ApprovalEvidence struct {
 	Blockers              []string                `json:"blockers"`
 	Warnings              []string                `json:"warnings"`
 	PostApplyVerification string                  `json:"post_apply_verification"`
+}
+
+func (e ApprovalEvidence) MarshalJSON() ([]byte, error) {
+	type approvalEvidenceJSON ApprovalEvidence
+	out := approvalEvidenceJSON(e)
+	if len(out.DryRunArgv) == 0 && strings.TrimSpace(out.DryRunCommand) != "" {
+		out.DryRunArgv = parseApprovalCommandLine(out.DryRunCommand)
+	}
+	if len(out.ApplyArgv) == 0 && strings.TrimSpace(out.ApplyCommand) != "" {
+		out.ApplyArgv = parseApprovalCommandLine(out.ApplyCommand)
+	}
+	return json.Marshal(out)
+}
+
+func parseApprovalCommandLine(command string) []string {
+	args := []string{}
+	var current strings.Builder
+	inToken := false
+	inSingle := false
+	inDouble := false
+	escaped := false
+
+	flush := func() {
+		if !inToken {
+			return
+		}
+		args = append(args, current.String())
+		current.Reset()
+		inToken = false
+	}
+
+	for _, r := range command {
+		switch {
+		case escaped:
+			current.WriteRune(r)
+			inToken = true
+			escaped = false
+		case inSingle:
+			if r == '\'' {
+				inSingle = false
+			} else {
+				current.WriteRune(r)
+				inToken = true
+			}
+		case inDouble:
+			switch r {
+			case '"':
+				inDouble = false
+			case '\\':
+				escaped = true
+				inToken = true
+			default:
+				current.WriteRune(r)
+				inToken = true
+			}
+		case r == '\'':
+			inSingle = true
+			inToken = true
+		case r == '"':
+			inDouble = true
+			inToken = true
+		case r == '\\':
+			escaped = true
+			inToken = true
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+			flush()
+		default:
+			current.WriteRune(r)
+			inToken = true
+		}
+	}
+	if escaped {
+		current.WriteRune('\\')
+		inToken = true
+	}
+	flush()
+	return args
 }
 
 type ApprovalPlannedAction struct {
@@ -35,7 +115,7 @@ func WorkStartApprovalEvidence(result WorkStartResult, canonicalCommand string) 
 		canonicalCommand = "gira work start"
 	}
 	applyCommand := workStartApprovalCommand(result, canonicalCommand, "--apply")
-	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	dryRunCommand := workStartApprovalCommand(result, canonicalCommand, "--dry-run")
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,
@@ -60,7 +140,7 @@ func workStartApprovalCommand(result WorkStartResult, canonicalCommand string, m
 		args = append(args, "--repo", result.Repo, "--issue", fmt.Sprintf("%d", result.Issue))
 	}
 	if result.BaseSource == "explicit --base" && result.BaseBranch != "" {
-		args = append(args, "--base", result.BaseBranch)
+		args = append(args, "--base", QuoteShellArg(result.BaseBranch))
 	}
 	args = append(args, mode)
 	return strings.Join(args, " ")
@@ -85,7 +165,7 @@ func WorkPRApprovalEvidence(result WorkPRResult, canonicalCommand string) *Appro
 		canonicalCommand = "gira work pr"
 	}
 	applyCommand := workPRApprovalCommand(result, canonicalCommand, "--apply")
-	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	dryRunCommand := workPRApprovalCommand(result, canonicalCommand, "--dry-run")
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,
@@ -137,7 +217,7 @@ func workPRApprovalActions(result WorkPRResult) []ApprovalPlannedAction {
 
 func TicketNoteApprovalEvidence(report TicketNoteReport) *ApprovalEvidence {
 	applyCommand := ticketNoteApprovalCommand(report, "--apply")
-	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	dryRunCommand := ticketNoteApprovalCommand(report, "--dry-run")
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,
@@ -163,7 +243,7 @@ func ticketNoteApprovalCommand(report TicketNoteReport, mode string) string {
 		"--target", report.Target,
 	}
 	if strings.TrimSpace(report.Body) != "" {
-		args = append(args, "--body", shellQuoteArg(report.Body))
+		args = append(args, "--body", QuoteShellArg(report.Body))
 	}
 	args = append(args, mode)
 	return strings.Join(args, " ")
@@ -182,19 +262,9 @@ func ticketNoteApprovalActions(report TicketNoteReport) []ApprovalPlannedAction 
 	return actions
 }
 
-func shellQuoteArg(value string) string {
-	if value == "" {
-		return "''"
-	}
-	if !strings.ContainsAny(value, " \t\n'\"`$\\") {
-		return value
-	}
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
-}
-
 func WorkFinishApprovalEvidence(result WorkFinishResult) *ApprovalEvidence {
 	applyCommand := workFinishApprovalCommand(result, "--apply")
-	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	dryRunCommand := workFinishApprovalCommand(result, "--dry-run")
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,
@@ -273,7 +343,7 @@ func stableStringSlice(values []string) []string {
 
 func TicketSupersedeApprovalEvidence(report TicketSupersedeReport) *ApprovalEvidence {
 	applyCommand := ticketSupersedeApprovalCommand(report, "--apply")
-	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	dryRunCommand := ticketSupersedeApprovalCommand(report, "--dry-run")
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,
@@ -295,16 +365,16 @@ func ticketSupersedeApprovalCommand(report TicketSupersedeReport, mode string) s
 		"gira ticket supersede",
 		fmt.Sprintf("%d", report.Original.Number),
 		"--repo", report.Repo,
-		"--replacement-title", shellQuoteArg(report.Replacement.Title),
+		"--replacement-title", QuoteShellArg(report.Replacement.Title),
 	}
 	if strings.TrimSpace(report.Body) != "" {
-		args = append(args, "--body", shellQuoteArg(report.Body))
+		args = append(args, "--body", QuoteShellArg(report.Body))
 	}
 	for _, label := range report.Labels {
-		args = append(args, "--label", shellQuoteArg(label))
+		args = append(args, "--label", QuoteShellArg(label))
 	}
 	if strings.TrimSpace(report.Milestone) != "" {
-		args = append(args, "--milestone", shellQuoteArg(report.Milestone))
+		args = append(args, "--milestone", QuoteShellArg(report.Milestone))
 	}
 	if report.DraftPR.Action == "close" {
 		args = append(args, "--close-draft-pr")
@@ -347,7 +417,7 @@ func ticketSupersedeApprovalActions(report TicketSupersedeReport) []ApprovalPlan
 
 func TicketNewApprovalEvidence(report TicketNewReport) *ApprovalEvidence {
 	applyCommand := ticketNewApprovalCommand(report, "--apply")
-	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	dryRunCommand := ticketNewApprovalCommand(report, "--dry-run")
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,
@@ -366,9 +436,9 @@ func TicketNewApprovalEvidence(report TicketNewReport) *ApprovalEvidence {
 func ticketNewApprovalCommand(report TicketNewReport, mode string) string {
 	args := []string{
 		"gira ticket new",
-		shellQuoteArg(report.Title),
+		QuoteShellArg(report.Title),
 		"--repo", report.Repo,
-		"--body", shellQuoteArg(report.Body),
+		"--body", QuoteShellArg(report.Body),
 	}
 	if strings.TrimSpace(report.Type) != "" && report.Type != "task" {
 		args = append(args, "--type", report.Type)
@@ -377,10 +447,10 @@ func ticketNewApprovalCommand(report TicketNewReport, mode string) string {
 		args = append(args, "--priority", report.Priority)
 	}
 	for _, label := range ticketNewApprovalExtraLabels(report) {
-		args = append(args, "--label", shellQuoteArg(label))
+		args = append(args, "--label", QuoteShellArg(label))
 	}
 	if strings.TrimSpace(report.Milestone) != "" {
-		args = append(args, "--milestone", shellQuoteArg(report.Milestone))
+		args = append(args, "--milestone", QuoteShellArg(report.Milestone))
 	}
 	if report.Start {
 		args = append(args, "--start")
@@ -427,7 +497,7 @@ func ticketNewApprovalExtraLabels(report TicketNewReport) []string {
 
 func RepoRegisterApprovalEvidence(report RepoRegisterReport) *ApprovalEvidence {
 	applyCommand := repoRegisterApprovalCommand(report, "--apply")
-	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	dryRunCommand := repoRegisterApprovalCommand(report, "--dry-run")
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,
@@ -486,7 +556,7 @@ func repoRegisterApprovalBlockers(report RepoRegisterReport) []string {
 
 func RepoMigrateApprovalEvidence(report RepoMigrateReport) *ApprovalEvidence {
 	applyCommand := repoMigrateApprovalCommand(report, "--apply")
-	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	dryRunCommand := repoMigrateApprovalCommand(report, "--dry-run")
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,
@@ -565,7 +635,7 @@ func repoMigratePostApplyVerification(report RepoMigrateReport) string {
 
 func SetupGlobalApprovalEvidence(report SetupGlobalReport) *ApprovalEvidence {
 	applyCommand := setupGlobalApprovalCommand(report, "--apply")
-	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	dryRunCommand := setupGlobalApprovalCommand(report, "--dry-run")
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,
@@ -681,7 +751,7 @@ func setupGlobalPostApplyVerification(report SetupGlobalReport) string {
 
 func WorkspaceReposSyncApprovalEvidence(report WorkspaceRepoSyncReport) *ApprovalEvidence {
 	applyCommand := workspaceReposSyncApprovalCommand(report, "--apply")
-	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	dryRunCommand := workspaceReposSyncApprovalCommand(report, "--dry-run")
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,
@@ -751,7 +821,7 @@ func workspaceReposSyncApprovalBlockers(report WorkspaceRepoSyncReport) []string
 
 func AdoptRepoApprovalEvidence(report AdoptRepoReport) *ApprovalEvidence {
 	applyCommand := adoptRepoApprovalCommand(report, "--apply")
-	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	dryRunCommand := adoptRepoApprovalCommand(report, "--dry-run")
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,

@@ -140,8 +140,8 @@ func RenderTicketSelfReviewBody(review AgentPromptReport) string {
 }
 
 func TicketSelfReviewApprovalEvidence(report TicketSelfReviewReport) *ApprovalEvidence {
-	applyCommand := fmt.Sprintf("gira ticket self-review %d --repo %s --apply", report.Ticket, report.Repo)
-	dryRunCommand := strings.Replace(applyCommand, " --apply", " --dry-run", 1)
+	applyCommand := fmt.Sprintf("gira ticket self-review %d --repo %s --apply", report.Ticket, QuoteShellArg(report.Repo))
+	dryRunCommand := fmt.Sprintf("gira ticket self-review %d --repo %s --dry-run", report.Ticket, QuoteShellArg(report.Repo))
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,

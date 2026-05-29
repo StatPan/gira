@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: Gira
-  text: Jira-style project flow on GitHub
-  tagline: Use GitHub issues, branches, PRs, and milestones as a safer project operating system.
+  text: GitHub-native work control plane
+  tagline: Turn human and AI work into reviewable, auditable, evidence-backed completion.
   actions:
     - theme: brand
       text: Quick Start
@@ -24,6 +24,8 @@ features:
     details: Plan child tickets, select the next safe goal item, inspect epic progress, and use milestones as sprint or release boundaries.
   - title: Readiness and audit
     details: Use ticket, PR, finish, provider, and drift reports to make missing evidence, blockers, checks, and review state explicit.
+  - title: 2.0 control-plane contract
+    details: Stabilize ticket lifecycle, goal mode, workspace queues, readiness reports, and adapter approval evidence without introducing a hidden planning database.
   - title: Distribution and providers
     details: Install the same Go-built binary through release archives, npm, PyPI, Homebrew, or install.sh, with optional Jira-primary provider mode.
 ---
@@ -38,6 +40,7 @@ features:
 | Run issue to PR work | [Ticket Workflow](/ticket-workflow) | `gira ticket new`, `start`, `pr`, `review`, `checks`, `wait`, `finish` |
 | Maintain an optional feature map | [Feature Map](/feature-map) | `gira feature list`, `feature check`, `feature for` |
 | Manage larger work packets | [Goal Mode](/goal-mode), [Sprint And Release](/sprint-release) | `gira goal status`, `goal next`, `goal finish`, `epic list`, `milestone plan` |
+| Understand the 2.0 contract | [Gira 2.0 Control Plane](/v2-control-plane), [State Model](/state-model) | `gira ticket status`, `gira goal status`, `gira workspace status --json` |
 | Diagnose readiness and drift | [Readiness And Audit](/readiness-audit), [Troubleshooting](/troubleshooting) | `gira ticket status`, `ticket review`, `audit drift`, `jira doctor` |
 | Map Jira concepts to GitHub | [Jira Mapping](/jira-mapping), [Jira Provider](/jira-primary-provider) | `gira jira init`, `jira mirror`, `jira transition`, `jira import`, `jira export` |
 
@@ -74,7 +77,9 @@ Use [Jira-primary provider mode](/jira-primary-provider) only when Jira already 
 
 Use [workspace status](/workspace) when a personal operator needs a bounded multi-repo view, and [goal mode](/goal-mode) when a larger objective needs child-ticket convergence before handoff.
 
-The future hosted direction is documented as a bounded [control-plane roadmap](/hosted-control-plane), not as a replacement for the CLI.
+The [Gira 2.0 control-plane contract](/v2-control-plane) is CLI-first. The
+future hosted direction is documented as a bounded [control-plane
+roadmap](/hosted-control-plane), not as a replacement for the CLI.
 
 Gira's [worker boundary](/worker-boundary) keeps the product focused on
 contracts, readiness, review packets, provenance, and finish convergence while

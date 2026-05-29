@@ -6,6 +6,21 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v2.0.0 - Pending maintainer approval
+
+- Stabilizes Gira as a GitHub-native control plane for AI-assisted software
+  work: executable tickets, state-aware PR context, readiness reports, review
+  packets, evidence-backed finish, goal mode, workspace queues, and adapter
+  approval evidence now form one public product contract.
+- Defines the 2.0 stable CLI surface around `ticket`, `goal`, `workspace`,
+  `audit`, `stats`, Jira-primary provider diagnostics, command capability
+  metadata, and dry-run/apply approval boundaries.
+- Keeps hosted dashboards, UI/TUI workflows, GitLab/Forgejo providers, Notion
+  integration, broad background sync, full bidirectional Jira sync, and
+  Gira-native planning databases outside the 2.0 release boundary.
+- Adds release-readiness documentation for the maintainer decision to tag
+  `v2.0.0` after final verification and human approval.
+
 ## v1.17.0 - 2026-05-24
 
 - Added optional issue-backed feature map commands with the short `gira feat`

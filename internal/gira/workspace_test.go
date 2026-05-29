@@ -150,6 +150,60 @@ func TestResolveWorkspaceConfigRepoOnlyConfigExplainsWorkspaceInit(t *testing.T)
 	}
 }
 
+func TestResolveProjectsSyncWorkspaceConfigPrefersRepoLocal(t *testing.T) {
+	dir := chdirTemp(t)
+	root := defaultGlobalConfigRootForTest(t)
+	writeTestFile(t, filepath.Join(root, "config.yaml"), "default_workspace: personal\n")
+	writeTestFile(t, filepath.Join(root, "workspaces", "personal.yaml"), "workspace:\n  name: personal\n  owner: StatPan\n  inbox_repo: StatPan/backlog\n  repos:\n    - StatPan/gira\n")
+	writeTestFile(t, filepath.Join(dir, ".gira", "config.yaml"), "workspace:\n  name: routi\n  owner: StatPan\n  inbox_repo: StatPan/routi-backlog\n  repos:\n    - StatPan/routi\n")
+
+	resolved, err := ResolveProjectsSyncWorkspaceConfig("")
+	if err != nil {
+		t.Fatalf("ResolveProjectsSyncWorkspaceConfig error: %v", err)
+	}
+	if resolved.Source != "repo_local_contract" || resolved.Name != "routi" || resolved.InboxRepo.FullName() != "StatPan/routi-backlog" {
+		t.Fatalf("projects sync should prefer repo-local workspace, got %+v", resolved)
+	}
+}
+
+func TestResolveProjectsSyncWorkspaceConfigUsesRepoRegistryWorkspace(t *testing.T) {
+	checkout := chdirTemp(t)
+	root := defaultGlobalConfigRootForTest(t)
+	writeTestFile(t, filepath.Join(root, "config.yaml"), "default_workspace: personal\n")
+	writeTestFile(t, filepath.Join(root, "workspaces", "personal.yaml"), "workspace:\n  name: personal\n  owner: StatPan\n  inbox_repo: StatPan/backlog\n  repos:\n    - StatPan/gira\n")
+	writeTestFile(t, filepath.Join(root, "workspaces", "routi.yaml"), "workspace:\n  name: routi\n  owner: StatPan\n  inbox_repo: StatPan/routi-backlog\n  repos:\n    - StatPan/routi\n")
+	writeTestFile(t, filepath.Join(root, "repos", "StatPan", "routi.yaml"), "repo: StatPan/routi\npath: "+filepath.ToSlash(checkout)+"\nworkspace:\n  name: routi\n")
+
+	resolved, err := ResolveProjectsSyncWorkspaceConfig("")
+	if err != nil {
+		t.Fatalf("ResolveProjectsSyncWorkspaceConfig error: %v", err)
+	}
+	if resolved.Source != "global_repo_registry" || resolved.Name != "routi" || resolved.InboxRepo.FullName() != "StatPan/routi-backlog" {
+		t.Fatalf("projects sync should use repo registry workspace, got %+v", resolved)
+	}
+}
+
+func TestResolveProjectsSyncWorkspaceConfigFallsBackToGlobalDefaultWithDiagnostics(t *testing.T) {
+	chdirTemp(t)
+	root := defaultGlobalConfigRootForTest(t)
+	writeTestFile(t, filepath.Join(root, "config.yaml"), "default_workspace: personal\n")
+	writeTestFile(t, filepath.Join(root, "workspaces", "personal.yaml"), "workspace:\n  name: personal\n  owner: StatPan\n  inbox_repo: StatPan/backlog\n  repos:\n    - StatPan/gira\n")
+
+	resolved, err := ResolveProjectsSyncWorkspaceConfig("")
+	if err != nil {
+		t.Fatalf("ResolveProjectsSyncWorkspaceConfig error: %v", err)
+	}
+	if resolved.Source != "global_workspace" || resolved.Name != "personal" {
+		t.Fatalf("projects sync should fall back to global default, got %+v", resolved)
+	}
+	joined := strings.Join(resolved.Warnings, "\n")
+	for _, want := range []string{"repo-local workspace config .gira/config.yaml was not found", "global repo registry workspace.name was not found", "using global default workspace \"personal\""} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("warnings missing %q:\n%s", want, joined)
+		}
+	}
+}
+
 func TestBuildWorkspaceStatusReportAggregatesInboxAndRepos(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",

@@ -41,6 +41,21 @@ Historical child tickets that predate finish receipts still require maintainer
 judgment in #521. Do not invent backfilled evidence for those issues; use the
 existing goal-finish human-review handoff when closing the planning loop.
 
+As of 2026-05-29, `v2.0.0` is ready for maintainer release review rather than
+additional feature expansion. The Alpha, Beta, RC, GA, and Branch Policy
+Hardening milestone tracks are 100% complete in GitHub. The release-readiness
+boundary, out-of-scope list, and tag recommendation are documented in
+[v2-release-readiness.md](v2-release-readiness.md).
+
+The recommended release stance is:
+
+- tag `v2.0.0` only after a maintainer reviews the readiness package and gives
+  explicit approval;
+- do not add hosted dashboards, additional providers, local planning databases,
+  or UI/TUI work to the 2.0 release boundary;
+- keep remaining JSON coverage and post-apply verification work as hardening
+  after the 2.0 contract is named.
+
 ## Current Baseline
 
 Shipped before this roadmap:

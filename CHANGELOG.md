@@ -6,7 +6,7 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
-## v2.0.0 - Pending maintainer approval
+## v2.0.0 - 2026-05-29
 
 - Stabilizes Gira as a GitHub-native control plane for AI-assisted software
   work: executable tickets, state-aware PR context, readiness reports, review

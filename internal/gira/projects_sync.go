@@ -93,12 +93,15 @@ type ProjectsSyncReport struct {
 	Command              string               `json:"command"`
 	DryRun               bool                 `json:"dry_run"`
 	Workspace            WorkspaceSummary     `json:"workspace"`
+	Source               string               `json:"source,omitempty"`
+	ConfigPath           string               `json:"config_path,omitempty"`
 	Project              ProjectsSyncProject  `json:"project"`
 	Repos                []string             `json:"repos"`
 	Counts               ProjectsSyncCounts   `json:"counts"`
 	Actions              []ProjectsSyncAction `json:"actions"`
 	ManualActionRequired bool                 `json:"manual_action_required"`
 	ManualActions        []string             `json:"manual_actions,omitempty"`
+	Warnings             []string             `json:"warnings,omitempty"`
 	FetchedAt            string               `json:"fetched_at"`
 	NextSteps            []string             `json:"next_steps"`
 }
@@ -556,12 +559,15 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 		return ProjectsSyncReport{}, err
 	}
 	report := ProjectsSyncReport{
-		Command:   "projects sync",
-		DryRun:    dryRun,
-		Workspace: WorkspaceSummary{Name: config.Name, Owner: config.Owner},
-		Project:   project,
-		Actions:   []ProjectsSyncAction{},
-		FetchedAt: fetchedAt.UTC().Format(time.RFC3339),
+		Command:    "projects sync",
+		DryRun:     dryRun,
+		Workspace:  WorkspaceSummary{Name: config.Name, Owner: config.Owner},
+		Source:     config.Source,
+		ConfigPath: config.ConfigPath,
+		Project:    project,
+		Actions:    []ProjectsSyncAction{},
+		Warnings:   append([]string{}, config.Warnings...),
+		FetchedAt:  fetchedAt.UTC().Format(time.RFC3339),
 	}
 
 	var fields []ProjectsSyncField
@@ -740,11 +746,29 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 	if len(report.Actions) == 0 {
 		report.NextSteps = []string{manualViewStep}
 	} else if dryRun {
-		report.NextSteps = []string{"gira projects sync --config .gira/config.yaml --apply", manualViewStep}
+		report.NextSteps = []string{projectsSyncNextStep(config, "apply"), manualViewStep}
 	} else {
-		report.NextSteps = []string{"gira projects sync --config .gira/config.yaml --dry-run", manualViewStep}
+		report.NextSteps = []string{projectsSyncNextStep(config, "dry-run"), manualViewStep}
 	}
 	return report, nil
+}
+
+func projectsSyncNextStep(config WorkspaceConfigResolved, mode string) string {
+	args := []string{"gira", "projects", "sync"}
+	if projectsSyncNextStepUsesConfig(config) && strings.TrimSpace(config.ConfigPath) != "" {
+		args = append(args, "--config", QuoteShellArg(config.ConfigPath))
+	}
+	args = append(args, "--"+mode)
+	return strings.Join(args, " ")
+}
+
+func projectsSyncNextStepUsesConfig(config WorkspaceConfigResolved) bool {
+	switch config.Source {
+	case "explicit_config", "repo_local_contract":
+		return true
+	default:
+		return false
+	}
 }
 
 func resolveProjectsSyncProject(config WorkspaceConfigResolved, client ProjectsSyncClient, owner string) (ProjectsSyncProject, error) {
@@ -1057,6 +1081,12 @@ func FormatProjectsSyncReport(report ProjectsSyncReport) string {
 		mode = "dry-run"
 	}
 	fmt.Fprintf(&b, "projects sync: %s\n", mode)
+	if report.Source != "" {
+		fmt.Fprintf(&b, "workspace: %s source=%s\n", report.Workspace.Name, report.Source)
+	}
+	for _, warning := range report.Warnings {
+		fmt.Fprintf(&b, "warning: %s\n", warning)
+	}
 	fmt.Fprintf(&b, "project: %s #%d\n", report.Project.Title, report.Project.Number)
 	fmt.Fprintf(&b, "repos: %d issues: %d fields-create: %d add-items: %d archive-items: %d status-updates: %d field-updates: %d date-updates: %d\n", report.Counts.Repos, report.Counts.Issues, report.Counts.FieldsCreate, report.Counts.ProjectItemsAdd, report.Counts.ProjectItemsArchive, report.Counts.StatusUpdates, report.Counts.FieldUpdates, report.Counts.DateUpdates)
 	fmt.Fprintf(&b, "project-items-skip: total=%d already_present=%d closed_done=%d duplicate_candidate=%d capability_unavailable=%d unsupported_item_shape=%d\n", report.Counts.ProjectItemsSkip, report.Counts.ProjectItemsSkipReasons.AlreadyPresent, report.Counts.ProjectItemsSkipReasons.ClosedDone, report.Counts.ProjectItemsSkipReasons.DuplicateCandidate, report.Counts.ProjectItemsSkipReasons.CapabilityUnavailable, report.Counts.ProjectItemsSkipReasons.UnsupportedItemShape)

@@ -1264,7 +1264,7 @@ var newWorkspaceProjectAdoptReport = func(input gira.WorkspaceProjectAdoptInput)
 }
 
 var newProjectsSyncReport = func(configPath string, dryRun bool, archiveClosed bool) (gira.ProjectsSyncReport, error) {
-	resolved, err := gira.ResolveWorkspaceConfig(configPath)
+	resolved, err := gira.ResolveProjectsSyncWorkspaceConfig(configPath)
 	if err != nil {
 		return gira.ProjectsSyncReport{}, err
 	}

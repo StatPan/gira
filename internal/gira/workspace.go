@@ -22,6 +22,7 @@ type WorkspaceConfigResolved struct {
 	Project    ProjectConfig
 	Source     string
 	ConfigPath string
+	Warnings   []string
 }
 
 type WorkspaceClient interface {
@@ -218,6 +219,52 @@ func ResolveWorkspaceConfig(path string) (WorkspaceConfigResolved, error) {
 	return resolveWorkspaceConfigFile(DefaultInitConfigPath("."), "repo_local_contract")
 }
 
+func ResolveProjectsSyncWorkspaceConfig(path string) (WorkspaceConfigResolved, error) {
+	if strings.TrimSpace(path) != "" {
+		return resolveWorkspaceConfigFile(path, "explicit_config")
+	}
+	root, err := globalConfigRoot("")
+	if err != nil {
+		return WorkspaceConfigResolved{}, err
+	}
+	var warnings []string
+	var localErr error
+	localPath := DefaultInitConfigPath(".")
+	if _, err := os.Stat(localPath); err == nil {
+		resolved, err := resolveWorkspaceConfigFile(localPath, "repo_local_contract")
+		if err == nil {
+			return resolved, nil
+		}
+		localErr = err
+		warnings = append(warnings, fmt.Sprintf("repo-local workspace config %s was not used: %v", localPath, err))
+	} else if os.IsNotExist(err) {
+		warnings = append(warnings, fmt.Sprintf("repo-local workspace config %s was not found", localPath))
+	} else {
+		return WorkspaceConfigResolved{}, fmt.Errorf("inspect repo-local workspace config %q: %w", localPath, err)
+	}
+	if resolved, ok, err := resolveProjectsSyncWorkspaceFromRepoRegistry(root); err != nil {
+		return WorkspaceConfigResolved{}, err
+	} else if ok {
+		resolved.Warnings = warnings
+		return resolved, nil
+	}
+	warnings = append(warnings, "global repo registry workspace.name was not found for the current checkout")
+	if cfg, err := LoadGlobalConfig(root); err == nil && strings.TrimSpace(cfg.DefaultWorkspace) != "" {
+		resolved, err := resolveGlobalWorkspaceConfig(root, cfg.DefaultWorkspace)
+		if err != nil {
+			return resolved, err
+		}
+		resolved.Warnings = append(warnings, fmt.Sprintf("using global default workspace %q", cfg.DefaultWorkspace))
+		return resolved, nil
+	} else if err != nil && !os.IsNotExist(err) {
+		return WorkspaceConfigResolved{}, err
+	}
+	if localErr != nil {
+		return WorkspaceConfigResolved{}, localErr
+	}
+	return WorkspaceConfigResolved{}, fmt.Errorf("workspace config unavailable: no repo-local workspace config, global repo registry workspace.name, or global default workspace found")
+}
+
 func resolveWorkspaceConfigFile(path string, source string) (WorkspaceConfigResolved, error) {
 	cfg, err := loadWorkspaceConfig(path)
 	if err != nil {
@@ -300,6 +347,45 @@ func resolveWorkspaceConfigFromGlobalRegistry(configRoot string) (WorkspaceConfi
 		return WorkspaceConfigResolved{}, false, nil
 	}
 	return resolveGlobalWorkspaceContainingRepo(root, repo)
+}
+
+func resolveProjectsSyncWorkspaceFromRepoRegistry(configRoot string) (WorkspaceConfigResolved, bool, error) {
+	if ctx, ok, err := repoContextFromGlobalPath(configRoot, "."); err != nil {
+		return WorkspaceConfigResolved{}, false, err
+	} else if ok && ctx.GlobalRepo != nil && strings.TrimSpace(ctx.GlobalRepo.Workspace.Name) != "" {
+		resolved, err := resolveGlobalWorkspaceConfig(configRoot, ctx.GlobalRepo.Workspace.Name)
+		if err != nil {
+			return WorkspaceConfigResolved{}, false, err
+		}
+		resolved.Source = "global_repo_registry"
+		return resolved, true, nil
+	}
+	repo, hasRepo, err := repoContextFromConfig(DefaultInitConfigPath("."))
+	if err != nil {
+		return WorkspaceConfigResolved{}, false, err
+	}
+	if !hasRepo {
+		repo, hasRepo, err = repoContextFromGitOrigin(".", ExecCommandRunner{})
+		if err != nil {
+			return WorkspaceConfigResolved{}, false, err
+		}
+	}
+	if !hasRepo {
+		return WorkspaceConfigResolved{}, false, nil
+	}
+	entry, _, ok, err := loadOptionalGlobalRepoRegistryEntry(configRoot, repo)
+	if err != nil {
+		return WorkspaceConfigResolved{}, false, err
+	}
+	if !ok || strings.TrimSpace(entry.Workspace.Name) == "" {
+		return WorkspaceConfigResolved{}, false, nil
+	}
+	resolved, err := resolveGlobalWorkspaceConfig(configRoot, entry.Workspace.Name)
+	if err != nil {
+		return WorkspaceConfigResolved{}, false, err
+	}
+	resolved.Source = "global_repo_registry"
+	return resolved, true, nil
 }
 
 func verifyGlobalWorkspaceMatchesCheckout(workspace WorkspaceConfigResolved, configRoot string) error {

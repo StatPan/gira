@@ -221,6 +221,49 @@ func TestBuildProjectsSyncReportManualViewOnlyNextStepSkipsApply(t *testing.T) {
 	}
 }
 
+func TestBuildProjectsSyncReportNextStepMatchesConfigSource(t *testing.T) {
+	baseConfig := WorkspaceConfigResolved{
+		Name:      "routi",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/routi-backlog"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/routi")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Routi"},
+	}
+	newClient := func() *fakeProjectsSyncClient {
+		return &fakeProjectsSyncClient{
+			project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Routi"},
+			projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Routi"}},
+			fields:      allProjectsSyncCanonicalFields(),
+			statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "In Progress": "progress", "Done": "done"}},
+			linked:      map[string]bool{"StatPan/routi": false},
+			issues: map[string][]ProjectsSyncIssue{
+				"StatPan/routi": {{Repo: "StatPan/routi", Number: 180, Title: "Ready", URL: "https://github.com/StatPan/routi/issues/180", Labels: []string{"status:ready"}}},
+			},
+		}
+	}
+	localConfig := baseConfig
+	localConfig.Source = "repo_local_contract"
+	localConfig.ConfigPath = ".gira/config.yaml"
+	localReport, err := BuildProjectsSyncReport(localConfig, newClient(), true, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport local error: %v", err)
+	}
+	if len(localReport.NextSteps) == 0 || localReport.NextSteps[0] != "gira projects sync --config .gira/config.yaml --apply" {
+		t.Fatalf("local next step = %+v", localReport.NextSteps)
+	}
+
+	globalConfig := baseConfig
+	globalConfig.Source = "global_repo_registry"
+	globalConfig.ConfigPath = "/home/user/.config/gira/workspaces/routi.yaml"
+	globalReport, err := BuildProjectsSyncReport(globalConfig, newClient(), true, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport global error: %v", err)
+	}
+	if len(globalReport.NextSteps) == 0 || globalReport.NextSteps[0] != "gira projects sync --apply" {
+		t.Fatalf("global next step = %+v", globalReport.NextSteps)
+	}
+}
+
 func TestBuildProjectsSyncReportApplyAddsAndUpdates(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",

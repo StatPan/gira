@@ -11,7 +11,7 @@ Schema version: `gira-command-capabilities/v1`
 | `gira feature list` | gira feat list | `read` | `stable_json` | none | docs/feature-map.md, docs-site/feature-map.md, docs-site/command-reference.md |
 | `gira goal finish` | none | `apply_mutation` | `stable_json` | posts an idempotent goal finish handoff receipt when run with --apply; --dry-run previews readiness and receipt | docs/goal-operating-model.md, docs-site/command-reference.md |
 | `gira goal next` | none | `read` | `stable_json` | none | docs/goal-operating-model.md, docs-site/command-reference.md |
-| `gira goal plan` | none | `dry_run_mutation` | `stable_json` | computes child ticket proposals only; no apply surface exists for this command | docs/goal-operating-model.md, docs-site/command-reference.md |
+| `gira goal plan` | none | `apply_mutation` | `stable_json` | creates linked child tickets from reviewed goal-plan proposals when run with --apply; --dry-run previews the same plan | docs/goal-operating-model.md, docs-site/command-reference.md |
 | `gira goal status` | none | `read` | `stable_json` | none | docs/goal-operating-model.md, docs-site/command-reference.md |
 | `gira jira doctor` | none | `read` | `stable_json` | none | README.md, docs/jira-primary-provider.md, docs-site/jira-primary-provider.md |
 | `gira jira export` | none | `apply_mutation` | `stable_json` | writes Jira-friendly export artifacts to the requested output path | README.md, docs/jira-primary-provider.md, docs-site/jira-primary-provider.md |

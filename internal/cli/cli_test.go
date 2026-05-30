@@ -5318,7 +5318,7 @@ func TestGoalPlanJSONUsesInjectedBuilder(t *testing.T) {
 	restore := newGoalPlanReport
 	t.Cleanup(func() { newGoalPlanReport = restore })
 	newGoalPlanReport = func(input gira.GoalPlanInput) (gira.GoalPlanReport, error) {
-		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 || !input.DryRun {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 || !input.DryRun || input.Apply {
 			t.Fatalf("unexpected goal plan input: %+v repo=%s", input, input.Repo.FullName())
 		}
 		return gira.GoalPlanReport{
@@ -5347,14 +5347,54 @@ func TestGoalPlanJSONUsesInjectedBuilder(t *testing.T) {
 	}
 }
 
-func TestGoalPlanRequiresDryRun(t *testing.T) {
+func TestGoalPlanApplyJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newGoalPlanReport
+	t.Cleanup(func() { newGoalPlanReport = restore })
+	newGoalPlanReport = func(input gira.GoalPlanInput) (gira.GoalPlanReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 || input.DryRun || !input.Apply {
+			t.Fatalf("unexpected goal plan apply input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.GoalPlanReport{
+			Command:       "goal plan",
+			SchemaVersion: gira.GoalPlanSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			Apply:         true,
+			Goal:          gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 2.0", State: "open", Status: "Ready"},
+			CreatedChildren: []gira.GoalPlanChild{
+				{Number: 700, Title: "[Task] Add plan", Category: "ready", Status: "Ready"},
+			},
+			Actions:    []gira.GoalPlanAction{{Action: "child_ticket:create", Title: "[Task] Add plan", Status: "applied", Issue: 700}},
+			NextAction: "inspect_goal",
+			NextStep:   "gira goal status --repo StatPan/gira --goal 521 --json",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "plan", "521", "--repo", "StatPan/gira", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"apply": true`, `"created_children"`, `"issue": 700`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("goal plan apply JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestGoalPlanRequiresExactlyOneMode(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"goal", "plan", "521", "--repo", "StatPan/gira"}, &stdout, &stderr)
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "pass --dry-run") {
-		t.Fatalf("stderr missing dry-run requirement:\n%s", stderr.String())
+	if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required for goal plan") {
+		t.Fatalf("stderr missing mode requirement:\n%s", stderr.String())
+	}
+	stderr.Reset()
+	stdout.Reset()
+	code = Run([]string{"goal", "plan", "521", "--repo", "StatPan/gira", "--dry-run", "--apply"}, &stdout, &stderr)
+	if code != 2 || !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required for goal plan") {
+		t.Fatalf("expected dry-run/apply conflict; code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
 }
 

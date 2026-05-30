@@ -836,13 +836,13 @@ Flags:
 const goalHelp = `Goal-mode commands for long-running AI-assisted work.
 
 Usage:
-  gira goal plan [GOAL] --dry-run [--repo OWNER/REPO] [--json]
+  gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira goal status [GOAL] [--repo OWNER/REPO] [--json]
   gira goal next [GOAL] [--repo OWNER/REPO] [--json]
   gira goal finish [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]
 
 Commands:
-  plan    Propose dry-run child ticket packets from a goal issue
+  plan    Propose or create child ticket packets from a goal issue
   status  Summarize a goal issue, child ticket graph, blockers, and next safe action
   next    Select the next safe child ticket or explain why the goal must stop
   finish  Preview goal finish readiness and apply human-review handoff receipts
@@ -851,7 +851,7 @@ Flags:
   --repo string  Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
   --goal int     Goal issue number. Can also be numeric positional
   --dry-run      Preview without mutation
-  --apply        Apply supported goal finish handoff mutations
+  --apply        Apply goal plan child ticket creation or supported goal finish handoff mutations
   --terminal string Goal terminal recommendation override for finish
   --json         Emit stable goal JSON
   -h, --help     Show help
@@ -3295,6 +3295,7 @@ func runGoalPlan(args []string, stdout io.Writer, stderr io.Writer) int {
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	goal := fs.Int("goal", 0, "Goal issue number")
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Create proposed child tickets")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -3320,8 +3321,8 @@ func runGoalPlan(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, goalHelp)
 		return 2
 	}
-	if !*dryRun {
-		fmt.Fprint(stderr, "goal plan is read-only in this release; pass --dry-run\n\n")
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required for goal plan\n\n")
 		_, _ = io.WriteString(stderr, goalHelp)
 		return 2
 	}
@@ -3330,7 +3331,7 @@ func runGoalPlan(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	report, err := newGoalPlanReport(gira.GoalPlanInput{Repo: repo, Goal: *goal, DryRun: *dryRun})
+	report, err := newGoalPlanReport(gira.GoalPlanInput{Repo: repo, Goal: *goal, DryRun: *dryRun, Apply: *apply})
 	if err != nil {
 		if *jsonOutput {
 			out, _ := json.MarshalIndent(report, "", "  ")

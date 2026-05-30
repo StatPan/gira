@@ -17,6 +17,17 @@ Use the plan when a goal issue has enough scope and acceptance detail to split
 into bounded tickets. If the goal requires a human decision or the target repo is
 ambiguous, the report stops with an explicit reason instead of inventing work.
 
+After reviewing the plan, create the linked child tickets:
+
+```bash
+gira goal plan 521 --repo OWNER/app --apply --json
+```
+
+The apply path creates normal GitHub issues in the same repo. Each child keeps a
+readable `Parent: #521` reference in its body, carries the proposed labels and
+milestone, and is skipped on later runs when an existing linked child already
+matches the proposed title.
+
 ## Status
 
 Inspect the current goal graph:

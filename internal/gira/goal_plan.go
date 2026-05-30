@@ -13,6 +13,7 @@ type GoalPlanInput struct {
 	Repo   RepoRef `json:"repo"`
 	Goal   int     `json:"goal"`
 	DryRun bool    `json:"dry_run"`
+	Apply  bool    `json:"apply"`
 }
 
 type GoalPlanReport struct {
@@ -20,10 +21,13 @@ type GoalPlanReport struct {
 	SchemaVersion     string           `json:"schema_version"`
 	Repo              string           `json:"repo"`
 	DryRun            bool             `json:"dry_run"`
+	Apply             bool             `json:"apply,omitempty"`
 	Goal              GoalStatusIssue  `json:"goal"`
 	ProposedTickets   []GoalPlanTicket `json:"proposed_tickets"`
 	SkippedCandidates []GoalPlanSkip   `json:"skipped_candidates,omitempty"`
 	ExistingChildren  []GoalPlanChild  `json:"existing_children,omitempty"`
+	CreatedChildren   []GoalPlanChild  `json:"created_children,omitempty"`
+	Actions           []GoalPlanAction `json:"actions,omitempty"`
 	StopConditions    []string         `json:"stop_conditions,omitempty"`
 	Warnings          []string         `json:"warnings,omitempty"`
 	NextAction        string           `json:"next_action"`
@@ -57,6 +61,16 @@ type GoalPlanChild struct {
 	Title    string `json:"title"`
 	Category string `json:"category"`
 	Status   string `json:"status"`
+	URL      string `json:"url,omitempty"`
+}
+
+type GoalPlanAction struct {
+	Action string `json:"action"`
+	Title  string `json:"title,omitempty"`
+	Status string `json:"status"`
+	Issue  int    `json:"issue,omitempty"`
+	URL    string `json:"url,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }
 
 func BuildGoalPlanReport(input GoalPlanInput, runner CommandRunner) (GoalPlanReport, error) {
@@ -71,6 +85,7 @@ func BuildGoalPlanReport(input GoalPlanInput, runner CommandRunner) (GoalPlanRep
 			Command:       "goal plan",
 			SchemaVersion: GoalPlanSchemaVersion,
 			DryRun:        input.DryRun,
+			Apply:         input.Apply,
 			StopConditions: []string{
 				"ambiguous_target_repo",
 			},
@@ -91,9 +106,10 @@ func BuildGoalPlanReport(input GoalPlanInput, runner CommandRunner) (GoalPlanRep
 		SchemaVersion: GoalPlanSchemaVersion,
 		Repo:          input.Repo.FullName(),
 		DryRun:        input.DryRun,
+		Apply:         input.Apply,
 		Goal:          status.Goal,
 		NextAction:    "create_child_tickets",
-		NextStep:      fmt.Sprintf("review proposed tickets, then create them with `gira ticket new --repo %s --dry-run`", input.Repo.FullName()),
+		NextStep:      fmt.Sprintf("gira goal plan --repo %s --goal %d --apply", input.Repo.FullName(), input.Goal),
 	}
 	report.ExistingChildren = goalPlanChildren(status.Children)
 	objective := goalPlanObjective(goal.Body)
@@ -120,17 +136,64 @@ func BuildGoalPlanReport(input GoalPlanInput, runner CommandRunner) (GoalPlanRep
 		title := goalPlanTicketTitle(item)
 		if duplicate := goalPlanDuplicateChildNumber(title, status.Children); duplicate > 0 {
 			report.SkippedCandidates = append(report.SkippedCandidates, GoalPlanSkip{Title: title, Reason: "duplicate_existing_child", DuplicateOf: duplicate})
+			report.Actions = append(report.Actions, GoalPlanAction{Action: "child_ticket:skip", Title: title, Status: "skipped", Issue: duplicate, Reason: "duplicate_existing_child"})
 			report.Warnings = appendUniqueStrings(report.Warnings, "duplicate_existing_child")
 			continue
 		}
-		report.ProposedTickets = append(report.ProposedTickets, goalPlanTicket(goal, title, objective, scope))
+		ticket := goalPlanTicket(goal, title, objective, scope)
+		report.ProposedTickets = append(report.ProposedTickets, ticket)
+		report.Actions = append(report.Actions, GoalPlanAction{Action: "child_ticket:create", Title: ticket.Title, Status: "planned", Reason: "proposed goal child ticket"})
 	}
 	if len(report.ProposedTickets) == 0 {
 		report.StopConditions = append(report.StopConditions, "no_new_child_tickets")
 		report.NextAction = "inspect_goal"
 		report.NextStep = fmt.Sprintf("gira goal status --repo %s --goal %d --json", input.Repo.FullName(), input.Goal)
 	}
+	if input.Apply {
+		if len(report.StopConditions) > 0 {
+			return report, nil
+		}
+		if err := applyGoalPlan(&report, input.Repo, runner); err != nil {
+			return report, err
+		}
+		report.NextAction = "inspect_goal"
+		report.NextStep = fmt.Sprintf("gira goal status --repo %s --goal %d --json", input.Repo.FullName(), input.Goal)
+	}
 	return report, nil
+}
+
+func applyGoalPlan(report *GoalPlanReport, repo RepoRef, runner CommandRunner) error {
+	labels := []string{}
+	for _, ticket := range report.ProposedTickets {
+		labels = append(labels, ticket.Labels...)
+	}
+	if err := preflightTicketNewLabels(repo, appendUniqueStrings(nil, labels...), runner); err != nil {
+		report.StopConditions = appendUniqueStrings(report.StopConditions, "label_preflight_failed")
+		report.NextAction = "fix_labels"
+		report.NextStep = fmt.Sprintf("gira ops sync --repo %s --dry-run", repo.FullName())
+		return err
+	}
+	for _, ticket := range report.ProposedTickets {
+		created, err := createRepoTicket(repo, ticket.Title, ticket.Body, ticket.Labels, ticket.Milestone, runner)
+		if err != nil {
+			return err
+		}
+		child := GoalPlanChild{Number: created.Number, Title: ticket.Title, Category: "ready", Status: "Ready", URL: created.URL}
+		report.CreatedChildren = append(report.CreatedChildren, child)
+		goalPlanMarkActionApplied(report.Actions, ticket.Title, created)
+	}
+	return nil
+}
+
+func goalPlanMarkActionApplied(actions []GoalPlanAction, title string, created TicketCreatedIssue) {
+	for i := range actions {
+		if actions[i].Action == "child_ticket:create" && actions[i].Title == title {
+			actions[i].Status = "applied"
+			actions[i].Issue = created.Number
+			actions[i].URL = created.URL
+			return
+		}
+	}
 }
 
 func goalPlanChildren(children []GoalStatusChild) []GoalPlanChild {
@@ -350,15 +413,27 @@ func goalPlanFuzzyTitleMatch(candidate []string, existing []string) bool {
 
 func FormatGoalPlan(report GoalPlanReport) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "goal plan: #%d proposed=%d skipped=%d stops=%d\n", report.Goal.Number, len(report.ProposedTickets), len(report.SkippedCandidates), len(report.StopConditions))
+	fmt.Fprintf(&b, "goal plan: #%d proposed=%d created=%d skipped=%d stops=%d\n", report.Goal.Number, len(report.ProposedTickets), len(report.CreatedChildren), len(report.SkippedCandidates), len(report.StopConditions))
 	if len(report.StopConditions) > 0 {
 		fmt.Fprintf(&b, "stop: %s\n", strings.Join(report.StopConditions, ","))
 	}
 	if len(report.Warnings) > 0 {
 		fmt.Fprintf(&b, "warnings: %s\n", strings.Join(report.Warnings, ","))
 	}
+	for _, child := range report.CreatedChildren {
+		fmt.Fprintf(&b, "- created #%d %s\n", child.Number, child.Title)
+	}
+	for _, skip := range report.SkippedCandidates {
+		if skip.DuplicateOf > 0 {
+			fmt.Fprintf(&b, "- skipped %s duplicate_existing_child=#%d\n", skip.Title, skip.DuplicateOf)
+			continue
+		}
+		fmt.Fprintf(&b, "- skipped %s %s\n", skip.Title, skip.Reason)
+	}
 	for _, ticket := range report.ProposedTickets {
-		fmt.Fprintf(&b, "- %s\n", ticket.Title)
+		if len(report.CreatedChildren) == 0 {
+			fmt.Fprintf(&b, "- %s\n", ticket.Title)
+		}
 	}
 	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
 	return b.String()

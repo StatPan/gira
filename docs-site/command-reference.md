@@ -148,12 +148,12 @@ Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
 
 ## `goal plan`
 
-Propose dry-run child ticket packets from a goal issue without mutation.
+Propose or create linked child ticket packets from a goal issue.
 
 Usage:
 
 ```bash
-gira goal plan [GOAL] --dry-run [--repo OWNER/REPO] [--json]
+gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]
 ```
 
 Since: `v1.17.0`
@@ -162,7 +162,8 @@ Flags:
 
 - `--repo`: Target GitHub repo in OWNER/REPO format.
 - `--goal`: Goal issue number. Can also be numeric positional.
-- `--dry-run`: Required. Preview proposed child tickets without mutation.
+- `--dry-run`: Preview proposed child tickets without mutation.
+- `--apply`: Create reviewed child tickets from the proposed plan.
 - `--json`: Emit stable goal-plan/v1 JSON.
 
 Examples:
@@ -171,6 +172,12 @@ Examples:
 
 ```bash
 gira goal plan 521 --repo OWNER/app --dry-run --json
+```
+
+- Create planned child tickets
+
+```bash
+gira goal plan 521 --repo OWNER/app --apply --json
 ```
 
 Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`

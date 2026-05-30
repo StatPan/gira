@@ -113,7 +113,7 @@ This generated section contains command facts for the agent lifecycle. Update `i
 - `gira feature list [--repo OWNER/REPO] [--limit N] [--json]`: List optional issue-backed feature or capability records.
 - `gira goal finish [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]`: Preview goal finish readiness and apply human-review handoff receipts.
 - `gira goal next [GOAL] [--repo OWNER/REPO] [--json]`: Select the next safe child ticket for a goal or explain why work must stop.
-- `gira goal plan [GOAL] --dry-run [--repo OWNER/REPO] [--json]`: Propose dry-run child ticket packets from a goal issue without mutation.
+- `gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]`: Propose or create linked child ticket packets from a goal issue.
 - `gira goal status [GOAL] [--repo OWNER/REPO] [--json]`: Summarize a goal issue, child ticket graph, blockers, and next safe action.
 
 <!-- gira:agent-skill:end -->

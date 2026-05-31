@@ -15,6 +15,7 @@ export default defineConfig({
     nav: [
       { text: 'Quick Start', link: '/quickstart' },
       { text: 'Gira 2.0', link: '/v2-control-plane' },
+      { text: 'Gira 3.0', link: '/gira-3-local-report-bundle' },
       { text: 'Workspace', link: '/workspace' },
       { text: 'Workflow', link: '/ticket-workflow' },
       { text: 'Goal Mode', link: '/goal-mode' },
@@ -50,6 +51,7 @@ export default defineConfig({
           { text: 'Ticket Workflow', link: '/ticket-workflow' },
           { text: 'Feature Map', link: '/feature-map' },
           { text: 'Gira 2.0 Control Plane', link: '/v2-control-plane' },
+          { text: 'Gira 3.0 Local Report Bundle', link: '/gira-3-local-report-bundle' },
           { text: 'State Model', link: '/state-model' },
           { text: 'Goal Mode', link: '/goal-mode' },
           { text: 'Sprint And Release', link: '/sprint-release' },

@@ -97,6 +97,7 @@ func TestCommandCapabilitiesCoverAdapterClasses(t *testing.T) {
 		}
 	}
 	assertCapability("gira ticket status", AdapterCapabilityRead)
+	assertCapability("gira goal dossier", AdapterCapabilityRead)
 	assertCapability("gira goal plan", AdapterCapabilityApplyMutation)
 	assertCapability("gira ticket start", AdapterCapabilityApplyMutation)
 	assertCapability("gira stats workspace", AdapterCapabilityUnsupported)

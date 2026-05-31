@@ -40,6 +40,19 @@ The `goal-status/v1` report includes the goal issue, child ticket counts,
 blockers, remaining autonomous work, handoff receipt presence, and the next safe
 action. It is the read-only summary to use before starting a new child ticket.
 
+## Dossier
+
+Build the first visible v3 operating artifact for a goal:
+
+```bash
+gira goal dossier 521 --repo OWNER/app --json
+```
+
+The `goal-dossier/v1` report packages the goal summary, grouped child tickets,
+blockers, stop conditions, selected next child, evidence summary, and next safe
+step into one JSON contract. It is generated from existing Goal Mode state and
+does not become a source of truth.
+
 ## Next
 
 Select the next safe child ticket or stop:

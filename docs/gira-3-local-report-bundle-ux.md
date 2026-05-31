@@ -115,9 +115,9 @@ out/dashboard/
   goals/
     goal-525.html
   tickets/
-    ticket-666.html
+    statpan-gira-ticket-666.html
   reviews/
-    pr-665.html
+    statpan-gira-pr-665.html
 ```
 
 The HTML files are views over exported or freshly computed Gira state. They are
@@ -166,6 +166,8 @@ few additional contracts:
 - Goal HTML reports linked from the bundle index.
 - Stable warning codes instead of prose-only warning strings.
 - A top-level `index.html` artifact listed in `manifest.json`.
+- Bundle `tickets/` and `reviews/` deep links generated from workspace queue
+  state and listed in `manifest.json`.
 
 These gaps map directly to the next 3.0 child tickets:
 
@@ -173,6 +175,8 @@ These gaps map directly to the next 3.0 child tickets:
 - #668 Implement local workspace report bundle export.
 - #669 Add ticket detail HTML report from ticket status and review state.
 - #670 Add review packet HTML report for human review flow.
+- #676 Integrate HTML deep links into local report bundle index.
+- #677 Support done terminal for goal finish apply.
 
 The #667 contract decisions are documented in
 [workspace-dashboard-contract-gaps.md](workspace-dashboard-contract-gaps.md).

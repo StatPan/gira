@@ -174,6 +174,21 @@ func TestBuildWorkspaceDashboardExportPlanUsesWorkspaceQueues(t *testing.T) {
 	if len(bundle.WorkspaceDashboard.TopActions) != 2 || bundle.WorkspaceDashboard.TopActions[0].Issue != 10 {
 		t.Fatalf("top actions = %+v", bundle.WorkspaceDashboard.TopActions)
 	}
+	if bundle.WorkspaceDashboard.TopActions[0].LocalTicketHTML != "tickets/statpan-gira-ticket-10.html" {
+		t.Fatalf("top action ticket link = %+v", bundle.WorkspaceDashboard.TopActions[0])
+	}
+	if bundle.WorkspaceDashboard.TopActions[1].LocalTicketHTML != "tickets/statpan-gira-ticket-11.html" || bundle.WorkspaceDashboard.TopActions[1].LocalReviewHTML != "reviews/statpan-gira-pr-101.html" {
+		t.Fatalf("top action deep links = %+v", bundle.WorkspaceDashboard.TopActions[1])
+	}
+	for _, want := range []DashboardExportArtifact{
+		{Path: "tickets/statpan-gira-ticket-10.html", Kind: "html", WillWrite: true},
+		{Path: "tickets/statpan-gira-ticket-11.html", Kind: "html", WillWrite: true},
+		{Path: "reviews/statpan-gira-pr-101.html", Kind: "html", WillWrite: true},
+	} {
+		if !containsDashboardArtifact(plan.Artifacts, want) || !containsDashboardArtifact(bundle.Manifest.Artifacts, want) {
+			t.Fatalf("missing deep-link artifact %+v\nplan=%+v\nmanifest=%+v", want, plan.Artifacts, bundle.Manifest.Artifacts)
+		}
+	}
 	text := FormatDashboardExportPlan(plan)
 	for _, want := range []string{"workspace: personal (StatPan)", "workspace_repos: 1", "workspace_queue_items: 2"} {
 		if !strings.Contains(text, want) {
@@ -251,6 +266,7 @@ func TestWriteWorkspaceDashboardExportBundleWritesArtifactsAndEscapesHTML(t *tes
 					Counts: StatusCounts{Issues: IssueCounts{Open: 1}},
 					Issues: StatusIssueLists{Open: []IssueStats{
 						{Number: 10, Title: "<script>alert(1)</script>", State: "open", Labels: []string{"status:ready"}},
+						{Number: 11, Title: "Review ready", State: "open", Labels: []string{"status:in-review"}},
 					}},
 				},
 			},
@@ -258,6 +274,19 @@ func TestWriteWorkspaceDashboardExportBundleWritesArtifactsAndEscapesHTML(t *tes
 		queues: map[string][]WorkStatusResult{
 			"StatPan/gira": {
 				{Repo: "StatPan/gira", Issue: 10, Title: "<script>alert(1)</script>", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+				{
+					Repo:         "StatPan/gira",
+					Issue:        11,
+					Title:        "Review ready",
+					State:        "open",
+					Status:       "In review",
+					Labels:       []string{"status:in-review"},
+					NextAction:   "merge_when_policy_allows",
+					ChecksStatus: "passed",
+					ReviewStatus: "approved",
+					PullRequest:  &TicketStatusPullRequest{Available: true, Number: 101, State: "OPEN", ReviewDecision: "APPROVED"},
+					PRReadiness:  &PRReadinessReport{SchemaVersion: PRReadinessSchemaVersion, PullRequest: 101, Readiness: "ready_for_finish", NextAction: "finish_ticket"},
+				},
 			},
 		},
 	}
@@ -276,6 +305,9 @@ func TestWriteWorkspaceDashboardExportBundleWritesArtifactsAndEscapesHTML(t *tes
 		"derived/workspace_dashboard.json",
 		"csv/workspace_queue_items.csv",
 		"index.html",
+		"tickets/statpan-gira-ticket-10.html",
+		"tickets/statpan-gira-ticket-11.html",
+		"reviews/statpan-gira-pr-101.html",
 	}
 	for _, relativePath := range expected {
 		if _, err := os.Stat(filepath.Join(outputRoot, relativePath)); err != nil {
@@ -296,9 +328,38 @@ func TestWriteWorkspaceDashboardExportBundleWritesArtifactsAndEscapesHTML(t *tes
 	if strings.Contains(string(htmlContent), "<script>alert(1)</script>") || !strings.Contains(string(htmlContent), "&lt;script&gt;alert(1)&lt;/script&gt;") {
 		t.Fatalf("HTML did not escape queue title:\n%s", htmlContent)
 	}
+	if !strings.Contains(string(htmlContent), `tickets/statpan-gira-ticket-10.html`) {
+		t.Fatalf("HTML missing local ticket report link:\n%s", htmlContent)
+	}
+	if !strings.Contains(string(htmlContent), `reviews/statpan-gira-pr-101.html`) {
+		t.Fatalf("HTML missing local review report link:\n%s", htmlContent)
+	}
+	ticketHTML, err := os.ReadFile(filepath.Join(outputRoot, "tickets/statpan-gira-ticket-10.html"))
+	if err != nil {
+		t.Fatalf("read ticket report html: %v", err)
+	}
+	if strings.Contains(string(ticketHTML), "<script>alert(1)</script>") || !strings.Contains(string(ticketHTML), "Gira ticket report") {
+		t.Fatalf("ticket report HTML unsafe or incomplete:\n%s", ticketHTML)
+	}
+	reviewHTML, err := os.ReadFile(filepath.Join(outputRoot, "reviews/statpan-gira-pr-101.html"))
+	if err != nil {
+		t.Fatalf("read review packet html: %v", err)
+	}
+	if !strings.Contains(string(reviewHTML), "Gira review packet") || !strings.Contains(string(reviewHTML), PRReadinessSchemaVersion) {
+		t.Fatalf("review packet HTML incomplete:\n%s", reviewHTML)
+	}
 	if _, err := os.Stat(filepath.Join(outputRoot, "raw/github.json")); !os.IsNotExist(err) {
 		t.Fatalf("workspace-only export should not write repo raw github artifact, stat err=%v", err)
 	}
+}
+
+func containsDashboardArtifact(values []DashboardExportArtifact, want DashboardExportArtifact) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestDashboardExportBundleMetadataAndSnapshotReuse(t *testing.T) {

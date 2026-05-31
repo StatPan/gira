@@ -71,13 +71,17 @@ out/dashboard/
   goals/
     goal-525.html
   tickets/
-    ticket-666.html
+    statpan-gira-ticket-666.html
   reviews/
-    pr-665.html
+    statpan-gira-pr-665.html
 ```
 
 The HTML files are views over Gira-computed state. They are safe to delete and
 regenerate.
+
+Workspace-mode exports now list queue-derived ticket and review pages in
+`manifest.json`, and `index.html` links queue rows to those local pages when
+they exist.
 
 ## Next Slices
 
@@ -85,6 +89,5 @@ regenerate.
 - #668 Implement local workspace report bundle export.
 - #669 Add ticket detail HTML report from ticket status and review state.
 - #670 Add review packet HTML report for human review flow.
-
-Start with #667 so the bundle gets a clear queue contract before HTML starts
-rebuilding workflow logic.
+- #676 Integrate HTML deep links into local report bundle index.
+- #677 Support done terminal for goal finish apply.

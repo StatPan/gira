@@ -6,6 +6,7 @@ Schema version: `gira-command-capabilities/v1`
 
 | Command | Aliases | Capability | JSON support | Mutation boundary | Docs |
 | --- | --- | --- | --- | --- | --- |
+| `gira completion` | none | `read` | `none` | none | README.md, docs-site/command-reference.md |
 | `gira feature check` | gira feat check | `read` | `stable_json` | none | docs/feature-map.md, docs-site/feature-map.md, docs-site/command-reference.md |
 | `gira feature for` | gira feat for | `read` | `stable_json` | none | docs/feature-map.md, docs-site/feature-map.md, docs-site/command-reference.md |
 | `gira feature list` | gira feat list | `read` | `stable_json` | none | docs/feature-map.md, docs-site/feature-map.md, docs-site/command-reference.md |

@@ -98,9 +98,13 @@ func TestCommandCapabilitiesCoverAdapterClasses(t *testing.T) {
 	}
 	assertCapability("gira ticket status", AdapterCapabilityRead)
 	assertCapability("gira goal report", AdapterCapabilityRead)
+	assertCapability("gira completion", AdapterCapabilityRead)
 	assertCapability("gira goal plan", AdapterCapabilityApplyMutation)
 	assertCapability("gira ticket start", AdapterCapabilityApplyMutation)
 	assertCapability("gira stats workspace", AdapterCapabilityUnsupported)
+	if byCanonical["gira completion"].JSONSupport != JSONSupportNone {
+		t.Fatalf("completion JSON support = %q, want %q", byCanonical["gira completion"].JSONSupport, JSONSupportNone)
+	}
 	if !containsString(byCanonical["gira goal report"].Aliases, "gira goal dossier") {
 		t.Fatalf("goal report capability must expose goal dossier alias: %+v", byCanonical["gira goal report"])
 	}

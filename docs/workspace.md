@@ -244,6 +244,11 @@ hosted view can render the same queues across workspaces, but GitHub issues and
 PRs remain the source of truth and mutation still flows through explicit Gira
 commands.
 
+For the Gira 3.0 local dashboard bundle, the contract gap between
+`workspace status --json`, `workspace-queues/v1`, and `gira export dashboard`
+is documented in
+[Workspace Dashboard Contract Gaps](workspace-dashboard-contract-gaps.md).
+
 For the broader ownership boundary between labels, computed JSON state,
 receipts, and local cache, see [Gira State Model](state-model.md).
 

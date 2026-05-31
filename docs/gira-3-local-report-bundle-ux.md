@@ -165,6 +165,9 @@ These gaps map directly to the next 3.0 child tickets:
 - #669 Add ticket detail HTML report from ticket status and review state.
 - #670 Add review packet HTML report for human review flow.
 
+The #667 contract decisions are documented in
+[workspace-dashboard-contract-gaps.md](workspace-dashboard-contract-gaps.md).
+
 ## Non-Goals
 
 The local report bundle must not introduce:

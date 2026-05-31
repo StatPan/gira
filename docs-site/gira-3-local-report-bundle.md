@@ -72,7 +72,7 @@ regenerate.
 
 ## Next Slices
 
-- #667 Define workspace dashboard contract gaps for UI-shaped reports.
+- #667 Define [workspace dashboard contract gaps](/workspace-dashboard-contract-gaps) for UI-shaped reports.
 - #668 Implement local workspace report bundle export.
 - #669 Add ticket detail HTML report from ticket status and review state.
 - #670 Add review packet HTML report for human review flow.

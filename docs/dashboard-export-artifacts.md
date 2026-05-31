@@ -62,6 +62,25 @@ out/dashboard/
 
 Not every file must exist on day one, but the layout should be stable from the first implementation so later slices can add content without reorganizing the bundle.
 
+The Gira 3.0 workspace dashboard additions are defined in
+[workspace-dashboard-contract-gaps.md](workspace-dashboard-contract-gaps.md).
+Those additions keep this machine layer intact and add workspace status, queue,
+index, CSV, and HTML artifacts for local report bundles.
+
+Recommended workspace-mode additions:
+
+```text
+out/dashboard/
+  raw/
+    workspace_status.json
+  derived/
+    workspace_queues.json
+    workspace_dashboard.json
+  csv/
+    workspace_queue_items.csv
+  index.html
+```
+
 ## Versioning
 
 Every export bundle must carry a schema version.
@@ -123,6 +142,10 @@ Suggested shape:
 ```
 
 `snapshot_at` should represent the canonical source snapshot time that the export bundle is derived from. Implementations may log a separate wall-clock run time elsewhere, but canonical JSON artifacts should not require volatile per-run timestamps when the source snapshot is unchanged.
+
+Workspace-mode exports should list workspace artifacts in `artifacts` when they
+are written. `index.html` should use artifact kind `html`; workspace JSON files
+should use `raw_json` or `derived_json`; and queue CSV should use `csv`.
 
 ## Raw JSON Layer
 

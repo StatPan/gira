@@ -8,12 +8,15 @@ unless an explicit lifecycle command says `--apply`.
 
 ```bash
 gira ticket status --json
+gira ticket status 42 --repo OWNER/app --html --output out/gira/ticket-42.html
 gira ticket view
 ```
 
 `ticket status --json` emits the stable `ticket-status/v1` contract. The report
 includes labels, milestone, branch policy, linked PR, checks, review state,
 evidence, warnings, and nested readiness reports.
+`ticket status --html --output PATH` writes the same state as a static local
+ticket detail page for human review.
 Run these from the `issue-N-*` branch for the daily path. Pass an explicit
 ticket and repo only when auditing from detached context.
 

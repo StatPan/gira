@@ -794,7 +794,7 @@ Usage:
   gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]
   gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--json]
   gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--wait 0s] [--sync-local] [--json]
-  gira ticket status [TICKET] [--repo OWNER/REPO] [--json]
+  gira ticket status [TICKET] [--repo OWNER/REPO] [--json|--html --output PATH]
 
 Commands:
   new     Create a repo-bound executable ticket with a structured Gira body
@@ -841,6 +841,8 @@ Flags:
   --interval duration  Poll interval for ticket wait. Default: 5s
   --start          Start a newly created ticket after ticket new --apply
   --json           Emit stable JSON output
+  --html           Write a static local HTML report
+  --output string  Output path for --html
   -h, --help       Show help
 `
 
@@ -4863,6 +4865,8 @@ func runTicketStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	ticket := fs.Int("ticket", 0, "Ticket number")
 	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	htmlOutput := fs.Bool("html", false, "Write a static local HTML report")
+	outputPath := fs.String("output", "", "Output path for --html")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
 	if err := fs.Parse(args); err != nil {
@@ -4873,6 +4877,21 @@ func runTicketStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	if *help {
 		_, _ = io.WriteString(stdout, ticketHelp)
 		return 0
+	}
+	if *jsonOutput && *htmlOutput {
+		fmt.Fprint(stderr, "choose exactly one output format: --json or --html\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *htmlOutput && strings.TrimSpace(*outputPath) == "" {
+		fmt.Fprint(stderr, "--output is required when using --html\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if !*htmlOutput && strings.TrimSpace(*outputPath) != "" {
+		fmt.Fprint(stderr, "--output requires --html\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
 	}
 	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
 	if err != nil {
@@ -4893,6 +4912,15 @@ func runTicketStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	if *jsonOutput {
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	if *htmlOutput {
+		if err := gira.WriteTicketStatusHTML(*outputPath, result); err != nil {
+			fmt.Fprintf(stderr, "write ticket status HTML: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "ticket status html: %s\n", filepath.Clean(*outputPath))
+		fmt.Fprintf(stdout, "next step: open %s\n", filepath.Clean(*outputPath))
 		return 0
 	}
 	fmt.Fprint(stdout, formatTicketStatus(result))
@@ -5051,7 +5079,7 @@ func parseWorkRequiredFlags(repoValue string, issue int, dryRun bool, apply bool
 func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bool) {
 	cleaned := make([]string, 0, len(args))
 	positional := 0
-	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}, "--timeout": {}, "--interval": {}, "--replacement-title": {}, "--body": {}, "--body-file": {}, "--milestone": {}, "--label": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}, "--timeout": {}, "--interval": {}, "--replacement-title": {}, "--body": {}, "--body-file": {}, "--milestone": {}, "--label": {}, "--output": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)

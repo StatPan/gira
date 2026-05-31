@@ -740,15 +740,24 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
-			Path:        []string{"ticket", "status"},
-			Summary:     "Report ticket status, linked PR blockers, and next action.",
-			Usage:       "gira ticket status [TICKET] [--repo OWNER/REPO] [--json]",
-			Since:       "v1.0.0",
+			Path:    []string{"ticket", "status"},
+			Summary: "Report ticket status, linked PR blockers, and next action.",
+			Usage:   "gira ticket status [TICKET] [--repo OWNER/REPO] [--json|--html --output PATH]",
+			Since:   "v1.0.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--ticket", Summary: "Ticket number. Can also be numeric positional."},
+				{Name: "--issue", Summary: "Compatibility alias for --ticket."},
+				{Name: "--json", Summary: "Emit the stable ticket-status/v1 JSON contract with issue, branch, PR, checks, review, evidence, blockers, warnings, and next action."},
+				{Name: "--html", Summary: "Write a static local HTML report from ticket-status/v1."},
+				{Name: "--output", Summary: "Output path for --html."},
+			},
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
 			GuideTopics: []string{"ticket", "agent"},
 			GuideOrder:  70,
 			Examples: []CommandExample{
 				{Summary: "Inspect current branch ticket", Command: "gira ticket status"},
+				{Summary: "Export a ticket status page", Command: "gira ticket status 42 --repo OWNER/app --html --output out/gira/ticket-42.html"},
 			},
 		},
 	}

@@ -501,7 +501,7 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 	}
 	result := WorkStatusResult{
 		Command:          "ticket status",
-		SchemaVersion:    "ticket-status/v1",
+		SchemaVersion:    TicketStatusSchemaVersion,
 		Repo:             repo.FullName(),
 		Issue:            issueNumber,
 		Title:            issue.Title,

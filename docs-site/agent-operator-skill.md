@@ -30,7 +30,7 @@ summarize that skill instead of redefining it.
 - `gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]`: Show linked PR checks, review blockers, and next action.
 - `gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s]`: Wait for pending linked PR checks without merging.
 - `gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--sync-local]`: Merge the linked PR when policy allows and close the ticket loop without local checkout sync by default.
-- `gira ticket status [TICKET] [--repo OWNER/REPO] [--json]`: Report ticket status, linked PR blockers, and next action.
+- `gira ticket status [TICKET] [--repo OWNER/REPO] [--json|--html --output PATH]`: Report ticket status, linked PR blockers, and next action.
 - `gira feature check [--repo OWNER/REPO] [--limit N] [--json]`: Validate optional feature map records and work links without mutating GitHub.
 - `gira feature for ISSUE [--repo OWNER/REPO] [--limit N] [--json]`: Show which feature or capability a work issue is linked to.
 - `gira feature list [--repo OWNER/REPO] [--limit N] [--json]`: List optional issue-backed feature or capability records.

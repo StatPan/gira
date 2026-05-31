@@ -917,7 +917,7 @@ Render a reviewer packet from current ticket and linked PR state.
 Usage:
 
 ```bash
-gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] [--include-diff] [--json]
+gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] [--include-diff] [--json|--html --output PATH]
 ```
 
 Since: `v1.15.0`
@@ -928,6 +928,8 @@ Flags:
 - `--diff-summary`: Include changed files, diff stat, hunk headers, acceptance mapping candidates, and risk hints.
 - `--include-diff`: Include the full PR diff. Output can be long and must be requested explicitly.
 - `--json`: Emit stable JSON including issue, PR, evidence, repo guidance, verdict schema, and prompt fields.
+- `--html`: Write a static local HTML review packet.
+- `--output`: Output path for --html.
 
 Examples:
 
@@ -941,6 +943,12 @@ gira ticket review --diff-summary
 
 ```bash
 gira ticket review --ticket 42 --pr 77 --json
+```
+
+- Write a local review packet page
+
+```bash
+gira ticket review 42 --repo OWNER/app --diff-summary --html --output out/gira/review-42.html
 ```
 
 Documented in: `docs-site/ticket-workflow.md`, `docs-site/command-reference.md`, `docs/dogfood.md`

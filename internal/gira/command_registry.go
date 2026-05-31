@@ -596,13 +596,15 @@ func CoreCommandSpecs() []CommandSpec {
 		{
 			Path:    []string{"ticket", "review"},
 			Summary: "Render a reviewer packet from current ticket and linked PR state.",
-			Usage:   "gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] [--include-diff] [--json]",
+			Usage:   "gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] [--include-diff] [--json|--html --output PATH]",
 			Since:   "v1.15.0",
 			Flags: []FlagSpec{
 				{Name: "--pr", Summary: "Optional PR number override for reviewer packet context."},
 				{Name: "--diff-summary", Summary: "Include changed files, diff stat, hunk headers, acceptance mapping candidates, and risk hints."},
 				{Name: "--include-diff", Summary: "Include the full PR diff. Output can be long and must be requested explicitly."},
 				{Name: "--json", Summary: "Emit stable JSON including issue, PR, evidence, repo guidance, verdict schema, and prompt fields."},
+				{Name: "--html", Summary: "Write a static local HTML review packet."},
+				{Name: "--output", Summary: "Output path for --html."},
 			},
 			Docs:        []string{"docs-site/ticket-workflow.md", "docs-site/command-reference.md", "docs/dogfood.md"},
 			GuideTopics: []string{"ticket", "agent"},
@@ -610,6 +612,7 @@ func CoreCommandSpecs() []CommandSpec {
 			Examples: []CommandExample{
 				{Summary: "Render reviewer packet for current branch ticket", Command: "gira ticket review --diff-summary"},
 				{Summary: "Render reviewer packet with an explicit PR override", Command: "gira ticket review --ticket 42 --pr 77 --json"},
+				{Summary: "Write a local review packet page", Command: "gira ticket review 42 --repo OWNER/app --diff-summary --html --output out/gira/review-42.html"},
 			},
 		},
 		{

@@ -28,6 +28,7 @@ handoff.
 
 ```bash
 gira ticket review --diff-summary --json
+gira ticket review 42 --repo OWNER/app --diff-summary --html --output out/gira/review-42.html
 gira ticket checks
 gira ticket wait --timeout 5m
 ```
@@ -35,7 +36,8 @@ gira ticket wait --timeout 5m
 `pr-readiness/v1` checks whether worker output is reviewable or should wait,
 revise, request review, finish, or stop. Review packets include the linked PR,
 changed-file context, checks, finish readiness, evidence fields, and a verdict
-schema for reviewer judgment.
+schema for reviewer judgment. `ticket review --html --output PATH` writes that
+packet as a static local review page.
 
 ## Finish Readiness And Receipts
 

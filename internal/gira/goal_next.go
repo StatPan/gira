@@ -59,6 +59,12 @@ func BuildGoalNextReportFromStatus(repo RepoRef, status GoalStatusReport) GoalNe
 		Blockers:                append([]string(nil), status.Blockers...),
 		RemainingAutonomousWork: status.RemainingAutonomousWork,
 	}
+	if goalStatusIssueDone(status.Goal) {
+		report.StopReasons = []string{"goal_done"}
+		report.NextAction = "done"
+		report.NextStep = "goal is done"
+		return report
+	}
 	if len(status.Children) == 0 {
 		report.StopReasons = []string{"no_child_tickets"}
 		report.NextAction = "plan_children"

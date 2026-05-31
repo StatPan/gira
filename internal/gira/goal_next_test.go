@@ -115,6 +115,22 @@ func TestBuildGoalNextReportNoRemainingWorkWithHandoffStopsForHumanReview(t *tes
 	}
 }
 
+func TestBuildGoalNextReportClosedDoneGoalStopsAsDone(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	status := goalNextTestStatus([]GoalStatusChild{
+		{Number: 201, Title: "Done", State: "closed", Status: "Done", Category: "done", NextAction: "done"},
+	})
+	status.Goal.State = "closed"
+	status.Goal.Status = "Done"
+	status.RemainingAutonomousWork = 0
+	status.HandoffReceiptPresent = true
+
+	report := BuildGoalNextReportFromStatus(repo, status)
+	if report.SelectedTicket != nil || report.NextAction != "done" || report.NextStep != "goal is done" || !containsString(report.StopReasons, "goal_done") {
+		t.Fatalf("closed done goal should stop as done: %+v", report)
+	}
+}
+
 func goalNextTestStatus(children []GoalStatusChild) GoalStatusReport {
 	counts := map[string]int{"total": len(children)}
 	remaining := 0

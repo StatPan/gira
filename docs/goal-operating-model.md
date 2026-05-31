@@ -151,11 +151,18 @@ The receipt should be posted as a GitHub comment before closing the goal. If
 the safe terminal state is not `done`, the goal should remain open or close
 with an explicit non-done resolution label.
 
-`gira goal finish --terminal human_review --apply` is the first apply-safe
+`gira goal finish --terminal done --apply` is the normal completion path for a
+ready goal graph. It requires clean readiness with no blockers, posts an
+idempotent `goal-finish-receipt/v1` done receipt, normalizes active status
+labels to `status:done`, and closes the goal issue only after receipt posting
+succeeds. The command refuses done apply when children remain open, evidence is
+missing, checks are not clean, or the terminal is not explicit.
+
+`gira goal finish --terminal human_review --apply` remains the supported
 handoff path. It posts the `goal-finish-receipt/v1` comment when blockers remain
 and preserves those blockers in the receipt. It does not close the goal, mark it
 done, waive missing child evidence, or invent historical PR/check/receipt
-evidence. The apply path is idempotent: if the goal issue already has a
+evidence. The handoff path is idempotent: if the goal issue already has a
 `goal-finish-receipt/v1` handoff comment, dry-run and apply report a skipped
 comment action instead of posting a duplicate. This path is for completed goal
 graphs that need a maintainer to accept or decide how to handle historical

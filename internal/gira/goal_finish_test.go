@@ -20,6 +20,9 @@ func TestBuildGoalFinishReportAllDoneReady(t *testing.T) {
 	if report.Receipt.SchemaVersion != GoalFinishReceiptSchemaVersion || !strings.Contains(report.Receipt.RenderedBody, "## Goal Finish Receipt") {
 		t.Fatalf("unexpected receipt: %+v", report.Receipt)
 	}
+	if !goalFinishActionStatus(report.Actions, "goal:comment", "planned") || !goalFinishActionStatus(report.Actions, "goal:normalize-status", "planned") || !goalFinishActionStatus(report.Actions, "goal:close", "planned") {
+		t.Fatalf("expected done terminal planned actions: %+v", report.Actions)
+	}
 }
 
 func TestBuildGoalFinishReportBlocksOpenChild(t *testing.T) {
@@ -141,16 +144,78 @@ func TestBuildGoalFinishReportHumanReviewApplySkipsExistingReceipt(t *testing.T)
 	}
 }
 
-func TestBuildGoalFinishReportApplyRejectsNonHumanReviewTerminal(t *testing.T) {
+func TestBuildGoalFinishReportDoneDryRunPlansReceiptLabelsAndClose(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := goalFinishApplyRunner{responses: goalFinishRunner(`{"comments":[]}`, `[]`, goalFinishChildIssue("closed", "status:done")).responses}
+	runner := goalFinishRunner(`{"comments":[{"body":"## Finish Receipt\nDone"}]}`, goalFinishMergedPR("SUCCESS"), goalFinishChildIssue("closed", "status:done"))
+
+	report, err := BuildGoalFinishReport(GoalFinishInput{Repo: repo, Goal: 100, DryRun: true, Terminal: "done"}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalFinishReport error: %v", err)
+	}
+	if !report.Readiness.Ready || report.NextAction != "finish_goal" {
+		t.Fatalf("unexpected readiness: %+v", report)
+	}
+	if !goalFinishActionStatus(report.Actions, "goal:comment", "planned") || !goalFinishActionStatus(report.Actions, "goal:normalize-status", "planned") || !goalFinishActionStatus(report.Actions, "goal:close", "planned") {
+		t.Fatalf("unexpected actions: %+v", report.Actions)
+	}
+	if detail := goalFinishActionDetail(report.Actions, "goal:normalize-status"); !strings.Contains(detail, "add=status:done") || !strings.Contains(detail, "remove=status:ready") {
+		t.Fatalf("unexpected normalize detail: %q", detail)
+	}
+	if !strings.Contains(report.NextStep, "--terminal done --apply") {
+		t.Fatalf("next step should include explicit done apply: %q", report.NextStep)
+	}
+}
+
+func TestBuildGoalFinishReportDoneApplyPostsReceiptNormalizesAndCloses(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := goalFinishApplyRunner{responses: goalFinishRunner(`{"comments":[{"body":"## Finish Receipt\nDone"}]}`, goalFinishMergedPR("SUCCESS"), goalFinishChildIssue("closed", "status:done")).responses}
+
+	report, err := BuildGoalFinishReport(GoalFinishInput{Repo: repo, Goal: 100, Apply: true, Terminal: "done"}, &runner)
+	if err != nil {
+		t.Fatalf("BuildGoalFinishReport error: %v", err)
+	}
+	if len(runner.comments) != 1 || !strings.Contains(runner.comments[0], "Terminal recommendation: done") {
+		t.Fatalf("unexpected comments: %+v", runner.comments)
+	}
+	if !containsCall(runner.calls, "gh issue edit 100 --repo StatPan/gira --add-label status:done --remove-label status:ready") {
+		t.Fatalf("missing label normalization call: %+v", runner.calls)
+	}
+	if !containsCall(runner.calls, "gh issue close 100 --repo StatPan/gira --comment Closed by gira goal finish") {
+		t.Fatalf("missing close call: %+v", runner.calls)
+	}
+	for _, action := range []string{"goal:comment", "goal:normalize-status", "goal:close"} {
+		if !goalFinishActionStatus(report.Actions, action, "applied") {
+			t.Fatalf("expected %s applied: %+v", action, report.Actions)
+		}
+	}
+	if report.NextAction != "done" || report.NextStep != "goal is done" {
+		t.Fatalf("unexpected next state: %+v", report)
+	}
+}
+
+func TestBuildGoalFinishReportDoneApplyRejectsBlockers(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := goalFinishApplyRunner{responses: goalFinishRunner(`{"comments":[]}`, `[]`, goalFinishChildIssue("open", "status:ready")).responses}
 
 	_, err := BuildGoalFinishReport(GoalFinishInput{Repo: repo, Goal: 100, Apply: true, Terminal: "done"}, &runner)
-	if err == nil || !strings.Contains(err.Error(), "explicit --terminal human_review") {
-		t.Fatalf("error = %v, want human_review rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "requires ready=true with no blockers") {
+		t.Fatalf("error = %v, want readiness rejection", err)
 	}
-	if len(runner.comments) != 0 {
-		t.Fatalf("apply should not comment on rejection: %+v", runner.comments)
+	if len(runner.comments) != 0 || len(runner.calls) != 0 {
+		t.Fatalf("apply should not mutate on rejection: comments=%+v calls=%+v", runner.comments, runner.calls)
+	}
+}
+
+func TestBuildGoalFinishReportApplyRejectsImplicitTerminal(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := goalFinishApplyRunner{responses: goalFinishRunner(`{"comments":[{"body":"## Finish Receipt\nDone"}]}`, goalFinishMergedPR("SUCCESS"), goalFinishChildIssue("closed", "status:done")).responses}
+
+	_, err := BuildGoalFinishReport(GoalFinishInput{Repo: repo, Goal: 100, Apply: true}, &runner)
+	if err == nil || !strings.Contains(err.Error(), "explicit --terminal done") {
+		t.Fatalf("error = %v, want explicit terminal rejection", err)
+	}
+	if len(runner.comments) != 0 || len(runner.calls) != 0 {
+		t.Fatalf("apply should not mutate on rejection: comments=%+v calls=%+v", runner.comments, runner.calls)
 	}
 }
 
@@ -165,19 +230,25 @@ func goalFinishRunnerWithGoalComments(goalComments string, childComments string,
 		"gh issue view 100 --repo StatPan/gira --json comments": goalComments,
 		"gh api repos/StatPan/gira/issues/101":                  childIssue,
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": childPRs,
-		"gh issue view 101 --repo StatPan/gira --json comments": childComments,
+		"gh issue view 101 --repo StatPan/gira --json comments":      childComments,
+		"gh label list --repo StatPan/gira --json name --limit 1000": `[{"name":"status:done"}]`,
 	}}
 }
 
 type goalFinishApplyRunner struct {
 	responses map[string]string
 	comments  []string
+	calls     []string
 }
 
 func (r *goalFinishApplyRunner) Run(name string, args ...string) ([]byte, error) {
 	if name == "gh" && len(args) == 7 && args[0] == "issue" && args[1] == "comment" && args[2] == "100" && args[3] == "--repo" && args[4] == "StatPan/gira" && args[5] == "--body" {
 		r.comments = append(r.comments, args[6])
 		return []byte("https://github.com/StatPan/gira/issues/100#issuecomment-1\n"), nil
+	}
+	if name == "gh" && len(args) >= 2 && args[0] == "issue" && (args[1] == "edit" || args[1] == "close") {
+		r.calls = append(r.calls, strings.TrimSpace(name+" "+strings.Join(args, " ")))
+		return []byte("{}"), nil
 	}
 	key := strings.TrimSpace(name + " " + strings.Join(args, " "))
 	response, ok := r.responses[key]
@@ -193,4 +264,22 @@ func goalFinishChildIssue(state string, statusLabel string) string {
 
 func goalFinishMergedPR(conclusion string) string {
 	return `[{"number":202,"title":"Child PR","body":"Closes #101","state":"MERGED","url":"https://github.com/StatPan/gira/pull/202","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-101-child","baseRefName":"main","statusCheckRollup":[{"conclusion":"` + conclusion + `","status":"COMPLETED"}]}]`
+}
+
+func goalFinishActionStatus(actions []GoalFinishAction, action string, status string) bool {
+	for _, item := range actions {
+		if item.Action == action && item.Status == status {
+			return true
+		}
+	}
+	return false
+}
+
+func goalFinishActionDetail(actions []GoalFinishAction, action string) string {
+	for _, item := range actions {
+		if item.Action == action {
+			return item.Detail
+		}
+	}
+	return ""
 }

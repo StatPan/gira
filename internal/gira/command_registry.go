@@ -263,15 +263,15 @@ func CoreCommandSpecs() []CommandSpec {
 		},
 		{
 			Path:    []string{"goal", "finish"},
-			Summary: "Preview goal finish readiness and apply human-review handoff receipts.",
+			Summary: "Preview goal finish readiness, then post receipts and close ready goals or preserve human-review handoffs.",
 			Usage:   "gira goal finish [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]",
 			Since:   "v1.17.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
 				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional."},
 				{Name: "--dry-run", Summary: "Preview readiness and receipt without mutation."},
-				{Name: "--apply", Summary: "Post a goal-finish-receipt/v1 human-review handoff when blockers remain."},
-				{Name: "--terminal", Summary: "Optional terminal recommendation override: done, human_review, blocked, superseded, or abandoned."},
+				{Name: "--apply", Summary: "Apply an explicit done close or human_review handoff mutation."},
+				{Name: "--terminal", Summary: "Explicit terminal recommendation override for apply: done, human_review, blocked, superseded, or abandoned."},
 				{Name: "--json", Summary: "Emit stable goal-finish-readiness/v1 JSON."},
 			},
 			Docs:        []string{"docs/goal-operating-model.md", "docs-site/command-reference.md"},
@@ -794,7 +794,7 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 		case "goal next":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "goal finish":
-			specs[i].Adapter = adapterApply("posts an idempotent goal finish handoff receipt when run with --apply; --dry-run previews readiness and receipt", JSONSupportStable)
+			specs[i].Adapter = adapterApply("posts an idempotent goal finish receipt; explicit --terminal done may normalize labels and close the goal, while explicit --terminal human_review preserves blocker handoff", JSONSupportStable)
 		case "stats repo":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "stats workspace":

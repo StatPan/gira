@@ -123,7 +123,7 @@ Documented in: `docs/feature-map.md`, `docs-site/feature-map.md`, `docs-site/com
 
 ## `goal finish`
 
-Preview goal finish readiness and apply human-review handoff receipts.
+Preview goal finish readiness, then post receipts and close ready goals or preserve human-review handoffs.
 
 Usage:
 
@@ -138,8 +138,8 @@ Flags:
 - `--repo`: Target GitHub repo in OWNER/REPO format.
 - `--goal`: Goal issue number. Can also be numeric positional.
 - `--dry-run`: Preview readiness and receipt without mutation.
-- `--apply`: Post a goal-finish-receipt/v1 human-review handoff when blockers remain.
-- `--terminal`: Optional terminal recommendation override: done, human_review, blocked, superseded, or abandoned.
+- `--apply`: Apply an explicit done close or human_review handoff mutation.
+- `--terminal`: Explicit terminal recommendation override for apply: done, human_review, blocked, superseded, or abandoned.
 - `--json`: Emit stable goal-finish-readiness/v1 JSON.
 
 Examples:

@@ -190,19 +190,22 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
-			Path:    []string{"goal", "dossier"},
-			Summary: "Build a visible operating dossier for one goal from stable Goal Mode state.",
-			Usage:   "gira goal dossier [GOAL] [--repo OWNER/REPO] [--json]",
+			Path:    []string{"goal", "report"},
+			Summary: "Build a visible report for one goal from stable Goal Mode state. Alias: gira goal dossier.",
+			Usage:   "gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]",
 			Since:   "v2.1.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
 				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional."},
 				{Name: "--json", Summary: "Emit stable goal-dossier/v1 JSON."},
+				{Name: "--html", Summary: "Write a static local HTML report."},
+				{Name: "--output", Summary: "Output path for --html."},
 			},
 			Docs:        []string{"docs/goal-operating-model.md", "docs-site/goal-mode.md", "docs-site/command-reference.md"},
 			GuideTopics: []string{"agent", "ticket"},
 			Examples: []CommandExample{
-				{Summary: "Export a goal dossier JSON contract", Command: "gira goal dossier 521 --repo OWNER/app --json"},
+				{Summary: "Export a goal report JSON contract", Command: "gira goal report 521 --repo OWNER/app --json"},
+				{Summary: "Write a local goal report page", Command: "gira goal report 521 --repo OWNER/app --html --output out/gira/goal-521.html"},
 			},
 		},
 		{
@@ -752,8 +755,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterRead(JSONSupportStable, "gira feat for")
 		case "goal status":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
-		case "goal dossier":
-			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "goal report":
+			specs[i].Adapter = adapterRead(JSONSupportStable, "gira goal dossier")
 		case "goal plan":
 			specs[i].Adapter = adapterApply("creates linked child tickets from reviewed goal-plan proposals when run with --apply; --dry-run previews the same plan", JSONSupportStable)
 		case "goal next":

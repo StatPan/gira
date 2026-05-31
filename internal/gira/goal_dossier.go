@@ -2,6 +2,7 @@ package gira
 
 import (
 	"fmt"
+	"html"
 	"sort"
 	"strings"
 	"time"
@@ -185,8 +186,12 @@ func goalDossierReviews(children []GoalStatusChild) map[string]int {
 }
 
 func FormatGoalDossier(report GoalDossierReport) string {
+	return FormatGoalReport(report)
+}
+
+func FormatGoalReport(report GoalDossierReport) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "goal dossier: #%d children=%d remaining=%d next=%s\n", report.Goal.Number, report.Counts["total"], report.RemainingAutonomousWork, report.NextAction)
+	fmt.Fprintf(&b, "goal report: #%d children=%d remaining=%d next=%s\n", report.Goal.Number, report.Counts["total"], report.RemainingAutonomousWork, report.NextAction)
 	if len(report.ChildGroups) > 0 {
 		parts := []string{}
 		for _, group := range report.ChildGroups {
@@ -205,4 +210,261 @@ func FormatGoalDossier(report GoalDossierReport) string {
 	}
 	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
 	return b.String()
+}
+
+func WriteGoalReportHTML(path string, report GoalDossierReport) error {
+	return writeSafeLocalFile(path, []byte(RenderGoalReportHTML(report)), 0o644)
+}
+
+func RenderGoalReportHTML(report GoalDossierReport) string {
+	var b strings.Builder
+	title := fmt.Sprintf("Goal report #%d", report.Goal.Number)
+	if strings.TrimSpace(report.Goal.Title) != "" {
+		title = fmt.Sprintf("%s - %s", title, report.Goal.Title)
+	}
+
+	b.WriteString("<!doctype html>\n")
+	b.WriteString("<html lang=\"en\">\n")
+	b.WriteString("<head>\n")
+	b.WriteString("<meta charset=\"utf-8\">\n")
+	b.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n")
+	fmt.Fprintf(&b, "<title>%s</title>\n", goalReportHTMLText(title))
+	b.WriteString(`<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --text: #20242a;
+  --muted: #606b78;
+  --line: #d8dde4;
+  --accent: #1769aa;
+  --accent-soft: #e7f2fb;
+  --warn: #935f00;
+  --warn-soft: #fff4d9;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+main { max-width: 1080px; margin: 0 auto; padding: 28px 18px 42px; }
+header, section {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 0 0 14px;
+  padding: 18px;
+}
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 24px; line-height: 1.2; }
+h2 { font-size: 16px; margin-bottom: 10px; }
+h3 { font-size: 14px; margin-bottom: 8px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f2f4f7;
+  padding: 2px 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.eyebrow { color: var(--muted); font-size: 12px; text-transform: uppercase; margin-bottom: 4px; }
+.summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: #fbfcfd;
+  color: var(--muted);
+}
+.next {
+  border-color: #b9d8ef;
+  background: var(--accent-soft);
+}
+.warn {
+  border-color: #efd48d;
+  background: var(--warn-soft);
+}
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.metric { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fbfcfd; }
+.metric strong { display: block; font-size: 20px; line-height: 1.2; }
+.metric span { color: var(--muted); }
+.list { display: grid; gap: 8px; }
+.item { border-top: 1px solid var(--line); padding-top: 8px; }
+.item:first-child { border-top: 0; padding-top: 0; }
+.item-title { font-weight: 600; }
+.meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.empty { color: var(--muted); }
+</style>
+`)
+	b.WriteString("</head>\n<body>\n<main>\n")
+	b.WriteString("<header>\n")
+	b.WriteString("<p class=\"eyebrow\">Gira goal report</p>\n")
+	fmt.Fprintf(&b, "<h1>%s</h1>\n", goalReportHTMLText(goalReportIssueLabel(report.Goal.Number, report.Goal.Title)))
+	b.WriteString("<div class=\"summary\">\n")
+	goalReportWritePill(&b, "repo", report.Repo, "")
+	goalReportWritePill(&b, "status", report.Goal.Status, "")
+	goalReportWritePill(&b, "state", report.Goal.State, "")
+	goalReportWritePill(&b, "next", report.NextAction, "next")
+	goalReportWritePill(&b, "generated", report.GeneratedAt, "")
+	b.WriteString("</div>\n")
+	if href := goalReportSafeHref(report.Goal.URL); href != "" {
+		fmt.Fprintf(&b, "<p class=\"meta\"><a href=\"%s\">Open goal</a></p>\n", href)
+	}
+	b.WriteString("</header>\n")
+
+	b.WriteString("<section>\n<h2>Next</h2>\n")
+	if report.SelectedTicket != nil {
+		selected := report.SelectedTicket
+		fmt.Fprintf(&b, "<p class=\"item-title\">Selected ticket: %s</p>\n", goalReportHTMLText(goalReportIssueLabel(selected.Number, selected.Title)))
+		fmt.Fprintf(&b, "<p class=\"meta\">Reason: %s</p>\n", goalReportHTMLText(selected.Reason))
+		if href := goalReportSafeHref(selected.URL); href != "" {
+			fmt.Fprintf(&b, "<p class=\"meta\"><a href=\"%s\">Open selected ticket</a></p>\n", href)
+		}
+	} else {
+		b.WriteString("<p class=\"empty\">No selected ticket.</p>\n")
+	}
+	if strings.TrimSpace(report.NextStep) != "" {
+		fmt.Fprintf(&b, "<p class=\"meta\">Next step</p><code>%s</code>\n", goalReportHTMLText(report.NextStep))
+	}
+	b.WriteString("</section>\n")
+
+	b.WriteString("<section>\n<h2>Counts</h2>\n<div class=\"grid\">\n")
+	for _, pair := range goalReportCountPairs(report.Counts) {
+		fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>%s</span></div>\n", pair.count, goalReportHTMLText(pair.name))
+	}
+	b.WriteString("</div>\n</section>\n")
+
+	b.WriteString("<section>\n<h2>Tickets</h2>\n")
+	if len(report.ChildGroups) == 0 {
+		b.WriteString("<p class=\"empty\">No child tickets.</p>\n")
+	} else {
+		for _, group := range report.ChildGroups {
+			fmt.Fprintf(&b, "<h3>%s (%d)</h3>\n<div class=\"list\">\n", goalReportHTMLText(group.Category), group.Count)
+			for _, child := range group.Children {
+				b.WriteString("<div class=\"item\">\n")
+				goalReportWriteChildTitle(&b, child)
+				fmt.Fprintf(&b, "<p class=\"meta\">status=%s checks=%s review=%s next=%s</p>\n", goalReportHTMLText(child.Status), goalReportHTMLText(child.ChecksStatus), goalReportHTMLText(child.ReviewStatus), goalReportHTMLText(child.NextAction))
+				if child.PRNumber > 0 {
+					fmt.Fprintf(&b, "<p class=\"meta\">PR #%d %s</p>\n", child.PRNumber, goalReportHTMLText(child.PRState))
+				}
+				if strings.TrimSpace(child.NextStep) != "" {
+					fmt.Fprintf(&b, "<code>%s</code>\n", goalReportHTMLText(child.NextStep))
+				}
+				b.WriteString("</div>\n")
+			}
+			b.WriteString("</div>\n")
+		}
+	}
+	b.WriteString("</section>\n")
+
+	goalReportWriteStringListSection(&b, "Blockers", report.Blockers, "warn")
+	goalReportWriteStringListSection(&b, "Stop", report.StopConditions, "warn")
+
+	b.WriteString("<section>\n<h2>Evidence</h2>\n<div class=\"grid\">\n")
+	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>children</span></div>\n", report.Evidence.ChildCount)
+	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>remaining</span></div>\n", report.Evidence.RemainingAutonomousWork)
+	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>blockers</span></div>\n", report.Evidence.BlockerCount)
+	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>checks failing</span></div>\n", report.Evidence.Checks.Failing)
+	b.WriteString("</div>\n")
+	if len(report.Evidence.Sources) > 0 {
+		fmt.Fprintf(&b, "<p class=\"meta\">Sources: %s</p>\n", goalReportHTMLText(strings.Join(report.Evidence.Sources, ", ")))
+	}
+	fmt.Fprintf(&b, "<p class=\"meta\">Schema: %s</p>\n", goalReportHTMLText(report.SchemaVersion))
+	b.WriteString("</section>\n")
+
+	b.WriteString("</main>\n</body>\n</html>\n")
+	return b.String()
+}
+
+type goalReportCountPair struct {
+	name  string
+	count int
+}
+
+func goalReportCountPairs(counts map[string]int) []goalReportCountPair {
+	order := []string{"total", "ready", "in_progress", "in_review", "blocked", "done", "closed_other", "unknown"}
+	out := []goalReportCountPair{}
+	seen := map[string]struct{}{}
+	for _, name := range order {
+		if count, ok := counts[name]; ok {
+			out = append(out, goalReportCountPair{name: name, count: count})
+			seen[name] = struct{}{}
+		}
+	}
+	extra := []string{}
+	for name := range counts {
+		if _, ok := seen[name]; !ok {
+			extra = append(extra, name)
+		}
+	}
+	sort.Strings(extra)
+	for _, name := range extra {
+		out = append(out, goalReportCountPair{name: name, count: counts[name]})
+	}
+	if len(out) == 0 {
+		out = append(out, goalReportCountPair{name: "total", count: 0})
+	}
+	return out
+}
+
+func goalReportWriteChildTitle(b *strings.Builder, child GoalStatusChild) {
+	label := goalReportHTMLText(goalReportIssueLabel(child.Number, child.Title))
+	if href := goalReportSafeHref(child.URL); href != "" {
+		fmt.Fprintf(b, "<p class=\"item-title\"><a href=\"%s\">%s</a></p>\n", href, label)
+		return
+	}
+	fmt.Fprintf(b, "<p class=\"item-title\">%s</p>\n", label)
+}
+
+func goalReportWriteStringListSection(b *strings.Builder, title string, values []string, className string) {
+	fmt.Fprintf(b, "<section class=\"%s\">\n<h2>%s</h2>\n", goalReportHTMLText(className), goalReportHTMLText(title))
+	if len(values) == 0 {
+		b.WriteString("<p class=\"empty\">None.</p>\n</section>\n")
+		return
+	}
+	b.WriteString("<div class=\"list\">\n")
+	for _, value := range values {
+		fmt.Fprintf(b, "<div class=\"item\">%s</div>\n", goalReportHTMLText(value))
+	}
+	b.WriteString("</div>\n</section>\n")
+}
+
+func goalReportWritePill(b *strings.Builder, label string, value string, className string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = "none"
+	}
+	classes := "pill"
+	if strings.TrimSpace(className) != "" {
+		classes += " " + className
+	}
+	fmt.Fprintf(b, "<span class=\"%s\">%s: %s</span>\n", goalReportHTMLText(classes), goalReportHTMLText(label), goalReportHTMLText(value))
+}
+
+func goalReportIssueLabel(number int, title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Sprintf("#%d", number)
+	}
+	return fmt.Sprintf("#%d %s", number, title)
+}
+
+func goalReportSafeHref(value string) string {
+	value = strings.TrimSpace(value)
+	lower := strings.ToLower(value)
+	if strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://") {
+		return goalReportHTMLText(value)
+	}
+	return ""
+}
+
+func goalReportHTMLText(value string) string {
+	return html.EscapeString(value)
 }

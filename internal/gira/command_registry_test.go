@@ -97,10 +97,13 @@ func TestCommandCapabilitiesCoverAdapterClasses(t *testing.T) {
 		}
 	}
 	assertCapability("gira ticket status", AdapterCapabilityRead)
-	assertCapability("gira goal dossier", AdapterCapabilityRead)
+	assertCapability("gira goal report", AdapterCapabilityRead)
 	assertCapability("gira goal plan", AdapterCapabilityApplyMutation)
 	assertCapability("gira ticket start", AdapterCapabilityApplyMutation)
 	assertCapability("gira stats workspace", AdapterCapabilityUnsupported)
+	if !containsString(byCanonical["gira goal report"].Aliases, "gira goal dossier") {
+		t.Fatalf("goal report capability must expose goal dossier alias: %+v", byCanonical["gira goal report"])
+	}
 	if !containsString(byCanonical["gira ticket view"].Aliases, "gira ticket show") {
 		t.Fatalf("ticket view capability must expose ticket show alias: %+v", byCanonical["gira ticket view"])
 	}

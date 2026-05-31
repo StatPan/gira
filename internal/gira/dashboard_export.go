@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,11 +13,15 @@ import (
 )
 
 const DashboardExportSchemaVersion = "v1alpha1"
+const WorkspaceDashboardSchemaVersion = "workspace-dashboard/v1alpha1"
+const WorkspaceStatusSourceContract = "workspace-status/v1"
 const dashboardExportGeneratorName = "gira"
 const dashboardExportGeneratorMode = "dashboard_export"
+const workspaceDashboardTopActionLimit = 10
 
 var dashboardExecutionCSVHeaders = []string{"id", "kind", "title", "status", "priority", "owner", "milestone", "target_date", "source_refs"}
 var dashboardRoadmapCSVHeaders = []string{"id", "title", "start_date", "target_date", "status", "phase", "source_refs"}
+var dashboardWorkspaceQueueCSVHeaders = []string{"queue", "repo", "issue", "title", "state", "status", "pr_number", "pr_state", "reason_codes", "next_safe_command", "url"}
 
 var dashboardExportSourceGoogleCalendarReason = "not_enabled"
 
@@ -36,18 +41,21 @@ type DashboardExportArtifact struct {
 }
 
 type DashboardExportCounts struct {
-	Issues       int `json:"issues"`
-	PullRequests int `json:"pull_requests"`
-	Milestones   int `json:"milestones"`
-	RoadmapItems int `json:"roadmap_items"`
-	Transitions  int `json:"transitions"`
-	Warnings     int `json:"warnings"`
+	Issues              int `json:"issues"`
+	PullRequests        int `json:"pull_requests"`
+	Milestones          int `json:"milestones"`
+	RoadmapItems        int `json:"roadmap_items"`
+	Transitions         int `json:"transitions"`
+	WorkspaceRepos      int `json:"workspace_repos,omitempty"`
+	WorkspaceQueueItems int `json:"workspace_queue_items,omitempty"`
+	Warnings            int `json:"warnings"`
 }
 
 type DashboardExportPlan struct {
 	Command       string                    `json:"command"`
 	DryRun        bool                      `json:"dry_run"`
-	Repo          string                    `json:"repo"`
+	Repo          string                    `json:"repo,omitempty"`
+	Workspace     *WorkspaceSummary         `json:"workspace,omitempty"`
 	OutputRoot    string                    `json:"output_root"`
 	SchemaVersion string                    `json:"schema_version"`
 	SnapshotAt    string                    `json:"snapshot_at"`
@@ -65,7 +73,8 @@ type DashboardExportGenerator struct {
 type DashboardExportManifest struct {
 	SchemaVersion string                    `json:"schema_version"`
 	SnapshotAt    string                    `json:"snapshot_at"`
-	Repo          string                    `json:"repo"`
+	Repo          string                    `json:"repo,omitempty"`
+	Workspace     *WorkspaceSummary         `json:"workspace,omitempty"`
 	Sources       []DashboardExportSource   `json:"sources"`
 	Artifacts     []DashboardExportArtifact `json:"artifacts"`
 	Generator     DashboardExportGenerator  `json:"generator"`
@@ -176,19 +185,63 @@ type DashboardExportRoadmapTimeline struct {
 }
 
 type DashboardExportWarnings struct {
-	Repo       string   `json:"repo"`
-	SnapshotAt string   `json:"snapshot_at"`
-	Warnings   []string `json:"warnings"`
+	Repo       string            `json:"repo"`
+	Workspace  *WorkspaceSummary `json:"workspace,omitempty"`
+	SnapshotAt string            `json:"snapshot_at"`
+	Warnings   []string          `json:"warnings"`
+}
+
+type DashboardWorkspaceSource struct {
+	Contract string `json:"contract"`
+	Path     string `json:"path"`
+}
+
+type DashboardWorkspaceTopAction struct {
+	Queue           string   `json:"queue"`
+	Repo            string   `json:"repo"`
+	Issue           int      `json:"issue"`
+	Title           string   `json:"title"`
+	URL             string   `json:"url"`
+	ReasonCodes     []string `json:"reason_codes"`
+	NextSafeCommand string   `json:"next_safe_command"`
+	SourceRefs      []string `json:"source_refs"`
+}
+
+type DashboardWorkspaceWarning struct {
+	Code     string `json:"code"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+}
+
+type DashboardWorkspaceArtifacts struct {
+	WorkspaceStatus string `json:"workspace_status"`
+	WorkspaceQueues string `json:"workspace_queues"`
+	QueueItemsCSV   string `json:"queue_items_csv"`
+}
+
+type DashboardWorkspaceDashboard struct {
+	SchemaVersion string                        `json:"schema_version"`
+	SnapshotAt    string                        `json:"snapshot_at"`
+	Workspace     WorkspaceSummary              `json:"workspace"`
+	Source        DashboardWorkspaceSource      `json:"source"`
+	Counts        WorkspaceCounts               `json:"counts"`
+	QueueCounts   WorkspaceQueueCounts          `json:"queue_counts"`
+	TopActions    []DashboardWorkspaceTopAction `json:"top_actions"`
+	Warnings      []DashboardWorkspaceWarning   `json:"warnings"`
+	Artifacts     DashboardWorkspaceArtifacts   `json:"artifacts"`
 }
 
 type DashboardExportBundle struct {
-	Manifest        DashboardExportManifest        `json:"manifest"`
-	RawGitHub       DashboardExportRawGitHub       `json:"raw_github"`
-	RawTransitions  DashboardExportRawTransitions  `json:"raw_transitions"`
-	RawCapabilities DashboardExportRawCapabilities `json:"raw_capabilities"`
-	ExecutionBoard  DashboardExportExecutionBoard  `json:"execution_board"`
-	RoadmapTimeline DashboardExportRoadmapTimeline `json:"roadmap_timeline"`
-	Warnings        DashboardExportWarnings        `json:"warnings"`
+	Manifest           DashboardExportManifest        `json:"manifest"`
+	RawGitHub          DashboardExportRawGitHub       `json:"raw_github"`
+	RawTransitions     DashboardExportRawTransitions  `json:"raw_transitions"`
+	RawCapabilities    DashboardExportRawCapabilities `json:"raw_capabilities"`
+	ExecutionBoard     DashboardExportExecutionBoard  `json:"execution_board"`
+	RoadmapTimeline    DashboardExportRoadmapTimeline `json:"roadmap_timeline"`
+	Warnings           DashboardExportWarnings        `json:"warnings"`
+	WorkspaceStatus    *WorkspaceReport               `json:"workspace_status,omitempty"`
+	WorkspaceQueues    *WorkspaceQueuesReport         `json:"workspace_queues,omitempty"`
+	WorkspaceDashboard *DashboardWorkspaceDashboard   `json:"workspace_dashboard,omitempty"`
 }
 
 func DashboardExportArtifacts() []DashboardExportArtifact {
@@ -202,6 +255,17 @@ func DashboardExportArtifacts() []DashboardExportArtifact {
 		{Path: "derived/warnings.json", Kind: "derived_json", WillWrite: true},
 		{Path: "csv/execution_items.csv", Kind: "csv", WillWrite: true},
 		{Path: "csv/roadmap_items.csv", Kind: "csv", WillWrite: true},
+	}
+}
+
+func DashboardExportWorkspaceArtifacts() []DashboardExportArtifact {
+	return []DashboardExportArtifact{
+		{Path: "manifest.json", Kind: "manifest_json", WillWrite: true},
+		{Path: "raw/workspace_status.json", Kind: "raw_json", WillWrite: true},
+		{Path: "derived/workspace_queues.json", Kind: "derived_json", WillWrite: true},
+		{Path: "derived/workspace_dashboard.json", Kind: "derived_json", WillWrite: true},
+		{Path: "csv/workspace_queue_items.csv", Kind: "csv", WillWrite: true},
+		{Path: "index.html", Kind: "html", WillWrite: true},
 	}
 }
 
@@ -337,11 +401,80 @@ func BuildDashboardExportPlan(repo RepoRef, outputRoot string, snapshotAt time.T
 	return plan, bundle, nil
 }
 
+func BuildWorkspaceDashboardExportPlan(config WorkspaceConfigResolved, outputRoot string, snapshotAt time.Time, dryRun bool, client WorkspaceClient, staleDays int, options WorkspaceStatusOptions) (DashboardExportPlan, DashboardExportBundle, error) {
+	if client == nil {
+		return DashboardExportPlan{}, DashboardExportBundle{}, fmt.Errorf("workspace dashboard export client is required")
+	}
+
+	report, err := BuildWorkspaceStatusReportWithOptions(config, client, snapshotAt, staleDays, options)
+	if err != nil {
+		return DashboardExportPlan{}, DashboardExportBundle{}, err
+	}
+	snapshotText := report.FetchedAt
+	if strings.TrimSpace(snapshotText) == "" {
+		snapshotText = formatGitHubTime(snapshotAt)
+	}
+	workspace := report.Workspace
+	artifacts := DashboardExportWorkspaceArtifacts()
+	sources := dashboardWorkspaceExportSources(snapshotText)
+	dashboard := buildWorkspaceDashboard(report, snapshotText)
+	warnings := workspaceDashboardWarningMessages(dashboard.Warnings)
+
+	plan := DashboardExportPlan{
+		Command:       "export dashboard",
+		DryRun:        dryRun,
+		Workspace:     &workspace,
+		OutputRoot:    outputRoot,
+		SchemaVersion: DashboardExportSchemaVersion,
+		SnapshotAt:    snapshotText,
+		Sources:       sources,
+		Artifacts:     artifacts,
+		Counts: DashboardExportCounts{
+			WorkspaceRepos:      len(report.Repos),
+			WorkspaceQueueItems: countWorkspaceQueueItems(report.Queues),
+			Warnings:            len(dashboard.Warnings),
+		},
+		Warnings: warnings,
+	}
+
+	queues := report.Queues
+	bundle := DashboardExportBundle{
+		Manifest: DashboardExportManifest{
+			SchemaVersion: DashboardExportSchemaVersion,
+			SnapshotAt:    snapshotText,
+			Workspace:     &workspace,
+			Sources:       sources,
+			Artifacts:     artifacts,
+			Generator: DashboardExportGenerator{
+				Name: dashboardExportGeneratorName,
+				Mode: dashboardExportGeneratorMode,
+			},
+		},
+		Warnings: DashboardExportWarnings{
+			Workspace:  &workspace,
+			SnapshotAt: snapshotText,
+			Warnings:   warnings,
+		},
+		WorkspaceStatus:    &report,
+		WorkspaceQueues:    &queues,
+		WorkspaceDashboard: &dashboard,
+	}
+
+	return plan, bundle, nil
+}
+
 func dashboardExportSources(snapshotAt string) []DashboardExportSource {
 	github := snapshotAt
 	return []DashboardExportSource{
 		{Name: "github", Included: true, SnapshotAt: &github},
 		{Name: "google_calendar", Included: false, SnapshotAt: nil, Reason: dashboardExportSourceGoogleCalendarReason},
+	}
+}
+
+func dashboardWorkspaceExportSources(snapshotAt string) []DashboardExportSource {
+	workspace := snapshotAt
+	return []DashboardExportSource{
+		{Name: "workspace_status", Included: true, SnapshotAt: &workspace},
 	}
 }
 
@@ -446,6 +579,137 @@ func buildDashboardRoadmapItems(milestones []DashboardRawMilestone, projectItems
 		return items[i].Title < items[j].Title
 	})
 	return items
+}
+
+func buildWorkspaceDashboard(report WorkspaceReport, snapshotAt string) DashboardWorkspaceDashboard {
+	warnings := buildWorkspaceDashboardWarnings(report)
+	return DashboardWorkspaceDashboard{
+		SchemaVersion: WorkspaceDashboardSchemaVersion,
+		SnapshotAt:    snapshotAt,
+		Workspace:     report.Workspace,
+		Source: DashboardWorkspaceSource{
+			Contract: WorkspaceStatusSourceContract,
+			Path:     "raw/workspace_status.json",
+		},
+		Counts:      report.Counts,
+		QueueCounts: report.Queues.Counts,
+		TopActions:  buildWorkspaceDashboardTopActions(report.Queues),
+		Warnings:    warnings,
+		Artifacts: DashboardWorkspaceArtifacts{
+			WorkspaceStatus: "raw/workspace_status.json",
+			WorkspaceQueues: "derived/workspace_queues.json",
+			QueueItemsCSV:   "csv/workspace_queue_items.csv",
+		},
+	}
+}
+
+func buildWorkspaceDashboardTopActions(report WorkspaceQueuesReport) []DashboardWorkspaceTopAction {
+	items := workspaceDashboardAllQueueItems(report)
+	actions := make([]DashboardWorkspaceTopAction, 0, minInt(len(items), workspaceDashboardTopActionLimit))
+	for _, item := range items {
+		if len(actions) >= workspaceDashboardTopActionLimit {
+			break
+		}
+		actions = append(actions, DashboardWorkspaceTopAction{
+			Queue:           item.Queue,
+			Repo:            item.Repo,
+			Issue:           item.Issue,
+			Title:           item.Title,
+			URL:             workspaceQueueIssueURL(item),
+			ReasonCodes:     append([]string(nil), item.ReasonCodes...),
+			NextSafeCommand: item.NextSafeCommand,
+			SourceRefs: []string{
+				fmt.Sprintf("workspace_queue:%s:%s#%d", item.Queue, item.Repo, item.Issue),
+				fmt.Sprintf("issue:%s#%d", item.Repo, item.Issue),
+			},
+		})
+	}
+	return actions
+}
+
+func buildWorkspaceDashboardWarnings(report WorkspaceReport) []DashboardWorkspaceWarning {
+	warnings := make([]DashboardWorkspaceWarning, 0)
+	if report.RateLimit != nil && !report.RateLimit.BudgetOK {
+		warnings = append(warnings, DashboardWorkspaceWarning{
+			Code:     "workspace_rate_budget_low",
+			Severity: "warning",
+			Message:  fmt.Sprintf("GitHub API budget low: remaining=%d estimated=%d reset=%s", report.RateLimit.Remaining, report.RateLimit.EstimatedRequests, report.RateLimit.ResetAt),
+		})
+	}
+	if report.Cache.Enabled && report.Cache.Stale > 0 {
+		warnings = append(warnings, DashboardWorkspaceWarning{
+			Code:     "workspace_cache_stale",
+			Severity: "warning",
+			Message:  fmt.Sprintf("%d workspace status cache entries were stale.", report.Cache.Stale),
+		})
+	}
+	for _, warning := range report.Warnings {
+		code := workspaceDashboardWarningCode(warning)
+		structured := DashboardWorkspaceWarning{Code: code, Severity: "warning", Message: warning}
+		if code == "workspace_rate_budget_low" && hasWorkspaceDashboardWarning(warnings, code) {
+			continue
+		}
+		warnings = append(warnings, structured)
+	}
+	return warnings
+}
+
+func workspaceDashboardWarningCode(warning string) string {
+	lower := strings.ToLower(warning)
+	switch {
+	case strings.Contains(lower, "budget low") || strings.Contains(lower, "rate limit"):
+		return "workspace_rate_budget_low"
+	case strings.Contains(lower, "queue") && (strings.Contains(lower, "detail") || strings.Contains(lower, "status")):
+		return "workspace_queue_detail_incomplete"
+	case strings.Contains(lower, "cache") && strings.Contains(lower, "stale"):
+		return "workspace_cache_stale"
+	default:
+		return "workspace_status_unavailable"
+	}
+}
+
+func hasWorkspaceDashboardWarning(warnings []DashboardWorkspaceWarning, code string) bool {
+	for _, warning := range warnings {
+		if warning.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func workspaceDashboardWarningMessages(warnings []DashboardWorkspaceWarning) []string {
+	values := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		values = append(values, warning.Code+": "+warning.Message)
+	}
+	return values
+}
+
+func workspaceDashboardAllQueueItems(report WorkspaceQueuesReport) []WorkspaceQueueItem {
+	items := make([]WorkspaceQueueItem, 0, countWorkspaceQueueItems(report))
+	items = append(items, report.Queues.AgentReady...)
+	items = append(items, report.Queues.ReviewNeeded...)
+	items = append(items, report.Queues.FinishReady...)
+	items = append(items, report.Queues.Blocked...)
+	items = append(items, report.Queues.FailedCheck...)
+	items = append(items, report.Queues.HumanDecision...)
+	return items
+}
+
+func countWorkspaceQueueItems(report WorkspaceQueuesReport) int {
+	return len(report.Queues.AgentReady) +
+		len(report.Queues.ReviewNeeded) +
+		len(report.Queues.FinishReady) +
+		len(report.Queues.Blocked) +
+		len(report.Queues.FailedCheck) +
+		len(report.Queues.HumanDecision)
+}
+
+func workspaceQueueIssueURL(item WorkspaceQueueItem) string {
+	if strings.TrimSpace(item.Repo) == "" || item.Issue <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("https://github.com/%s/issues/%d", item.Repo, item.Issue)
 }
 
 func buildDashboardRawProjectItems(roadmapItems []ProjectRoadmapItem) []DashboardRawProjectItem {
@@ -570,7 +834,12 @@ func dashboardExportPullStatusFromState(state string) string {
 func FormatDashboardExportPlan(plan DashboardExportPlan) string {
 	var lines []string
 	lines = append(lines, "export dashboard plan:")
-	lines = append(lines, "repo: "+plan.Repo)
+	if plan.Repo != "" {
+		lines = append(lines, "repo: "+plan.Repo)
+	}
+	if plan.Workspace != nil {
+		lines = append(lines, "workspace: "+plan.Workspace.Name+" ("+plan.Workspace.Owner+")")
+	}
 	lines = append(lines, "output_root: "+plan.OutputRoot)
 	lines = append(lines, "schema_version: "+plan.SchemaVersion)
 	lines = append(lines, "snapshot_at: "+plan.SnapshotAt)
@@ -597,6 +866,12 @@ func FormatDashboardExportPlan(plan DashboardExportPlan) string {
 	lines = append(lines, fmt.Sprintf("  milestones: %d", plan.Counts.Milestones))
 	lines = append(lines, fmt.Sprintf("  roadmap_items: %d", plan.Counts.RoadmapItems))
 	lines = append(lines, fmt.Sprintf("  transitions: %d", plan.Counts.Transitions))
+	if plan.Counts.WorkspaceRepos > 0 {
+		lines = append(lines, fmt.Sprintf("  workspace_repos: %d", plan.Counts.WorkspaceRepos))
+	}
+	if plan.Counts.WorkspaceQueueItems > 0 {
+		lines = append(lines, fmt.Sprintf("  workspace_queue_items: %d", plan.Counts.WorkspaceQueueItems))
+	}
 	lines = append(lines, fmt.Sprintf("  warnings: %d", plan.Counts.Warnings))
 	lines = append(lines, "warnings:")
 	if len(plan.Warnings) == 0 {
@@ -615,41 +890,73 @@ func WriteDashboardExportBundle(outputRoot string, bundle DashboardExportBundle)
 	if err != nil {
 		return err
 	}
-	executionCSV, err := renderDashboardExecutionCSV(bundle.ExecutionBoard.Items)
-	if err != nil {
-		return err
-	}
-	roadmapCSV, err := renderDashboardRoadmapCSV(bundle.RoadmapTimeline.Items)
-	if err != nil {
-		return err
-	}
 
 	if err := writeDashboardExportJSON(scope, "manifest.json", bundle.Manifest); err != nil {
 		return err
 	}
-	if err := writeDashboardExportJSON(scope, "raw/github.json", bundle.RawGitHub); err != nil {
-		return err
+	if strings.TrimSpace(bundle.Manifest.Repo) != "" {
+		executionCSV, err := renderDashboardExecutionCSV(bundle.ExecutionBoard.Items)
+		if err != nil {
+			return err
+		}
+		roadmapCSV, err := renderDashboardRoadmapCSV(bundle.RoadmapTimeline.Items)
+		if err != nil {
+			return err
+		}
+
+		if err := writeDashboardExportJSON(scope, "raw/github.json", bundle.RawGitHub); err != nil {
+			return err
+		}
+		if err := writeDashboardExportJSON(scope, "raw/transitions.json", bundle.RawTransitions); err != nil {
+			return err
+		}
+		if err := writeDashboardExportJSON(scope, "raw/capabilities.json", bundle.RawCapabilities); err != nil {
+			return err
+		}
+		if err := writeDashboardExportJSON(scope, "derived/execution_board.json", bundle.ExecutionBoard); err != nil {
+			return err
+		}
+		if err := writeDashboardExportJSON(scope, "derived/roadmap_timeline.json", bundle.RoadmapTimeline); err != nil {
+			return err
+		}
+		if err := writeDashboardExportJSON(scope, "derived/warnings.json", bundle.Warnings); err != nil {
+			return err
+		}
+		if err := scope.WriteFile("csv/execution_items.csv", executionCSV, 0o644); err != nil {
+			return err
+		}
+		if err := scope.WriteFile("csv/roadmap_items.csv", roadmapCSV, 0o644); err != nil {
+			return err
+		}
 	}
-	if err := writeDashboardExportJSON(scope, "raw/transitions.json", bundle.RawTransitions); err != nil {
-		return err
+	if bundle.WorkspaceStatus != nil {
+		if err := writeDashboardExportJSON(scope, "raw/workspace_status.json", bundle.WorkspaceStatus); err != nil {
+			return err
+		}
 	}
-	if err := writeDashboardExportJSON(scope, "raw/capabilities.json", bundle.RawCapabilities); err != nil {
-		return err
+	if bundle.WorkspaceQueues != nil {
+		if err := writeDashboardExportJSON(scope, "derived/workspace_queues.json", bundle.WorkspaceQueues); err != nil {
+			return err
+		}
+		queueCSV, err := renderDashboardWorkspaceQueueCSV(*bundle.WorkspaceQueues)
+		if err != nil {
+			return err
+		}
+		if err := scope.WriteFile("csv/workspace_queue_items.csv", queueCSV, 0o644); err != nil {
+			return err
+		}
 	}
-	if err := writeDashboardExportJSON(scope, "derived/execution_board.json", bundle.ExecutionBoard); err != nil {
-		return err
-	}
-	if err := writeDashboardExportJSON(scope, "derived/roadmap_timeline.json", bundle.RoadmapTimeline); err != nil {
-		return err
-	}
-	if err := writeDashboardExportJSON(scope, "derived/warnings.json", bundle.Warnings); err != nil {
-		return err
-	}
-	if err := scope.WriteFile("csv/execution_items.csv", executionCSV, 0o644); err != nil {
-		return err
-	}
-	if err := scope.WriteFile("csv/roadmap_items.csv", roadmapCSV, 0o644); err != nil {
-		return err
+	if bundle.WorkspaceDashboard != nil {
+		if err := writeDashboardExportJSON(scope, "derived/workspace_dashboard.json", bundle.WorkspaceDashboard); err != nil {
+			return err
+		}
+		html, err := renderWorkspaceDashboardHTML(*bundle.WorkspaceDashboard)
+		if err != nil {
+			return err
+		}
+		if err := scope.WriteFile("index.html", html, 0o644); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -711,4 +1018,133 @@ func renderDashboardRoadmapCSV(items []DashboardRoadmapTimelineItem) ([]byte, er
 	}
 	writer.Flush()
 	return buffer.Bytes(), writer.Error()
+}
+
+func renderDashboardWorkspaceQueueCSV(report WorkspaceQueuesReport) ([]byte, error) {
+	buffer := &bytes.Buffer{}
+	writer := csv.NewWriter(buffer)
+	if err := writer.Write(dashboardWorkspaceQueueCSVHeaders); err != nil {
+		return nil, err
+	}
+	for _, item := range workspaceDashboardAllQueueItems(report) {
+		prNumber := ""
+		prState := ""
+		if item.PullRequest != nil {
+			prNumber = strconv.Itoa(item.PullRequest.Number)
+			prState = item.PullRequest.State
+		}
+		row := []string{
+			item.Queue,
+			item.Repo,
+			strconv.Itoa(item.Issue),
+			item.Title,
+			item.State,
+			item.Status,
+			prNumber,
+			prState,
+			strings.Join(item.ReasonCodes, ","),
+			item.NextSafeCommand,
+			workspaceQueueIssueURL(item),
+		}
+		if err := writer.Write(row); err != nil {
+			return nil, err
+		}
+	}
+	writer.Flush()
+	return buffer.Bytes(), writer.Error()
+}
+
+var workspaceDashboardHTMLTemplate = template.Must(template.New("workspace-dashboard").Parse(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gira Workspace Dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; color: #202124; background: #fff; }
+    main { max-width: 1120px; margin: 0 auto; padding: 2rem; }
+    header, section { border-bottom: 1px solid #dfe3e8; padding: 1.25rem 0; }
+    h1, h2 { margin: 0 0 .75rem; }
+    dl, table { width: 100%; }
+    dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; }
+    dt { font-size: .8rem; color: #5f6368; }
+    dd { margin: .2rem 0 0; font-size: 1.25rem; font-weight: 650; }
+    table { border-collapse: collapse; background: #fff; }
+    th, td { padding: .6rem; border-top: 1px solid #eceff3; text-align: left; vertical-align: top; }
+    th { font-size: .8rem; color: #5f6368; }
+    code { white-space: pre-wrap; word-break: break-word; }
+    a { color: #0b57d0; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>{{.Workspace.Name}} Workspace Dashboard</h1>
+    <p>Owner: {{.Workspace.Owner}} | Snapshot: {{.SnapshotAt}} | Source: {{.Source.Contract}} at {{.Source.Path}}</p>
+  </header>
+  <section>
+    <h2>Counts</h2>
+    <dl>
+      <div><dt>Backlog</dt><dd>{{.Counts.Backlog}}</dd></div>
+      <div><dt>Repo Open</dt><dd>{{.Counts.RepoOpen}}</dd></div>
+      <div><dt>Ready</dt><dd>{{.Counts.Ready}}</dd></div>
+      <div><dt>In Progress</dt><dd>{{.Counts.InProgress}}</dd></div>
+      <div><dt>Blocked</dt><dd>{{.Counts.Blocked}}</dd></div>
+      <div><dt>Stale</dt><dd>{{.Counts.Stale}}</dd></div>
+    </dl>
+  </section>
+  <section>
+    <h2>Queue Counts</h2>
+    <dl>
+      <div><dt>Agent Ready</dt><dd>{{.QueueCounts.AgentReady}}</dd></div>
+      <div><dt>Review Needed</dt><dd>{{.QueueCounts.ReviewNeeded}}</dd></div>
+      <div><dt>Finish Ready</dt><dd>{{.QueueCounts.FinishReady}}</dd></div>
+      <div><dt>Blocked</dt><dd>{{.QueueCounts.Blocked}}</dd></div>
+      <div><dt>Failed Check</dt><dd>{{.QueueCounts.FailedCheck}}</dd></div>
+      <div><dt>Human Decision</dt><dd>{{.QueueCounts.HumanDecision}}</dd></div>
+    </dl>
+  </section>
+  <section>
+    <h2>Top Actions</h2>
+    <table>
+      <thead><tr><th>Queue</th><th>Item</th><th>Reason</th><th>Next Command</th></tr></thead>
+      <tbody>
+      {{range .TopActions}}
+        <tr>
+          <td>{{.Queue}}</td>
+          <td><a href="{{.URL}}">{{.Repo}}#{{.Issue}}</a><br>{{.Title}}</td>
+          <td>{{range .ReasonCodes}}<code>{{.}}</code> {{end}}</td>
+          <td><code>{{.NextSafeCommand}}</code></td>
+        </tr>
+      {{else}}
+        <tr><td colspan="4">No queue actions in this snapshot.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+  <section>
+    <h2>Warnings</h2>
+    <table>
+      <thead><tr><th>Code</th><th>Severity</th><th>Message</th></tr></thead>
+      <tbody>
+      {{range .Warnings}}
+        <tr><td><code>{{.Code}}</code></td><td>{{.Severity}}</td><td>{{.Message}}</td></tr>
+      {{else}}
+        <tr><td colspan="3">No warnings.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>
+`))
+
+func renderWorkspaceDashboardHTML(dashboard DashboardWorkspaceDashboard) ([]byte, error) {
+	var buffer bytes.Buffer
+	if err := workspaceDashboardHTMLTemplate.Execute(&buffer, dashboard); err != nil {
+		return nil, err
+	}
+	buffer.WriteByte('\n')
+	return buffer.Bytes(), nil
 }

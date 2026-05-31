@@ -81,6 +81,13 @@ out/dashboard/
   index.html
 ```
 
+Workspace-mode export starts from:
+
+```bash
+gira export dashboard --config .gira/config.yaml --output out/dashboard --dry-run
+gira export dashboard --config .gira/config.yaml --output out/dashboard
+```
+
 ## Versioning
 
 Every export bundle must carry a schema version.

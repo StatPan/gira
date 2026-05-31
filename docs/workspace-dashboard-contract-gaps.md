@@ -143,6 +143,9 @@ gira export dashboard --config .gira/config.yaml --output out/dashboard --dry-ru
 gira export dashboard --config .gira/config.yaml --output out/dashboard
 ```
 
+The first #668 implementation uses that `--config` path and supports `--repo`
+as an optional workspace repo filter.
+
 If neither `--repo` nor `--config` is provided, the command may resolve the
 default global workspace the same way `gira workspace status` does. That is a
 convenience path, not the required implementation for #668.
@@ -289,6 +292,14 @@ implementation should choose one behavior and document it in tests.
 7. Add `index.html` only after JSON artifacts are deterministic.
 8. Add tests for dry-run artifacts, apply writes, stable CSV headers, and
    repo-only compatibility.
+
+The first implemented workspace bundle writes:
+
+- `raw/workspace_status.json`
+- `derived/workspace_queues.json`
+- `derived/workspace_dashboard.json`
+- `csv/workspace_queue_items.csv`
+- `index.html`
 
 ## Non-Goals
 

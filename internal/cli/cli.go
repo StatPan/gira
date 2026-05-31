@@ -617,9 +617,19 @@ const exportHelp = `Export read-only dashboard artifacts from GitHub.
 
 Usage:
   gira export dashboard --repo OWNER/REPO [--output PATH] [--dry-run] [--json]
+  gira export dashboard --config .gira/config.yaml [--repo OWNER/REPO] [--output PATH] [--dry-run] [--json]
 
 Flags:
   --repo string       Target GitHub repo in OWNER/REPO format
+  --config string     Workspace config path for workspace dashboard export
+  --limit int         Maximum workspace execution repos to inspect
+  --active-only       Include only active workspace repos
+  --max-concurrency int
+                      Maximum concurrent workspace repo status fetches (default 4)
+  --cache-ttl duration
+                      Reuse recent per-repo status cache for this duration (default 5m)
+  --cache-root string Workspace status cache root
+  --refresh           Ignore cached workspace status and fetch fresh data
   --output string     Output root directory for artifacts (default "./out/dashboard")
   --dry-run           Plan export without writing artifacts
   --json              Emit stable JSON summary
@@ -1112,6 +1122,14 @@ var newProjectTransitionsApplyReport = func(repo gira.RepoRef) (gira.ProjectTran
 
 var newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
 	return gira.NewGHDashboardExportClient(repo, gira.ExecCommandRunner{})
+}
+
+var newWorkspaceDashboardExportBundle = func(configPath string, outputRoot string, snapshotAt time.Time, dryRun bool, options gira.WorkspaceStatusOptions) (gira.DashboardExportPlan, gira.DashboardExportBundle, error) {
+	resolved, err := gira.ResolveWorkspaceConfig(configPath)
+	if err != nil {
+		return gira.DashboardExportPlan{}, gira.DashboardExportBundle{}, err
+	}
+	return gira.BuildWorkspaceDashboardExportPlan(resolved, outputRoot, snapshotAt, dryRun, gira.NewGHWorkspaceClient(gira.ExecCommandRunner{}), 14, options)
 }
 
 var newPortfolioReport = func(command string, configPath string, dryRun bool) (gira.PortfolioReport, error) {
@@ -7095,7 +7113,14 @@ func runExportDashboard(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs.SetOutput(io.Discard)
 
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	configPath := fs.String("config", "", "Workspace config path for workspace dashboard export")
 	outputRoot := fs.String("output", "./out/dashboard", "Output root directory for artifacts")
+	limit := fs.Int("limit", 0, "Maximum workspace execution repos to inspect")
+	activeOnly := fs.Bool("active-only", false, "Include only active workspace repos")
+	maxConcurrency := fs.Int("max-concurrency", 4, "Maximum concurrent workspace repo status fetches")
+	cacheTTL := fs.Duration("cache-ttl", 5*time.Minute, "Reuse recent per-repo status cache for this duration. Use 0 to disable")
+	refresh := fs.Bool("refresh", false, "Ignore cached workspace status and fetch fresh data")
+	cacheRoot := fs.String("cache-root", "", "Workspace status cache root")
 	dryRun := fs.Bool("dry-run", false, "Plan export without writing artifacts")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON summary")
 	help := fs.Bool("help", false, "Show help")
@@ -7115,15 +7140,24 @@ func runExportDashboard(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, exportHelp)
 		return 2
 	}
-	if *repoValue == "" {
-		fmt.Fprint(stderr, "--repo is required\n\n")
+	if *repoValue == "" && *configPath == "" {
+		fmt.Fprint(stderr, "--repo or --config is required\n\n")
 		fmt.Fprint(stderr, exportHelp)
 		return 2
 	}
-
-	repo, err := gira.ParseRepoRef(*repoValue)
-	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
+	if *limit < 0 {
+		fmt.Fprint(stderr, "--limit must be at least 0\n\n")
+		fmt.Fprint(stderr, exportHelp)
+		return 2
+	}
+	if *maxConcurrency < 1 {
+		fmt.Fprint(stderr, "--max-concurrency must be at least 1\n\n")
+		fmt.Fprint(stderr, exportHelp)
+		return 2
+	}
+	if *cacheTTL < 0 {
+		fmt.Fprint(stderr, "--cache-ttl must be non-negative\n\n")
+		fmt.Fprint(stderr, exportHelp)
 		return 2
 	}
 
@@ -7134,8 +7168,37 @@ func runExportDashboard(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 	}
 
-	client := newDashboardExportClient(repo)
-	plan, bundle, err := gira.BuildDashboardExportPlan(repo, *outputRoot, dashboardExportNow(), *dryRun, client)
+	var plan gira.DashboardExportPlan
+	var bundle gira.DashboardExportBundle
+	var err error
+	if *configPath != "" {
+		var selectedRepos []gira.RepoRef
+		if strings.TrimSpace(*repoValue) != "" {
+			repo, parseErr := gira.ParseRepoRef(*repoValue)
+			if parseErr != nil {
+				fmt.Fprintf(stderr, "--repo must be in OWNER/REPO format: %v\n", parseErr)
+				return 2
+			}
+			selectedRepos = []gira.RepoRef{repo}
+		}
+		plan, bundle, err = newWorkspaceDashboardExportBundle(*configPath, *outputRoot, dashboardExportNow(), *dryRun, gira.WorkspaceStatusOptions{
+			Repos:          selectedRepos,
+			Limit:          *limit,
+			ActiveOnly:     *activeOnly,
+			MaxConcurrency: *maxConcurrency,
+			CacheTTL:       *cacheTTL,
+			Refresh:        *refresh,
+			CacheRoot:      *cacheRoot,
+		})
+	} else {
+		repo, parseErr := gira.ParseRepoRef(*repoValue)
+		if parseErr != nil {
+			fmt.Fprintf(stderr, "%v\n", parseErr)
+			return 2
+		}
+		client := newDashboardExportClient(repo)
+		plan, bundle, err = gira.BuildDashboardExportPlan(repo, *outputRoot, dashboardExportNow(), *dryRun, client)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2

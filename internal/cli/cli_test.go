@@ -5985,15 +5985,15 @@ func TestSyncApplyUsesInjectedClientAndPrintsComplete(t *testing.T) {
 	}
 }
 
-func TestExportDashboardCommandRequiresRepo(t *testing.T) {
+func TestExportDashboardCommandRequiresRepoOrConfig(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"export", "dashboard", "--dry-run"}, &stdout, &stderr)
 
 	if code == 0 {
 		t.Fatal("exit code = 0, want non-zero")
 	}
-	if !strings.Contains(stderr.String(), "--repo is required") {
-		t.Fatalf("stderr missing repo requirement:\n%s", stderr.String())
+	if !strings.Contains(stderr.String(), "--repo or --config is required") {
+		t.Fatalf("stderr missing repo/config requirement:\n%s", stderr.String())
 	}
 }
 
@@ -6180,6 +6180,145 @@ func TestExportDashboardApplyWritesArtifactsAndJsonOnlyStdout(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(outputRoot, relativePath)); err != nil {
 			t.Fatalf("expected exported file %q: %v", relativePath, err)
 		}
+	}
+}
+
+func TestExportDashboardWorkspaceDryRunJSON(t *testing.T) {
+	restoreExport, restoreNow := newWorkspaceDashboardExportBundle, dashboardExportNow
+	t.Cleanup(func() {
+		newWorkspaceDashboardExportBundle = restoreExport
+		dashboardExportNow = restoreNow
+	})
+	dashboardExportNow = func() time.Time {
+		return time.Date(2026, 5, 31, 9, 0, 0, 0, time.UTC)
+	}
+	var capturedConfig string
+	var capturedDryRun bool
+	var capturedOptions gira.WorkspaceStatusOptions
+	newWorkspaceDashboardExportBundle = func(configPath string, outputRoot string, snapshotAt time.Time, dryRun bool, options gira.WorkspaceStatusOptions) (gira.DashboardExportPlan, gira.DashboardExportBundle, error) {
+		capturedConfig = configPath
+		capturedDryRun = dryRun
+		capturedOptions = options
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.DashboardExportPlan{
+			Command:       "export dashboard",
+			DryRun:        dryRun,
+			Workspace:     &workspace,
+			OutputRoot:    outputRoot,
+			SchemaVersion: gira.DashboardExportSchemaVersion,
+			SnapshotAt:    "2026-05-31T09:00:00Z",
+			Sources:       []gira.DashboardExportSource{{Name: "workspace_status", Included: true}},
+			Artifacts:     gira.DashboardExportWorkspaceArtifacts(),
+			Counts:        gira.DashboardExportCounts{WorkspaceRepos: 1, WorkspaceQueueItems: 1},
+		}, gira.DashboardExportBundle{}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"export",
+		"dashboard",
+		"--config",
+		".gira/config.yaml",
+		"--repo",
+		"StatPan/gira",
+		"--limit",
+		"1",
+		"--active-only",
+		"--cache-ttl",
+		"0s",
+		"--dry-run",
+		"--json",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr not empty in json mode:\n%s", stderr.String())
+	}
+	if capturedConfig != ".gira/config.yaml" || !capturedDryRun {
+		t.Fatalf("workspace export call config=%q dry=%t", capturedConfig, capturedDryRun)
+	}
+	if len(capturedOptions.Repos) != 1 || capturedOptions.Repos[0].FullName() != "StatPan/gira" || capturedOptions.Limit != 1 || !capturedOptions.ActiveOnly || capturedOptions.CacheTTL != 0 {
+		t.Fatalf("workspace options = %+v", capturedOptions)
+	}
+	var payload struct {
+		Workspace *gira.WorkspaceSummary     `json:"workspace"`
+		Counts    gira.DashboardExportCounts `json:"counts"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("JSON output parse failure: %v\n%s", err, stdout.String())
+	}
+	if payload.Workspace == nil || payload.Workspace.Name != "personal" || payload.Counts.WorkspaceQueueItems != 1 {
+		t.Fatalf("workspace payload mismatch: %+v", payload)
+	}
+}
+
+func TestExportDashboardWorkspaceApplyWritesArtifacts(t *testing.T) {
+	restoreExport, restoreNow := newWorkspaceDashboardExportBundle, dashboardExportNow
+	t.Cleanup(func() {
+		newWorkspaceDashboardExportBundle = restoreExport
+		dashboardExportNow = restoreNow
+	})
+	dashboardExportNow = func() time.Time {
+		return time.Date(2026, 5, 31, 9, 0, 0, 0, time.UTC)
+	}
+	newWorkspaceDashboardExportBundle = func(configPath string, outputRoot string, snapshotAt time.Time, dryRun bool, options gira.WorkspaceStatusOptions) (gira.DashboardExportPlan, gira.DashboardExportBundle, error) {
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		queues := gira.BuildWorkspaceQueues(workspace, []gira.WorkStatusResult{
+			{Repo: "StatPan/gira", Issue: 10, Title: "Ready issue", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+		})
+		dashboard := gira.DashboardWorkspaceDashboard{
+			SchemaVersion: gira.WorkspaceDashboardSchemaVersion,
+			SnapshotAt:    "2026-05-31T09:00:00Z",
+			Workspace:     workspace,
+			Source:        gira.DashboardWorkspaceSource{Contract: gira.WorkspaceStatusSourceContract, Path: "raw/workspace_status.json"},
+			QueueCounts:   queues.Counts,
+			TopActions: []gira.DashboardWorkspaceTopAction{
+				{Queue: "agent_ready", Repo: "StatPan/gira", Issue: 10, Title: "Ready issue", URL: "https://github.com/StatPan/gira/issues/10", ReasonCodes: []string{"ticket_ready"}, NextSafeCommand: "gira ticket start --repo StatPan/gira --ticket 10 --apply"},
+			},
+			Artifacts: gira.DashboardWorkspaceArtifacts{WorkspaceStatus: "raw/workspace_status.json", WorkspaceQueues: "derived/workspace_queues.json", QueueItemsCSV: "csv/workspace_queue_items.csv"},
+		}
+		report := gira.WorkspaceReport{Workspace: workspace, Queues: queues, FetchedAt: "2026-05-31T09:00:00Z"}
+		return gira.DashboardExportPlan{
+				Command:       "export dashboard",
+				DryRun:        dryRun,
+				Workspace:     &workspace,
+				OutputRoot:    outputRoot,
+				SchemaVersion: gira.DashboardExportSchemaVersion,
+				SnapshotAt:    "2026-05-31T09:00:00Z",
+				Artifacts:     gira.DashboardExportWorkspaceArtifacts(),
+				Counts:        gira.DashboardExportCounts{WorkspaceRepos: 1, WorkspaceQueueItems: 1},
+			}, gira.DashboardExportBundle{
+				Manifest:           gira.DashboardExportManifest{SchemaVersion: gira.DashboardExportSchemaVersion, SnapshotAt: "2026-05-31T09:00:00Z", Workspace: &workspace, Artifacts: gira.DashboardExportWorkspaceArtifacts()},
+				WorkspaceStatus:    &report,
+				WorkspaceQueues:    &queues,
+				WorkspaceDashboard: &dashboard,
+			}, nil
+	}
+
+	outputRoot := filepath.Join(t.TempDir(), "workspace-dashboard")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"export",
+		"dashboard",
+		"--config",
+		".gira/config.yaml",
+		"--output",
+		outputRoot,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr not empty:\n%s", stderr.String())
+	}
+	for _, relativePath := range []string{"raw/workspace_status.json", "derived/workspace_queues.json", "derived/workspace_dashboard.json", "csv/workspace_queue_items.csv", "index.html"} {
+		if _, err := os.Stat(filepath.Join(outputRoot, relativePath)); err != nil {
+			t.Fatalf("expected workspace artifact %q: %v", relativePath, err)
+		}
+	}
+	if !strings.Contains(stdout.String(), "export dashboard artifacts written") {
+		t.Fatalf("stdout missing write summary:\n%s", stdout.String())
 	}
 }
 

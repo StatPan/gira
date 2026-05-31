@@ -97,6 +97,91 @@ func TestDashboardExportArtifactsOrder(t *testing.T) {
 	}
 }
 
+func TestDashboardExportWorkspaceArtifactsOrder(t *testing.T) {
+	got := DashboardExportWorkspaceArtifacts()
+	want := []DashboardExportArtifact{
+		{Path: "manifest.json", Kind: "manifest_json", WillWrite: true},
+		{Path: "raw/workspace_status.json", Kind: "raw_json", WillWrite: true},
+		{Path: "derived/workspace_queues.json", Kind: "derived_json", WillWrite: true},
+		{Path: "derived/workspace_dashboard.json", Kind: "derived_json", WillWrite: true},
+		{Path: "csv/workspace_queue_items.csv", Kind: "csv", WillWrite: true},
+		{Path: "index.html", Kind: "html", WillWrite: true},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("workspace artifacts mismatch: %v", got)
+	}
+}
+
+func TestBuildWorkspaceDashboardExportPlanUsesWorkspaceQueues(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:       "personal",
+		Owner:      "StatPan",
+		InboxRepo:  ParseRepoRefMust("StatPan/gira"),
+		Repos:      []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		ConfigPath: ".gira/config.yaml",
+	}
+	client := queueWorkspaceClient{
+		fakeWorkspaceClient: fakeWorkspaceClient{
+			status: map[string]StatusSummary{
+				"StatPan/gira": {
+					Repo:   "StatPan/gira",
+					Counts: StatusCounts{Issues: IssueCounts{Open: 2}},
+					Issues: StatusIssueLists{Open: []IssueStats{
+						{Number: 10, Title: "Ready issue", State: "open", Labels: []string{"status:ready"}},
+						{Number: 11, Title: "Finishable", State: "open", Labels: []string{"status:in-review"}},
+					}},
+				},
+			},
+		},
+		queues: map[string][]WorkStatusResult{
+			"StatPan/gira": {
+				{Repo: "StatPan/gira", Issue: 10, Title: "Ready issue", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+				{
+					Repo:         "StatPan/gira",
+					Issue:        11,
+					Title:        "Finishable",
+					State:        "open",
+					Status:       "In review",
+					NextAction:   "merge_when_policy_allows",
+					ChecksStatus: "passed",
+					ReviewStatus: "approved",
+					PullRequest:  &TicketStatusPullRequest{Available: true, Number: 101, State: "OPEN", ReviewDecision: "APPROVED"},
+					PRReadiness:  &PRReadinessReport{SchemaVersion: PRReadinessSchemaVersion, PullRequest: 101, Readiness: "ready_for_finish", NextAction: "finish_ticket"},
+				},
+			},
+		},
+	}
+
+	plan, bundle, err := BuildWorkspaceDashboardExportPlan(config, "./out/dashboard", time.Date(2026, 5, 31, 9, 0, 0, 0, time.UTC), true, client, 14, WorkspaceStatusOptions{})
+	if err != nil {
+		t.Fatalf("BuildWorkspaceDashboardExportPlan returned error: %v", err)
+	}
+	if plan.Workspace == nil || plan.Workspace.Name != "personal" || plan.Repo != "" {
+		t.Fatalf("plan workspace/repo mismatch: %+v", plan)
+	}
+	if plan.Counts.WorkspaceRepos != 1 || plan.Counts.WorkspaceQueueItems != 2 {
+		t.Fatalf("plan counts = %+v", plan.Counts)
+	}
+	if bundle.WorkspaceStatus == nil || bundle.WorkspaceQueues == nil || bundle.WorkspaceDashboard == nil {
+		t.Fatalf("workspace bundle artifacts missing: %+v", bundle)
+	}
+	if bundle.WorkspaceDashboard.SchemaVersion != WorkspaceDashboardSchemaVersion {
+		t.Fatalf("workspace dashboard schema = %s", bundle.WorkspaceDashboard.SchemaVersion)
+	}
+	if bundle.WorkspaceDashboard.Source.Contract != WorkspaceStatusSourceContract {
+		t.Fatalf("workspace source = %+v", bundle.WorkspaceDashboard.Source)
+	}
+	if len(bundle.WorkspaceDashboard.TopActions) != 2 || bundle.WorkspaceDashboard.TopActions[0].Issue != 10 {
+		t.Fatalf("top actions = %+v", bundle.WorkspaceDashboard.TopActions)
+	}
+	text := FormatDashboardExportPlan(plan)
+	for _, want := range []string{"workspace: personal (StatPan)", "workspace_repos: 1", "workspace_queue_items: 2"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("plan text missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestDashboardExportSortingAndCSVHeaders(t *testing.T) {
 	execution := buildDashboardExecutionItems(
 		[]DashboardRawIssue{
@@ -148,6 +233,71 @@ func TestDashboardExportSortingAndCSVHeaders(t *testing.T) {
 	}
 	if roadmapHeader != "id,title,start_date,target_date,status,phase,source_refs" {
 		t.Fatalf("unexpected roadmap header: %s", roadmapHeader)
+	}
+}
+
+func TestWriteWorkspaceDashboardExportBundleWritesArtifactsAndEscapesHTML(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	client := queueWorkspaceClient{
+		fakeWorkspaceClient: fakeWorkspaceClient{
+			status: map[string]StatusSummary{
+				"StatPan/gira": {
+					Repo:   "StatPan/gira",
+					Counts: StatusCounts{Issues: IssueCounts{Open: 1}},
+					Issues: StatusIssueLists{Open: []IssueStats{
+						{Number: 10, Title: "<script>alert(1)</script>", State: "open", Labels: []string{"status:ready"}},
+					}},
+				},
+			},
+		},
+		queues: map[string][]WorkStatusResult{
+			"StatPan/gira": {
+				{Repo: "StatPan/gira", Issue: 10, Title: "<script>alert(1)</script>", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+			},
+		},
+	}
+	_, bundle, err := BuildWorkspaceDashboardExportPlan(config, "./out/dashboard", time.Date(2026, 5, 31, 9, 0, 0, 0, time.UTC), false, client, 14, WorkspaceStatusOptions{})
+	if err != nil {
+		t.Fatalf("BuildWorkspaceDashboardExportPlan returned error: %v", err)
+	}
+	outputRoot := filepath.Join(t.TempDir(), "dashboard")
+	if err := WriteDashboardExportBundle(outputRoot, bundle); err != nil {
+		t.Fatalf("WriteDashboardExportBundle returned error: %v", err)
+	}
+	expected := []string{
+		"manifest.json",
+		"raw/workspace_status.json",
+		"derived/workspace_queues.json",
+		"derived/workspace_dashboard.json",
+		"csv/workspace_queue_items.csv",
+		"index.html",
+	}
+	for _, relativePath := range expected {
+		if _, err := os.Stat(filepath.Join(outputRoot, relativePath)); err != nil {
+			t.Fatalf("expected workspace exported file %q: %v", relativePath, err)
+		}
+	}
+	csvContent, err := os.ReadFile(filepath.Join(outputRoot, "csv/workspace_queue_items.csv"))
+	if err != nil {
+		t.Fatalf("read workspace queue csv: %v", err)
+	}
+	if !strings.HasPrefix(string(csvContent), "queue,repo,issue,title,state,status,pr_number,pr_state,reason_codes,next_safe_command,url\n") {
+		t.Fatalf("unexpected workspace queue csv:\n%s", csvContent)
+	}
+	htmlContent, err := os.ReadFile(filepath.Join(outputRoot, "index.html"))
+	if err != nil {
+		t.Fatalf("read index html: %v", err)
+	}
+	if strings.Contains(string(htmlContent), "<script>alert(1)</script>") || !strings.Contains(string(htmlContent), "&lt;script&gt;alert(1)&lt;/script&gt;") {
+		t.Fatalf("HTML did not escape queue title:\n%s", htmlContent)
+	}
+	if _, err := os.Stat(filepath.Join(outputRoot, "raw/github.json")); !os.IsNotExist(err) {
+		t.Fatalf("workspace-only export should not write repo raw github artifact, stat err=%v", err)
 	}
 }
 

@@ -16,6 +16,8 @@ The first 3.0 surface should build on:
 ```bash
 gira export dashboard --repo OWNER/REPO --output out/dashboard --dry-run
 gira export dashboard --repo OWNER/REPO --output out/dashboard
+gira export dashboard --config .gira/config.yaml --output out/dashboard --dry-run
+gira export dashboard --config .gira/config.yaml --output out/dashboard
 gira goal report GOAL --repo OWNER/REPO --html --output out/dashboard/goals/goal-GOAL.html
 ```
 
@@ -58,6 +60,13 @@ out/dashboard/
 
 ```text
 out/dashboard/
+  raw/
+    workspace_status.json
+  derived/
+    workspace_queues.json
+    workspace_dashboard.json
+  csv/
+    workspace_queue_items.csv
   index.html
   goals/
     goal-525.html

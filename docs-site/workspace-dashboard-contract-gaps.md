@@ -53,7 +53,8 @@ gira export dashboard --config .gira/config.yaml --output out/dashboard --dry-ru
 gira export dashboard --config .gira/config.yaml --output out/dashboard
 ```
 
-Repo-only export may omit workspace artifacts with a stable warning code.
+The first implementation uses that `--config` path and supports `--repo` as an
+optional workspace repo filter. Repo-only export remains compatible.
 
 ## New Index Contract
 

@@ -785,7 +785,7 @@ Usage:
   gira ticket view|show [TICKET|JIRA-KEY] [--repo OWNER/REPO] [--json]
   gira ticket prompt [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]
   gira ticket handoff [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--json]
-  gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] [--include-diff] [--json]
+  gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] [--include-diff] [--json|--html --output PATH]
   gira ticket self-review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] --dry-run|--apply [--json]
   gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
@@ -3973,6 +3973,8 @@ func runTicketReview(args []string, stdout io.Writer, stderr io.Writer) int {
 	diffSummary := fs.Bool("diff-summary", false, "Include compact PR diff summary")
 	includeDiff := fs.Bool("include-diff", false, "Include full PR diff")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	htmlOutput := fs.Bool("html", false, "Write a static local HTML report")
+	outputPath := fs.String("output", "", "Output path for --html")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
 	if err := fs.Parse(args); err != nil {
@@ -3983,6 +3985,21 @@ func runTicketReview(args []string, stdout io.Writer, stderr io.Writer) int {
 	if *help {
 		_, _ = io.WriteString(stdout, ticketHelp)
 		return 0
+	}
+	if *jsonOutput && *htmlOutput {
+		fmt.Fprint(stderr, "choose exactly one output format: --json or --html\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *htmlOutput && strings.TrimSpace(*outputPath) == "" {
+		fmt.Fprint(stderr, "--output is required when using --html\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if !*htmlOutput && strings.TrimSpace(*outputPath) != "" {
+		fmt.Fprint(stderr, "--output requires --html\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
 	}
 	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
 	if err != nil {
@@ -4023,6 +4040,15 @@ func runTicketReview(args []string, stdout io.Writer, stderr io.Writer) int {
 			return 2
 		}
 		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	if *htmlOutput {
+		if err := gira.WriteTicketReviewHTML(*outputPath, result); err != nil {
+			fmt.Fprintf(stderr, "write ticket review HTML: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "ticket review html: %s\n", filepath.Clean(*outputPath))
+		fmt.Fprintf(stdout, "next step: open %s\n", filepath.Clean(*outputPath))
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatAgentPrompt(result))
@@ -5175,7 +5201,7 @@ func extractFeatureForPositional(args []string, stderr io.Writer) ([]string, int
 func extractTicketPromptRolePositional(args []string, stderr io.Writer) ([]string, string, bool) {
 	cleaned := make([]string, 0, len(args))
 	role := ""
-	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--role": {}, "--profile": {}, "--pr": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--role": {}, "--profile": {}, "--pr": {}, "--output": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)
@@ -5213,7 +5239,7 @@ func extractTicketIdentifierPositional(args []string, stderr io.Writer) ([]strin
 	cleaned := make([]string, 0, len(args))
 	var identifier ticketIdentifier
 	seen := false
-	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--role": {}, "--profile": {}, "--pr": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--role": {}, "--profile": {}, "--pr": {}, "--output": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)

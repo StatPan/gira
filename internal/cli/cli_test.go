@@ -5796,6 +5796,92 @@ func TestTicketReviewDiffSummaryUsesCurrentBranchContext(t *testing.T) {
 	}
 }
 
+func TestTicketReviewHTMLWritesOutput(t *testing.T) {
+	restorePrompt := newTicketPromptReport
+	t.Cleanup(func() { newTicketPromptReport = restorePrompt })
+	newTicketPromptReport = func(input gira.AgentPromptInput) (gira.AgentPromptReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 646 || input.Role != "reviewer" || !input.IncludeDiffSummary {
+			t.Fatalf("unexpected review input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.AgentPromptReport{
+			Command: "ticket review",
+			Repo:    input.Repo.FullName(),
+			Ticket:  input.Ticket,
+			Role:    input.Role,
+			Profile: input.Profile,
+			Issue:   gira.AgentPromptIssue{Number: input.Ticket, Title: "Review <UX>", State: "open"},
+			PR:      &gira.AgentPromptPR{Number: 647, URL: "https://github.com/StatPan/gira/pull/647", Title: "review ux", State: "OPEN", ReviewDecision: "APPROVED", FinishReady: true},
+			PRReady: &gira.PRReadinessReport{SchemaVersion: gira.PRReadinessSchemaVersion, Repo: input.Repo.FullName(), Issue: input.Ticket, PullRequest: 647, Readiness: "ready_for_finish", NextAction: "finish_ticket"},
+			Review: &gira.AgentReviewContract{
+				DiffSummary: &gira.AgentReviewDiffSummary{
+					ChangedFiles:    []string{"internal/cli/cli.go"},
+					Files:           []gira.AgentReviewDiffFile{{Path: "internal/cli/cli.go", Additions: 3, Deletions: 1}},
+					TotalAdditions:  3,
+					TotalDeletions:  1,
+					FullDiffCommand: "gh pr diff 647 --repo StatPan/gira",
+				},
+				VerdictSchema: gira.AgentReviewVerdictSchema{RecommendedAction: []string{"approve", "request_changes"}},
+			},
+			Prompt:   "# Gira reviewer prompt\n",
+			NextStep: "gira ticket finish --apply",
+		}, nil
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "review-646.html")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "review", "646", "--repo", "StatPan/gira", "--diff-summary", "--html", "--output", outputPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "ticket review html:") || !strings.Contains(stdout.String(), "next step: open") {
+		t.Fatalf("ticket review HTML output missing next-step summary:\n%s", stdout.String())
+	}
+	got, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read ticket review HTML: %v", err)
+	}
+	for _, want := range []string{"Gira review packet", "Review &lt;UX&gt;", "ready_for_finish", "gh pr diff 647 --repo StatPan/gira"} {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("ticket review HTML missing %q:\n%s", want, string(got))
+		}
+	}
+}
+
+func TestTicketReviewRejectsInvalidOutputFlags(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "json and html",
+			args: []string{"ticket", "review", "646", "--repo", "StatPan/gira", "--json", "--html", "--output", "review.html"},
+			want: "choose exactly one output format",
+		},
+		{
+			name: "html needs output",
+			args: []string{"ticket", "review", "646", "--repo", "StatPan/gira", "--html"},
+			want: "--output is required when using --html",
+		},
+		{
+			name: "output needs html",
+			args: []string{"ticket", "review", "646", "--repo", "StatPan/gira", "--output", "review.html"},
+			want: "--output requires --html",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run(tc.args, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+			}
+			if !strings.Contains(stderr.String(), tc.want) {
+				t.Fatalf("stderr missing %q:\n%s", tc.want, stderr.String())
+			}
+		})
+	}
+}
+
 func TestTicketReviewIncludeDiffRequiresExplicitFlag(t *testing.T) {
 	restorePrompt := newTicketPromptReport
 	restoreRunner := devCommandRunner

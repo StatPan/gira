@@ -860,13 +860,13 @@ Commands:
   report  Build a visible goal report. Alias: dossier
   status  Summarize a goal issue, child ticket graph, blockers, and next safe action
   next    Select the next safe child ticket or explain why the goal must stop
-  finish  Preview goal finish readiness and apply human-review handoff receipts
+  finish  Preview goal finish readiness, then close ready goals or preserve handoffs
 
 Flags:
   --repo string  Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
   --goal int     Goal issue number. Can also be numeric positional
   --dry-run      Preview without mutation
-  --apply        Apply goal plan child ticket creation or supported goal finish handoff mutations
+  --apply        Apply goal plan child ticket creation or explicit supported goal finish mutations
   --terminal string Goal terminal recommendation override for finish
   --json         Emit stable goal JSON
   --html         Write a static local HTML report

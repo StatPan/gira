@@ -38,6 +38,14 @@ type GoalFinishAction struct {
 	Detail string `json:"detail"`
 }
 
+type goalFinishMutationPlan struct {
+	Actions      []GoalFinishAction
+	AddLabels    []string
+	RemoveLabels []string
+	CommentDone  bool
+	CloseGoal    bool
+}
+
 type GoalFinishReadiness struct {
 	SchemaVersion          string                    `json:"schema_version"`
 	Repository             string                    `json:"repository"`
@@ -111,6 +119,10 @@ func BuildGoalFinishReport(input GoalFinishInput, runner CommandRunner) (GoalFin
 	}
 	readiness := buildGoalFinishReadiness(input.Repo, status, terminal, runner)
 	receipt := buildGoalFinishReceipt(readiness)
+	plan, err := goalFinishActions(input, readiness, runner)
+	if err != nil {
+		return GoalFinishReport{}, err
+	}
 	report := GoalFinishReport{
 		Command:    "goal finish",
 		Repo:       input.Repo.FullName(),
@@ -119,27 +131,14 @@ func BuildGoalFinishReport(input GoalFinishInput, runner CommandRunner) (GoalFin
 		Apply:      input.Apply,
 		Readiness:  readiness,
 		Receipt:    receipt,
-		Actions:    goalFinishActions(input, readiness),
+		Actions:    plan.Actions,
 		NextAction: readiness.NextAction,
 		NextStep:   readiness.NextStep,
 	}
 	if input.Apply {
-		actionStatus, err := applyGoalFinishHandoff(input, readiness, receipt, runner)
-		if err != nil {
-			return report, err
-		}
-		for i := range report.Actions {
-			if report.Actions[i].Action == "goal:comment" {
-				report.Actions[i].Status = actionStatus
-			}
-		}
-		if actionStatus == "skipped" {
-			report.NextStep = "human review handoff receipt already present"
-		} else {
-			report.NextStep = "human review handoff receipt posted"
-		}
+		report, err = applyGoalFinish(input, readiness, receipt, plan, report, runner)
 	}
-	return report, nil
+	return report, err
 }
 
 func validGoalTerminalRecommendation(value string) bool {
@@ -296,7 +295,7 @@ func goalTerminalRecommendation(requested string, readiness GoalFinishReadiness)
 
 func goalFinishNextStep(repo RepoRef, readiness GoalFinishReadiness) (string, string) {
 	if readiness.Ready {
-		return "finish_goal", fmt.Sprintf("post goal receipt and close #%d when apply support is enabled", readiness.Goal.Number)
+		return "finish_goal", fmt.Sprintf("gira goal finish --repo %s --goal %d --terminal done --apply", repo.FullName(), readiness.Goal.Number)
 	}
 	switch readiness.TerminalRecommendation {
 	case "superseded", "abandoned":
@@ -308,7 +307,7 @@ func goalFinishNextStep(repo RepoRef, readiness GoalFinishReadiness) (string, st
 	}
 }
 
-func goalFinishActions(input GoalFinishInput, readiness GoalFinishReadiness) []GoalFinishAction {
+func goalFinishActions(input GoalFinishInput, readiness GoalFinishReadiness, runner CommandRunner) (goalFinishMutationPlan, error) {
 	if readiness.TerminalRecommendation == "human_review" && len(readiness.Blockers) > 0 {
 		status := "planned"
 		detail := fmt.Sprintf("post goal-finish-receipt/v1 human review handoff to issue #%d", readiness.Goal.Number)
@@ -316,13 +315,132 @@ func goalFinishActions(input GoalFinishInput, readiness GoalFinishReadiness) []G
 			status = "skipped"
 			detail = fmt.Sprintf("goal-finish-receipt/v1 human review handoff already exists on issue #%d", readiness.Goal.Number)
 		}
-		return []GoalFinishAction{{
+		return goalFinishMutationPlan{Actions: []GoalFinishAction{{
 			Action: "goal:comment",
 			Status: status,
 			Detail: detail,
-		}}
+		}}}, nil
 	}
-	return nil
+	if readiness.TerminalRecommendation == "done" && readiness.Ready {
+		return buildGoalFinishDonePlan(input.Repo, readiness, runner)
+	}
+	return goalFinishMutationPlan{}, nil
+}
+
+func buildGoalFinishDonePlan(repo RepoRef, readiness GoalFinishReadiness, runner CommandRunner) (goalFinishMutationPlan, error) {
+	addLabels, removeLabels, err := goalFinishDoneLabelChanges(repo, readiness, runner)
+	if err != nil {
+		return goalFinishMutationPlan{}, err
+	}
+	receiptPresent := goalFinishGoalTerminalReceiptPresent(repo, readiness.Goal.Number, "done", runner)
+	plan := goalFinishMutationPlan{
+		AddLabels:    addLabels,
+		RemoveLabels: removeLabels,
+		CommentDone:  !receiptPresent,
+		CloseGoal:    !strings.EqualFold(readiness.Goal.State, "closed"),
+	}
+	commentStatus := "planned"
+	commentDetail := fmt.Sprintf("post goal-finish-receipt/v1 done receipt to issue #%d", readiness.Goal.Number)
+	if receiptPresent {
+		commentStatus = "skipped"
+		commentDetail = fmt.Sprintf("goal-finish-receipt/v1 done receipt already exists on issue #%d", readiness.Goal.Number)
+	}
+	plan.Actions = append(plan.Actions, GoalFinishAction{
+		Action: "goal:comment",
+		Status: commentStatus,
+		Detail: commentDetail,
+	})
+	normalizeStatus := "planned"
+	normalizeDetail := finishStatusNormalizeDetail(addLabels, removeLabels)
+	if normalizeDetail == "" {
+		normalizeStatus = "skipped"
+		normalizeDetail = "goal already has terminal status labels"
+	}
+	plan.Actions = append(plan.Actions, GoalFinishAction{
+		Action: "goal:normalize-status",
+		Status: normalizeStatus,
+		Detail: normalizeDetail,
+	})
+	closeStatus := "planned"
+	closeDetail := fmt.Sprintf("close goal #%d", readiness.Goal.Number)
+	if !plan.CloseGoal {
+		closeStatus = "skipped"
+		closeDetail = "goal is already closed"
+	}
+	plan.Actions = append(plan.Actions, GoalFinishAction{
+		Action: "goal:close",
+		Status: closeStatus,
+		Detail: closeDetail,
+	})
+	return plan, nil
+}
+
+func goalFinishDoneLabelChanges(repo RepoRef, readiness GoalFinishReadiness, runner CommandRunner) ([]string, []string, error) {
+	removeLabels := activeStatusLabels(readiness.Goal.Labels)
+	addLabels := []string{}
+	statusDoneExists, err := repoHasLabel(repo, "status:done", runner)
+	if err != nil {
+		return nil, nil, fmt.Errorf("plan goal done status labels: %w", err)
+	}
+	if statusDoneExists && !hasLabel(readiness.Goal.Labels, "status:done") {
+		addLabels = append(addLabels, "status:done")
+	}
+	return addLabels, removeLabels, nil
+}
+
+func goalFinishGoalTerminalReceiptPresent(repo RepoRef, goal int, terminal string, runner CommandRunner) bool {
+	out, err := runner.Run("gh", "issue", "view", strconv.Itoa(goal), "--repo", repo.FullName(), "--json", "comments")
+	if err != nil {
+		return false
+	}
+	var raw struct {
+		Comments []struct {
+			Body string `json:"body"`
+		} `json:"comments"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return false
+	}
+	needle := "terminal recommendation: " + strings.ToLower(strings.TrimSpace(terminal))
+	for _, comment := range raw.Comments {
+		lower := strings.ToLower(comment.Body)
+		if strings.Contains(lower, GoalFinishReceiptSchemaVersion) && strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func applyGoalFinish(input GoalFinishInput, readiness GoalFinishReadiness, receipt GoalFinishReceipt, plan goalFinishMutationPlan, report GoalFinishReport, runner CommandRunner) (GoalFinishReport, error) {
+	switch strings.TrimSpace(input.Terminal) {
+	case "human_review":
+		actionStatus, err := applyGoalFinishHandoff(input, readiness, receipt, runner)
+		if err != nil {
+			return report, err
+		}
+		for i := range report.Actions {
+			if report.Actions[i].Action == "goal:comment" {
+				report.Actions[i].Status = actionStatus
+			}
+		}
+		if actionStatus == "skipped" {
+			report.NextStep = "human review handoff receipt already present"
+		} else {
+			report.NextStep = "human review handoff receipt posted"
+		}
+		return report, nil
+	case "done":
+		actions, err := applyGoalFinishDone(input, readiness, receipt, plan, runner)
+		report.Actions = actions
+		if err != nil {
+			return report, err
+		}
+		report.NextAction = "done"
+		report.NextStep = "goal is done"
+		return report, nil
+	default:
+		return report, fmt.Errorf("goal finish --apply requires explicit --terminal done or --terminal human_review")
+	}
 }
 
 func applyGoalFinishHandoff(input GoalFinishInput, readiness GoalFinishReadiness, receipt GoalFinishReceipt, runner CommandRunner) (string, error) {
@@ -339,6 +457,46 @@ func applyGoalFinishHandoff(input GoalFinishInput, readiness GoalFinishReadiness
 		return "", fmt.Errorf("post goal finish receipt: %w", err)
 	}
 	return "applied", nil
+}
+
+func applyGoalFinishDone(input GoalFinishInput, readiness GoalFinishReadiness, receipt GoalFinishReceipt, plan goalFinishMutationPlan, runner CommandRunner) ([]GoalFinishAction, error) {
+	actions := append([]GoalFinishAction(nil), plan.Actions...)
+	if !readiness.Ready || len(readiness.Blockers) > 0 || readiness.TerminalRecommendation != "done" {
+		return actions, fmt.Errorf("goal finish --terminal done --apply requires ready=true with no blockers")
+	}
+	if len(actions) == 0 {
+		return actions, fmt.Errorf("goal finish --terminal done has no planned mutations")
+	}
+	if plan.CommentDone {
+		if _, err := runner.Run("gh", "issue", "comment", strconv.Itoa(input.Goal), "--repo", input.Repo.FullName(), "--body", receipt.RenderedBody); err != nil {
+			markGoalFinishActionStatus(actions, "goal:comment", "failed")
+			return actions, fmt.Errorf("post goal finish receipt: %w", err)
+		}
+		markGoalFinishActionStatus(actions, "goal:comment", "applied")
+	}
+	if len(plan.AddLabels) > 0 || len(plan.RemoveLabels) > 0 {
+		if err := applyFinishedIssueStatusLabels(input.Repo, input.Goal, plan.AddLabels, plan.RemoveLabels, runner); err != nil {
+			markGoalFinishActionStatus(actions, "goal:normalize-status", "failed")
+			return actions, fmt.Errorf("normalize goal status labels: %w", err)
+		}
+		markGoalFinishActionStatus(actions, "goal:normalize-status", "applied")
+	}
+	if plan.CloseGoal {
+		if _, err := runner.Run("gh", "issue", "close", strconv.Itoa(input.Goal), "--repo", input.Repo.FullName(), "--comment", "Closed by gira goal finish"); err != nil {
+			markGoalFinishActionStatus(actions, "goal:close", "failed")
+			return actions, fmt.Errorf("close goal issue: %w", err)
+		}
+		markGoalFinishActionStatus(actions, "goal:close", "applied")
+	}
+	return actions, nil
+}
+
+func markGoalFinishActionStatus(actions []GoalFinishAction, actionName string, status string) {
+	for i := range actions {
+		if actions[i].Action == actionName {
+			actions[i].Status = status
+		}
+	}
 }
 
 func buildGoalFinishReceipt(readiness GoalFinishReadiness) GoalFinishReceipt {

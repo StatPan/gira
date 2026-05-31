@@ -76,7 +76,17 @@ Preview convergence before posting any receipt:
 gira goal finish 521 --repo OWNER/app --dry-run --json
 ```
 
-The current apply-safe path supports explicit human-review handoff receipts:
+Close a ready goal only with an explicit done terminal:
+
+```bash
+gira goal finish 521 --repo OWNER/app --terminal done --apply --json
+```
+
+This posts a `goal-finish-receipt/v1` done receipt, normalizes active status
+labels to `status:done`, and closes the goal when readiness is clean.
+
+Use explicit human-review when blockers or historical evidence gaps need a
+maintainer handoff:
 
 ```bash
 gira goal finish 521 --repo OWNER/app --terminal human_review --apply --json

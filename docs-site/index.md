@@ -41,6 +41,7 @@ features:
 | Maintain an optional feature map | [Feature Map](/feature-map) | `gira feature list`, `feature check`, `feature for` |
 | Manage larger work packets | [Goal Mode](/goal-mode), [Sprint And Release](/sprint-release) | `gira goal status`, `goal next`, `goal finish`, `epic list`, `milestone plan` |
 | Understand the 2.0 contract | [Gira 2.0 Control Plane](/v2-control-plane), [State Model](/state-model) | `gira ticket status`, `gira goal status`, `gira workspace status --json` |
+| Plan the first 3.0 surface | [Gira 3.0 Local Report Bundle](/gira-3-local-report-bundle) | `gira export dashboard`, `gira goal report --html` |
 | Diagnose readiness and drift | [Readiness And Audit](/readiness-audit), [Troubleshooting](/troubleshooting) | `gira ticket status`, `ticket review`, `audit drift`, `jira doctor` |
 | Map Jira concepts to GitHub | [Jira Mapping](/jira-mapping), [Jira Provider](/jira-primary-provider) | `gira jira init`, `jira mirror`, `jira transition`, `jira import`, `jira export` |
 
@@ -78,8 +79,10 @@ Use [Jira-primary provider mode](/jira-primary-provider) only when Jira already 
 Use [workspace status](/workspace) when a personal operator needs a bounded multi-repo view, and [goal mode](/goal-mode) when a larger objective needs child-ticket convergence before handoff.
 
 The [Gira 2.0 control-plane contract](/v2-control-plane) is CLI-first. The
-future hosted direction is documented as a bounded [control-plane
-roadmap](/hosted-control-plane), not as a replacement for the CLI.
+first 3.0 surface is a [local report bundle](/gira-3-local-report-bundle) over
+stable state contracts. The future hosted direction is documented as a bounded
+[control-plane roadmap](/hosted-control-plane), not as a replacement for the
+CLI.
 
 Gira's [worker boundary](/worker-boundary) keeps the product focused on
 contracts, readiness, review packets, provenance, and finish convergence while

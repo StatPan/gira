@@ -318,6 +318,9 @@ func goalRemainingAutonomousWork(children []GoalStatusChild) int {
 }
 
 func goalStatusNextAction(repo RepoRef, report GoalStatusReport) (string, string) {
+	if goalStatusIssueDone(report.Goal) {
+		return "done", "goal is done"
+	}
 	if len(report.Children) == 0 {
 		return "plan_children", fmt.Sprintf("gira goal plan --repo %s --goal %d --dry-run", repo.FullName(), report.Goal.Number)
 	}
@@ -340,6 +343,10 @@ func goalStatusNextAction(repo RepoRef, report GoalStatusReport) (string, string
 		return "finish_goal", fmt.Sprintf("gira goal finish --repo %s --goal %d --dry-run", repo.FullName(), report.Goal.Number)
 	}
 	return "inspect_goal", fmt.Sprintf("gira goal status --repo %s --goal %d --json", repo.FullName(), report.Goal.Number)
+}
+
+func goalStatusIssueDone(goal GoalStatusIssue) bool {
+	return strings.EqualFold(goal.State, "closed") && strings.EqualFold(goal.Status, "Done")
 }
 
 func githubIssueURL(repo RepoRef, issue int) string {

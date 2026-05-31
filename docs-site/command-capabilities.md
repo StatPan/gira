@@ -9,6 +9,7 @@ Schema version: `gira-command-capabilities/v1`
 | `gira feature check` | gira feat check | `read` | `stable_json` | none | docs/feature-map.md, docs-site/feature-map.md, docs-site/command-reference.md |
 | `gira feature for` | gira feat for | `read` | `stable_json` | none | docs/feature-map.md, docs-site/feature-map.md, docs-site/command-reference.md |
 | `gira feature list` | gira feat list | `read` | `stable_json` | none | docs/feature-map.md, docs-site/feature-map.md, docs-site/command-reference.md |
+| `gira goal dossier` | none | `read` | `stable_json` | none | docs/goal-operating-model.md, docs-site/goal-mode.md, docs-site/command-reference.md |
 | `gira goal finish` | none | `apply_mutation` | `stable_json` | posts an idempotent goal finish handoff receipt when run with --apply; --dry-run previews readiness and receipt | docs/goal-operating-model.md, docs-site/command-reference.md |
 | `gira goal next` | none | `read` | `stable_json` | none | docs/goal-operating-model.md, docs-site/command-reference.md |
 | `gira goal plan` | none | `apply_mutation` | `stable_json` | creates linked child tickets from reviewed goal-plan proposals when run with --apply; --dry-run previews the same plan | docs/goal-operating-model.md, docs-site/command-reference.md |

@@ -34,6 +34,7 @@ summarize that skill instead of redefining it.
 - `gira feature check [--repo OWNER/REPO] [--limit N] [--json]`: Validate optional feature map records and work links without mutating GitHub.
 - `gira feature for ISSUE [--repo OWNER/REPO] [--limit N] [--json]`: Show which feature or capability a work issue is linked to.
 - `gira feature list [--repo OWNER/REPO] [--limit N] [--json]`: List optional issue-backed feature or capability records.
+- `gira goal dossier [GOAL] [--repo OWNER/REPO] [--json]`: Build a visible operating dossier for one goal from stable Goal Mode state.
 - `gira goal finish [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]`: Preview goal finish readiness and apply human-review handoff receipts.
 - `gira goal next [GOAL] [--repo OWNER/REPO] [--json]`: Select the next safe child ticket for a goal or explain why work must stop.
 - `gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]`: Propose or create linked child ticket packets from a goal issue.

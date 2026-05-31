@@ -32,7 +32,7 @@ Daily commands:
   adopt       Plan or apply adoption for existing repositories and issues
   ticket      Jira-style ticket lifecycle commands
   feature     Optional issue-backed feature map commands. Alias: feat
-  goal        Goal-mode read-only planning and status commands
+  goal        Goal-mode planning, status, and visible dossier commands
   epic        Numberless epic status and finish commands
   milestone   Milestone lifecycle and bulk ticket assignment
   sprint      Sprint iteration planning/start/close workflow
@@ -837,12 +837,14 @@ const goalHelp = `Goal-mode commands for long-running AI-assisted work.
 
 Usage:
   gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]
+  gira goal dossier [GOAL] [--repo OWNER/REPO] [--json]
   gira goal status [GOAL] [--repo OWNER/REPO] [--json]
   gira goal next [GOAL] [--repo OWNER/REPO] [--json]
   gira goal finish [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]
 
 Commands:
   plan    Propose or create child ticket packets from a goal issue
+  dossier Build a visible operating dossier for one goal
   status  Summarize a goal issue, child ticket graph, blockers, and next safe action
   next    Select the next safe child ticket or explain why the goal must stop
   finish  Preview goal finish readiness and apply human-review handoff receipts
@@ -1444,6 +1446,10 @@ var newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHan
 
 var newGoalStatusReport = func(input gira.GoalStatusInput) (gira.GoalStatusReport, error) {
 	return gira.BuildGoalStatusReport(input, devCommandRunner)
+}
+
+var newGoalDossierReport = func(input gira.GoalDossierInput) (gira.GoalDossierReport, error) {
+	return gira.BuildGoalDossierReport(input, devCommandRunner)
 }
 
 var newGoalNextReport = func(input gira.GoalNextInput) (gira.GoalNextReport, error) {
@@ -3271,6 +3277,8 @@ func runGoal(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "plan":
 		return runGoalPlan(args[1:], stdout, stderr)
+	case "dossier":
+		return runGoalDossier(args[1:], stdout, stderr)
 	case "status":
 		return runGoalStatus(args[1:], stdout, stderr)
 	case "next":
@@ -3482,6 +3490,68 @@ func runGoalStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatGoalStatus(report))
+	return 0
+}
+
+func runGoalDossier(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalGoal, positionalOK := extractNumericPositional(args, "goal", stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("goal dossier", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	goal := fs.Int("goal", 0, "Goal issue number")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, goalHelp)
+		return 0
+	}
+	if positionalGoal > 0 {
+		if *goal > 0 && *goal != positionalGoal {
+			fmt.Fprint(stderr, "--goal and positional goal must refer to the same number\n\n")
+			_, _ = io.WriteString(stderr, goalHelp)
+			return 2
+		}
+		*goal = positionalGoal
+	}
+	if *goal <= 0 {
+		fmt.Fprint(stderr, "--goal or positional goal is required\n\n")
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newGoalDossierReport(gira.GoalDossierInput{Repo: repo, Goal: *goal})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode goal dossier JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatGoalDossier(report))
 	return 0
 }
 

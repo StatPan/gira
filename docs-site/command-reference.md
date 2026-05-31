@@ -87,6 +87,34 @@ gira feat list --repo OWNER/backlog
 
 Documented in: `docs/feature-map.md`, `docs-site/feature-map.md`, `docs-site/command-reference.md`
 
+## `goal dossier`
+
+Build a visible operating dossier for one goal from stable Goal Mode state.
+
+Usage:
+
+```bash
+gira goal dossier [GOAL] [--repo OWNER/REPO] [--json]
+```
+
+Since: `v2.1.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--goal`: Goal issue number. Can also be numeric positional.
+- `--json`: Emit stable goal-dossier/v1 JSON.
+
+Examples:
+
+- Export a goal dossier JSON contract
+
+```bash
+gira goal dossier 521 --repo OWNER/app --json
+```
+
+Documented in: `docs/goal-operating-model.md`, `docs-site/goal-mode.md`, `docs-site/command-reference.md`
+
 ## `goal finish`
 
 Preview goal finish readiness and apply human-review handoff receipts.

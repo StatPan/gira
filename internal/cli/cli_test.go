@@ -5282,6 +5282,43 @@ func TestGoalStatusTextRequiresGoal(t *testing.T) {
 	}
 }
 
+func TestGoalDossierJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newGoalDossierReport
+	t.Cleanup(func() { newGoalDossierReport = restore })
+	newGoalDossierReport = func(input gira.GoalDossierInput) (gira.GoalDossierReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 {
+			t.Fatalf("unexpected goal dossier input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		selected := gira.GoalNextCandidate{Number: 573, Title: "Next", Category: "ready", Reason: "next_ready_child", NextStep: "gira ticket start --repo StatPan/gira --ticket 573 --apply"}
+		return gira.GoalDossierReport{
+			Command:                 "goal dossier",
+			SchemaVersion:           gira.GoalDossierSchemaVersion,
+			Repo:                    input.Repo.FullName(),
+			GeneratedAt:             "2026-05-31T00:00:00Z",
+			Goal:                    gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 3.0", State: "open", Status: "Ready"},
+			Counts:                  map[string]int{"total": 1, "ready": 1},
+			ChildGroups:             []gira.GoalDossierChildGroup{{Category: "ready", Count: 1, Children: []gira.GoalStatusChild{{Number: 573, Title: "Next", Category: "ready", Status: "Ready"}}}},
+			SelectedTicket:          &selected,
+			NextAction:              "start_child",
+			NextStep:                selected.NextStep,
+			RemainingAutonomousWork: 1,
+			Evidence:                gira.GoalDossierEvidenceSummary{Sources: []string{"goal_status", "goal_next"}, ChildCount: 1, RemainingAutonomousWork: 1},
+			Sources:                 []gira.GoalDossierSource{{Name: "goal_status", SchemaVersion: gira.GoalStatusSchemaVersion}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "dossier", "521", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "goal dossier"`, `"schema_version": "goal-dossier/v1"`, `"child_groups"`, `"selected_ticket"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("goal dossier JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestGoalNextJSONUsesInjectedBuilder(t *testing.T) {
 	restore := newGoalNextReport
 	t.Cleanup(func() { newGoalNextReport = restore })

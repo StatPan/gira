@@ -190,6 +190,22 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"goal", "dossier"},
+			Summary: "Build a visible operating dossier for one goal from stable Goal Mode state.",
+			Usage:   "gira goal dossier [GOAL] [--repo OWNER/REPO] [--json]",
+			Since:   "v2.1.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional."},
+				{Name: "--json", Summary: "Emit stable goal-dossier/v1 JSON."},
+			},
+			Docs:        []string{"docs/goal-operating-model.md", "docs-site/goal-mode.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "ticket"},
+			Examples: []CommandExample{
+				{Summary: "Export a goal dossier JSON contract", Command: "gira goal dossier 521 --repo OWNER/app --json"},
+			},
+		},
+		{
 			Path:    []string{"goal", "plan"},
 			Summary: "Propose or create linked child ticket packets from a goal issue.",
 			Usage:   "gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]",
@@ -735,6 +751,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 		case "feature for":
 			specs[i].Adapter = adapterRead(JSONSupportStable, "gira feat for")
 		case "goal status":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "goal dossier":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "goal plan":
 			specs[i].Adapter = adapterApply("creates linked child tickets from reviewed goal-plan proposals when run with --apply; --dry-run previews the same plan", JSONSupportStable)

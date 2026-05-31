@@ -79,7 +79,17 @@ out/dashboard/
   csv/
     workspace_queue_items.csv
   index.html
+  tickets/
+    OWNER-REPO-ticket-N.html
+  reviews/
+    OWNER-REPO-pr-N.html
 ```
+
+Workspace-mode HTML deep links are generated from `workspace-queues/v1`.
+Ticket pages are static `ticket-status/v1` views synthesized from queue item
+state. Review pages are static reviewer packet views for queue items with a
+linked PR. The top-level `index.html` links to these local pages when present
+and keeps GitHub issue/PR links available as canonical evidence.
 
 Workspace-mode export starts from:
 

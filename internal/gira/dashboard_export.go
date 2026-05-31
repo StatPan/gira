@@ -202,6 +202,8 @@ type DashboardWorkspaceTopAction struct {
 	Issue           int      `json:"issue"`
 	Title           string   `json:"title"`
 	URL             string   `json:"url"`
+	LocalTicketHTML string   `json:"local_ticket_html,omitempty"`
+	LocalReviewHTML string   `json:"local_review_html,omitempty"`
 	ReasonCodes     []string `json:"reason_codes"`
 	NextSafeCommand string   `json:"next_safe_command"`
 	SourceRefs      []string `json:"source_refs"`
@@ -214,9 +216,11 @@ type DashboardWorkspaceWarning struct {
 }
 
 type DashboardWorkspaceArtifacts struct {
-	WorkspaceStatus string `json:"workspace_status"`
-	WorkspaceQueues string `json:"workspace_queues"`
-	QueueItemsCSV   string `json:"queue_items_csv"`
+	WorkspaceStatus string   `json:"workspace_status"`
+	WorkspaceQueues string   `json:"workspace_queues"`
+	QueueItemsCSV   string   `json:"queue_items_csv"`
+	TicketReports   []string `json:"ticket_reports,omitempty"`
+	ReviewReports   []string `json:"review_reports,omitempty"`
 }
 
 type DashboardWorkspaceDashboard struct {
@@ -267,6 +271,12 @@ func DashboardExportWorkspaceArtifacts() []DashboardExportArtifact {
 		{Path: "csv/workspace_queue_items.csv", Kind: "csv", WillWrite: true},
 		{Path: "index.html", Kind: "html", WillWrite: true},
 	}
+}
+
+type dashboardWorkspaceDeepLink struct {
+	TicketPath string
+	ReviewPath string
+	Item       WorkspaceQueueItem
 }
 
 func BuildDashboardExportPlan(repo RepoRef, outputRoot string, snapshotAt time.Time, dryRun bool, client DashboardExportClient) (DashboardExportPlan, DashboardExportBundle, error) {
@@ -415,9 +425,10 @@ func BuildWorkspaceDashboardExportPlan(config WorkspaceConfigResolved, outputRoo
 		snapshotText = formatGitHubTime(snapshotAt)
 	}
 	workspace := report.Workspace
-	artifacts := DashboardExportWorkspaceArtifacts()
 	sources := dashboardWorkspaceExportSources(snapshotText)
-	dashboard := buildWorkspaceDashboard(report, snapshotText)
+	deepLinks := workspaceDashboardDeepLinks(report.Queues)
+	artifacts := append(DashboardExportWorkspaceArtifacts(), workspaceDashboardDeepLinkArtifacts(deepLinks)...)
+	dashboard := buildWorkspaceDashboard(report, snapshotText, deepLinks)
 	warnings := workspaceDashboardWarningMessages(dashboard.Warnings)
 
 	plan := DashboardExportPlan{
@@ -581,8 +592,9 @@ func buildDashboardRoadmapItems(milestones []DashboardRawMilestone, projectItems
 	return items
 }
 
-func buildWorkspaceDashboard(report WorkspaceReport, snapshotAt string) DashboardWorkspaceDashboard {
+func buildWorkspaceDashboard(report WorkspaceReport, snapshotAt string, deepLinks []dashboardWorkspaceDeepLink) DashboardWorkspaceDashboard {
 	warnings := buildWorkspaceDashboardWarnings(report)
+	ticketReports, reviewReports := workspaceDashboardDeepLinkPaths(deepLinks)
 	return DashboardWorkspaceDashboard{
 		SchemaVersion: WorkspaceDashboardSchemaVersion,
 		SnapshotAt:    snapshotAt,
@@ -593,29 +605,34 @@ func buildWorkspaceDashboard(report WorkspaceReport, snapshotAt string) Dashboar
 		},
 		Counts:      report.Counts,
 		QueueCounts: report.Queues.Counts,
-		TopActions:  buildWorkspaceDashboardTopActions(report.Queues),
+		TopActions:  buildWorkspaceDashboardTopActions(report.Queues, deepLinks),
 		Warnings:    warnings,
 		Artifacts: DashboardWorkspaceArtifacts{
 			WorkspaceStatus: "raw/workspace_status.json",
 			WorkspaceQueues: "derived/workspace_queues.json",
 			QueueItemsCSV:   "csv/workspace_queue_items.csv",
+			TicketReports:   ticketReports,
+			ReviewReports:   reviewReports,
 		},
 	}
 }
 
-func buildWorkspaceDashboardTopActions(report WorkspaceQueuesReport) []DashboardWorkspaceTopAction {
+func buildWorkspaceDashboardTopActions(report WorkspaceQueuesReport, deepLinks []dashboardWorkspaceDeepLink) []DashboardWorkspaceTopAction {
 	items := workspaceDashboardAllQueueItems(report)
 	actions := make([]DashboardWorkspaceTopAction, 0, minInt(len(items), workspaceDashboardTopActionLimit))
 	for _, item := range items {
 		if len(actions) >= workspaceDashboardTopActionLimit {
 			break
 		}
+		ticketPath, reviewPath := workspaceDashboardDeepLinkPathsForItem(deepLinks, item)
 		actions = append(actions, DashboardWorkspaceTopAction{
 			Queue:           item.Queue,
 			Repo:            item.Repo,
 			Issue:           item.Issue,
 			Title:           item.Title,
 			URL:             workspaceQueueIssueURL(item),
+			LocalTicketHTML: ticketPath,
+			LocalReviewHTML: reviewPath,
 			ReasonCodes:     append([]string(nil), item.ReasonCodes...),
 			NextSafeCommand: item.NextSafeCommand,
 			SourceRefs: []string{
@@ -625,6 +642,226 @@ func buildWorkspaceDashboardTopActions(report WorkspaceQueuesReport) []Dashboard
 		})
 	}
 	return actions
+}
+
+func workspaceDashboardDeepLinks(report WorkspaceQueuesReport) []dashboardWorkspaceDeepLink {
+	items := workspaceDashboardAllQueueItems(report)
+	links := make([]dashboardWorkspaceDeepLink, 0, len(items))
+	seenTickets := map[string]struct{}{}
+	seenReviews := map[string]struct{}{}
+	for _, item := range items {
+		key := workspaceDashboardItemKey(item)
+		link := dashboardWorkspaceDeepLink{Item: item}
+		if item.Issue > 0 && strings.TrimSpace(item.Repo) != "" {
+			if _, ok := seenTickets[key]; !ok {
+				link.TicketPath = workspaceDashboardTicketReportPath(item)
+				seenTickets[key] = struct{}{}
+			}
+		}
+		if item.PullRequest != nil && item.PullRequest.Number > 0 {
+			reviewKey := workspaceDashboardReviewKey(item)
+			if _, ok := seenReviews[reviewKey]; !ok {
+				link.ReviewPath = workspaceDashboardReviewReportPath(item)
+				seenReviews[reviewKey] = struct{}{}
+			}
+		}
+		if link.TicketPath != "" || link.ReviewPath != "" {
+			links = append(links, link)
+		}
+	}
+	return links
+}
+
+func workspaceDashboardDeepLinkArtifacts(links []dashboardWorkspaceDeepLink) []DashboardExportArtifact {
+	artifacts := make([]DashboardExportArtifact, 0, len(links)*2)
+	for _, link := range links {
+		if strings.TrimSpace(link.TicketPath) != "" {
+			artifacts = append(artifacts, DashboardExportArtifact{Path: link.TicketPath, Kind: "html", WillWrite: true})
+		}
+		if strings.TrimSpace(link.ReviewPath) != "" {
+			artifacts = append(artifacts, DashboardExportArtifact{Path: link.ReviewPath, Kind: "html", WillWrite: true})
+		}
+	}
+	return artifacts
+}
+
+func workspaceDashboardDeepLinkPaths(links []dashboardWorkspaceDeepLink) ([]string, []string) {
+	tickets := []string{}
+	reviews := []string{}
+	for _, link := range links {
+		if strings.TrimSpace(link.TicketPath) != "" {
+			tickets = append(tickets, link.TicketPath)
+		}
+		if strings.TrimSpace(link.ReviewPath) != "" {
+			reviews = append(reviews, link.ReviewPath)
+		}
+	}
+	return tickets, reviews
+}
+
+func workspaceDashboardDeepLinkPathsForItem(links []dashboardWorkspaceDeepLink, item WorkspaceQueueItem) (string, string) {
+	itemKey := workspaceDashboardItemKey(item)
+	reviewKey := workspaceDashboardReviewKey(item)
+	ticketPath := ""
+	reviewPath := ""
+	for _, link := range links {
+		if workspaceDashboardItemKey(link.Item) == itemKey {
+			if ticketPath == "" && link.TicketPath != "" {
+				ticketPath = link.TicketPath
+			}
+			if reviewPath == "" && reviewKey != "" && workspaceDashboardReviewKey(link.Item) == reviewKey && link.ReviewPath != "" {
+				reviewPath = link.ReviewPath
+			}
+		}
+	}
+	return ticketPath, reviewPath
+}
+
+func workspaceDashboardItemKey(item WorkspaceQueueItem) string {
+	return strings.ToLower(strings.TrimSpace(item.Repo)) + "#" + strconv.Itoa(item.Issue)
+}
+
+func workspaceDashboardReviewKey(item WorkspaceQueueItem) string {
+	if item.PullRequest == nil || item.PullRequest.Number <= 0 {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(item.Repo)) + "#pr-" + strconv.Itoa(item.PullRequest.Number)
+}
+
+func workspaceDashboardTicketReportPath(item WorkspaceQueueItem) string {
+	return fmt.Sprintf("tickets/%s-ticket-%d.html", workspaceDashboardRepoSlug(item.Repo), item.Issue)
+}
+
+func workspaceDashboardReviewReportPath(item WorkspaceQueueItem) string {
+	if item.PullRequest == nil || item.PullRequest.Number <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("reviews/%s-pr-%d.html", workspaceDashboardRepoSlug(item.Repo), item.PullRequest.Number)
+}
+
+func workspaceDashboardRepoSlug(repo string) string {
+	repo = strings.ToLower(strings.TrimSpace(repo))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range repo {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	slug := strings.Trim(b.String(), "-")
+	if slug == "" {
+		return "repo"
+	}
+	return slug
+}
+
+func workspaceDashboardStatusFromQueueItem(item WorkspaceQueueItem) WorkStatusResult {
+	status := WorkStatusResult{
+		Command:       "ticket status",
+		SchemaVersion: TicketStatusSchemaVersion,
+		Repo:          item.Repo,
+		Issue:         item.Issue,
+		Title:         item.Title,
+		State:         item.State,
+		Status:        item.Status,
+		Labels:        append([]string(nil), item.Labels...),
+		Milestone:     item.Milestone,
+		Blockers:      append([]string(nil), item.Evidence.Blockers...),
+		NextAction:    item.Evidence.NextAction,
+		NextStep:      item.NextSafeCommand,
+		ChecksStatus:  item.Evidence.ChecksStatus,
+		ReviewStatus:  item.Evidence.ReviewStatus,
+	}
+	if item.PullRequest != nil {
+		status.PRNumber = item.PullRequest.Number
+		status.PRURL = item.PullRequest.URL
+		status.PRState = item.PullRequest.State
+		status.PullRequest = &TicketStatusPullRequest{
+			Available:      item.PullRequest.Number > 0,
+			Number:         item.PullRequest.Number,
+			URL:            item.PullRequest.URL,
+			State:          item.PullRequest.State,
+			ReviewDecision: item.PullRequest.ReviewDecision,
+			IsDraft:        item.PullRequest.Draft,
+		}
+	}
+	if strings.TrimSpace(item.Evidence.TicketReadiness) != "" {
+		status.TicketReadiness = &TicketReadinessReport{
+			SchemaVersion: TicketReadinessSchemaVersion,
+			Readiness:     item.Evidence.TicketReadiness,
+		}
+	}
+	if strings.TrimSpace(item.Evidence.PRReadiness) != "" || item.PullRequest != nil {
+		readiness := strings.TrimSpace(item.Evidence.PRReadiness)
+		if readiness == "" {
+			readiness = "unknown"
+		}
+		status.PRReadiness = &PRReadinessReport{
+			SchemaVersion: PRReadinessSchemaVersion,
+			Repo:          item.Repo,
+			Issue:         item.Issue,
+			Readiness:     readiness,
+			NextAction:    item.Evidence.NextAction,
+		}
+		if item.PullRequest != nil {
+			status.PRReadiness.PullRequest = item.PullRequest.Number
+		}
+	}
+	return status
+}
+
+func workspaceDashboardReviewFromQueueItem(item WorkspaceQueueItem) AgentPromptReport {
+	report := AgentPromptReport{
+		Command: "ticket review",
+		Repo:    item.Repo,
+		Ticket:  item.Issue,
+		Role:    AgentPromptRoleReviewer,
+		Profile: AgentPromptProfileDefault,
+		Issue: AgentPromptIssue{
+			Number: item.Issue,
+			Title:  item.Title,
+			State:  item.State,
+			Labels: append([]string(nil), item.Labels...),
+		},
+		Evidence: &AgentPromptEvidence{
+			Blockers:    append([]string(nil), item.Evidence.Blockers...),
+			FinishReady: item.Evidence.PRReadiness == "ready_for_finish",
+		},
+		NextStep: item.NextSafeCommand,
+	}
+	if item.PullRequest != nil {
+		report.PR = &AgentPromptPR{
+			Number:         item.PullRequest.Number,
+			URL:            item.PullRequest.URL,
+			State:          item.PullRequest.State,
+			ReviewDecision: item.PullRequest.ReviewDecision,
+			IsDraft:        item.PullRequest.Draft,
+			FinishReady:    item.Evidence.PRReadiness == "ready_for_finish",
+		}
+	}
+	readiness := item.Evidence.PRReadiness
+	if strings.TrimSpace(readiness) == "" {
+		readiness = "unknown"
+	}
+	report.PRReady = &PRReadinessReport{
+		SchemaVersion: PRReadinessSchemaVersion,
+		Repo:          item.Repo,
+		Issue:         item.Issue,
+		Readiness:     readiness,
+		NextAction:    item.Evidence.NextAction,
+	}
+	if item.PullRequest != nil {
+		report.PRReady.PullRequest = item.PullRequest.Number
+	}
+	report.Review = buildAgentReviewContract(report)
+	report.Prompt = RenderAgentPrompt(report)
+	return report
 }
 
 func buildWorkspaceDashboardWarnings(report WorkspaceReport) []DashboardWorkspaceWarning {
@@ -958,6 +1195,22 @@ func WriteDashboardExportBundle(outputRoot string, bundle DashboardExportBundle)
 			return err
 		}
 	}
+	if bundle.WorkspaceQueues != nil {
+		for _, link := range workspaceDashboardDeepLinks(*bundle.WorkspaceQueues) {
+			if strings.TrimSpace(link.TicketPath) != "" {
+				status := workspaceDashboardStatusFromQueueItem(link.Item)
+				if err := scope.WriteFile(link.TicketPath, []byte(RenderTicketStatusHTML(status)), 0o644); err != nil {
+					return err
+				}
+			}
+			if strings.TrimSpace(link.ReviewPath) != "" {
+				review := workspaceDashboardReviewFromQueueItem(link.Item)
+				if err := scope.WriteFile(link.ReviewPath, []byte(RenderTicketReviewHTML(review)), 0o644); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -1112,7 +1365,11 @@ var workspaceDashboardHTMLTemplate = template.Must(template.New("workspace-dashb
       {{range .TopActions}}
         <tr>
           <td>{{.Queue}}</td>
-          <td><a href="{{.URL}}">{{.Repo}}#{{.Issue}}</a><br>{{.Title}}</td>
+          <td>
+            <a href="{{.URL}}">{{.Repo}}#{{.Issue}}</a><br>{{.Title}}
+            {{if .LocalTicketHTML}}<br><a href="{{.LocalTicketHTML}}">Ticket report</a>{{end}}
+            {{if .LocalReviewHTML}}<br><a href="{{.LocalReviewHTML}}">Review packet</a>{{end}}
+          </td>
           <td>{{range .ReasonCodes}}<code>{{.}}</code> {{end}}</td>
           <td><code>{{.NextSafeCommand}}</code></td>
         </tr>

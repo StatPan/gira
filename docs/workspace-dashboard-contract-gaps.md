@@ -90,6 +90,8 @@ The 3.0 workspace report bundle needs these additions:
 | Dashboard index data | `derived/workspace_dashboard.json` | Give `index.html` one compact data source. |
 | Queue CSV | `csv/workspace_queue_items.csv` | Keep spreadsheet and CLI-adjacent workflows cheap. |
 | Human entry point | `index.html` | Make the bundle openable without a server. |
+| Ticket detail pages | `tickets/OWNER-REPO-ticket-N.html` | Let queue items open local ticket state without another command. |
+| Review packet pages | `reviews/OWNER-REPO-pr-N.html` | Let review-needed or PR-backed items open local review context. |
 | Workspace status schema marker | `schema_version` or index `source.contract` | Identify the raw snapshot contract even if existing CLI output predates a top-level marker. |
 | Stable warning codes | `warnings[].code` | Let UI and tests reason about degraded exports. |
 | Manifest visibility | artifact entries for all files above | Let consumers discover what exists. |
@@ -108,6 +110,10 @@ out/dashboard/
   csv/
     workspace_queue_items.csv
   index.html
+  tickets/
+    OWNER-REPO-ticket-N.html
+  reviews/
+    OWNER-REPO-pr-N.html
 ```
 
 `raw/workspace_status.json` is the full workspace status payload. It may include
@@ -127,6 +133,11 @@ spreadsheets, shell filtering, and quick inspection.
 
 `index.html` is a static view over the JSON artifacts. It is not a source of
 truth.
+
+`tickets/` and `reviews/` contain local deep-link pages generated from the same
+workspace queue snapshot. They are presentation artifacts, not durable state.
+Their filenames include the repository slug so multi-repo workspaces avoid issue
+or PR number collisions.
 
 ## Command Gap
 

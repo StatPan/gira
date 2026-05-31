@@ -87,34 +87,6 @@ gira feat list --repo OWNER/backlog
 
 Documented in: `docs/feature-map.md`, `docs-site/feature-map.md`, `docs-site/command-reference.md`
 
-## `goal dossier`
-
-Build a visible operating dossier for one goal from stable Goal Mode state.
-
-Usage:
-
-```bash
-gira goal dossier [GOAL] [--repo OWNER/REPO] [--json]
-```
-
-Since: `v2.1.0`
-
-Flags:
-
-- `--repo`: Target GitHub repo in OWNER/REPO format.
-- `--goal`: Goal issue number. Can also be numeric positional.
-- `--json`: Emit stable goal-dossier/v1 JSON.
-
-Examples:
-
-- Export a goal dossier JSON contract
-
-```bash
-gira goal dossier 521 --repo OWNER/app --json
-```
-
-Documented in: `docs/goal-operating-model.md`, `docs-site/goal-mode.md`, `docs-site/command-reference.md`
-
 ## `goal finish`
 
 Preview goal finish readiness and apply human-review handoff receipts.
@@ -209,6 +181,42 @@ gira goal plan 521 --repo OWNER/app --apply --json
 ```
 
 Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
+
+## `goal report`
+
+Build a visible report for one goal from stable Goal Mode state. Alias: gira goal dossier.
+
+Usage:
+
+```bash
+gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]
+```
+
+Since: `v2.1.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--goal`: Goal issue number. Can also be numeric positional.
+- `--json`: Emit stable goal-dossier/v1 JSON.
+- `--html`: Write a static local HTML report.
+- `--output`: Output path for --html.
+
+Examples:
+
+- Export a goal report JSON contract
+
+```bash
+gira goal report 521 --repo OWNER/app --json
+```
+
+- Write a local goal report page
+
+```bash
+gira goal report 521 --repo OWNER/app --html --output out/gira/goal-521.html
+```
+
+Documented in: `docs/goal-operating-model.md`, `docs-site/goal-mode.md`, `docs-site/command-reference.md`
 
 ## `goal status`
 

@@ -1,6 +1,8 @@
 package gira
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -33,9 +35,9 @@ func TestBuildGoalDossierReportSummarizesGoalState(t *testing.T) {
 	if report.Evidence.ChildCount != 2 || report.Evidence.RemainingAutonomousWork != 1 || report.Evidence.Checks.Total != 2 {
 		t.Fatalf("unexpected evidence summary: %+v", report.Evidence)
 	}
-	for _, want := range []string{"goal dossier: #100 children=2 remaining=1 next=start_child", "children: ready=1 done=1", "selected: #101 next_ready_child"} {
-		if !strings.Contains(FormatGoalDossier(report), want) {
-			t.Fatalf("formatted dossier missing %q:\n%s", want, FormatGoalDossier(report))
+	for _, want := range []string{"goal report: #100 children=2 remaining=1 next=start_child", "children: ready=1 done=1", "selected: #101 next_ready_child"} {
+		if !strings.Contains(FormatGoalReport(report), want) {
+			t.Fatalf("formatted report missing %q:\n%s", want, FormatGoalReport(report))
 		}
 	}
 }
@@ -55,7 +57,95 @@ func TestBuildGoalDossierReportCarriesStopConditions(t *testing.T) {
 	if !containsString(report.StopConditions, "no_child_tickets") || report.NextAction != "plan_children" {
 		t.Fatalf("unexpected no-child dossier: %+v", report)
 	}
-	if !strings.Contains(FormatGoalDossier(report), "stop: no_child_tickets") {
-		t.Fatalf("formatted dossier missing stop condition:\n%s", FormatGoalDossier(report))
+	if !strings.Contains(FormatGoalReport(report), "stop: no_child_tickets") {
+		t.Fatalf("formatted report missing stop condition:\n%s", FormatGoalReport(report))
+	}
+}
+
+func TestRenderGoalReportHTMLEscapesUnsafeTextAndLinks(t *testing.T) {
+	selected := GoalNextCandidate{
+		Number:   102,
+		Title:    `Pick <b>me</b>`,
+		Category: "ready",
+		Reason:   `because <ok>`,
+		URL:      "javascript:alert(1)",
+	}
+	report := BuildGoalDossierReportFromStatus(GoalStatusReport{
+		Command:       "goal status",
+		SchemaVersion: GoalStatusSchemaVersion,
+		Repo:          "StatPan/gira",
+		Goal: GoalStatusIssue{
+			Number: 100,
+			Title:  `Goal <script>alert("x")</script>`,
+			State:  "open",
+			Status: "Ready",
+			URL:    "javascript:alert(1)",
+		},
+		Children: []GoalStatusChild{
+			{
+				Number:       101,
+				Title:        `Child <b>x</b>`,
+				State:        "open",
+				Status:       "Ready",
+				Category:     "ready",
+				URL:          "javascript:evil()",
+				ChecksStatus: "passed",
+				ReviewStatus: "approved",
+				NextAction:   "start_child",
+				NextStep:     "gira ticket start <unsafe>",
+			},
+		},
+		Counts:                  map[string]int{"total": 1, "ready": 1},
+		NextAction:              "start_child",
+		NextStep:                "gira goal next <unsafe>",
+		RemainingAutonomousWork: 1,
+	}, GoalNextReport{
+		Command:        "goal next",
+		SchemaVersion:  GoalNextSchemaVersion,
+		Repo:           "StatPan/gira",
+		Goal:           GoalStatusIssue{Number: 100},
+		SelectedTicket: &selected,
+		Counts:         map[string]int{"total": 1, "ready": 1},
+		NextAction:     "start_child",
+		NextStep:       "gira ticket start <unsafe>",
+	})
+
+	html := RenderGoalReportHTML(report)
+	for _, bad := range []string{`<script>alert`, `<b>x</b>`, `Pick <b>me</b>`, `javascript:alert`, `javascript:evil`} {
+		if strings.Contains(html, bad) {
+			t.Fatalf("HTML contains unsafe raw value %q:\n%s", bad, html)
+		}
+	}
+	for _, want := range []string{`Goal &lt;script&gt;alert`, `Child &lt;b&gt;x&lt;/b&gt;`, `Pick &lt;b&gt;me&lt;/b&gt;`, `gira ticket start &lt;unsafe&gt;`, GoalDossierSchemaVersion} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("HTML missing escaped value %q:\n%s", want, html)
+		}
+	}
+}
+
+func TestWriteGoalReportHTMLWritesSafeFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reports", "goal-100.html")
+	report := GoalDossierReport{
+		Command:       "goal report",
+		SchemaVersion: GoalDossierSchemaVersion,
+		Repo:          "StatPan/gira",
+		GeneratedAt:   "2026-05-31T00:00:00Z",
+		Goal:          GoalStatusIssue{Number: 100, Title: "Goal mode", State: "open", Status: "Ready"},
+		Counts:        map[string]int{"total": 0},
+		NextAction:    "plan_children",
+		NextStep:      "gira goal plan --repo StatPan/gira --goal 100 --dry-run",
+		Evidence:      GoalDossierEvidenceSummary{Sources: []string{"goal_status", "goal_next"}},
+	}
+	if err := WriteGoalReportHTML(path, report); err != nil {
+		t.Fatalf("WriteGoalReportHTML error: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read report HTML: %v", err)
+	}
+	for _, want := range []string{"Gira goal report", "Goal mode", GoalDossierSchemaVersion} {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("written report missing %q:\n%s", want, string(got))
+		}
 	}
 }

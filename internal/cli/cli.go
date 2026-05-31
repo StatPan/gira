@@ -32,7 +32,7 @@ Daily commands:
   adopt       Plan or apply adoption for existing repositories and issues
   ticket      Jira-style ticket lifecycle commands
   feature     Optional issue-backed feature map commands. Alias: feat
-  goal        Goal-mode planning, status, and visible dossier commands
+  goal        Goal-mode planning, status, and visible report commands
   epic        Numberless epic status and finish commands
   milestone   Milestone lifecycle and bulk ticket assignment
   sprint      Sprint iteration planning/start/close workflow
@@ -837,14 +837,14 @@ const goalHelp = `Goal-mode commands for long-running AI-assisted work.
 
 Usage:
   gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]
-  gira goal dossier [GOAL] [--repo OWNER/REPO] [--json]
+  gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]
   gira goal status [GOAL] [--repo OWNER/REPO] [--json]
   gira goal next [GOAL] [--repo OWNER/REPO] [--json]
   gira goal finish [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]
 
 Commands:
   plan    Propose or create child ticket packets from a goal issue
-  dossier Build a visible operating dossier for one goal
+  report  Build a visible goal report. Alias: dossier
   status  Summarize a goal issue, child ticket graph, blockers, and next safe action
   next    Select the next safe child ticket or explain why the goal must stop
   finish  Preview goal finish readiness and apply human-review handoff receipts
@@ -856,6 +856,8 @@ Flags:
   --apply        Apply goal plan child ticket creation or supported goal finish handoff mutations
   --terminal string Goal terminal recommendation override for finish
   --json         Emit stable goal JSON
+  --html         Write a static local HTML report
+  --output path  Output path for --html
   -h, --help     Show help
 `
 
@@ -3277,8 +3279,10 @@ func runGoal(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "plan":
 		return runGoalPlan(args[1:], stdout, stderr)
+	case "report":
+		return runGoalReport(args[1:], "report", stdout, stderr)
 	case "dossier":
-		return runGoalDossier(args[1:], stdout, stderr)
+		return runGoalReport(args[1:], "dossier", stdout, stderr)
 	case "status":
 		return runGoalStatus(args[1:], stdout, stderr)
 	case "next":
@@ -3493,17 +3497,19 @@ func runGoalStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
-func runGoalDossier(args []string, stdout io.Writer, stderr io.Writer) int {
+func runGoalReport(args []string, commandName string, stdout io.Writer, stderr io.Writer) int {
 	args, positionalGoal, positionalOK := extractNumericPositional(args, "goal", stderr)
 	if !positionalOK {
 		_, _ = io.WriteString(stderr, goalHelp)
 		return 2
 	}
-	fs := flag.NewFlagSet("goal dossier", flag.ContinueOnError)
+	fs := flag.NewFlagSet("goal "+commandName, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	goal := fs.Int("goal", 0, "Goal issue number")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	htmlOutput := fs.Bool("html", false, "Write a static local HTML report")
+	outputPath := fs.String("output", "", "Output path for --html")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
 	if err := fs.Parse(args); err != nil {
@@ -3528,6 +3534,21 @@ func runGoalDossier(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, goalHelp)
 		return 2
 	}
+	if *jsonOutput && *htmlOutput {
+		fmt.Fprint(stderr, "choose exactly one output format: --json or --html\n\n")
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	if *htmlOutput && strings.TrimSpace(*outputPath) == "" {
+		fmt.Fprint(stderr, "--output is required when using --html\n\n")
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	if !*htmlOutput && strings.TrimSpace(*outputPath) != "" {
+		fmt.Fprint(stderr, "--output requires --html\n\n")
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
 	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -3542,16 +3563,28 @@ func runGoalDossier(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
+	if commandName == "report" {
+		report.Command = "goal report"
+	}
 	if *jsonOutput {
 		out, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
-			fmt.Fprintf(stderr, "encode goal dossier JSON: %v\n", err)
+			fmt.Fprintf(stderr, "encode goal report JSON: %v\n", err)
 			return 2
 		}
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0
 	}
-	fmt.Fprint(stdout, gira.FormatGoalDossier(report))
+	if *htmlOutput {
+		if err := gira.WriteGoalReportHTML(*outputPath, report); err != nil {
+			fmt.Fprintf(stderr, "write goal report HTML: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "goal report html: %s\n", filepath.Clean(*outputPath))
+		fmt.Fprintf(stdout, "next step: open %s\n", filepath.Clean(*outputPath))
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatGoalReport(report))
 	return 0
 }
 
@@ -5029,7 +5062,7 @@ func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bo
 func extractNumericPositional(args []string, noun string, stderr io.Writer) ([]string, int, bool) {
 	cleaned := make([]string, 0, len(args))
 	positional := 0
-	valueFlags := map[string]struct{}{"--repo": {}, "--goal": {}, "--terminal": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--goal": {}, "--terminal": {}, "--output": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)

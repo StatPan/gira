@@ -5319,6 +5319,118 @@ func TestGoalDossierJSONUsesInjectedBuilder(t *testing.T) {
 	}
 }
 
+func TestGoalReportJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newGoalDossierReport
+	t.Cleanup(func() { newGoalDossierReport = restore })
+	newGoalDossierReport = func(input gira.GoalDossierInput) (gira.GoalDossierReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 {
+			t.Fatalf("unexpected goal report input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		selected := gira.GoalNextCandidate{Number: 573, Title: "Next", Category: "ready", Reason: "next_ready_child", NextStep: "gira ticket start --repo StatPan/gira --ticket 573 --apply"}
+		return gira.GoalDossierReport{
+			Command:                 "goal dossier",
+			SchemaVersion:           gira.GoalDossierSchemaVersion,
+			Repo:                    input.Repo.FullName(),
+			GeneratedAt:             "2026-05-31T00:00:00Z",
+			Goal:                    gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 3.0", State: "open", Status: "Ready"},
+			Counts:                  map[string]int{"total": 1, "ready": 1},
+			ChildGroups:             []gira.GoalDossierChildGroup{{Category: "ready", Count: 1, Children: []gira.GoalStatusChild{{Number: 573, Title: "Next", Category: "ready", Status: "Ready"}}}},
+			SelectedTicket:          &selected,
+			NextAction:              "start_child",
+			NextStep:                selected.NextStep,
+			RemainingAutonomousWork: 1,
+			Evidence:                gira.GoalDossierEvidenceSummary{Sources: []string{"goal_status", "goal_next"}, ChildCount: 1, RemainingAutonomousWork: 1},
+			Sources:                 []gira.GoalDossierSource{{Name: "goal_status", SchemaVersion: gira.GoalStatusSchemaVersion}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "report", "521", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "goal report"`, `"schema_version": "goal-dossier/v1"`, `"child_groups"`, `"selected_ticket"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("goal report JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestGoalReportHTMLWritesOutput(t *testing.T) {
+	restore := newGoalDossierReport
+	t.Cleanup(func() { newGoalDossierReport = restore })
+	newGoalDossierReport = func(input gira.GoalDossierInput) (gira.GoalDossierReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 {
+			t.Fatalf("unexpected goal report input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.GoalDossierReport{
+			Command:       "goal dossier",
+			SchemaVersion: gira.GoalDossierSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			GeneratedAt:   "2026-05-31T00:00:00Z",
+			Goal:          gira.GoalStatusIssue{Number: input.Goal, Title: "Gira <3", State: "open", Status: "Ready"},
+			Counts:        map[string]int{"total": 0},
+			NextAction:    "plan_children",
+			NextStep:      "gira goal plan --repo StatPan/gira --goal 521 --dry-run",
+			Evidence:      gira.GoalDossierEvidenceSummary{Sources: []string{"goal_status", "goal_next"}},
+		}, nil
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "goal-521.html")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "report", "521", "--repo", "StatPan/gira", "--html", "--output", outputPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "goal report html:") || !strings.Contains(stdout.String(), "next step: open") {
+		t.Fatalf("goal report HTML output missing next-step summary:\n%s", stdout.String())
+	}
+	got, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read report HTML: %v", err)
+	}
+	for _, want := range []string{"Gira goal report", "Gira &lt;3", gira.GoalDossierSchemaVersion} {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("report HTML missing %q:\n%s", want, string(got))
+		}
+	}
+}
+
+func TestGoalReportRejectsInvalidOutputFlags(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "json and html",
+			args: []string{"goal", "report", "521", "--repo", "StatPan/gira", "--json", "--html", "--output", "goal.html"},
+			want: "choose exactly one output format",
+		},
+		{
+			name: "html needs output",
+			args: []string{"goal", "report", "521", "--repo", "StatPan/gira", "--html"},
+			want: "--output is required when using --html",
+		},
+		{
+			name: "output needs html",
+			args: []string{"goal", "report", "521", "--repo", "StatPan/gira", "--output", "goal.html"},
+			want: "--output requires --html",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run(tc.args, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+			}
+			if !strings.Contains(stderr.String(), tc.want) {
+				t.Fatalf("stderr missing %q:\n%s", tc.want, stderr.String())
+			}
+		})
+	}
+}
+
 func TestGoalNextJSONUsesInjectedBuilder(t *testing.T) {
 	restore := newGoalNextReport
 	t.Cleanup(func() { newGoalNextReport = restore })

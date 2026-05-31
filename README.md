@@ -29,9 +29,10 @@ a Jira-like lifecycle that coding agents can operate safely:
 The 2.0 control-plane contract extends that loop with stable surfaces for
 long-running human and agent work:
 
-- `goal status`, `goal dossier`, `goal next`, `goal plan --dry-run|--apply`,
+- `goal status`, `goal report`, `goal next`, `goal plan --dry-run|--apply`,
   and `goal finish` model a larger objective as an evidence-backed child-ticket
-  graph with explicit human-review stop conditions and a visible JSON dossier.
+  graph with explicit human-review stop conditions and a visible JSON or HTML
+  report.
 - Ticket readiness, PR readiness, review packets, finish readiness, finish
   receipts, and drift audits make completion reviewable without trusting an
   agent transcript.

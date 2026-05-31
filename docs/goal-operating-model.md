@@ -170,7 +170,7 @@ Suggested implementation order:
 | `gira goal plan` | Read a goal issue and print proposed child ticket packets. Optional `--apply` creates linked child issues. |
 | `gira goal next` | Select the next safe child ticket or explain the stop condition. |
 | `gira goal status` | Summarize goal, child tickets, PR evidence, blockers, drift, and remaining autonomous work. |
-| `gira goal dossier` | Package goal status, grouped children, blockers, stop conditions, evidence summary, and next safe action into one visible JSON artifact. |
+| `gira goal report` | Package goal status, grouped children, blockers, stop conditions, evidence summary, and next safe action into one visible JSON or HTML artifact. Alias: `gira goal dossier`. |
 | `gira goal finish` | Verify child ticket convergence, post a human-review receipt when blockers remain, and later close or hand off the goal. |
 
 Each command should support `--dry-run|--apply` for mutations and `--json` for

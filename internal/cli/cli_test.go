@@ -4371,6 +4371,83 @@ func TestTicketStatusHumanOutputUsesTicketNextStep(t *testing.T) {
 	}
 }
 
+func TestTicketStatusHTMLWritesOutput(t *testing.T) {
+	restore := newWorkStatusResult
+	t.Cleanup(func() { newWorkStatusResult = restore })
+	newWorkStatusResult = func(repo gira.RepoRef, issue int) (gira.WorkStatusResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 {
+			t.Fatalf("unexpected args repo=%s issue=%d", repo.FullName(), issue)
+		}
+		return gira.WorkStatusResult{
+			Command:       "ticket status",
+			SchemaVersion: gira.TicketStatusSchemaVersion,
+			Repo:          repo.FullName(),
+			Issue:         issue,
+			Title:         "Ticket <detail>",
+			State:         "open",
+			Status:        "In review",
+			NextAction:    "address_review",
+			ReviewStatus:  "blocked",
+			PullRequest:   &gira.TicketStatusPullRequest{Available: true, Number: 127, URL: "https://github.com/StatPan/gira/pull/127", State: "OPEN", ReviewDecision: "CHANGES_REQUESTED"},
+			PRReadiness:   &gira.PRReadinessReport{SchemaVersion: gira.PRReadinessSchemaVersion, Repo: repo.FullName(), Issue: issue, PullRequest: 127, Readiness: "needs_revision", NextAction: "revise_pr"},
+		}, nil
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "ticket-126.html")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "status", "126", "--repo", "StatPan/gira", "--html", "--output", outputPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "ticket status html:") || !strings.Contains(stdout.String(), "next step: open") {
+		t.Fatalf("ticket status HTML output missing next-step summary:\n%s", stdout.String())
+	}
+	got, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read ticket status HTML: %v", err)
+	}
+	for _, want := range []string{"Gira ticket report", "Ticket &lt;detail&gt;", "review: blocked", "CHANGES_REQUESTED", gira.TicketStatusSchemaVersion} {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("ticket status HTML missing %q:\n%s", want, string(got))
+		}
+	}
+}
+
+func TestTicketStatusRejectsInvalidOutputFlags(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "json and html",
+			args: []string{"ticket", "status", "126", "--repo", "StatPan/gira", "--json", "--html", "--output", "ticket.html"},
+			want: "choose exactly one output format",
+		},
+		{
+			name: "html needs output",
+			args: []string{"ticket", "status", "126", "--repo", "StatPan/gira", "--html"},
+			want: "--output is required when using --html",
+		},
+		{
+			name: "output needs html",
+			args: []string{"ticket", "status", "126", "--repo", "StatPan/gira", "--output", "ticket.html"},
+			want: "--output requires --html",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run(tc.args, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+			}
+			if !strings.Contains(stderr.String(), tc.want) {
+				t.Fatalf("stderr missing %q:\n%s", tc.want, stderr.String())
+			}
+		})
+	}
+}
+
 func TestTicketStatusJSONUsesTicketNextStep(t *testing.T) {
 	restore := newWorkStatusResult
 	t.Cleanup(func() { newWorkStatusResult = restore })

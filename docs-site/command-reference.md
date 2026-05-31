@@ -1015,10 +1015,19 @@ Report ticket status, linked PR blockers, and next action.
 Usage:
 
 ```bash
-gira ticket status [TICKET] [--repo OWNER/REPO] [--json]
+gira ticket status [TICKET] [--repo OWNER/REPO] [--json|--html --output PATH]
 ```
 
 Since: `v1.0.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--ticket`: Ticket number. Can also be numeric positional.
+- `--issue`: Compatibility alias for --ticket.
+- `--json`: Emit the stable ticket-status/v1 JSON contract with issue, branch, PR, checks, review, evidence, blockers, warnings, and next action.
+- `--html`: Write a static local HTML report from ticket-status/v1.
+- `--output`: Output path for --html.
 
 Examples:
 
@@ -1026,6 +1035,12 @@ Examples:
 
 ```bash
 gira ticket status
+```
+
+- Export a ticket status page
+
+```bash
+gira ticket status 42 --repo OWNER/app --html --output out/gira/ticket-42.html
 ```
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`

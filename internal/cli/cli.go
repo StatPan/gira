@@ -42,6 +42,7 @@ Daily commands:
   config      Inspect global and repo-local Gira config sources
   upgrade     Check latest release and print upgrade instructions
   cache       Manage local Gira caches
+  completion  Generate static shell completion scripts
   version     Show Gira build version
   start       Shortcut for ticket start
 
@@ -1599,6 +1600,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runUpgrade(args[1:], stdout, stderr)
 	case "cache":
 		return runCache(args[1:], stdout, stderr)
+	case "completion":
+		return runCompletion(args[1:], stdout, stderr)
 	case "version":
 		return runVersion(args[1:], stdout, stderr)
 	case "jira":

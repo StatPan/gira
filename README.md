@@ -42,6 +42,8 @@ long-running human and agent work:
 - Adapter-facing command metadata and approval evidence, including
   `gira-approval-plan/v1`, let durable agent runtimes treat Gira dry-runs as
   auditable plans before any matching `--apply`.
+- `gira completion bash|zsh|fish` prints static shell completion scripts for
+  common commands, lifecycle subcommands, and shared flags.
 
 `v2.0.0` is the release line for this CLI-first control-plane contract. It is
 not a hosted dashboard, UI/TUI launch, provider expansion, or Gira-native

@@ -2,6 +2,40 @@
 
 This page is generated from Gira's command metadata registry. Update `internal/gira/command_registry.go` first, then refresh this page.
 
+## `completion`
+
+Generate static shell completion scripts for common commands, subcommands, and flags.
+
+Usage:
+
+```bash
+gira completion bash|zsh|fish
+```
+
+Since: `v2.1.0`
+
+Flags:
+
+- `bash`: Print Bash completion script.
+- `zsh`: Print Zsh completion script.
+- `fish`: Print Fish completion script.
+
+Examples:
+
+- Install Bash completion locally
+
+```bash
+gira completion bash > ~/.local/share/bash-completion/completions/gira
+```
+
+- Preview Fish completion
+
+```bash
+gira completion fish
+```
+
+Documented in: `README.md`, `docs-site/command-reference.md`
+
 ## `feature check`
 
 Validate optional feature map records and work links without mutating GitHub.

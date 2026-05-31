@@ -40,6 +40,7 @@ const (
 	CommandCapabilitySchemaVersion = "gira-command-capabilities/v1"
 	JSONSupportStable              = "stable_json"
 	JSONSupportPlanned             = "planned"
+	JSONSupportNone                = "none"
 )
 
 type AdapterCommandCapability struct {
@@ -122,6 +123,23 @@ func CoreCommandSpecs() []CommandSpec {
 			Examples: []CommandExample{
 				{Summary: "Read the default workspace", Command: "gira workspace status"},
 				{Summary: "Inspect a bounded subset", Command: "gira workspace status --limit 10 --active-only"},
+			},
+		},
+		{
+			Path:    []string{"completion"},
+			Summary: "Generate static shell completion scripts for common commands, subcommands, and flags.",
+			Usage:   "gira completion bash|zsh|fish",
+			Since:   "v2.1.0",
+			Flags: []FlagSpec{
+				{Name: "bash", Summary: "Print Bash completion script."},
+				{Name: "zsh", Summary: "Print Zsh completion script."},
+				{Name: "fish", Summary: "Print Fish completion script."},
+			},
+			Docs:        []string{"README.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"quickstart"},
+			Examples: []CommandExample{
+				{Summary: "Install Bash completion locally", Command: "gira completion bash > ~/.local/share/bash-completion/completions/gira"},
+				{Summary: "Preview Fish completion", Command: "gira completion fish"},
 			},
 		},
 		{
@@ -747,6 +765,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterApply("updates workspace repo allowlist; --dry-run previews selected repositories", JSONSupportStable)
 		case "workspace status":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "completion":
+			specs[i].Adapter = adapterRead(JSONSupportNone)
 		case "feature list":
 			specs[i].Adapter = adapterRead(JSONSupportStable, "gira feat list")
 		case "feature check":

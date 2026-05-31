@@ -220,18 +220,65 @@ func ticketHandoffRequiredChecks(body string) []string {
 	items = append(items, markdownListSection(body, "Verification")...)
 	checks := []string{}
 	for _, item := range items {
-		lower := strings.ToLower(item)
-		for _, needle := range []string{"go test", "pytest", "npm test", "pnpm test", "bun test", "make ", "sh ", "scripts/"} {
-			if strings.Contains(lower, needle) {
-				checks = append(checks, item)
-				break
-			}
+		if trusted, ok := trustedTicketHandoffCheck(item); ok {
+			checks = append(checks, trusted)
 		}
 	}
 	if len(checks) > 0 {
 		return checks
 	}
 	return []string{"discover and run the repo's relevant focused checks before PR handoff"}
+}
+
+func trustedTicketHandoffCheck(value string) (string, bool) {
+	command := strings.TrimSpace(value)
+	if command == "" || containsShellControl(command) {
+		return "", false
+	}
+	lower := strings.ToLower(command)
+	if hasShellLauncherPrefix(lower) {
+		return "", false
+	}
+	for _, prefix := range []string{
+		"go test",
+		"go vet",
+		"pytest",
+		"python -m pytest",
+		"npm test",
+		"npm run test",
+		"pnpm test",
+		"pnpm run test",
+		"bun test",
+	} {
+		if lower == prefix || strings.HasPrefix(lower, prefix+" ") {
+			return command, true
+		}
+	}
+	switch lower {
+	case "make test", "make check":
+		return command, true
+	default:
+		return "", false
+	}
+}
+
+func containsShellControl(value string) bool {
+	for _, r := range value {
+		switch r {
+		case '\n', '\r', ';', '&', '|', '<', '>', '`', '$', '\\', '(', ')':
+			return true
+		}
+	}
+	return false
+}
+
+func hasShellLauncherPrefix(value string) bool {
+	for _, prefix := range []string{"sh ", "bash ", "zsh ", "fish ", "dash ", "env sh ", "env bash "} {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func ticketHandoffReviewExpectations(issue int) []string {

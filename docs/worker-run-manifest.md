@@ -210,19 +210,116 @@ also be linked through `outputs` or `artifacts`.
 
 ## Outputs
 
-`outputs` records durable evidence produced by the run:
+`outputs` records durable evidence produced or observed by the run. It is an
+evidence index, not a completion signal. A worker-run manifest may omit arrays
+that do not apply. When an array is present, each item must follow the
+corresponding contract below.
+
+Required nullable fields must be present with `null` when the value is unknown.
+Optional fields may be omitted. Timestamp fields use RFC 3339. URL fields, when
+non-null, must be absolute `https://` URLs; GitHub-visible evidence should use
+`https://github.com/...`. Local filesystem paths belong in `artifacts[]`, not
+in `outputs`.
 
 | Field | Meaning |
 | --- | --- |
-| `commits[]` | Commit SHA, branch, subject, and URL when pushed. |
-| `pull_requests[]` | PR number, URL, state, draft flag, and closing references. |
-| `comments[]` | Issue or PR comments written by the worker or Gira lifecycle commands. |
+| `commits[]` | Git commits created or selected by the run. |
+| `pull_requests[]` | Pull requests opened, updated, or selected by the run. |
+| `comments[]` | Issue, PR, review, or commit comments written by or relevant to the run. |
 | `labels[]` | Labels added or removed when relevant. |
-| `checks[]` | Check names and URLs when available. |
+| `checks[]` | GitHub checks or external CI checks observed for the run output. |
 | `reports[]` | Exported reports or receipts. |
 
 This section should not invent completion. A PR is complete only when GitHub
 shows merge/close evidence.
+
+Actor objects use this shape:
+
+| Field | Required | Nullable | Meaning |
+| --- | --- | --- | --- |
+| `type` | Yes | No | `github_user`, `github_bot`, `gira`, `worker`, `operator`, or `unknown`. |
+| `login` | Yes | Yes | GitHub login when known. Use `null` for local worker or unknown actors. |
+| `display_name` | No | No | Human-readable display name when safe to expose. |
+| `id` | No | No | Stable GitHub or runtime actor ID when available. |
+
+### `outputs.commits[]`
+
+| Field | Required | Nullable | Meaning |
+| --- | --- | --- | --- |
+| `sha` | Yes | No | 40-character Git commit SHA. |
+| `repo` | Yes | No | `OWNER/REPO` containing the commit. |
+| `branch` | Yes | Yes | Branch where the commit was produced or observed. |
+| `subject` | Yes | No | First line of the commit message. |
+| `author` | Yes | No | Actor object for the Git author. |
+| `authored_at` | Yes | Yes | Commit authored timestamp. |
+| `committer` | Yes | No | Actor object for the Git committer. |
+| `committed_at` | Yes | Yes | Commit committed timestamp. |
+| `url` | Yes | Yes | GitHub commit URL when pushed; `null` for local-only commits. |
+| `source` | Yes | No | `git_local`, `github`, `gira_export`, `worker_manifest`, or `unknown`. |
+
+When `url` is non-null, it should resolve to
+`https://github.com/OWNER/REPO/commit/SHA`.
+
+### `outputs.pull_requests[]`
+
+| Field | Required | Nullable | Meaning |
+| --- | --- | --- | --- |
+| `repo` | Yes | No | `OWNER/REPO` containing the PR. |
+| `number` | Yes | No | Positive PR number. |
+| `url` | Yes | No | GitHub PR URL. |
+| `state` | Yes | No | `open`, `closed`, `merged`, or `unknown`. |
+| `draft` | Yes | No | Whether the PR is currently a draft. |
+| `title` | Yes | No | Current PR title. |
+| `author` | Yes | No | Actor object for the PR author. |
+| `created_at` | Yes | Yes | PR creation timestamp. |
+| `updated_at` | Yes | Yes | Last observed PR update timestamp. |
+| `merged_at` | Yes | Yes | Merge timestamp when merged; otherwise `null`. |
+| `closed_at` | Yes | Yes | Close timestamp when closed; otherwise `null`. |
+| `head_branch` | Yes | Yes | PR head branch when known. |
+| `base_branch` | Yes | Yes | PR base branch when known. |
+| `closing_refs` | Yes | No | Array of linked issue refs closed by the PR. May be empty. |
+| `source` | Yes | No | `gira_ticket_pr`, `github`, `worker`, `gira_export`, or `unknown`. |
+
+Each `closing_refs[]` item should include `repo`, `number`, `url`, and nullable
+`keyword`. `keyword` preserves the closing word such as `Closes`, `Fixes`, or
+`Resolves` when the exporter can determine it.
+
+### `outputs.comments[]`
+
+| Field | Required | Nullable | Meaning |
+| --- | --- | --- | --- |
+| `kind` | Yes | No | `issue_comment`, `pr_comment`, `pr_review`, `commit_comment`, or `check_run_annotation`. |
+| `repo` | Yes | No | `OWNER/REPO` containing the comment target. |
+| `target_type` | Yes | No | `issue`, `pull_request`, `commit`, or `check_run`. |
+| `target_number` | Yes | Yes | Issue or PR number when the target has one. |
+| `url` | Yes | No | GitHub comment, review, commit-comment, or annotation URL. |
+| `author` | Yes | No | Actor object for the comment author. |
+| `source` | Yes | No | `worker`, `gira_lifecycle`, `gira_self_review`, `reviewer`, `operator`, `github`, or `unknown`. |
+| `created_at` | Yes | Yes | Comment creation timestamp. |
+| `updated_at` | Yes | Yes | Last observed comment update timestamp. |
+| `purpose` | Yes | No | Machine-readable purpose such as `progress_note`, `self_review`, `review_findings`, or `handoff`. |
+| `comment_id` | No | No | GitHub node ID or database ID when available. |
+| `body_sha256` | No | No | Optional hash of the comment body when content integrity matters. |
+
+Do not duplicate full comment bodies in `outputs`. Link to GitHub and store
+body hashes or summaries only when needed.
+
+### `outputs.checks[]`
+
+| Field | Required | Nullable | Meaning |
+| --- | --- | --- | --- |
+| `repo` | Yes | No | `OWNER/REPO` containing the checked ref or PR. |
+| `name` | Yes | No | Check run, status context, or workflow job name. |
+| `workflow` | Yes | Yes | Workflow name when the check belongs to a workflow. |
+| `status` | Yes | No | `queued`, `in_progress`, `completed`, `waiting`, `requested`, `pending`, or `unknown`. |
+| `conclusion` | Yes | Yes | `success`, `failure`, `neutral`, `cancelled`, `skipped`, `timed_out`, `action_required`, `startup_failure`, `stale`, or `null`. |
+| `url` | Yes | Yes | GitHub check, job, or external CI details URL when available. |
+| `source` | Yes | No | `github_actions`, `github_check_run`, `external_ci`, `gira_export`, or `unknown`. |
+| `started_at` | Yes | Yes | Check start timestamp when known. |
+| `completed_at` | Yes | Yes | Check completion timestamp when known. |
+| `external_id` | No | No | Provider-specific check or job ID. |
+
+When `status` is not `completed`, `conclusion` should be `null`.
 
 ## Human Decision Gates
 
@@ -258,14 +355,27 @@ out/dashboard/
 `raw/worker_runs.json` may be an index with compact rows. Each
 `worker-runs/RUN_ID.json` is the full `worker-run/v1` manifest.
 
-Manifest entries should be listed in `manifest.json`:
+Manifest entries must reuse the existing dashboard bundle artifact row shape:
+`path`, `kind`, and `will_write`. Do not add per-artifact `schema_version`
+fields to `manifest.json`; the dashboard bundle schema remains the top-level
+`manifest.json.schema_version`, and each referenced worker-run file carries its
+own `schema_version: "worker-run/v1"`.
+
+Example `manifest.json.artifacts[]` entries:
 
 ```json
-{
-  "path": "worker-runs/gira-686-worker.json",
-  "kind": "worker_run",
-  "schema_version": "worker-run/v1"
-}
+[
+  {
+    "path": "raw/worker_runs.json",
+    "kind": "raw_json",
+    "will_write": true
+  },
+  {
+    "path": "worker-runs/gira-686-worker.json",
+    "kind": "worker_run",
+    "will_write": true
+  }
+]
 ```
 
 Gira may export these manifests from local runtime files or from
@@ -294,7 +404,7 @@ Agentree should:
 ## Example
 
 This example is based on the current overnight worker files for
-`StatPan/gira#686`.
+`StatPan/gira#686` plus GitHub-visible evidence from PR #687.
 
 ```json
 {
@@ -330,7 +440,7 @@ This example is based on the current overnight worker files for
       "worker-run:gira-686-worker"
     ]
   },
-  "status": "running",
+  "status": "review_needed",
   "status_transitions": [
     {
       "status": "running",
@@ -338,6 +448,13 @@ This example is based on the current overnight worker files for
       "source": "worker_event_log",
       "reason": "thread_started",
       "message": "Worker thread and first command events were recorded."
+    },
+    {
+      "status": "review_needed",
+      "observed_at": "2026-06-05T02:21:48+09:00",
+      "source": "github_pr",
+      "reason": "pull_request_opened",
+      "message": "PR #687 was opened with worker-run contract evidence."
     }
   ],
   "artifacts": [
@@ -402,10 +519,95 @@ This example is based on the current overnight worker files for
     "commands": []
   },
   "outputs": {
-    "commits": [],
-    "pull_requests": [],
-    "comments": [],
-    "checks": [],
+    "commits": [
+      {
+        "sha": "58e0cea026f7b7c5105cc68cd461e8e4c37fe42c",
+        "repo": "StatPan/gira",
+        "branch": "issue-686-worker-run-v1-manifest",
+        "subject": "Define worker-run v1 manifest",
+        "author": {
+          "type": "github_user",
+          "login": "StatPan",
+          "display_name": "StatPan",
+          "id": "U_kgDOCXvv_Q"
+        },
+        "authored_at": "2026-06-04T17:21:19Z",
+        "committer": {
+          "type": "github_user",
+          "login": "StatPan",
+          "display_name": "StatPan",
+          "id": "U_kgDOCXvv_Q"
+        },
+        "committed_at": "2026-06-04T17:21:19Z",
+        "url": "https://github.com/StatPan/gira/commit/58e0cea026f7b7c5105cc68cd461e8e4c37fe42c",
+        "source": "git_local"
+      }
+    ],
+    "pull_requests": [
+      {
+        "repo": "StatPan/gira",
+        "number": 687,
+        "url": "https://github.com/StatPan/gira/pull/687",
+        "state": "open",
+        "draft": false,
+        "title": "feat: Define worker-run/v1 runtime evidence manifest",
+        "author": {
+          "type": "github_user",
+          "login": "StatPan",
+          "display_name": "StatPan",
+          "id": "U_kgDOCXvv_Q"
+        },
+        "created_at": "2026-06-04T17:21:48Z",
+        "updated_at": "2026-06-04T17:39:54Z",
+        "merged_at": null,
+        "closed_at": null,
+        "head_branch": "issue-686-worker-run-v1-manifest",
+        "base_branch": "main",
+        "closing_refs": [
+          {
+            "repo": "StatPan/gira",
+            "number": 686,
+            "url": "https://github.com/StatPan/gira/issues/686",
+            "keyword": "Closes"
+          }
+        ],
+        "source": "gira_ticket_pr"
+      }
+    ],
+    "comments": [
+      {
+        "kind": "pr_comment",
+        "repo": "StatPan/gira",
+        "target_type": "pull_request",
+        "target_number": 687,
+        "url": "https://github.com/StatPan/gira/pull/687#issuecomment-4624683190",
+        "author": {
+          "type": "github_user",
+          "login": "StatPan",
+          "display_name": "StatPan",
+          "id": "U_kgDOCXvv_Q"
+        },
+        "source": "reviewer",
+        "created_at": "2026-06-04T17:39:54Z",
+        "updated_at": "2026-06-04T17:39:54Z",
+        "purpose": "review_findings",
+        "comment_id": "IC_kwDOSMv06M8AAAABE6cQtg"
+      }
+    ],
+    "labels": [],
+    "checks": [
+      {
+        "repo": "StatPan/gira",
+        "name": "build",
+        "workflow": "Docs site",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/StatPan/gira/actions/runs/26967957837/job/79575486976",
+        "source": "github_actions",
+        "started_at": "2026-06-04T17:21:55Z",
+        "completed_at": "2026-06-04T17:22:40Z"
+      }
+    ],
     "reports": []
   },
   "human_decision_gates": [
@@ -421,9 +623,9 @@ This example is based on the current overnight worker files for
   "summary": "Runtime evidence manifest definition worker for StatPan/gira#686.",
   "warnings": [
     {
-      "code": "run_in_progress",
+      "code": "representative_github_evidence",
       "severity": "info",
-      "message": "This example was captured while the worker run was still active."
+      "message": "This example includes GitHub-visible evidence from PR #687 to document outputs item shapes."
     }
   ]
 }

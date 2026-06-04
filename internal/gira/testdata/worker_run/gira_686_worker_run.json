@@ -31,7 +31,7 @@
       "worker-run:gira-686-worker"
     ]
   },
-  "status": "running",
+  "status": "review_needed",
   "status_transitions": [
     {
       "status": "running",
@@ -39,6 +39,13 @@
       "source": "worker_event_log",
       "reason": "thread_started",
       "message": "Worker thread and first command events were recorded."
+    },
+    {
+      "status": "review_needed",
+      "observed_at": "2026-06-05T02:21:48+09:00",
+      "source": "github_pr",
+      "reason": "pull_request_opened",
+      "message": "PR #687 was opened with worker-run contract evidence."
     }
   ],
   "artifacts": [
@@ -103,10 +110,95 @@
     "commands": []
   },
   "outputs": {
-    "commits": [],
-    "pull_requests": [],
-    "comments": [],
-    "checks": [],
+    "commits": [
+      {
+        "sha": "58e0cea026f7b7c5105cc68cd461e8e4c37fe42c",
+        "repo": "StatPan/gira",
+        "branch": "issue-686-worker-run-v1-manifest",
+        "subject": "Define worker-run v1 manifest",
+        "author": {
+          "type": "github_user",
+          "login": "StatPan",
+          "display_name": "StatPan",
+          "id": "U_kgDOCXvv_Q"
+        },
+        "authored_at": "2026-06-04T17:21:19Z",
+        "committer": {
+          "type": "github_user",
+          "login": "StatPan",
+          "display_name": "StatPan",
+          "id": "U_kgDOCXvv_Q"
+        },
+        "committed_at": "2026-06-04T17:21:19Z",
+        "url": "https://github.com/StatPan/gira/commit/58e0cea026f7b7c5105cc68cd461e8e4c37fe42c",
+        "source": "git_local"
+      }
+    ],
+    "pull_requests": [
+      {
+        "repo": "StatPan/gira",
+        "number": 687,
+        "url": "https://github.com/StatPan/gira/pull/687",
+        "state": "open",
+        "draft": false,
+        "title": "feat: Define worker-run/v1 runtime evidence manifest",
+        "author": {
+          "type": "github_user",
+          "login": "StatPan",
+          "display_name": "StatPan",
+          "id": "U_kgDOCXvv_Q"
+        },
+        "created_at": "2026-06-04T17:21:48Z",
+        "updated_at": "2026-06-04T17:39:54Z",
+        "merged_at": null,
+        "closed_at": null,
+        "head_branch": "issue-686-worker-run-v1-manifest",
+        "base_branch": "main",
+        "closing_refs": [
+          {
+            "repo": "StatPan/gira",
+            "number": 686,
+            "url": "https://github.com/StatPan/gira/issues/686",
+            "keyword": "Closes"
+          }
+        ],
+        "source": "gira_ticket_pr"
+      }
+    ],
+    "comments": [
+      {
+        "kind": "pr_comment",
+        "repo": "StatPan/gira",
+        "target_type": "pull_request",
+        "target_number": 687,
+        "url": "https://github.com/StatPan/gira/pull/687#issuecomment-4624683190",
+        "author": {
+          "type": "github_user",
+          "login": "StatPan",
+          "display_name": "StatPan",
+          "id": "U_kgDOCXvv_Q"
+        },
+        "source": "reviewer",
+        "created_at": "2026-06-04T17:39:54Z",
+        "updated_at": "2026-06-04T17:39:54Z",
+        "purpose": "review_findings",
+        "comment_id": "IC_kwDOSMv06M8AAAABE6cQtg"
+      }
+    ],
+    "labels": [],
+    "checks": [
+      {
+        "repo": "StatPan/gira",
+        "name": "build",
+        "workflow": "Docs site",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/StatPan/gira/actions/runs/26967957837/job/79575486976",
+        "source": "github_actions",
+        "started_at": "2026-06-04T17:21:55Z",
+        "completed_at": "2026-06-04T17:22:40Z"
+      }
+    ],
     "reports": []
   },
   "human_decision_gates": [
@@ -122,9 +214,9 @@
   "summary": "Runtime evidence manifest definition worker for StatPan/gira#686.",
   "warnings": [
     {
-      "code": "run_in_progress",
+      "code": "representative_github_evidence",
       "severity": "info",
-      "message": "This example was captured while the worker run was still active."
+      "message": "This example includes GitHub-visible evidence from PR #687 to document outputs item shapes."
     }
   ]
 }

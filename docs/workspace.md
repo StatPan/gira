@@ -136,6 +136,7 @@ Capture a repo-agnostic ticket:
 
 ```bash
 gira workspace ticket new --title "Define billing model" --config .gira/config.yaml
+gira workspace ticket new --title "Define billing model" --body-file issue.md --config .gira/config.yaml
 ```
 
 Create and route in one command once the execution repo is known:
@@ -143,6 +144,7 @@ Create and route in one command once the execution repo is known:
 ```bash
 gira workspace ticket new "Define billing model" --repo OWNER/app --dry-run --config .gira/config.yaml
 gira workspace ticket new "Define billing model" --repo OWNER/app --apply --config .gira/config.yaml
+gira workspace ticket new "Define billing model" --body-file issue.md --repo OWNER/app --dry-run --config .gira/config.yaml
 ```
 
 Route an older or externally-created inbox ticket by number:

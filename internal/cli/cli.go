@@ -303,7 +303,7 @@ Usage:
   gira workspace list [--config .gira/config.yaml] [--repo OWNER/REPO] [--limit N] [--cache-ttl 5m] [--refresh] [--json]  (alias: backlog)
   gira workspace sync --dry-run|--apply [--config .gira/config.yaml] [--bootstrap-issues] [--json]
   gira workspace repos sync [--owner OWNER] [--workspace NAME] --dry-run|--apply [--config-root PATH] [--limit N] [--include-archived] [--json]
-  gira workspace ticket new "Title" [--body TEXT] [--repo OWNER/REPO --dry-run|--apply] [--config .gira/config.yaml] [--json]
+  gira workspace ticket new "Title" [--body TEXT|--body-file PATH|-] [--repo OWNER/REPO --dry-run|--apply] [--config .gira/config.yaml] [--json]
   gira workspace ticket route --ticket N --repo OWNER/REPO --dry-run|--apply [--config .gira/config.yaml] [--json]
   gira workspace capability [--config .gira/config.yaml] [--json]
   gira workspace project plan [--config .gira/config.yaml] [--json]
@@ -6535,6 +6535,7 @@ func runWorkspaceTicketNew(args []string, stdout io.Writer, stderr io.Writer) in
 	configPath := fs.String("config", "", "Workspace config path")
 	title := fs.String("title", "", "Ticket title")
 	body := fs.String("body", "", "Ticket body")
+	bodyFile := fs.String("body-file", "", "Read ticket body from file")
 	repoValue := fs.String("repo", "", "Target execution repo")
 	dryRun := fs.Bool("dry-run", false, "Create and route without mutation")
 	apply := fs.Bool("apply", false, "Create and route")
@@ -6580,7 +6581,12 @@ func runWorkspaceTicketNew(args []string, stdout io.Writer, stderr io.Writer) in
 			return 2
 		}
 	}
-	report, err := newWorkspaceTicketNewReport(*configPath, resolvedTitle, *body, repo, route, *dryRun)
+	resolvedBody, err := readTicketNewBody(*body, *bodyFile, os.Stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newWorkspaceTicketNewReport(*configPath, resolvedTitle, resolvedBody, repo, route, *dryRun)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
@@ -6601,7 +6607,7 @@ func runWorkspaceTicketNew(args []string, stdout io.Writer, stderr io.Writer) in
 func splitWorkspaceTicketNewArgs(args []string) ([]string, []string) {
 	flagArgs := []string{}
 	positionalArgs := []string{}
-	valueFlags := map[string]struct{}{"--config": {}, "--title": {}, "--body": {}, "--repo": {}}
+	valueFlags := map[string]struct{}{"--config": {}, "--title": {}, "--body": {}, "--body-file": {}, "--repo": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if _, ok := valueFlags[arg]; ok {
@@ -6612,7 +6618,7 @@ func splitWorkspaceTicketNewArgs(args []string) ([]string, []string) {
 			}
 			continue
 		}
-		if strings.HasPrefix(arg, "--config=") || strings.HasPrefix(arg, "--title=") || strings.HasPrefix(arg, "--body=") || strings.HasPrefix(arg, "--repo=") {
+		if strings.HasPrefix(arg, "--config=") || strings.HasPrefix(arg, "--title=") || strings.HasPrefix(arg, "--body=") || strings.HasPrefix(arg, "--body-file=") || strings.HasPrefix(arg, "--repo=") {
 			flagArgs = append(flagArgs, arg)
 			continue
 		}

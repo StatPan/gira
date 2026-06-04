@@ -129,6 +129,12 @@ classifies Gira commands as read, dry-run mutation, apply mutation, or
 unsupported, and defines the evidence an adapter should preserve before any
 approved apply.
 
+Runtime evidence from external workers can be represented with
+[`worker-run/v1`](worker-run-manifest.md). That manifest records run/session,
+model, GitHub scope, local artifacts, GitHub-visible evidence, status
+transitions, verification, commits, comments, and human decision gates without
+making Gira a live process supervisor.
+
 The durable stack should look like this:
 
 ```text

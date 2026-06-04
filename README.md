@@ -323,6 +323,7 @@ gira workspace status --config .gira/config.yaml
 gira workspace backlog --config .gira/config.yaml
 gira workspace list --config .gira/config.yaml
 gira workspace sync --dry-run --config .gira/config.yaml
+gira workspace ticket new "Define billing model" --body-file issue.md --config .gira/config.yaml
 gira workspace ticket new "Define billing model" --repo OWNER/app --dry-run --config .gira/config.yaml
 gira workspace ticket new "Define billing model" --repo OWNER/app --apply --config .gira/config.yaml
 gira workspace ticket route --ticket 12 --repo OWNER/app --dry-run --config .gira/config.yaml
@@ -338,7 +339,7 @@ budget when available, bounds concurrent repo reads, caches per-repo status for
 five minutes by default, and supports `--repo`, `--limit`, `--active-only`, and
 `--refresh` for practical CLI and future GUI refresh loops.
 
-`workspace ticket new --repo OWNER/REPO --apply` creates an inbox ticket, routes it to a repo execution issue, and links the child issue back to the inbox ticket without requiring the user to copy the inbox issue number. `workspace ticket route --ticket N` remains available for older or externally-created inbox tickets. After routing, the normal loop continues with `gira ticket start`, `gira ticket pr`, and `gira ticket status` on the target repo.
+`workspace ticket new --repo OWNER/REPO --apply` creates an inbox ticket, routes it to a repo execution issue, and links the child issue back to the inbox ticket without requiring the user to copy the inbox issue number. Use `--body`, `--body-file PATH`, or `--body-file -` when the inbox packet is already drafted in Markdown. `workspace ticket route --ticket N` remains available for older or externally-created inbox tickets. After routing, the normal loop continues with `gira ticket start`, `gira ticket pr`, and `gira ticket status` on the target repo.
 
 `workspace project adopt` registers an existing profile or org GitHub Project in `workspace.project`; it never creates Projects and fails instead of replacing a different configured Project. `projects sync` then keeps that existing GitHub Projects v2 board visible by linking configured repos, adding missing open issues as project items, mirroring Gira status labels to the board's standard Status field, keeping closed issues as `Done`, creating supported planning fields, mirroring `priority:*`, `area:*`, and `agent:*` labels into Project planning fields, and copying milestone due dates into `Target date`. A Project may live under `users/OWNER/projects/N` or `orgs/OWNER/projects/N`; when it is linked to the repo and its items are repo issues, it is still a normal repo board surface. Repo issues remain the execution source of truth. Add `--archive-closed` only when closed issue items should leave the active Project item set. GitHub does not expose supported Project view creation APIs, so Gira reports the manual Board/Schedule view setup step instead of hiding it behind raw Project numbers.
 

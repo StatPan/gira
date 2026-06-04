@@ -2129,6 +2129,54 @@ func TestWorkspaceTicketNewJSON(t *testing.T) {
 	}
 }
 
+func TestWorkspaceTicketNewBodyFileJSON(t *testing.T) {
+	restore := newWorkspaceTicketNewReport
+	t.Cleanup(func() { newWorkspaceTicketNewReport = restore })
+	newWorkspaceTicketNewReport = func(configPath string, title string, body string, targetRepo gira.RepoRef, route bool, dryRun bool) (gira.WorkspaceTicketNewReport, error) {
+		if title != "Capture product idea" || body != "## Goal\nFrom file" || targetRepo.FullName() != "StatPan/gira" || !route || !dryRun {
+			t.Fatalf("unexpected ticket new body-file args title=%s body=%q repo=%s route=%t dryRun=%t", title, body, targetRepo.FullName(), route, dryRun)
+		}
+		return gira.WorkspaceTicketNewReport{
+			Command:    "workspace ticket new",
+			Workspace:  gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+			InboxRepo:  "StatPan/backlog",
+			Title:      title,
+			TargetRepo: targetRepo.FullName(),
+			DryRun:     true,
+			NextSteps:  []string{`gira workspace ticket new "Capture product idea" --repo StatPan/gira --apply`},
+		}, nil
+	}
+	bodyPath := filepath.Join(t.TempDir(), "issue.md")
+	if err := os.WriteFile(bodyPath, []byte("## Goal\nFrom file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "ticket", "new", "Capture", "product", "idea", "--body-file", bodyPath, "--repo", "StatPan/gira", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"target_repo": "StatPan/gira"`) {
+		t.Fatalf("workspace ticket new body-file JSON missing route output:\n%s", stdout.String())
+	}
+}
+
+func TestWorkspaceTicketNewRejectsBodyAndBodyFile(t *testing.T) {
+	bodyPath := filepath.Join(t.TempDir(), "issue.md")
+	if err := os.WriteFile(bodyPath, []byte("## Goal\nFrom file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "ticket", "new", "Capture product idea", "--body", "inline", "--body-file", bodyPath}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "either --body or --body-file") {
+		t.Fatalf("stderr missing body conflict guidance:\n%s", stderr.String())
+	}
+}
+
 func TestWorkspaceTicketNewAcceptsPositionalTitle(t *testing.T) {
 	restore := newWorkspaceTicketNewReport
 	t.Cleanup(func() { newWorkspaceTicketNewReport = restore })

@@ -31,6 +31,39 @@ Use a dedicated `--inbox-repo` for backlog intake when the workspace spans more
 than one execution repository. A small single-repo setup may reuse the execution
 repo as the inbox.
 
+## Inbox Role
+
+Treat `OWNER/backlog` as the workspace inbox, research shelf, and cross-repo
+goal handle. It is the right place for broad opportunities, unclear ownership,
+and goals that need one stable issue URL while child work lands in several
+execution repos.
+
+Do not use the inbox as the execution repo for every child task. Once ownership
+is clear, route or create a repo-local ticket in the target repo. That child
+ticket owns the branch, PR, checks, review, and finish evidence.
+
+Keep a backlog issue open as a goal handle when it still coordinates child
+links, cross-repo status, or human decisions. With goal mode, plan items can
+name target repos:
+
+```text
+- OWNER/app: Add auth adapter
+- target_repo: OWNER/api - Harden callback validation
+```
+
+Then run goal mode from the inbox issue:
+
+```bash
+gira goal plan 12 --repo OWNER/backlog --dry-run --json
+gira goal plan 12 --repo OWNER/backlog --apply --json
+gira goal status 12 --repo OWNER/backlog --json
+```
+
+Broad workspaces may keep many repos visible for discovery and planning. For
+daily control, narrow the read with `--repo`, `--limit`, and `--active-only`.
+The boundary is the same in both modes: inbox issues coordinate, repo-local
+issues execute.
+
 ## Repo Allowlist
 
 Sync the workspace repo allowlist explicitly from a GitHub owner:

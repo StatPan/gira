@@ -35,6 +35,38 @@ For multi-repo global operation, prefer a dedicated backlog repo such as
 small single-repo setup, but it mixes untriaged intake with product execution
 issues.
 
+## Inbox And Goal Handles
+
+The inbox repo is the workspace's intake and coordination surface. In a
+multi-repo workspace, a repo such as `OWNER/backlog` should hold:
+
+- repo-agnostic ideas, research notes, and opportunity tickets that are not yet
+  ready to execute;
+- broad workspace goals whose outcome spans more than one execution repo;
+- temporary human decision points that need a stable issue URL before ownership
+  is clear.
+
+It should not become the execution repo for every child task. Once a piece of
+work is ready to implement in a specific codebase, create or route a repo-local
+execution issue in that target repo. That child issue owns the branch, PR,
+checks, review, finish receipt, and final `status:done` evidence.
+
+Keep a backlog issue open as a goal handle when the operator still needs one
+place to track cross-repo convergence, remaining decisions, or child ticket
+links. Close or hand off the goal only after the repo-local child graph has
+converged through normal ticket lifecycle evidence. With goal mode, the backlog
+issue can define child plan items such as `OWNER/app: Add auth adapter` or
+`target_repo: OWNER/api - Harden callback validation`; `gira goal plan --apply`
+creates those child issues in their target repos and links them back to the
+parent goal.
+
+Broad workspaces and narrowed daily control workspaces use the same boundary.
+A broad workspace may include many execution repos for discovery, backlog
+review, and milestone visibility. A daily control workspace should usually
+filter to the active repo or use `--limit`, `--active-only`, and `--repo` for a
+smaller view. In both cases, the inbox stays the intake and coordination layer;
+repo-local issues stay the executable work packets.
+
 For personal multi-repo operation, prefer the OS-user global registry:
 
 ```bash
@@ -152,6 +184,16 @@ Route an older or externally-created inbox ticket by number:
 ```bash
 gira workspace ticket route --ticket 12 --repo OWNER/app --dry-run --config .gira/config.yaml
 gira workspace ticket route --ticket 12 --repo OWNER/app --apply --config .gira/config.yaml
+```
+
+For a broad goal that should remain in the inbox while its execution work lands
+elsewhere, keep the inbox issue as the goal handle and route child work through
+goal mode:
+
+```bash
+gira goal plan 12 --repo OWNER/backlog --dry-run --json
+gira goal plan 12 --repo OWNER/backlog --apply --json
+gira goal status 12 --repo OWNER/backlog --json
 ```
 
 After routing, continue in the target repo:

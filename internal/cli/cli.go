@@ -851,7 +851,7 @@ Flags:
 const runHelp = `Local Codex run manifests and execution state.
 
 Usage:
-  gira run start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--role implementer] [--profile default] [--name NAME] [--state-root PATH] [--workdir PATH] [--exec] [--json]
+  gira run start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--role implementer] [--profile default] [--context TEXT|--context-file PATH|-] [--name NAME] [--state-root PATH] [--workdir PATH] [--exec] [--json]
   gira run status --latest|--id RUN_ID [--ticket N] [--repo OWNER/REPO] [--state-root PATH] [--json]
   gira run collect --latest|--id RUN_ID [--ticket N] [--repo OWNER/REPO] [--state-root PATH] [--json]
 
@@ -866,6 +866,8 @@ Flags:
   --issue int         Compatibility alias for --ticket on start
   --role string       Ticket handoff role: planner, implementer, or reviewer. Default: implementer
   --profile string    Ticket handoff profile: default or python. Default: default
+  --context string    Small operator note to include in the private run prompt
+  --context-file path Read a small operator note from file, or "-" for stdin
   --name string       Optional human-readable local run name
   --id string         Optional run id for status/collect, or custom run id for start
   --latest           Select the newest matching local run
@@ -3180,6 +3182,8 @@ func runRunStart(args []string, stdout io.Writer, stderr io.Writer) int {
 	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
 	role := fs.String("role", gira.AgentPromptRoleImplementer, "Handoff role: planner|implementer|reviewer")
 	profile := fs.String("profile", "default", "Handoff profile: default|python")
+	contextNote := fs.String("context", "", "Small operator note to include in the private run prompt")
+	contextFile := fs.String("context-file", "", "Read a small operator note from file, or '-' for stdin")
 	name := fs.String("name", "", "Optional human-readable local run name")
 	runID := fs.String("id", "", "Optional custom local run id")
 	stateRoot := fs.String("state-root", "", "Override private local Gira state root")
@@ -3243,16 +3247,22 @@ func runRunStart(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		*workDir = wd
 	}
+	contextNotes, err := readRunStartContext(*contextNote, *contextFile, os.Stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
 	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
 	handoff, err := newTicketHandoffReport(gira.TicketHandoffInput{
-		Repo:    repo,
-		Ticket:  *ticket,
-		Role:    *role,
-		Profile: *profile,
+		Repo:         repo,
+		Ticket:       *ticket,
+		Role:         *role,
+		Profile:      *profile,
+		ContextNotes: contextNotes,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -3264,19 +3274,21 @@ func runRunStart(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 	prompt = append(prompt, '\n')
+	promptSummary := gira.SummarizeTicketHandoffPrompt(handoff)
 	report, err := gira.BuildRunStartReport(gira.RunStartInput{
-		Repo:        repo,
-		Ticket:      *ticket,
-		Role:        *role,
-		Profile:     *profile,
-		Name:        *name,
-		RunID:       *runID,
-		StateRoot:   *stateRoot,
-		WorkDir:     *workDir,
-		Prompt:      prompt,
-		DryRun:      *dryRun,
-		Apply:       *apply,
-		SafeSummary: fmt.Sprintf("local Codex run for %s#%d role=%s", repo.FullName(), *ticket, strings.TrimSpace(*role)),
+		Repo:          repo,
+		Ticket:        *ticket,
+		Role:          *role,
+		Profile:       *profile,
+		Name:          *name,
+		RunID:         *runID,
+		StateRoot:     *stateRoot,
+		WorkDir:       *workDir,
+		Prompt:        prompt,
+		DryRun:        *dryRun,
+		Apply:         *apply,
+		SafeSummary:   fmt.Sprintf("local Codex run for %s#%d role=%s", repo.FullName(), *ticket, strings.TrimSpace(*role)),
+		PromptSummary: &promptSummary,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -5518,15 +5530,17 @@ func extractRunStartTicketPositional(args []string, stderr io.Writer) ([]string,
 	cleaned := make([]string, 0, len(args))
 	positional := 0
 	valueFlags := map[string]struct{}{
-		"--repo":       {},
-		"--ticket":     {},
-		"--issue":      {},
-		"--role":       {},
-		"--profile":    {},
-		"--name":       {},
-		"--id":         {},
-		"--state-root": {},
-		"--workdir":    {},
+		"--repo":         {},
+		"--ticket":       {},
+		"--issue":        {},
+		"--role":         {},
+		"--profile":      {},
+		"--context":      {},
+		"--context-file": {},
+		"--name":         {},
+		"--id":           {},
+		"--state-root":   {},
+		"--workdir":      {},
 	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -5804,6 +5818,37 @@ func readTicketNoteBody(positional string, body string, bodyFile string, stdin i
 		return "", fmt.Errorf("ticket note body is required")
 	}
 	return readTicketNewBody("", bodyFile, stdin)
+}
+
+func readRunStartContext(contextNote string, contextFile string, stdin io.Reader) ([]string, error) {
+	contextNote = strings.TrimSpace(contextNote)
+	contextFile = strings.TrimSpace(contextFile)
+	notes := []string{}
+	if contextNote != "" {
+		notes = append(notes, contextNote)
+	}
+	if contextFile == "" {
+		return notes, nil
+	}
+	var content []byte
+	var err error
+	if contextFile == "-" {
+		content, err = io.ReadAll(stdin)
+	} else {
+		content, err = os.ReadFile(contextFile)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read --context-file: %w", err)
+	}
+	if len(content) > 16*1024 {
+		return nil, fmt.Errorf("--context-file must be 16 KiB or smaller")
+	}
+	trimmed := strings.TrimSpace(string(content))
+	if trimmed == "" {
+		return nil, fmt.Errorf("--context-file is empty")
+	}
+	notes = append(notes, trimmed)
+	return notes, nil
 }
 
 func resolveExplicitTicket(ticket int, issue int, positional int, stderr io.Writer) (int, bool) {

@@ -12,10 +12,11 @@ const (
 )
 
 type TicketHandoffInput struct {
-	Repo    RepoRef `json:"repo"`
-	Ticket  int     `json:"ticket"`
-	Role    string  `json:"role"`
-	Profile string  `json:"profile"`
+	Repo         RepoRef  `json:"repo"`
+	Ticket       int      `json:"ticket"`
+	Role         string   `json:"role"`
+	Profile      string   `json:"profile"`
+	ContextNotes []string `json:"context_notes,omitempty"`
 }
 
 type TicketHandoffReport struct {
@@ -32,6 +33,9 @@ type TicketHandoffReport struct {
 	Readiness              TicketReadinessReport     `json:"readiness"`
 	WorkOrder              TicketHandoffWorkOrder    `json:"work_order"`
 	BranchPolicy           TicketHandoffBranchPolicy `json:"branch_policy"`
+	LinkedPR               *TicketHandoffLinkedPR    `json:"linked_pr,omitempty"`
+	RolePacket             *AgentPromptRolePacket    `json:"role_packet,omitempty"`
+	OperatorContext        []TicketHandoffContext    `json:"operator_context,omitempty"`
 	RiskHints              []string                  `json:"risk_hints,omitempty"`
 	EvidenceExpectations   []string                  `json:"evidence_expectations"`
 	RequiredChecks         []string                  `json:"required_checks"`
@@ -40,14 +44,20 @@ type TicketHandoffReport struct {
 	TelemetryExpectations  TicketHandoffTelemetry    `json:"telemetry_expectations"`
 	ProvenanceExpectations TicketHandoffProvenance   `json:"provenance_expectations"`
 	Guidance               []AgentPromptGuidance     `json:"guidance,omitempty"`
+	PublicSafe             bool                      `json:"public_safe"`
+	PrivateStorage         bool                      `json:"private_storage"`
+	StorageNotice          string                    `json:"storage_notice,omitempty"`
 	NextAction             string                    `json:"next_action"`
 	NextSafeCommand        string                    `json:"next_safe_command"`
 }
 
 type TicketHandoffWorkOrder struct {
-	Goal       string   `json:"goal,omitempty"`
-	Scope      string   `json:"scope,omitempty"`
-	Acceptance []string `json:"acceptance,omitempty"`
+	Goal             string   `json:"goal,omitempty"`
+	Scope            string   `json:"scope,omitempty"`
+	Acceptance       []string `json:"acceptance,omitempty"`
+	ExpectedDelivery string   `json:"expected_delivery,omitempty"`
+	ReviewGuidance   string   `json:"review_guidance,omitempty"`
+	TicketBody       string   `json:"ticket_body,omitempty"`
 }
 
 type TicketHandoffBranchPolicy struct {
@@ -57,6 +67,24 @@ type TicketHandoffBranchPolicy struct {
 	Target      string   `json:"target,omitempty"`
 	WorkBranch  string   `json:"work_branch,omitempty"`
 	Diagnostics []string `json:"diagnostics,omitempty"`
+}
+
+type TicketHandoffLinkedPR struct {
+	Available      bool         `json:"available"`
+	Number         int          `json:"number,omitempty"`
+	URL            string       `json:"url,omitempty"`
+	State          string       `json:"state,omitempty"`
+	ReviewDecision string       `json:"review_decision,omitempty"`
+	IsDraft        bool         `json:"is_draft,omitempty"`
+	Ready          bool         `json:"ready"`
+	Blockers       []string     `json:"blockers,omitempty"`
+	Checks         []DevPRCheck `json:"checks,omitempty"`
+	Status         string       `json:"status,omitempty"`
+}
+
+type TicketHandoffContext struct {
+	Source  string `json:"source"`
+	Content string `json:"content"`
 }
 
 type TicketHandoffTelemetry struct {
@@ -140,6 +168,7 @@ func BuildTicketHandoffReport(input TicketHandoffInput, runner CommandRunner) (T
 
 	readiness := EvaluateTicketReadiness(issue.Body, issue.Labels, issue.State)
 	telemetry := ticketStatusTelemetry(issue.Body, issue.Labels)
+	guidance := loadAgentPromptGuidancePointers()
 	report := TicketHandoffReport{
 		Command:       "ticket handoff",
 		SchemaVersion: WorkerHandoffSchemaVersion,
@@ -153,11 +182,15 @@ func BuildTicketHandoffReport(input TicketHandoffInput, runner CommandRunner) (T
 		Labels:        append([]string(nil), issue.Labels...),
 		Readiness:     readiness,
 		WorkOrder: TicketHandoffWorkOrder{
-			Goal:       markdownSection(issue.Body, "Goal"),
-			Scope:      markdownSection(issue.Body, "Scope"),
-			Acceptance: ticketReadinessAcceptanceItems(issue.Body),
+			Goal:             markdownSection(issue.Body, "Goal"),
+			Scope:            markdownSection(issue.Body, "Scope"),
+			Acceptance:       ticketReadinessAcceptanceItems(issue.Body),
+			ExpectedDelivery: markdownSection(issue.Body, "Expected Delivery"),
+			ReviewGuidance:   ticketHandoffReviewGuidance(issue.Body),
+			TicketBody:       strings.TrimSpace(issue.Body),
 		},
 		BranchPolicy:           buildTicketHandoffBranchPolicy(input.Repo, issue, runner),
+		LinkedPR:               buildTicketHandoffLinkedPR(input.Repo, issue.Number, runner),
 		RiskHints:              agentPromptRiskSignals(issue.Labels),
 		EvidenceExpectations:   ticketHandoffEvidenceExpectations(issue.Body),
 		RequiredChecks:         ticketHandoffRequiredChecks(issue.Body),
@@ -165,10 +198,82 @@ func BuildTicketHandoffReport(input TicketHandoffInput, runner CommandRunner) (T
 		ProhibitedActions:      ticketHandoffProhibitedActions(),
 		TelemetryExpectations:  TicketHandoffTelemetry{Required: telemetry.Required, Present: telemetry.Present, Status: telemetry.Status, Sources: append([]string(nil), telemetry.Sources...)},
 		ProvenanceExpectations: ticketHandoffProvenanceExpectations(),
-		Guidance:               loadAgentPromptGuidance(),
+		Guidance:               guidance,
+		OperatorContext:        ticketHandoffOperatorContext(input.ContextNotes),
+		PublicSafe:             false,
+		PrivateStorage:         true,
+		StorageNotice:          "run prompts are stored in private local Gira state and are not public-safe by default",
 	}
+	report.RolePacket = buildTicketHandoffRolePacket(report, issue, guidance)
 	report.NextAction, report.NextSafeCommand = ticketHandoffNextStep(input.Repo, issue, role, readiness)
 	return report, nil
+}
+
+func buildTicketHandoffRolePacket(report TicketHandoffReport, issue devStartIssue, guidance []AgentPromptGuidance) *AgentPromptRolePacket {
+	promptReport := AgentPromptReport{
+		Repo:    report.Repo,
+		Ticket:  report.Issue,
+		Role:    report.Role,
+		Profile: report.Profile,
+		Issue: AgentPromptIssue{
+			Number:     report.Issue,
+			Title:      report.Title,
+			State:      report.State,
+			Body:       report.WorkOrder.TicketBody,
+			Labels:     append([]string(nil), report.Labels...),
+			Goal:       report.WorkOrder.Goal,
+			Scope:      report.WorkOrder.Scope,
+			Acceptance: append([]string(nil), report.WorkOrder.Acceptance...),
+		},
+	}
+	packet := buildAgentPromptRolePacket(promptReport, issue)
+	packet.Guidance = append([]AgentPromptGuidance(nil), guidance...)
+	return packet
+}
+
+func buildTicketHandoffLinkedPR(repo RepoRef, issueNumber int, runner CommandRunner) *TicketHandoffLinkedPR {
+	status, err := DevPRStatus(repo, issueNumber, runner)
+	if err != nil {
+		return &TicketHandoffLinkedPR{Available: false, Ready: false, Status: "unavailable: " + err.Error()}
+	}
+	linked := &TicketHandoffLinkedPR{
+		Available:      status.PRNumber > 0,
+		Number:         status.PRNumber,
+		URL:            status.PRURL,
+		State:          status.State,
+		ReviewDecision: status.ReviewDecision,
+		IsDraft:        status.IsDraft,
+		Ready:          status.Ready,
+		Blockers:       append([]string(nil), status.Blockers...),
+		Checks:         append([]DevPRCheck(nil), status.Checks...),
+	}
+	if linked.Available {
+		linked.Status = "linked"
+	} else {
+		linked.Status = "missing_linked_pr"
+	}
+	return linked
+}
+
+func ticketHandoffOperatorContext(notes []string) []TicketHandoffContext {
+	context := []TicketHandoffContext{}
+	for i, note := range notes {
+		note = strings.TrimSpace(note)
+		if note == "" {
+			continue
+		}
+		context = append(context, TicketHandoffContext{Source: fmt.Sprintf("operator_note_%d", i+1), Content: note})
+	}
+	return context
+}
+
+func ticketHandoffReviewGuidance(body string) string {
+	for _, section := range []string{"Review Guidance", "Review Expectations"} {
+		if value := markdownSection(body, section); strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func buildTicketHandoffBranchPolicy(repo RepoRef, issue devStartIssue, runner CommandRunner) TicketHandoffBranchPolicy {

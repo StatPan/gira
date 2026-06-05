@@ -5455,6 +5455,56 @@ func TestRunStartStatusAndCollectUseLocalState(t *testing.T) {
 	}
 }
 
+func TestRunStartDryRunShowsIncludedPromptContext(t *testing.T) {
+	restore := newTicketHandoffReport
+	t.Cleanup(func() { newTicketHandoffReport = restore })
+	newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 690 || input.Role != "reviewer" {
+			t.Fatalf("unexpected handoff input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		if len(input.ContextNotes) != 1 || input.ContextNotes[0] != "Use the shared handoff path." {
+			t.Fatalf("unexpected context notes: %+v", input.ContextNotes)
+		}
+		return gira.TicketHandoffReport{
+			Command:       "ticket handoff",
+			SchemaVersion: gira.WorkerHandoffSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			Issue:         input.Ticket,
+			Role:          input.Role,
+			Profile:       input.Profile,
+			Readiness:     gira.TicketReadinessReport{SchemaVersion: gira.TicketReadinessSchemaVersion, Readiness: "ready"},
+			WorkOrder: gira.TicketHandoffWorkOrder{
+				Goal:             "Reduce manual context",
+				Acceptance:       []string{"run prompt includes ticket context"},
+				ExpectedDelivery: "Document verification.",
+				ReviewGuidance:   "Review prompt content.",
+				TicketBody:       "## Goal\nReduce manual context",
+			},
+			Guidance:        []gira.AgentPromptGuidance{{Path: "AGENTS.md", Status: "found", Note: "content intentionally not expanded"}},
+			RolePacket:      &gira.AgentPromptRolePacket{Role: input.Role, WorkOrder: []string{"review the PR diff"}},
+			OperatorContext: []gira.TicketHandoffContext{{Source: "operator_note_1", Content: input.ContextNotes[0]}},
+			NextAction:      "request_review",
+			NextSafeCommand: "gira ticket review --repo StatPan/gira --ticket 690 --json",
+		}, nil
+	}
+
+	stateRoot := t.TempDir()
+	workDir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"run", "start", "690", "--repo", "StatPan/gira", "--role", "reviewer", "--context", "Use the shared handoff path.", "--state-root", stateRoot, "--workdir", workDir, "--dry-run"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run start exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"handoff: schema=worker-handoff/v1 role=reviewer readiness=ready next=request_review", "context included:", "ticket body", "expected delivery", "review guidance", "policy pointers: AGENTS.md (found)", "extra context notes: 1", "storage: prompt is written to private local Gira state"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("run start dry-run output missing %q:\n%s", want, stdout.String())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(stateRoot, "runs")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run should not create run directory, stat err=%v", err)
+	}
+}
+
 func TestGoalStatusJSONUsesInjectedBuilder(t *testing.T) {
 	restore := newGoalStatusReport
 	t.Cleanup(func() { newGoalStatusReport = restore })

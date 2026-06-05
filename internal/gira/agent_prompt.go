@@ -137,6 +137,7 @@ type AgentPromptGuidance struct {
 	Path    string `json:"path"`
 	Status  string `json:"status"`
 	Content string `json:"content,omitempty"`
+	Note    string `json:"note,omitempty"`
 }
 
 type AgentReviewVerdictSchema struct {
@@ -808,6 +809,32 @@ func loadAgentPromptGuidance() []AgentPromptGuidance {
 		return []AgentPromptGuidance{{Path: "AGENTS.md", Status: "unreadable"}}
 	}
 	return []AgentPromptGuidance{{Path: "AGENTS.md", Status: "found", Content: strings.TrimSpace(string(content))}}
+}
+
+func loadAgentPromptGuidancePointers() []AgentPromptGuidance {
+	path, ok := findFileUpward("AGENTS.md")
+	if !ok {
+		return []AgentPromptGuidance{{Path: "AGENTS.md", Status: "missing", Note: "repo-local policy file was not found"}}
+	}
+	displayPath := displayLocalPolicyPath(path)
+	if _, err := os.Stat(path); err != nil {
+		return []AgentPromptGuidance{{Path: displayPath, Status: "unreadable", Note: "policy content was not expanded"}}
+	}
+	return []AgentPromptGuidance{{
+		Path:   displayPath,
+		Status: "found",
+		Note:   "content intentionally not expanded; read this local policy file in the checkout before working",
+	}}
+}
+
+func displayLocalPolicyPath(path string) string {
+	wd, err := os.Getwd()
+	if err == nil {
+		if rel, relErr := filepath.Rel(wd, path); relErr == nil && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." {
+			return filepath.ToSlash(rel)
+		}
+	}
+	return filepath.ToSlash(path)
 }
 
 func findFileUpward(name string) (string, bool) {

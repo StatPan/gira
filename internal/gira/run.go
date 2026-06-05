@@ -46,30 +46,47 @@ type RunManifest struct {
 }
 
 type RunStartInput struct {
-	Repo        RepoRef
-	Ticket      int
-	Role        string
-	Profile     string
-	Name        string
-	StateRoot   string
-	WorkDir     string
-	Prompt      []byte
-	DryRun      bool
-	Apply       bool
-	Exec        bool
-	Now         time.Time
-	RunID       string
-	Command     []string
-	PID         int
-	SafeSummary string
+	Repo          RepoRef
+	Ticket        int
+	Role          string
+	Profile       string
+	Name          string
+	StateRoot     string
+	WorkDir       string
+	Prompt        []byte
+	DryRun        bool
+	Apply         bool
+	Exec          bool
+	Now           time.Time
+	RunID         string
+	Command       []string
+	PID           int
+	SafeSummary   string
+	PromptSummary *RunPromptSummary
 }
 
 type RunStartReport struct {
-	SchemaVersion string      `json:"schema_version"`
-	DryRun        bool        `json:"dry_run"`
-	Exec          bool        `json:"exec"`
-	Manifest      RunManifest `json:"manifest"`
-	NextStep      string      `json:"next_step"`
+	SchemaVersion string            `json:"schema_version"`
+	DryRun        bool              `json:"dry_run"`
+	Exec          bool              `json:"exec"`
+	Manifest      RunManifest       `json:"manifest"`
+	PromptSummary *RunPromptSummary `json:"prompt_summary,omitempty"`
+	NextStep      string            `json:"next_step"`
+}
+
+type RunPromptSummary struct {
+	SchemaVersion        string   `json:"schema_version,omitempty"`
+	Role                 string   `json:"role,omitempty"`
+	Profile              string   `json:"profile,omitempty"`
+	Readiness            string   `json:"readiness,omitempty"`
+	NextAction           string   `json:"next_action,omitempty"`
+	NextSafeCommand      string   `json:"next_safe_command,omitempty"`
+	IncludedContext      []string `json:"included_context,omitempty"`
+	GuidancePointers     []string `json:"guidance_pointers,omitempty"`
+	ExtraContextCount    int      `json:"extra_context_count,omitempty"`
+	PublicSafe           bool     `json:"public_safe"`
+	PrivateStorage       bool     `json:"private_storage"`
+	PrivateStorageNotice string   `json:"private_storage_notice,omitempty"`
 }
 
 type RunSelectInput struct {
@@ -169,6 +186,7 @@ func BuildRunStartReport(input RunStartInput) (RunStartReport, error) {
 		DryRun:        input.DryRun,
 		Exec:          input.Exec,
 		Manifest:      manifest,
+		PromptSummary: input.PromptSummary,
 		NextStep:      fmt.Sprintf("gira run status --id %s", runID),
 	}
 	if input.DryRun {
@@ -299,9 +317,80 @@ func FormatRunStart(report RunStartReport) string {
 	if m.PID > 0 {
 		fmt.Fprintf(&b, "pid: %d\n", m.PID)
 	}
+	if report.PromptSummary != nil {
+		summary := report.PromptSummary
+		fmt.Fprintf(&b, "handoff: schema=%s role=%s readiness=%s next=%s\n", valueOrUnknown(summary.SchemaVersion), valueOrUnknown(summary.Role), valueOrUnknown(summary.Readiness), valueOrUnknown(summary.NextAction))
+		if len(summary.IncludedContext) > 0 {
+			fmt.Fprintf(&b, "context included: %s\n", strings.Join(summary.IncludedContext, ", "))
+		}
+		if len(summary.GuidancePointers) > 0 {
+			fmt.Fprintf(&b, "policy pointers: %s\n", strings.Join(summary.GuidancePointers, ", "))
+		}
+		if summary.ExtraContextCount > 0 {
+			fmt.Fprintf(&b, "extra context notes: %d\n", summary.ExtraContextCount)
+		}
+		if strings.TrimSpace(summary.PrivateStorageNotice) != "" {
+			fmt.Fprintf(&b, "storage: %s\n", summary.PrivateStorageNotice)
+		}
+	}
 	fmt.Fprintf(&b, "command: %s\n", m.CommandSummary)
 	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
 	return b.String()
+}
+
+func SummarizeTicketHandoffPrompt(handoff TicketHandoffReport) RunPromptSummary {
+	included := []string{
+		"ticket metadata",
+		"ticket body",
+		"goal/scope/acceptance",
+		"expected evidence",
+		"branch policy",
+		"linked PR state",
+		"next Gira action",
+		"public-safe/private-storage flags",
+	}
+	if strings.TrimSpace(handoff.WorkOrder.ExpectedDelivery) != "" {
+		included = append(included, "expected delivery")
+	}
+	if strings.TrimSpace(handoff.WorkOrder.ReviewGuidance) != "" {
+		included = append(included, "review guidance")
+	}
+	if handoff.RolePacket != nil {
+		included = append(included, "role packet")
+	}
+	if len(handoff.OperatorContext) > 0 {
+		included = append(included, "operator extra notes")
+	}
+	guidance := []string{}
+	for _, item := range handoff.Guidance {
+		path := strings.TrimSpace(item.Path)
+		if path == "" {
+			continue
+		}
+		status := strings.TrimSpace(item.Status)
+		if status != "" {
+			path += " (" + status + ")"
+		}
+		guidance = append(guidance, path)
+	}
+	notice := strings.TrimSpace(handoff.StorageNotice)
+	if notice == "" {
+		notice = "prompt is written to private local Gira state; it is not public-safe by default"
+	}
+	return RunPromptSummary{
+		SchemaVersion:        handoff.SchemaVersion,
+		Role:                 handoff.Role,
+		Profile:              handoff.Profile,
+		Readiness:            handoff.Readiness.Readiness,
+		NextAction:           handoff.NextAction,
+		NextSafeCommand:      handoff.NextSafeCommand,
+		IncludedContext:      included,
+		GuidancePointers:     guidance,
+		ExtraContextCount:    len(handoff.OperatorContext),
+		PublicSafe:           handoff.PublicSafe,
+		PrivateStorage:       handoff.PrivateStorage,
+		PrivateStorageNotice: notice,
+	}
 }
 
 func FormatRunStatus(report RunStatusReport) string {

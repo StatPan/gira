@@ -142,6 +142,30 @@ func TestBuildGoalStatusReportClosedDoneGoalIsDone(t *testing.T) {
 	}
 }
 
+func TestBuildGoalStatusReportIncludesCrossRepoChildren(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "backlog"}
+	runner := onboardFakeRunner{responses: map[string]string{
+		"gh api repos/StatPan/backlog/issues/100": `{"number":100,"title":"Goal mode","state":"open","body":"## Goal\nShip cross repo goal\n\n## Child tickets\n- StatPan/gira#201","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
+		`gh issue list --repo StatPan/backlog --state all --search repo:StatPan/backlog is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
+		"gh issue view 100 --repo StatPan/backlog --json comments": `{"comments":[{"body":"Created child tickets:\n- StatPan/agentree#202"}]}`,
+		"gh api repos/StatPan/gira/issues/201":                     `{"number":201,"title":"Gira child","state":"open","body":"## Goal\nGira\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:ready"}]}`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		"gh api repos/StatPan/agentree/issues/202": `{"number":202,"title":"Agentree child","state":"closed","body":"## Goal\nAgentree\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
+		"gh pr list --repo StatPan/agentree --state all --search repo:StatPan/agentree is:pr 202 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+	}}
+
+	report, err := BuildGoalStatusReport(GoalStatusInput{Repo: repo, Goal: 100}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalStatusReport error: %v", err)
+	}
+	if len(report.Children) != 2 || report.Children[0].Repo != "StatPan/agentree" || report.Children[1].Repo != "StatPan/gira" {
+		t.Fatalf("unexpected cross-repo children: %+v", report.Children)
+	}
+	if report.Counts["ready"] != 1 || report.Counts["done"] != 1 {
+		t.Fatalf("unexpected cross-repo counts: %+v", report.Counts)
+	}
+}
+
 func TestIssueRefsFromText(t *testing.T) {
 	tests := []struct {
 		name string
@@ -157,6 +181,11 @@ func TestIssueRefsFromText(t *testing.T) {
 			name: "skip PR refs",
 			body: "Child tickets #573 and #574 landed via PR #579 and pull request #578",
 			want: []int{573, 574},
+		},
+		{
+			name: "skip qualified refs",
+			body: "Created child issue StatPan/gira#572",
+			want: []int{},
 		},
 	}
 	for _, tt := range tests {
@@ -175,30 +204,36 @@ func TestIssueRefsFromText(t *testing.T) {
 }
 
 func TestGoalChildRefsFromGoalTextSkipsParentGoal(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "backlog"}
 	tests := []struct {
 		name string
 		body string
-		want []int
+		want []goalChildRef
 	}{
 		{
 			name: "child tickets line",
 			body: "Parent goal: #521\n\nChild tickets: #572, #573\n",
-			want: []int{572, 573},
+			want: []goalChildRef{{Repo: repo, Number: 572}, {Repo: repo, Number: 573}},
 		},
 		{
 			name: "goal planning comment",
 			body: "Goal planning comment: #574 and #575 are ready next slices\n",
-			want: []int{574, 575},
+			want: []goalChildRef{{Repo: repo, Number: 574}, {Repo: repo, Number: 575}},
+		},
+		{
+			name: "qualified child refs",
+			body: "Goal planning comment: StatPan/gira#574 and StatPan/agentree#575 are ready next slices\n",
+			want: []goalChildRef{{Repo: RepoRef{Owner: "StatPan", Name: "gira"}, Number: 574}, {Repo: RepoRef{Owner: "StatPan", Name: "agentree"}, Number: 575}},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := goalChildRefsFromGoalText(tt.body)
+			got := goalChildRefsFromGoalText(repo, tt.body)
 			if len(got) != len(tt.want) {
 				t.Fatalf("goal child refs = %+v, want %+v", got, tt.want)
 			}
 			for i := range tt.want {
-				if got[i] != tt.want[i] {
+				if got[i].Repo.FullName() != tt.want[i].Repo.FullName() || got[i].Number != tt.want[i].Number {
 					t.Fatalf("goal child refs = %+v, want %+v", got, tt.want)
 				}
 			}

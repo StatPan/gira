@@ -191,8 +191,12 @@ Minimum viable GitHub mapping:
 
 - Goal: GitHub issue with `type:epic` or future `type:goal`.
 - Child tickets: normal GitHub issues linked from the goal body or comments.
-- Parent link: child issue body contains `Parent goal: #N` or an equivalent
-  structured link.
+- Target repo: same-repo children are the default; a goal plan item can route
+  work with `OWNER/REPO: title` or `target_repo: OWNER/REPO - title`.
+- Parent link: same-repo child issue body contains `Parent: #N`; cross-repo
+  child issue body contains `Parent: OWNER/REPO#N` or an equivalent structured
+  link. Goal plan apply also writes created child links back to the parent goal
+  comment stream so status can discover cross-repo children.
 - Status: existing `status:*` labels.
 - Autonomy: `lane:*`, `requires-human-approval`, and `agent:*` labels.
 - Evidence: PR closing references, check runs, reviews, issue comments, and

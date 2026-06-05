@@ -5366,6 +5366,95 @@ func TestTicketHandoffTextDefaultsImplementerRole(t *testing.T) {
 	}
 }
 
+func TestRunHelpIncludesStartStatusCollect(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"run", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"gira run start", "gira run status", "gira run collect"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("run help missing %q:\n%s", want, stdout.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"run", "status", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run status help exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "run status: no matching") {
+		t.Fatalf("run status help should not print status output:\n%s", stdout.String())
+	}
+}
+
+func TestRunStartStatusAndCollectUseLocalState(t *testing.T) {
+	restore := newTicketHandoffReport
+	t.Cleanup(func() { newTicketHandoffReport = restore })
+	newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 688 || input.Role != "implementer" {
+			t.Fatalf("unexpected handoff input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.TicketHandoffReport{
+			Command:       "ticket handoff",
+			SchemaVersion: gira.WorkerHandoffSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			Issue:         input.Ticket,
+			Role:          input.Role,
+			Profile:       input.Profile,
+			Readiness:     gira.TicketReadinessReport{SchemaVersion: gira.TicketReadinessSchemaVersion, Readiness: "ready"},
+			NextAction:    "implement",
+		}, nil
+	}
+
+	stateRoot := t.TempDir()
+	workDir := t.TempDir()
+	var startOut, startErr bytes.Buffer
+	code := Run([]string{"run", "start", "688", "--repo", "StatPan/gira", "--state-root", stateRoot, "--workdir", workDir, "--apply", "--json"}, &startOut, &startErr)
+	if code != 0 {
+		t.Fatalf("run start exit code = %d, want 0; stderr: %s", code, startErr.String())
+	}
+	var start gira.RunStartReport
+	if err := json.Unmarshal(startOut.Bytes(), &start); err != nil {
+		t.Fatalf("decode run start JSON: %v\n%s", err, startOut.String())
+	}
+	if start.Manifest.RunID == "" || start.Manifest.Status != "prepared" {
+		t.Fatalf("unexpected start manifest: %+v", start.Manifest)
+	}
+	if _, err := os.Stat(start.Manifest.ManifestPath); err != nil {
+		t.Fatalf("manifest was not written: %v", err)
+	}
+	if _, err := os.Stat(start.Manifest.PromptPath); err != nil {
+		t.Fatalf("prompt was not written: %v", err)
+	}
+
+	var statusOut, statusErr bytes.Buffer
+	code = Run([]string{"run", "status", "--latest", "--repo", "StatPan/gira", "--ticket", "688", "--state-root", stateRoot, "--json"}, &statusOut, &statusErr)
+	if code != 0 {
+		t.Fatalf("run status exit code = %d, want 0; stderr: %s", code, statusErr.String())
+	}
+	var status gira.RunStatusReport
+	if err := json.Unmarshal(statusOut.Bytes(), &status); err != nil {
+		t.Fatalf("decode run status JSON: %v\n%s", err, statusOut.String())
+	}
+	if status.Manifest == nil || status.Manifest.RunID != start.Manifest.RunID {
+		t.Fatalf("status manifest = %+v, want %s", status.Manifest, start.Manifest.RunID)
+	}
+
+	if err := os.WriteFile(start.Manifest.ResultPath, []byte("collected\n"), 0o600); err != nil {
+		t.Fatalf("write result: %v", err)
+	}
+	var collectOut, collectErr bytes.Buffer
+	code = Run([]string{"run", "collect", "--id", start.Manifest.RunID, "--state-root", stateRoot}, &collectOut, &collectErr)
+	if code != 0 {
+		t.Fatalf("run collect exit code = %d, want 0; stderr: %s", code, collectErr.String())
+	}
+	if collectOut.String() != "collected\n" {
+		t.Fatalf("collect output = %q", collectOut.String())
+	}
+}
+
 func TestGoalStatusJSONUsesInjectedBuilder(t *testing.T) {
 	restore := newGoalStatusReport
 	t.Cleanup(func() { newGoalStatusReport = restore })

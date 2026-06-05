@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -31,6 +32,7 @@ Daily commands:
   repo        Manage global registry entries for repositories
   adopt       Plan or apply adoption for existing repositories and issues
   ticket      Jira-style ticket lifecycle commands
+  run         Local Codex run manifests and execution state
   feature     Optional issue-backed feature map commands. Alias: feat
   goal        Goal-mode planning, status, and visible report commands
   epic        Numberless epic status and finish commands
@@ -846,6 +848,36 @@ Flags:
   -h, --help       Show help
 `
 
+const runHelp = `Local Codex run manifests and execution state.
+
+Usage:
+  gira run start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--role implementer] [--profile default] [--name NAME] [--state-root PATH] [--workdir PATH] [--exec] [--json]
+  gira run status --latest|--id RUN_ID [--ticket N] [--repo OWNER/REPO] [--state-root PATH] [--json]
+  gira run collect --latest|--id RUN_ID [--ticket N] [--repo OWNER/REPO] [--state-root PATH] [--json]
+
+Commands:
+  start    Store a ticket handoff prompt and prepared Codex command in private local state
+  status   Show the selected local run manifest
+  collect  Print the selected run result file
+
+Flags:
+  --repo string       Target GitHub repo in OWNER/REPO format. start defaults to .gira config or git origin
+  --ticket int        Ticket number. GitHub issue number in v1. Can also be numeric positional for start
+  --issue int         Compatibility alias for --ticket on start
+  --role string       Ticket handoff role: planner, implementer, or reviewer. Default: implementer
+  --profile string    Ticket handoff profile: default or python. Default: default
+  --name string       Optional human-readable local run name
+  --id string         Optional run id for status/collect, or custom run id for start
+  --latest           Select the newest matching local run
+  --state-root path   Override private local Gira state root
+  --workdir path      Codex working directory for start. Default: current directory
+  --exec             Start Codex in the background after writing the manifest
+  --dry-run          Preview without writing local run files
+  --apply            Write private local run files
+  --json             Emit stable JSON output
+  -h, --help         Show help
+`
+
 const goalHelp = `Goal-mode commands for long-running AI-assisted work.
 
 Usage:
@@ -1588,6 +1620,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTicketStart(args[1:], stdout, stderr)
 	case "ticket":
 		return runTicket(args[1:], stdout, stderr)
+	case "run":
+		return runRun(args[1:], stdout, stderr)
 	case "feature", "feat":
 		return runFeature(args[1:], stdout, stderr)
 	case "goal":
@@ -3112,6 +3146,320 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
 	}
+}
+
+func runRun(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		_, _ = io.WriteString(stdout, runHelp)
+		return 0
+	}
+	switch args[0] {
+	case "start":
+		return runRunStart(args[1:], stdout, stderr)
+	case "status":
+		return runRunStatus(args[1:], stdout, stderr)
+	case "collect":
+		return runRunCollect(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown run command: %s\n\n", args[0])
+		_, _ = io.WriteString(stderr, runHelp)
+		return 2
+	}
+}
+
+func runRunStart(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalTicket, positionalOK := extractRunStartTicketPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, runHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("run start", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	role := fs.String("role", gira.AgentPromptRoleImplementer, "Handoff role: planner|implementer|reviewer")
+	profile := fs.String("profile", "default", "Handoff profile: default|python")
+	name := fs.String("name", "", "Optional human-readable local run name")
+	runID := fs.String("id", "", "Optional custom local run id")
+	stateRoot := fs.String("state-root", "", "Override private local Gira state root")
+	workDir := fs.String("workdir", "", "Codex working directory")
+	execRun := fs.Bool("exec", false, "Start Codex in the background after writing the manifest")
+	dryRun := fs.Bool("dry-run", false, "Preview without writing local run files")
+	apply := fs.Bool("apply", false, "Write private local run files")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, runHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, runHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, runHelp)
+		return 2
+	}
+	if positionalTicket > 0 {
+		if *ticket > 0 && *ticket != positionalTicket {
+			fmt.Fprint(stderr, "--ticket and positional ticket must refer to the same number\n\n")
+			_, _ = io.WriteString(stderr, runHelp)
+			return 2
+		}
+		*ticket = positionalTicket
+	}
+	if *issue > 0 {
+		if *ticket > 0 && *ticket != *issue {
+			fmt.Fprint(stderr, "--ticket and --issue must refer to the same number\n\n")
+			_, _ = io.WriteString(stderr, runHelp)
+			return 2
+		}
+		*ticket = *issue
+	}
+	if *ticket <= 0 {
+		fmt.Fprint(stderr, "--ticket or positional ticket is required\n\n")
+		_, _ = io.WriteString(stderr, runHelp)
+		return 2
+	}
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required\n\n")
+		_, _ = io.WriteString(stderr, runHelp)
+		return 2
+	}
+	if *execRun && !*apply {
+		fmt.Fprint(stderr, "--exec requires --apply\n\n")
+		_, _ = io.WriteString(stderr, runHelp)
+		return 2
+	}
+	if strings.TrimSpace(*workDir) == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(stderr, "resolve working directory: %v\n", err)
+			return 1
+		}
+		*workDir = wd
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	handoff, err := newTicketHandoffReport(gira.TicketHandoffInput{
+		Repo:    repo,
+		Ticket:  *ticket,
+		Role:    *role,
+		Profile: *profile,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	prompt, err := json.MarshalIndent(handoff, "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "encode run prompt JSON: %v\n", err)
+		return 2
+	}
+	prompt = append(prompt, '\n')
+	report, err := gira.BuildRunStartReport(gira.RunStartInput{
+		Repo:        repo,
+		Ticket:      *ticket,
+		Role:        *role,
+		Profile:     *profile,
+		Name:        *name,
+		RunID:       *runID,
+		StateRoot:   *stateRoot,
+		WorkDir:     *workDir,
+		Prompt:      prompt,
+		DryRun:      *dryRun,
+		Apply:       *apply,
+		SafeSummary: fmt.Sprintf("local Codex run for %s#%d role=%s", repo.FullName(), *ticket, strings.TrimSpace(*role)),
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *execRun {
+		pid, err := startRunProcess(report.Manifest)
+		if err != nil {
+			fmt.Fprintf(stderr, "start run process: %v\n", err)
+			return 1
+		}
+		report.Exec = true
+		report.Manifest.Status = "running"
+		report.Manifest.PID = pid
+		if err := gira.WriteRunManifest(report.Manifest); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode run start JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatRunStart(report))
+	return 0
+}
+
+func runRunStatus(args []string, stdout io.Writer, stderr io.Writer) int {
+	report, code := selectRunFromFlags("run status", args, stdout, stderr)
+	if code != 0 {
+		return code
+	}
+	if report.handled {
+		return 0
+	}
+	if report.jsonOutput {
+		out, err := json.MarshalIndent(report.status, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode run status JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatRunStatus(report.status))
+	return 0
+}
+
+func runRunCollect(args []string, stdout io.Writer, stderr io.Writer) int {
+	report, code := selectRunFromFlags("run collect", args, stdout, stderr)
+	if code != 0 {
+		return code
+	}
+	if report.handled {
+		return 0
+	}
+	if report.status.Manifest == nil {
+		fmt.Fprint(stderr, "no matching local run result\n")
+		return 1
+	}
+	result, err := gira.ReadRunResult(*report.status.Manifest)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if report.jsonOutput {
+		out, err := json.MarshalIndent(struct {
+			SchemaVersion string           `json:"schema_version"`
+			Manifest      gira.RunManifest `json:"manifest"`
+			Result        string           `json:"result"`
+		}{
+			SchemaVersion: "gira-run-collect-report/v1",
+			Manifest:      *report.status.Manifest,
+			Result:        result,
+		}, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode run collect JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, result)
+	if !strings.HasSuffix(result, "\n") {
+		fmt.Fprintln(stdout)
+	}
+	return 0
+}
+
+type runStatusCLIReport struct {
+	status     gira.RunStatusReport
+	jsonOutput bool
+	handled    bool
+}
+
+func selectRunFromFlags(commandName string, args []string, stdout io.Writer, stderr io.Writer) (runStatusCLIReport, int) {
+	fs := flag.NewFlagSet(commandName, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	runID := fs.String("id", "", "Local run id")
+	latest := fs.Bool("latest", false, "Select the newest matching local run")
+	stateRoot := fs.String("state-root", "", "Override private local Gira state root")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, runHelp)
+		return runStatusCLIReport{}, 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, runHelp)
+		return runStatusCLIReport{handled: true}, 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, runHelp)
+		return runStatusCLIReport{}, 2
+	}
+	var repo gira.RepoRef
+	if strings.TrimSpace(*repoValue) != "" {
+		resolved, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return runStatusCLIReport{}, 2
+		}
+		repo = resolved
+	}
+	status, err := gira.BuildRunStatusReport(gira.RunSelectInput{
+		Repo:      repo,
+		Ticket:    *ticket,
+		RunID:     *runID,
+		Latest:    *latest,
+		StateRoot: *stateRoot,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return runStatusCLIReport{}, 1
+	}
+	return runStatusCLIReport{status: status, jsonOutput: *jsonOutput}, 0
+}
+
+func startRunProcess(manifest gira.RunManifest) (int, error) {
+	if len(manifest.Command) == 0 {
+		return 0, fmt.Errorf("run command is missing")
+	}
+	prompt, err := os.Open(manifest.PromptPath)
+	if err != nil {
+		return 0, fmt.Errorf("open run prompt: %w", err)
+	}
+	defer prompt.Close()
+	events, err := os.OpenFile(manifest.EventLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return 0, fmt.Errorf("open run event log: %w", err)
+	}
+	defer events.Close()
+	stderrLog, err := os.OpenFile(manifest.StderrLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return 0, fmt.Errorf("open run stderr log: %w", err)
+	}
+	defer stderrLog.Close()
+	cmd := osexec.Command(manifest.Command[0], manifest.Command[1:]...)
+	cmd.Stdin = prompt
+	cmd.Stdout = events
+	cmd.Stderr = stderrLog
+	if strings.TrimSpace(manifest.WorkDir) != "" {
+		cmd.Dir = filepath.Clean(manifest.WorkDir)
+	}
+	configureRunProcess(cmd)
+	if err := cmd.Start(); err != nil {
+		return 0, err
+	}
+	pid := cmd.Process.Pid
+	if err := cmd.Process.Release(); err != nil {
+		return 0, fmt.Errorf("release run process: %w", err)
+	}
+	return pid, nil
 }
 
 func runFeature(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -5158,6 +5506,48 @@ func extractNumericPositional(args []string, noun string, stderr io.Writer) ([]s
 		}
 		if positional > 0 && positional != n {
 			fmt.Fprintf(stderr, "only one positional %s can be provided\n\n", noun)
+			return nil, 0, false
+		}
+		positional = n
+		cleaned = cleaned[:len(cleaned)-1]
+	}
+	return cleaned, positional, true
+}
+
+func extractRunStartTicketPositional(args []string, stderr io.Writer) ([]string, int, bool) {
+	cleaned := make([]string, 0, len(args))
+	positional := 0
+	valueFlags := map[string]struct{}{
+		"--repo":       {},
+		"--ticket":     {},
+		"--issue":      {},
+		"--role":       {},
+		"--profile":    {},
+		"--name":       {},
+		"--id":         {},
+		"--state-root": {},
+		"--workdir":    {},
+	}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		cleaned = append(cleaned, arg)
+		if _, ok := valueFlags[arg]; ok {
+			if i+1 < len(args) {
+				i++
+				cleaned = append(cleaned, args[i])
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		n, err := strconv.Atoi(arg)
+		if err != nil || n <= 0 {
+			fmt.Fprintf(stderr, "unexpected positional argument %q; use a numeric ticket or --ticket N\n\n", arg)
+			return nil, 0, false
+		}
+		if positional > 0 && positional != n {
+			fmt.Fprint(stderr, "only one positional ticket can be provided\n\n")
 			return nil, 0, false
 		}
 		positional = n

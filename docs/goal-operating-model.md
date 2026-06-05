@@ -31,6 +31,26 @@ or a future `type:goal`, plus `status:*`, `priority:*`, and area labels. Child
 work remains normal repo-local tickets. PRs should close child tickets, not the
 goal issue, unless the PR is explicitly the final goal receipt.
 
+## Backlog Goal Handles
+
+In a multi-repo workspace, the configured inbox repo can also hold cross-repo
+goal handles. For example, `OWNER/backlog#12` can remain the durable issue that
+states the objective, open decisions, and child ticket links while execution
+happens in `OWNER/app`, `OWNER/api`, and `OWNER/infra`.
+
+Use a backlog goal handle when the work is broad, repo ownership is mixed, or a
+human still needs one place to inspect convergence. Do not create placeholder
+execution tickets in the backlog repo just to keep the plan visible. Once a
+slice is executable in a specific codebase, lower it into a repo-local child
+ticket and let that child own its branch, PR, checks, review, and finish
+receipt.
+
+This boundary is the same for broad workspaces and narrowed daily control
+workspaces. A broad workspace may scan many execution repos and keep the
+backlog issue open as the coordination hub. A daily control workspace may
+filter to one repo or a small active subset, but backlog issues still coordinate
+and repo-local child issues still execute.
+
 ## Relationship To Existing Units
 
 | Unit | Role |
@@ -189,7 +209,8 @@ ticket lifecycle logic.
 
 Minimum viable GitHub mapping:
 
-- Goal: GitHub issue with `type:epic` or future `type:goal`.
+- Goal: GitHub issue with `type:epic` or future `type:goal`. In a workspace,
+  this may be an inbox/backlog issue that coordinates children in other repos.
 - Child tickets: normal GitHub issues linked from the goal body or comments.
 - Target repo: same-repo children are the default; a goal plan item can route
   work with `OWNER/REPO: title` or `target_repo: OWNER/REPO - title`.

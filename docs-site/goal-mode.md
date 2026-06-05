@@ -5,6 +5,21 @@ safe next actions, and finish evidence. GitHub issues remain the durable graph:
 the goal issue names or links child tickets, child tickets close through PRs,
 and finish handoff is written back as a GitHub comment.
 
+## Backlog Goals
+
+In a multi-repo workspace, the inbox repo can hold cross-repo goal handles. A
+goal such as `OWNER/backlog#12` can stay open as the coordination issue while
+repo-local child tickets execute in `OWNER/app`, `OWNER/api`, or `OWNER/infra`.
+
+Use this when the objective spans repos, ownership is mixed, or a human still
+needs one stable issue URL for decisions and convergence. Do not put every child
+task in the backlog repo. Once a slice is executable in a codebase, route it to
+that target repo and let the child ticket own its branch, PR, checks, review,
+and finish evidence.
+
+Broad workspace views and narrowed daily control views use the same rule:
+backlog issues coordinate; repo-local issues execute.
+
 ## Plan
 
 Preview child ticket packets without creating anything:

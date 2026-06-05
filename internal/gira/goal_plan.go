@@ -36,6 +36,7 @@ type GoalPlanReport struct {
 
 type GoalPlanTicket struct {
 	Title            string                `json:"title"`
+	TargetRepo       string                `json:"target_repo"`
 	Type             string                `json:"type"`
 	Priority         string                `json:"priority,omitempty"`
 	Labels           []string              `json:"labels,omitempty"`
@@ -58,6 +59,7 @@ type GoalPlanSkip struct {
 
 type GoalPlanChild struct {
 	Number   int    `json:"number"`
+	Repo     string `json:"repo,omitempty"`
 	Title    string `json:"title"`
 	Category string `json:"category"`
 	Status   string `json:"status"`
@@ -65,12 +67,13 @@ type GoalPlanChild struct {
 }
 
 type GoalPlanAction struct {
-	Action string `json:"action"`
-	Title  string `json:"title,omitempty"`
-	Status string `json:"status"`
-	Issue  int    `json:"issue,omitempty"`
-	URL    string `json:"url,omitempty"`
-	Reason string `json:"reason,omitempty"`
+	Action     string `json:"action"`
+	Title      string `json:"title,omitempty"`
+	TargetRepo string `json:"target_repo,omitempty"`
+	Status     string `json:"status"`
+	Issue      int    `json:"issue,omitempty"`
+	URL        string `json:"url,omitempty"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 func BuildGoalPlanReport(input GoalPlanInput, runner CommandRunner) (GoalPlanReport, error) {
@@ -133,16 +136,19 @@ func BuildGoalPlanReport(input GoalPlanInput, runner CommandRunner) (GoalPlanRep
 		return report, nil
 	}
 	for _, item := range items {
-		title := goalPlanTicketTitle(item)
-		if duplicate := goalPlanDuplicateChildNumber(title, status.Children); duplicate > 0 {
+		targetRepo, title := goalPlanTargetAndTitle(input.Repo, item)
+		if duplicate := goalPlanDuplicateChildNumber(title, targetRepo, status.Children); duplicate > 0 {
 			report.SkippedCandidates = append(report.SkippedCandidates, GoalPlanSkip{Title: title, Reason: "duplicate_existing_child", DuplicateOf: duplicate})
-			report.Actions = append(report.Actions, GoalPlanAction{Action: "child_ticket:skip", Title: title, Status: "skipped", Issue: duplicate, Reason: "duplicate_existing_child"})
+			report.Actions = append(report.Actions, GoalPlanAction{Action: "child_ticket:skip", Title: title, TargetRepo: targetRepo.FullName(), Status: "skipped", Issue: duplicate, Reason: "duplicate_existing_child"})
 			report.Warnings = appendUniqueStrings(report.Warnings, "duplicate_existing_child")
 			continue
 		}
-		ticket := goalPlanTicket(goal, title, objective, scope)
+		ticket := goalPlanTicket(input.Repo, goal, title, targetRepo, objective, scope)
 		report.ProposedTickets = append(report.ProposedTickets, ticket)
-		report.Actions = append(report.Actions, GoalPlanAction{Action: "child_ticket:create", Title: ticket.Title, Status: "planned", Reason: "proposed goal child ticket"})
+		report.Actions = append(report.Actions, GoalPlanAction{Action: "child_ticket:create", Title: ticket.Title, TargetRepo: ticket.TargetRepo, Status: "planned", Reason: "proposed goal child ticket"})
+	}
+	if len(report.ProposedTickets) > 0 {
+		report.Actions = append(report.Actions, GoalPlanAction{Action: "goal:comment", TargetRepo: input.Repo.FullName(), Status: "planned", Reason: "record created child links on parent goal"})
 	}
 	if len(report.ProposedTickets) == 0 {
 		report.StopConditions = append(report.StopConditions, "no_new_child_tickets")
@@ -163,31 +169,45 @@ func BuildGoalPlanReport(input GoalPlanInput, runner CommandRunner) (GoalPlanRep
 }
 
 func applyGoalPlan(report *GoalPlanReport, repo RepoRef, runner CommandRunner) error {
-	labels := []string{}
+	labelsByRepo := map[string][]string{}
 	for _, ticket := range report.ProposedTickets {
-		labels = append(labels, ticket.Labels...)
+		labelsByRepo[ticket.TargetRepo] = append(labelsByRepo[ticket.TargetRepo], ticket.Labels...)
 	}
-	if err := preflightTicketNewLabels(repo, appendUniqueStrings(nil, labels...), runner); err != nil {
-		report.StopConditions = appendUniqueStrings(report.StopConditions, "label_preflight_failed")
-		report.NextAction = "fix_labels"
-		report.NextStep = fmt.Sprintf("gira ops sync --repo %s --dry-run", repo.FullName())
-		return err
-	}
-	for _, ticket := range report.ProposedTickets {
-		created, err := createRepoTicket(repo, ticket.Title, ticket.Body, ticket.Labels, ticket.Milestone, runner)
+	for targetRepoName, labels := range labelsByRepo {
+		targetRepo, err := ParseRepoRef(targetRepoName)
 		if err != nil {
 			return err
 		}
-		child := GoalPlanChild{Number: created.Number, Title: ticket.Title, Category: "ready", Status: "Ready", URL: created.URL}
-		report.CreatedChildren = append(report.CreatedChildren, child)
-		goalPlanMarkActionApplied(report.Actions, ticket.Title, created)
+		if err := preflightTicketNewLabels(targetRepo, appendUniqueStrings(nil, labels...), runner); err != nil {
+			report.StopConditions = appendUniqueStrings(report.StopConditions, "label_preflight_failed")
+			report.NextAction = "fix_labels"
+			report.NextStep = fmt.Sprintf("gira ops sync --repo %s --dry-run", targetRepo.FullName())
+			return err
+		}
 	}
+	for _, ticket := range report.ProposedTickets {
+		targetRepo, err := ParseRepoRef(ticket.TargetRepo)
+		if err != nil {
+			return err
+		}
+		created, err := createRepoTicket(targetRepo, ticket.Title, ticket.Body, ticket.Labels, ticket.Milestone, runner)
+		if err != nil {
+			return err
+		}
+		child := GoalPlanChild{Repo: targetRepo.FullName(), Number: created.Number, Title: ticket.Title, Category: "ready", Status: "Ready", URL: created.URL}
+		report.CreatedChildren = append(report.CreatedChildren, child)
+		goalPlanMarkActionApplied(report.Actions, ticket.Title, targetRepo.FullName(), created)
+	}
+	if err := postGoalPlanCreatedChildrenComment(repo, report.Goal.Number, report.CreatedChildren, runner); err != nil {
+		return err
+	}
+	goalPlanMarkActionStatus(report.Actions, "goal:comment", "applied")
 	return nil
 }
 
-func goalPlanMarkActionApplied(actions []GoalPlanAction, title string, created TicketCreatedIssue) {
+func goalPlanMarkActionApplied(actions []GoalPlanAction, title string, targetRepo string, created TicketCreatedIssue) {
 	for i := range actions {
-		if actions[i].Action == "child_ticket:create" && actions[i].Title == title {
+		if actions[i].Action == "child_ticket:create" && actions[i].Title == title && actions[i].TargetRepo == targetRepo {
 			actions[i].Status = "applied"
 			actions[i].Issue = created.Number
 			actions[i].URL = created.URL
@@ -196,12 +216,26 @@ func goalPlanMarkActionApplied(actions []GoalPlanAction, title string, created T
 	}
 }
 
+func goalPlanMarkActionStatus(actions []GoalPlanAction, actionName string, status string) {
+	for i := range actions {
+		if actions[i].Action == actionName {
+			actions[i].Status = status
+			return
+		}
+	}
+}
+
 func goalPlanChildren(children []GoalStatusChild) []GoalPlanChild {
 	out := make([]GoalPlanChild, 0, len(children))
 	for _, child := range children {
-		out = append(out, GoalPlanChild{Number: child.Number, Title: child.Title, Category: child.Category, Status: child.Status})
+		out = append(out, GoalPlanChild{Repo: child.Repo, Number: child.Number, Title: child.Title, Category: child.Category, Status: child.Status, URL: child.URL})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Repo != out[j].Repo {
+			return out[i].Repo < out[j].Repo
+		}
+		return out[i].Number < out[j].Number
+	})
 	return out
 }
 
@@ -255,21 +289,58 @@ func goalPlanTicketTitle(item string) string {
 	return "[Task] " + title
 }
 
-func goalPlanTicket(goal devStartIssue, title string, objective string, scope string) GoalPlanTicket {
+func goalPlanTargetAndTitle(defaultRepo RepoRef, item string) (RepoRef, string) {
+	trimmed := strings.TrimSpace(item)
+	for _, prefix := range []string{"target_repo:", "target_repo=", "repo:", "repo="} {
+		if strings.HasPrefix(strings.ToLower(trimmed), prefix) {
+			rest := strings.TrimSpace(trimmed[len(prefix):])
+			repoText, titleText := splitGoalPlanRepoPrefix(rest)
+			if repo, err := ParseRepoRef(repoText); err == nil {
+				return repo, goalPlanTicketTitle(titleText)
+			}
+		}
+	}
+	repoText, titleText := splitGoalPlanRepoPrefix(trimmed)
+	if repo, err := ParseRepoRef(repoText); err == nil {
+		return repo, goalPlanTicketTitle(titleText)
+	}
+	return defaultRepo, goalPlanTicketTitle(trimmed)
+}
+
+func splitGoalPlanRepoPrefix(value string) (string, string) {
+	trimmed := strings.TrimSpace(value)
+	for _, sep := range []string{" - ", " — ", ": "} {
+		if idx := strings.Index(trimmed, sep); idx > 0 {
+			return strings.TrimSpace(trimmed[:idx]), strings.TrimSpace(trimmed[idx+len(sep):])
+		}
+	}
+	fields := strings.Fields(trimmed)
+	if len(fields) >= 2 {
+		return strings.TrimSpace(fields[0]), strings.TrimSpace(strings.TrimPrefix(trimmed, fields[0]))
+	}
+	return trimmed, ""
+}
+
+func goalPlanTicket(parentRepo RepoRef, goal devStartIssue, title string, targetRepo RepoRef, objective string, scope string) GoalPlanTicket {
 	labels := goalPlanLabels(goal.Labels)
+	milestone := goal.Milestone
+	if targetRepo.FullName() != parentRepo.FullName() {
+		milestone = ""
+	}
 	acceptance := []string{
 		fmt.Sprintf("%s is defined with stable behavior", strings.TrimPrefix(title, "[Task] ")),
 		"JSON and compact human output are covered by tests or documented examples",
 		fmt.Sprintf("Parent goal #%d remains the source of truth", goal.Number),
 	}
 	evidence := []string{"go test ./internal/gira", "go test ./internal/cli", "go test ./..."}
-	body := renderGoalPlanTicketBody(goal.Number, objective, title, scope, acceptance, evidence)
+	body := renderGoalPlanTicketBody(parentRepo, targetRepo, goal.Number, objective, title, scope, acceptance, evidence)
 	return GoalPlanTicket{
 		Title:            title,
+		TargetRepo:       targetRepo.FullName(),
 		Type:             "task",
 		Priority:         goalPlanPriority(goal.Labels),
 		Labels:           labels,
-		Milestone:        goal.Milestone,
+		Milestone:        milestone,
 		ParentGoal:       goal.Number,
 		Goal:             fmt.Sprintf("%s for goal #%d.", strings.TrimPrefix(title, "[Task] "), goal.Number),
 		Scope:            scope,
@@ -280,9 +351,13 @@ func goalPlanTicket(goal devStartIssue, title string, objective string, scope st
 	}
 }
 
-func renderGoalPlanTicketBody(parent int, objective string, title string, scope string, acceptance []string, evidence []string) string {
+func renderGoalPlanTicketBody(parentRepo RepoRef, targetRepo RepoRef, parent int, objective string, title string, scope string, acceptance []string, evidence []string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "## Goal\n%s\n\nParent: #%d\n\n", strings.TrimPrefix(title, "[Task] "), parent)
+	parentRef := fmt.Sprintf("#%d", parent)
+	if parentRepo.FullName() != targetRepo.FullName() {
+		parentRef = fmt.Sprintf("%s#%d", parentRepo.FullName(), parent)
+	}
+	fmt.Fprintf(&b, "## Goal\n%s\n\nParent: %s\n\n", strings.TrimPrefix(title, "[Task] "), parentRef)
 	fmt.Fprintf(&b, "## Scope\nDerived from parent goal #%d.\n\nParent objective:\n%s\n\nPlanning scope:\n%s\n\n", parent, strings.TrimSpace(objective), strings.TrimSpace(scope))
 	b.WriteString("## Acceptance Criteria\n")
 	for _, item := range acceptance {
@@ -334,9 +409,33 @@ func goalPlanNeedsHumanDecision(body string, labels []string) bool {
 	return false
 }
 
-func goalPlanExistingTitleIndex(children []GoalStatusChild) map[string]int {
+func goalPlanDuplicateChildNumber(title string, targetRepo RepoRef, children []GoalStatusChild) int {
+	key := goalPlanTitleKey(title)
+	if key == "" {
+		return 0
+	}
+	existing := goalPlanExistingTitleIndexForRepo(children, targetRepo.FullName())
+	if duplicate := existing[key]; duplicate > 0 {
+		return duplicate
+	}
+	candidateTokens := goalPlanSignificantTokens(key)
+	for _, child := range children {
+		if child.Repo != "" && child.Repo != targetRepo.FullName() {
+			continue
+		}
+		if goalPlanFuzzyTitleMatch(candidateTokens, goalPlanSignificantTokens(goalPlanTitleKey(child.Title))) {
+			return child.Number
+		}
+	}
+	return 0
+}
+
+func goalPlanExistingTitleIndexForRepo(children []GoalStatusChild, targetRepo string) map[string]int {
 	index := map[string]int{}
 	for _, child := range children {
+		if child.Repo != "" && child.Repo != targetRepo {
+			continue
+		}
 		key := goalPlanTitleKey(child.Title)
 		if key != "" {
 			index[key] = child.Number
@@ -345,22 +444,22 @@ func goalPlanExistingTitleIndex(children []GoalStatusChild) map[string]int {
 	return index
 }
 
-func goalPlanDuplicateChildNumber(title string, children []GoalStatusChild) int {
-	key := goalPlanTitleKey(title)
-	if key == "" {
-		return 0
+func postGoalPlanCreatedChildrenComment(repo RepoRef, goal int, children []GoalPlanChild, runner CommandRunner) error {
+	if len(children) == 0 {
+		return nil
 	}
-	existing := goalPlanExistingTitleIndex(children)
-	if duplicate := existing[key]; duplicate > 0 {
-		return duplicate
-	}
-	candidateTokens := goalPlanSignificantTokens(key)
+	var b strings.Builder
+	b.WriteString("## Goal Plan Children\n\n")
+	b.WriteString("Created child tickets:\n")
 	for _, child := range children {
-		if goalPlanFuzzyTitleMatch(candidateTokens, goalPlanSignificantTokens(goalPlanTitleKey(child.Title))) {
-			return child.Number
+		ref := fmt.Sprintf("#%d", child.Number)
+		if child.Repo != "" && child.Repo != repo.FullName() {
+			ref = fmt.Sprintf("%s#%d", child.Repo, child.Number)
 		}
+		fmt.Fprintf(&b, "- %s %s\n", ref, child.Title)
 	}
-	return 0
+	_, err := runner.Run("gh", "issue", "comment", fmt.Sprintf("%d", goal), "--repo", repo.FullName(), "--body", strings.TrimSpace(b.String()))
+	return err
 }
 
 var goalPlanTitleNoise = regexp.MustCompile(`[^a-z0-9]+`)
@@ -421,7 +520,11 @@ func FormatGoalPlan(report GoalPlanReport) string {
 		fmt.Fprintf(&b, "warnings: %s\n", strings.Join(report.Warnings, ","))
 	}
 	for _, child := range report.CreatedChildren {
-		fmt.Fprintf(&b, "- created #%d %s\n", child.Number, child.Title)
+		ref := fmt.Sprintf("#%d", child.Number)
+		if child.Repo != "" && child.Repo != report.Repo {
+			ref = fmt.Sprintf("%s#%d", child.Repo, child.Number)
+		}
+		fmt.Fprintf(&b, "- created %s %s\n", ref, child.Title)
 	}
 	for _, skip := range report.SkippedCandidates {
 		if skip.DuplicateOf > 0 {
@@ -432,6 +535,10 @@ func FormatGoalPlan(report GoalPlanReport) string {
 	}
 	for _, ticket := range report.ProposedTickets {
 		if len(report.CreatedChildren) == 0 {
+			if ticket.TargetRepo != "" && ticket.TargetRepo != report.Repo {
+				fmt.Fprintf(&b, "- [%s] %s\n", ticket.TargetRepo, ticket.Title)
+				continue
+			}
 			fmt.Fprintf(&b, "- %s\n", ticket.Title)
 		}
 	}

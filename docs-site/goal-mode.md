@@ -14,8 +14,12 @@ gira goal plan 521 --repo OWNER/app --dry-run --json
 ```
 
 Use the plan when a goal issue has enough scope and acceptance detail to split
-into bounded tickets. If the goal requires a human decision or the target repo is
-ambiguous, the report stops with an explicit reason instead of inventing work.
+into bounded tickets. Same-repo children remain the default. To route a child
+into another execution repo, prefix a plan item with `OWNER/REPO:` or
+`target_repo: OWNER/REPO -`. The `goal-plan/v1` output includes `target_repo`
+for every proposed child. If the goal requires a human decision or the target
+repo is ambiguous, the report stops with an explicit reason instead of
+inventing work.
 
 After reviewing the plan, create the linked child tickets:
 
@@ -23,10 +27,14 @@ After reviewing the plan, create the linked child tickets:
 gira goal plan 521 --repo OWNER/app --apply --json
 ```
 
-The apply path creates normal GitHub issues in the same repo. Each child keeps a
-readable `Parent: #521` reference in its body, carries the proposed labels and
-milestone, and is skipped on later runs when an existing linked child already
-matches the proposed title.
+The apply path creates normal GitHub issues in each child target repo. Same-repo
+children keep a readable `Parent: #521` reference in their body; cross-repo
+children use `Parent: OWNER/app#521`. Gira also comments on the parent goal with
+the created child links so later `goal status` and `goal plan` runs can discover
+cross-repo children without a separate planning database. Each child carries the
+proposed labels; same-repo children also inherit the parent milestone. A child
+is skipped on later runs when an existing linked child in the same target repo
+already matches the proposed title.
 
 ## Status
 

@@ -20,7 +20,7 @@ func TestBuildGoalPlanReportValidPlan(t *testing.T) {
 		t.Fatalf("unexpected plan report: %+v", report)
 	}
 	first := report.ProposedTickets[0]
-	if first.ParentGoal != 100 || !strings.Contains(first.Body, "Parent: #100") || len(first.Acceptance) == 0 || len(first.ExpectedEvidence) == 0 {
+	if first.TargetRepo != "StatPan/gira" || first.ParentGoal != 100 || !strings.Contains(first.Body, "Parent: #100") || len(first.Acceptance) == 0 || len(first.ExpectedEvidence) == 0 {
 		t.Fatalf("proposed ticket is incomplete: %+v", first)
 	}
 	if first.TicketReadiness.Readiness != "ready" {
@@ -28,6 +28,41 @@ func TestBuildGoalPlanReportValidPlan(t *testing.T) {
 	}
 	if !strings.Contains(FormatGoalPlan(report), "proposed=2") {
 		t.Fatalf("formatted report missing proposal count:\n%s", FormatGoalPlan(report))
+	}
+}
+
+func TestBuildGoalPlanReportCrossRepoTargets(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "backlog"}
+	runner := onboardFakeRunner{responses: map[string]string{
+		"gh api repos/StatPan/backlog/issues/100": goalPlanGoalJSONForRepo(100, "StatPan/backlog", goalPlanBody("## Goal\nShip cross repo goal\n\n## Scope\nCoordinate child work across repos\n\n## Goal Plan\n- StatPan/gira: Add goal status routing\n- target_repo: StatPan/agentree - Render worker run cards\n- Add same repo inbox docs\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
+		`gh issue list --repo StatPan/backlog --state all --search repo:StatPan/backlog is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
+		"gh issue view 100 --repo StatPan/backlog --json comments": `{"comments":[]}`,
+	}}
+
+	report, err := BuildGoalPlanReport(GoalPlanInput{Repo: repo, Goal: 100, DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalPlanReport error: %v", err)
+	}
+	if len(report.ProposedTickets) != 3 {
+		t.Fatalf("unexpected proposals: %+v", report.ProposedTickets)
+	}
+	wants := []string{"StatPan/gira", "StatPan/agentree", "StatPan/backlog"}
+	for i, want := range wants {
+		if report.ProposedTickets[i].TargetRepo != want || report.Actions[i].TargetRepo != want {
+			t.Fatalf("proposal %d target = ticket:%q action:%q, want %q", i, report.ProposedTickets[i].TargetRepo, report.Actions[i].TargetRepo, want)
+		}
+	}
+	if !strings.Contains(report.ProposedTickets[0].Body, "Parent: StatPan/backlog#100") {
+		t.Fatalf("cross-repo child body missing qualified parent:\n%s", report.ProposedTickets[0].Body)
+	}
+	if report.ProposedTickets[0].Milestone != "" || report.ProposedTickets[1].Milestone != "" {
+		t.Fatalf("cross-repo child tickets should not inherit parent repo milestone: %+v", report.ProposedTickets)
+	}
+	if !strings.Contains(report.ProposedTickets[2].Body, "Parent: #100") {
+		t.Fatalf("same-repo child body should keep local parent ref:\n%s", report.ProposedTickets[2].Body)
+	}
+	if report.ProposedTickets[2].Milestone != "2.0 RC - Goal Mode" {
+		t.Fatalf("same-repo child should inherit milestone, got %q", report.ProposedTickets[2].Milestone)
 	}
 }
 
@@ -134,6 +169,45 @@ func TestBuildGoalPlanReportApplyCreatesChildren(t *testing.T) {
 	}
 }
 
+func TestBuildGoalPlanReportApplyCreatesCrossRepoChildrenAndLinksParent(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "backlog"}
+	runner := &goalPlanApplyRunner{
+		responses: map[string]string{
+			"gh api repos/StatPan/backlog/issues/100": goalPlanGoalJSONForRepo(100, "StatPan/backlog", goalPlanBody("## Goal\nShip cross repo goal\n\n## Scope\nCoordinate repos\n\n## Goal Plan\n- StatPan/gira: Add goal status routing\n- Add inbox docs\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
+			`gh issue list --repo StatPan/backlog --state all --search repo:StatPan/backlog is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
+			"gh issue view 100 --repo StatPan/backlog --json comments":      `{"comments":[]}`,
+			"gh label list --repo StatPan/gira --json name --limit 1000":    goalPlanLabelListJSON("type:task", "status:ready", "priority:p1", "area:backend"),
+			"gh label list --repo StatPan/backlog --json name --limit 1000": goalPlanLabelListJSON("type:task", "status:ready", "priority:p1", "area:backend"),
+		},
+	}
+
+	report, err := BuildGoalPlanReport(GoalPlanInput{Repo: repo, Goal: 100, Apply: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalPlanReport apply error: %v", err)
+	}
+	if len(report.CreatedChildren) != 2 || report.CreatedChildren[0].Repo != "StatPan/gira" || report.CreatedChildren[1].Repo != "StatPan/backlog" {
+		t.Fatalf("unexpected created children: %+v", report.CreatedChildren)
+	}
+	if len(runner.creates) != 2 || !containsCreateRepo(runner.creates, "StatPan/gira") || !containsCreateRepo(runner.creates, "StatPan/backlog") {
+		t.Fatalf("unexpected create calls: %+v", runner.creates)
+	}
+	crossCreate := strings.Join(createCallForRepo(runner.creates, "StatPan/gira"), "\x00")
+	if strings.Contains(crossCreate, "--milestone\x00") {
+		t.Fatalf("cross-repo create should not pass parent milestone: %q", crossCreate)
+	}
+	sameRepoCreate := strings.Join(createCallForRepo(runner.creates, "StatPan/backlog"), "\x00")
+	if !strings.Contains(sameRepoCreate, "--milestone\x002.0 RC - Goal Mode") {
+		t.Fatalf("same-repo create should pass parent milestone: %q", sameRepoCreate)
+	}
+	if len(runner.comments) != 1 {
+		t.Fatalf("expected parent link comment, got %+v", runner.comments)
+	}
+	comment := strings.Join(runner.comments[0], "\x00")
+	if !strings.Contains(comment, "StatPan/gira#700") || !strings.Contains(comment, "#701") {
+		t.Fatalf("parent comment missing child refs: %q", comment)
+	}
+}
+
 func TestBuildGoalPlanReportApplyStopsWithoutMutation(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &goalPlanApplyRunner{
@@ -196,12 +270,24 @@ func goalPlanRunner(goalJSON string, childrenJSON string, commentsJSON string, e
 type goalPlanApplyRunner struct {
 	responses map[string]string
 	creates   [][]string
+	comments  [][]string
 }
 
 func (r *goalPlanApplyRunner) Run(name string, args ...string) ([]byte, error) {
 	if name == "gh" && len(args) >= 2 && args[0] == "issue" && args[1] == "create" {
 		r.creates = append(r.creates, append([]string{}, args...))
-		return []byte(fmt.Sprintf("https://github.com/StatPan/gira/issues/%d\n", 699+len(r.creates))), nil
+		createRepo := "StatPan/gira"
+		for i := 0; i+1 < len(args); i++ {
+			if args[i] == "--repo" {
+				createRepo = args[i+1]
+				break
+			}
+		}
+		return []byte(fmt.Sprintf("https://github.com/%s/issues/%d\n", createRepo, 699+len(r.creates))), nil
+	}
+	if name == "gh" && len(args) >= 2 && args[0] == "issue" && args[1] == "comment" {
+		r.comments = append(r.comments, append([]string{}, args...))
+		return []byte("https://github.com/StatPan/gira/issues/100#issuecomment-1\n"), nil
 	}
 	key := strings.TrimSpace(name + " " + strings.Join(args, " "))
 	response, ok := r.responses[key]
@@ -212,6 +298,10 @@ func (r *goalPlanApplyRunner) Run(name string, args ...string) ([]byte, error) {
 }
 
 func goalPlanGoalJSON(number int, body string, labels []string) string {
+	return goalPlanGoalJSONForRepo(number, "StatPan/gira", body, labels)
+}
+
+func goalPlanGoalJSONForRepo(number int, repo string, body string, labels []string) string {
 	labelJSON := []string{}
 	for _, label := range labels {
 		labelJSON = append(labelJSON, `{"name":"`+label+`"}`)
@@ -230,4 +320,19 @@ func goalPlanLabelListJSON(labels ...string) string {
 		parts = append(parts, `{"name":"`+label+`"}`)
 	}
 	return "[" + strings.Join(parts, ",") + "]"
+}
+
+func containsCreateRepo(calls [][]string, repo string) bool {
+	return len(createCallForRepo(calls, repo)) > 0
+}
+
+func createCallForRepo(calls [][]string, repo string) []string {
+	for _, call := range calls {
+		for i := 0; i+1 < len(call); i++ {
+			if call[i] == "--repo" && call[i+1] == repo {
+				return call
+			}
+		}
+	}
+	return nil
 }

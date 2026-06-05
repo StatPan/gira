@@ -41,6 +41,7 @@ type GoalStatusIssue struct {
 }
 
 type GoalStatusChild struct {
+	Repo         string   `json:"repo,omitempty"`
 	Number       int      `json:"number"`
 	Title        string   `json:"title"`
 	State        string   `json:"state"`
@@ -89,26 +90,30 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 		Counts: map[string]int{},
 	}
 	report.HandoffReceiptPresent = goalFinishGoalReceiptPresent(input.Repo, goal.Number, runner)
-	childNumbers, err := discoverGoalChildNumbers(input.Repo, goal, runner)
+	childRefs, err := discoverGoalChildRefs(input.Repo, goal, runner)
 	if err != nil {
 		return report, err
 	}
-	for _, childNumber := range childNumbers {
-		childStatus, err := GetWorkStatus(input.Repo, childNumber, runner)
+	for _, childRef := range childRefs {
+		childStatus, err := GetWorkStatus(childRef.Repo, childRef.Number, runner)
+		childBlockerKey := goalStatusChildBlockerKey(input.Repo, childRef.Repo, childRef.Number)
 		if err != nil {
-			report.Blockers = appendUniqueStrings(report.Blockers, fmt.Sprintf("child_%d_status_unavailable", childNumber))
+			report.Blockers = appendUniqueStrings(report.Blockers, childBlockerKey+"_status_unavailable")
 			continue
 		}
-		child := goalStatusChildFromWorkStatus(input.Repo, childStatus)
+		child := goalStatusChildFromWorkStatus(childRef.Repo, childStatus)
 		report.Children = append(report.Children, child)
 		report.Counts[child.Category]++
 		if child.Category == "blocked" && len(child.Blockers) == 0 {
-			report.Blockers = appendUniqueStrings(report.Blockers, fmt.Sprintf("child_%d:blocked", child.Number))
+			report.Blockers = appendUniqueStrings(report.Blockers, childBlockerKey+":blocked")
 		} else if len(child.Blockers) > 0 && child.Category != "done" && child.Category != "closed_other" {
-			report.Blockers = appendUniqueStrings(report.Blockers, fmt.Sprintf("child_%d:%s", child.Number, strings.Join(child.Blockers, ",")))
+			report.Blockers = appendUniqueStrings(report.Blockers, fmt.Sprintf("%s:%s", childBlockerKey, strings.Join(child.Blockers, ",")))
 		}
 	}
 	sort.Slice(report.Children, func(i, j int) bool {
+		if report.Children[i].Repo != report.Children[j].Repo {
+			return report.Children[i].Repo < report.Children[j].Repo
+		}
 		return report.Children[i].Number < report.Children[j].Number
 	})
 	report.Counts["total"] = len(report.Children)
@@ -117,8 +122,13 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 	return report, nil
 }
 
-func discoverGoalChildNumbers(repo RepoRef, goal devStartIssue, runner CommandRunner) ([]int, error) {
-	numbers := map[int]struct{}{}
+type goalChildRef struct {
+	Repo   RepoRef
+	Number int
+}
+
+func discoverGoalChildRefs(repo RepoRef, goal devStartIssue, runner CommandRunner) ([]goalChildRef, error) {
+	refs := map[string]goalChildRef{}
 	search := fmt.Sprintf("repo:%s is:issue \"Parent: #%d\"", repo.FullName(), goal.Number)
 	out, err := runner.Run("gh", "issue", "list", "--repo", repo.FullName(), "--state", "all", "--search", search, "--json", "number,title,state,url", "--limit", "100")
 	if err != nil {
@@ -132,28 +142,62 @@ func discoverGoalChildNumbers(repo RepoRef, goal devStartIssue, runner CommandRu
 	}
 	for _, row := range rows {
 		if row.Number > 0 && row.Number != goal.Number {
-			numbers[row.Number] = struct{}{}
+			ref := goalChildRef{Repo: repo, Number: row.Number}
+			refs[goalChildRefKey(ref)] = ref
 		}
 	}
-	for _, number := range goalChildRefsFromGoalText(goal.Body) {
-		if number > 0 && number != goal.Number {
-			numbers[number] = struct{}{}
+	for _, ref := range goalChildRefsFromGoalText(repo, goal.Body) {
+		if ref.Number > 0 && !(ref.Repo.FullName() == repo.FullName() && ref.Number == goal.Number) {
+			refs[goalChildRefKey(ref)] = ref
 		}
 	}
-	for _, number := range goalChildRefsFromComments(repo, goal.Number, runner) {
-		if number > 0 && number != goal.Number {
-			numbers[number] = struct{}{}
+	for _, ref := range goalChildRefsFromComments(repo, goal.Number, runner) {
+		if ref.Number > 0 && !(ref.Repo.FullName() == repo.FullName() && ref.Number == goal.Number) {
+			refs[goalChildRefKey(ref)] = ref
 		}
 	}
-	outNumbers := make([]int, 0, len(numbers))
-	for number := range numbers {
-		outNumbers = append(outNumbers, number)
+	outRefs := make([]goalChildRef, 0, len(refs))
+	for _, ref := range refs {
+		outRefs = append(outRefs, ref)
 	}
-	sort.Ints(outNumbers)
-	return outNumbers, nil
+	sort.Slice(outRefs, func(i, j int) bool {
+		if outRefs[i].Repo.FullName() != outRefs[j].Repo.FullName() {
+			return outRefs[i].Repo.FullName() < outRefs[j].Repo.FullName()
+		}
+		return outRefs[i].Number < outRefs[j].Number
+	})
+	return outRefs, nil
 }
 
-func goalChildRefsFromComments(repo RepoRef, goal int, runner CommandRunner) []int {
+func goalChildRefKey(ref goalChildRef) string {
+	return ref.Repo.FullName() + "#" + strconv.Itoa(ref.Number)
+}
+
+func goalStatusChildBlockerKey(parentRepo RepoRef, childRepo RepoRef, number int) string {
+	if childRepo.FullName() == parentRepo.FullName() {
+		return fmt.Sprintf("child_%d", number)
+	}
+	return fmt.Sprintf("child_%s_%d", goalChildRefSlug(childRepo.FullName()), number)
+}
+
+func goalChildRefSlug(value string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(value)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash && b.Len() > 0 {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func goalChildRefsFromComments(repo RepoRef, goal int, runner CommandRunner) []goalChildRef {
 	out, err := runner.Run("gh", "issue", "view", strconv.Itoa(goal), "--repo", repo.FullName(), "--json", "comments")
 	if err != nil {
 		return nil
@@ -166,17 +210,18 @@ func goalChildRefsFromComments(repo RepoRef, goal int, runner CommandRunner) []i
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return nil
 	}
-	numbers := []int{}
+	refs := []goalChildRef{}
 	for _, comment := range raw.Comments {
-		numbers = append(numbers, goalChildRefsFromGoalText(comment.Body)...)
+		refs = append(refs, goalChildRefsFromGoalText(repo, comment.Body)...)
 	}
-	return numbers
+	return refs
 }
 
 var goalIssueRefPattern = regexp.MustCompile(`#([0-9]+)`)
+var goalQualifiedIssueRefPattern = regexp.MustCompile(`([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)`)
 
-func goalChildRefsFromGoalText(value string) []int {
-	numbers := []int{}
+func goalChildRefsFromGoalText(defaultRepo RepoRef, value string) []goalChildRef {
+	refs := []goalChildRef{}
 	inChildSection := false
 	for _, line := range strings.Split(value, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -184,12 +229,18 @@ func goalChildRefsFromGoalText(value string) []int {
 			inChildSection = goalChildHeading(trimmed)
 			continue
 		}
+		if goalChildListIntro(trimmed) {
+			inChildSection = true
+		}
 		if !inChildSection && !goalChildReferenceLine(trimmed) {
 			continue
 		}
-		numbers = append(numbers, issueRefsFromText(trimmed)...)
+		refs = append(refs, qualifiedIssueRefsFromText(trimmed)...)
+		for _, number := range issueRefsFromText(trimmed) {
+			refs = append(refs, goalChildRef{Repo: defaultRepo, Number: number})
+		}
 	}
-	return numbers
+	return refs
 }
 
 func goalChildHeading(line string) bool {
@@ -208,6 +259,11 @@ func goalChildReferenceLine(line string) bool {
 	return strings.Contains(lower, "child") && (strings.Contains(lower, "ticket") || strings.Contains(lower, "issue"))
 }
 
+func goalChildListIntro(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	return strings.HasSuffix(lower, ":") && strings.Contains(lower, "child") && (strings.Contains(lower, "ticket") || strings.Contains(lower, "issue"))
+}
+
 func issueRefsFromText(value string) []int {
 	matches := goalIssueRefPattern.FindAllStringSubmatchIndex(value, -1)
 	out := []int{}
@@ -215,7 +271,7 @@ func issueRefsFromText(value string) []int {
 		if len(match) < 4 {
 			continue
 		}
-		if goalIssueRefHasPRPrefix(value, match[0]) {
+		if goalIssueRefHasPRPrefix(value, match[0]) || goalIssueRefHasQualifiedPrefix(value, match[0]) {
 			continue
 		}
 		number, err := strconv.Atoi(value[match[2]:match[3]])
@@ -224,6 +280,44 @@ func issueRefsFromText(value string) []int {
 		}
 	}
 	return out
+}
+
+func qualifiedIssueRefsFromText(value string) []goalChildRef {
+	matches := goalQualifiedIssueRefPattern.FindAllStringSubmatchIndex(value, -1)
+	out := []goalChildRef{}
+	for _, match := range matches {
+		if len(match) < 6 {
+			continue
+		}
+		if goalIssueRefHasPRPrefix(value, match[0]) {
+			continue
+		}
+		repo, err := ParseRepoRef(value[match[2]:match[3]])
+		if err != nil {
+			continue
+		}
+		number, err := strconv.Atoi(value[match[4]:match[5]])
+		if err == nil && number > 0 {
+			out = append(out, goalChildRef{Repo: repo, Number: number})
+		}
+	}
+	return out
+}
+
+func goalIssueRefHasQualifiedPrefix(value string, hashStart int) bool {
+	start := hashStart - 80
+	if start < 0 {
+		start = 0
+	}
+	prefix := strings.TrimSpace(value[start:hashStart])
+	if prefix == "" {
+		return false
+	}
+	fields := strings.Fields(prefix)
+	if len(fields) == 0 {
+		return false
+	}
+	return strings.Contains(fields[len(fields)-1], "/")
 }
 
 func goalIssueRefHasPRPrefix(value string, hashStart int) bool {
@@ -244,6 +338,7 @@ func goalStatusChildFromWorkStatus(repo RepoRef, status WorkStatusResult) GoalSt
 	category := goalChildCategory(status)
 	blockers := goalRelevantChildBlockers(category, status)
 	return GoalStatusChild{
+		Repo:         repo.FullName(),
 		Number:       status.Issue,
 		Title:        status.Title,
 		State:        status.State,

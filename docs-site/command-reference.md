@@ -182,7 +182,7 @@ Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
 
 ## `goal plan`
 
-Propose or create linked child ticket packets from a goal issue.
+Propose or create same-repo or target-repo child ticket packets from a goal issue.
 
 Usage:
 
@@ -196,8 +196,8 @@ Flags:
 
 - `--repo`: Target GitHub repo in OWNER/REPO format.
 - `--goal`: Goal issue number. Can also be numeric positional.
-- `--dry-run`: Preview proposed child tickets without mutation.
-- `--apply`: Create reviewed child tickets from the proposed plan.
+- `--dry-run`: Preview proposed child tickets, including target_repo, without mutation.
+- `--apply`: Create reviewed child tickets in their target repos from the proposed plan.
 - `--json`: Emit stable goal-plan/v1 JSON.
 
 Examples:

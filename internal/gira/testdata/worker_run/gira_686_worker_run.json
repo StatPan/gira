@@ -1,0 +1,222 @@
+{
+  "schema_version": "worker-run/v1",
+  "run_id": "gira-686-worker",
+  "attempt": 1,
+  "session": {
+    "worker_id": "codex",
+    "thread_id": "019e93a2-6ed5-73d0-84b1-69df542477b5",
+    "session_id": "gira-686-worker",
+    "host": "statpan-local",
+    "pid": null,
+    "started_at": "2026-06-05T02:15:00+09:00",
+    "completed_at": null
+  },
+  "model": {
+    "provider": "openai",
+    "name": "gpt-5-codex",
+    "mode": "implementation_worker"
+  },
+  "scope": {
+    "repo": "StatPan/gira",
+    "issue": {
+      "number": 686,
+      "url": "https://github.com/StatPan/gira/issues/686"
+    },
+    "branch": "issue-686-worker-run-v1-manifest",
+    "pull_request": null,
+    "goal": null,
+    "source_refs": [
+      "issue:StatPan/gira#686",
+      "branch:issue-686-worker-run-v1-manifest",
+      "worker-run:gira-686-worker"
+    ]
+  },
+  "status": "review_needed",
+  "status_transitions": [
+    {
+      "status": "running",
+      "observed_at": "2026-06-05T02:15:00+09:00",
+      "source": "worker_event_log",
+      "reason": "thread_started",
+      "message": "Worker thread and first command events were recorded."
+    },
+    {
+      "status": "review_needed",
+      "observed_at": "2026-06-05T02:21:48+09:00",
+      "source": "github_pr",
+      "reason": "pull_request_opened",
+      "message": "PR #687 was opened with worker-run contract evidence."
+    }
+  ],
+  "artifacts": [
+    {
+      "kind": "prompt",
+      "visibility": "local_runtime",
+      "path": "/tmp/statpan-orchestration/gira-686-worker.prompt",
+      "content_type": "text/plain",
+      "redaction": "path_only",
+      "description": "Worker assignment prompt."
+    },
+    {
+      "kind": "event_log",
+      "visibility": "local_runtime",
+      "path": "/tmp/statpan-orchestration/gira-686-worker-events.jsonl",
+      "content_type": "application/jsonl",
+      "redaction": "path_only",
+      "description": "Codex runtime events for the worker attempt."
+    },
+    {
+      "kind": "stderr",
+      "visibility": "local_runtime",
+      "path": "/tmp/statpan-orchestration/gira-686-worker-stderr.log",
+      "content_type": "text/plain",
+      "redaction": "path_only",
+      "description": "Worker stderr stream."
+    },
+    {
+      "kind": "github_comment",
+      "visibility": "github_visible",
+      "url": "https://github.com/StatPan/gira/issues/686",
+      "content_type": "text/markdown",
+      "redaction": "none",
+      "description": "Issue body defines the requested worker-run/v1 contract."
+    }
+  ],
+  "safety_boundary": {
+    "delegation_lane": "unknown",
+    "approval_policy": "docs_and_fixture_only_no_runtime_supervision",
+    "allowed_operations": [
+      "read repo docs and GitHub issue state",
+      "edit documentation and sample fixture files",
+      "run local verification commands",
+      "commit and open a linked PR"
+    ],
+    "prohibited_operations": [
+      "implement hosted dashboard",
+      "implement long-running worker runtime",
+      "write external service state or credentials",
+      "make Gira a live process supervisor"
+    ],
+    "credential_boundary": "no provider credentials or external service writes",
+    "mutation_boundary": "repo_files_and_github_pr_only",
+    "requires_human_approval": true,
+    "stop_conditions": [
+      "scope expands beyond contract artifact",
+      "external service write is required",
+      "merge or release approval is needed"
+    ]
+  },
+  "verification": {
+    "commands": []
+  },
+  "outputs": {
+    "commits": [
+      {
+        "sha": "58e0cea026f7b7c5105cc68cd461e8e4c37fe42c",
+        "repo": "StatPan/gira",
+        "branch": "issue-686-worker-run-v1-manifest",
+        "subject": "Define worker-run v1 manifest",
+        "author": {
+          "type": "github_user",
+          "login": "StatPan",
+          "display_name": "StatPan",
+          "id": "U_kgDOCXvv_Q"
+        },
+        "authored_at": "2026-06-04T17:21:19Z",
+        "committer": {
+          "type": "github_user",
+          "login": "StatPan",
+          "display_name": "StatPan",
+          "id": "U_kgDOCXvv_Q"
+        },
+        "committed_at": "2026-06-04T17:21:19Z",
+        "url": "https://github.com/StatPan/gira/commit/58e0cea026f7b7c5105cc68cd461e8e4c37fe42c",
+        "source": "git_local"
+      }
+    ],
+    "pull_requests": [
+      {
+        "repo": "StatPan/gira",
+        "number": 687,
+        "url": "https://github.com/StatPan/gira/pull/687",
+        "state": "open",
+        "draft": false,
+        "title": "feat: Define worker-run/v1 runtime evidence manifest",
+        "author": {
+          "type": "github_user",
+          "login": "StatPan",
+          "display_name": "StatPan",
+          "id": "U_kgDOCXvv_Q"
+        },
+        "created_at": "2026-06-04T17:21:48Z",
+        "updated_at": "2026-06-04T17:39:54Z",
+        "merged_at": null,
+        "closed_at": null,
+        "head_branch": "issue-686-worker-run-v1-manifest",
+        "base_branch": "main",
+        "closing_refs": [
+          {
+            "repo": "StatPan/gira",
+            "number": 686,
+            "url": "https://github.com/StatPan/gira/issues/686",
+            "keyword": "Closes"
+          }
+        ],
+        "source": "gira_ticket_pr"
+      }
+    ],
+    "comments": [
+      {
+        "kind": "pr_comment",
+        "repo": "StatPan/gira",
+        "target_type": "pull_request",
+        "target_number": 687,
+        "url": "https://github.com/StatPan/gira/pull/687#issuecomment-4624683190",
+        "author": {
+          "type": "github_user",
+          "login": "StatPan",
+          "display_name": "StatPan",
+          "id": "U_kgDOCXvv_Q"
+        },
+        "source": "reviewer",
+        "created_at": "2026-06-04T17:39:54Z",
+        "updated_at": "2026-06-04T17:39:54Z",
+        "purpose": "review_findings",
+        "comment_id": "IC_kwDOSMv06M8AAAABE6cQtg"
+      }
+    ],
+    "labels": [],
+    "checks": [
+      {
+        "repo": "StatPan/gira",
+        "name": "build",
+        "workflow": "Docs site",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/StatPan/gira/actions/runs/26967957837/job/79575486976",
+        "source": "github_actions",
+        "started_at": "2026-06-04T17:21:55Z",
+        "completed_at": "2026-06-04T17:22:40Z"
+      }
+    ],
+    "reports": []
+  },
+  "human_decision_gates": [
+    {
+      "gate_id": "pr-review",
+      "kind": "review",
+      "status": "open",
+      "required_by": "normal_pr_review",
+      "question": "Should the worker-run/v1 contract be accepted?",
+      "evidence_ref": "issue:StatPan/gira#686"
+    }
+  ],
+  "summary": "Runtime evidence manifest definition worker for StatPan/gira#686.",
+  "warnings": [
+    {
+      "code": "representative_github_evidence",
+      "severity": "info",
+      "message": "This example includes GitHub-visible evidence from PR #687 to document outputs item shapes."
+    }
+  ]
+}

@@ -38,6 +38,13 @@ readiness, evidence expectations, required checks, review expectations,
 prohibited actions, telemetry/provenance expectations, and next safe command.
 Gira does not launch the worker.
 
+`worker-run/v1` is the optional runtime evidence manifest for worker attempts.
+It links run/session/model metadata, local prompt/event/stderr/result files,
+GitHub-visible evidence, verification commands, commits, comments, status
+transitions, and human decision gates back to the GitHub issue or PR. Gira can
+export that manifest for dashboards, but it still does not start, stop, retry,
+or supervise the worker process.
+
 ## Ownership
 
 Gira owns:

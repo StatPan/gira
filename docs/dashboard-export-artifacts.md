@@ -147,9 +147,9 @@ Suggested shape:
     }
   },
   "artifacts": [
-    {"path": "raw/github.json", "kind": "raw_json"},
-    {"path": "derived/execution_board.json", "kind": "derived_json"},
-    {"path": "csv/execution_items.csv", "kind": "csv"}
+    {"path": "raw/github.json", "kind": "raw_json", "will_write": true},
+    {"path": "derived/execution_board.json", "kind": "derived_json", "will_write": true},
+    {"path": "csv/execution_items.csv", "kind": "csv", "will_write": true}
   ],
   "generator": {
     "name": "gira",
@@ -157,6 +157,15 @@ Suggested shape:
   }
 }
 ```
+
+Each `artifacts[]` row uses the same manifest shape in dry-run plans and
+written bundles:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `path` | Yes | Relative path inside the export root. |
+| `kind` | Yes | Artifact kind such as `manifest_json`, `raw_json`, `derived_json`, `csv`, `html`, or a documented extension kind. |
+| `will_write` | Yes | Whether an apply run is expected to write the artifact. |
 
 `snapshot_at` should represent the canonical source snapshot time that the export bundle is derived from. Implementations may log a separate wall-clock run time elsewhere, but canonical JSON artifacts should not require volatile per-run timestamps when the source snapshot is unchanged.
 

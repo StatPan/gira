@@ -708,6 +708,8 @@ The Gira 2.0 release-readiness boundary is documented in [docs/v2-release-readin
 
 The first Gira 3.0 UX decision is documented in [docs/gira-3-local-report-bundle-ux.md](docs/gira-3-local-report-bundle-ux.md): start with a local report bundle over existing state contracts before adding hosted or TUI surfaces. The workspace dashboard contract gaps for that bundle are documented in [docs/workspace-dashboard-contract-gaps.md](docs/workspace-dashboard-contract-gaps.md).
 
+The dashboard signal projection strategy is documented in [docs/dashboard-signal-projection.md](docs/dashboard-signal-projection.md): add `pulse` and `storage` to the local export bundle before GitHub Projects view expansion or any SQLite/local index.
+
 The first local workspace report bundle can be generated with `gira export dashboard --config .gira/config.yaml --output out/dashboard --dry-run`, then applied by dropping `--dry-run`.
 
 This repository dogfoods Gira for its own work. The active operating loop, sprint commands, and maintainer handoff are documented in [docs/dogfood.md](docs/dogfood.md).

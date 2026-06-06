@@ -59,7 +59,8 @@ export default defineConfig({
           { text: 'Goal Mode', link: '/goal-mode' },
           { text: 'Sprint And Release', link: '/sprint-release' },
           { text: 'Readiness And Audit', link: '/readiness-audit' },
-          { text: 'Closure Funnel Stats', link: '/closure-funnel-stats' }
+          { text: 'Closure Funnel Stats', link: '/closure-funnel-stats' },
+          { text: 'Task Momentum Loop', link: '/task-momentum-loop' }
         ]
       },
       {

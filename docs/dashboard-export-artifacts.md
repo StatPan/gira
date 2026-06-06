@@ -85,6 +85,11 @@ out/dashboard/
     OWNER-REPO-pr-N.html
 ```
 
+The next dashboard signal projection step is documented in
+[dashboard-signal-projection.md](dashboard-signal-projection.md). It adds
+`pulse` and `storage` as local export signals before introducing GitHub
+Projects view expansion or SQLite.
+
 Workspace-mode HTML deep links are generated from `workspace-queues/v1`.
 Ticket pages are static `ticket-status/v1` views synthesized from queue item
 state. Review pages are static reviewer packet views for queue items with a

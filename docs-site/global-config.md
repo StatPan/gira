@@ -10,8 +10,11 @@ Default locations:
 ```text
 ~/.config/gira        durable config and registry
 ~/.cache/gira         disposable cache
-~/.local/state/gira   runtime state and logs
+~/.config/gira/state  private runtime state unless paths.state_root is set
 ```
+
+Set `paths.state_root` in global config when runtime evidence should live in a
+separate state directory such as `~/.local/state/gira`.
 
 The durable registry separates personal operator state from shared repository
 contracts:
@@ -100,7 +103,13 @@ Inspect what Gira sees:
 gira config global
 gira config repo --repo OWNER/app
 gira config doctor --repo OWNER/app
+gira config storage --repo OWNER/app
 ```
+
+`config storage` is read-only. It lists local config, state, cache, export,
+audit, and run-evidence surfaces with durability, privacy, rebuild, and
+source-of-truth boundaries. It exists to keep local files explicit without
+turning them into a hidden task database.
 
 Global repo or workspace registry entries can carry `branch_policy` when branch
 strategy is personal or workspace-scoped rather than committed as repo-local

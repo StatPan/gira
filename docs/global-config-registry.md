@@ -12,20 +12,21 @@ organization-wide, or machine-wide for every OS account. It means the current
 operating-system user's Gira config area.
 
 Gira should keep the product concept of a "Gira home" or "global registry",
-but default physical storage should follow OS-standard config, cache, and state
-locations instead of putting every file under one `~/.gira` directory.
+but physical storage must stay separated by ownership: durable config,
+disposable cache, private runtime state, and regenerable exports are not the
+same thing.
 
-On Linux/XDG-style systems, the default roots are:
+On Linux/XDG-style systems, current default roots are:
 
 ```text
 ~/.config/gira        durable config and registry
 ~/.cache/gira         disposable cache
-~/.local/state/gira   runtime state, logs, locks, and recent-run state
+~/.config/gira/state  private runtime state unless paths.state_root is set
 ```
 
 Future implementations may allow an explicit `GIRA_HOME` override for operators
-who want a single root, but the default should keep config, cache, and state
-separate.
+who want a single root. Operators who want strict XDG-style state separation
+can set `paths.state_root`, for example to `~/.local/state/gira`.
 
 Repo-local `.gira/config.yaml` remains supported as an optional shared repo
 contract. Global registry support should be additive first. A later default
@@ -67,8 +68,27 @@ Disposable cache:
 Runtime state:
 
 ```text
-~/.local/state/gira/
+~/.config/gira/state/
 ```
+
+Or an explicit override:
+
+```yaml
+paths:
+  state_root: ~/.local/state/gira
+```
+
+Inspect the resolved storage map with:
+
+```bash
+gira config storage --repo OWNER/REPO
+gira config storage --repo OWNER/REPO --json
+```
+
+`config storage` is read-only. It reports config files, repo-local contracts,
+private runtime state, workspace status cache, dashboard export bundles, audit
+ledgers, and wrapper binary cache with their durability, privacy, rebuild, and
+source-of-truth boundaries.
 
 The global repo registry entry may reference a repo-local contract instead of
 copying every shared policy field:

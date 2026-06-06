@@ -515,11 +515,13 @@ Usage:
   gira config global [--config-root PATH] [--json]
   gira config repo [--repo OWNER/REPO] [--config-root PATH] [--json]
   gira config doctor [--repo OWNER/REPO] [--config-root PATH] [--json]
+  gira config storage [--repo OWNER/REPO] [--config-root PATH] [--json]
 
 Commands:
   global  Show the resolved global config root and registry paths
   repo    Show repo-specific global registry and repo-local contract paths
   doctor  Explain which config source is selected and why
+  storage Show local storage roots, durability, privacy, and rebuild boundaries
 
 Flags:
   --repo string         Target GitHub repo in OWNER/REPO format
@@ -1606,6 +1608,10 @@ var newConfigDoctorReport = func(repoValue string, configRoot string) (gira.Conf
 	return gira.BuildConfigDoctorReport(repoValue, configRoot, repoContextRunner)
 }
 
+var newConfigStorageReport = func(repoValue string, configRoot string) (gira.ConfigStorageReport, error) {
+	return gira.BuildConfigStorageReport(repoValue, configRoot, repoContextRunner)
+}
+
 var newSetupGlobalReport = func(input gira.SetupGlobalInput) (gira.SetupGlobalReport, error) {
 	return gira.BuildSetupGlobalReport(input, devCommandRunner)
 }
@@ -1919,6 +1925,8 @@ func runConfig(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runConfigRepo(args[1:], stdout, stderr)
 	case "doctor":
 		return runConfigDoctor(args[1:], stdout, stderr)
+	case "storage":
+		return runConfigStorage(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown config command: %s\n\n", args[0])
 		fmt.Fprint(stderr, configHelp)
@@ -2015,6 +2023,37 @@ func runConfigDoctor(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatConfigDoctorReport(report))
+	return 0
+}
+
+func runConfigStorage(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("config storage", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	configRoot := fs.String("config-root", "", "Override global config root")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, configHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, configHelp)
+		return 0
+	}
+	report, err := newConfigStorageReport(*repoValue, *configRoot)
+	if err != nil {
+		fmt.Fprintf(stderr, "config storage failed: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatConfigStorageReport(report))
 	return 0
 }
 

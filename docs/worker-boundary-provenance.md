@@ -32,6 +32,19 @@ Gira owns the contract, not the worker process. A worker may receive
 packet from `gira ticket review`, but the worker is responsible for execution
 inside its own environment.
 
+## Queue Placement
+
+The Agent Handoff Queue sits before worker execution. `gira queue list` and
+`gira queue next` select from `workspace-queues/v1`; `gira queue handoff`
+embeds the same `worker-handoff/v1` contract as `ticket handoff`; and
+`gira queue take` delegates only to `ticket start`.
+
+This means a queue command can choose work, produce a worker packet, or start a
+trusted branch, but it does not invoke Codex, route a model, supervise retries,
+or mark work complete. If `queue take --apply` succeeds, the next owner is still
+an external worker or human operator. See [Agent Handoff Queue](agent-handoff-queue.md)
+for the command roles and stop reason contract.
+
 ## Gira Owns
 
 - Work-order shape: goal, scope, acceptance criteria, evidence expectations,

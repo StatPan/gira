@@ -19,7 +19,7 @@ Local files/cache = configuration, bindings, and acceleration
 | --- | --- | --- | --- |
 | GitHub labels | `status:ready`, `status:in-progress`, `status:in-review`, `status:blocked`, `status:done`, `type:*`, `priority:*`, `area:*`, `agent:*`, optional `lane:*` | Small public taxonomy that humans can scan in GitHub. | GitHub issue labels. |
 | GitHub issue/PR state | Open or closed issue, linked PR, draft PR, merged PR, reviews, checks, milestones, assignees, comments. | Durable execution evidence. | GitHub issue, PR, check, review, milestone, and comment APIs. |
-| Gira computed JSON | `ticket_readiness`, `pr_readiness`, `finish-readiness/v1`, `workspace-queues/v1`, `goal-next/v1`, `blockers`, `reason_codes`, `next_action`, `next_step`, `remaining_autonomous_work`. | High-cardinality operating state for agents, adapters, dashboards, and CLI decisions. | Recomputed from GitHub evidence and Gira config. |
+| Gira computed JSON | `ticket_readiness`, `pr_readiness`, `finish-readiness/v1`, `workspace-queues/v1`, `queue-list/v1`, `queue-next/v1`, `queue-handoff/v1`, `queue-take/v1`, `goal-next/v1`, `blockers`, `reason_codes`, `next_action`, `next_step`, `remaining_autonomous_work`. | High-cardinality operating state for agents, adapters, dashboards, and CLI decisions. | Recomputed from GitHub evidence and Gira config. |
 | Receipt/comment state | `finish-receipt/v1`, `goal-finish-receipt/v1`, supersede decision notes, worker handoff notes, progress notes. | Durable audit trail that explains why a transition or handoff happened. | GitHub issue or PR comments. |
 | Local or global config | `.gira/config.yaml`, global repo registry, workspace registry, branch policy defaults, provider config pointers. | Operator configuration and repo/workspace selection. | Local files unless explicitly committed as repo-local contract. |
 | Local cache/state | Workspace status cache, API budget-friendly snapshots, recent command state, checkout path metadata. | Speed and ergonomics only. | Disposable local cache; never the authoritative workflow state. |
@@ -62,6 +62,7 @@ Computed state is where Gira can be expressive without polluting GitHub labels.
 | `pr-readiness/v1` | Linked PR, draft state, checks, reviews, closing reference, branch binding. | `ticket review`, `ticket finish`, review queues. |
 | `finish-readiness/v1` | Ticket status, linked PR, checks, review, labels, branch trust, telemetry. | `ticket finish --dry-run`. |
 | `workspace-queues/v1` | Workspace issue summaries plus targeted ticket status details. | Multi-repo operator queues and future UI dashboards. |
+| `queue-list/v1`, `queue-next/v1`, `queue-handoff/v1`, `queue-take/v1` | `workspace-queues/v1`, worker handoff readiness, and delegated ticket-start dry-runs. | CLI task selection, adapter handoff, and safe work start. |
 | `goal-status/v1` and `goal-next/v1` | Goal issue, child issue links, child ticket state, PR evidence, receipts. | Long-running agent delegation and stop decisions. |
 | Adapter capability and approval reports | Command registry, dry-run result, planned actions. | Durable agent runtimes and approval gates. |
 
@@ -120,6 +121,7 @@ ergonomic command resolution.
 | Epic | A large GitHub issue that groups related work. It can remain human-managed. | Automatically an autonomous goal. |
 | Goal | A large objective that Gira treats as an autonomy envelope over child tickets, stop conditions, and finish receipts. | A GitHub-native object or milestone. |
 | Workspace queue | A computed operating view over many tickets and PRs. | A label taxonomy or hidden backlog database. |
+| Agent handoff queue | The CLI selection and handoff layer over `workspace-queues/v1`. | A worker runtime, model router, or execution database. |
 | Receipt | A durable comment explaining a transition, completion, supersede, or handoff decision. | A status label. |
 
 The shortest explanation for goal mode is:
@@ -137,6 +139,7 @@ Good UI candidates:
 
 - Goal graph summary and why `goal next` stopped.
 - Workspace queues with blockers and next safe commands.
+- Agent handoff queue lanes using `workspace-queues/v1` and `queue-*` contracts.
 - Ticket detail evidence cards.
 - Finish readiness and receipt review.
 - Drift and missing evidence dashboards.

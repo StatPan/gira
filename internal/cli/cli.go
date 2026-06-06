@@ -1204,7 +1204,16 @@ var newWorkspaceDashboardExportBundle = func(configPath string, outputRoot strin
 	if err != nil {
 		return gira.DashboardExportPlan{}, gira.DashboardExportBundle{}, err
 	}
-	return gira.BuildWorkspaceDashboardExportPlan(resolved, outputRoot, snapshotAt, dryRun, gira.NewGHWorkspaceClient(gira.ExecCommandRunner{}), 14, options)
+	return gira.BuildWorkspaceDashboardExportPlanWithSignals(
+		resolved,
+		outputRoot,
+		snapshotAt,
+		dryRun,
+		gira.NewGHWorkspaceClient(gira.ExecCommandRunner{}),
+		14,
+		options,
+		gira.GHDashboardSignalBuilder{Runner: gira.ExecCommandRunner{}, PulseSince: "7d", PulseLimit: 100},
+	)
 }
 
 var newPortfolioReport = func(command string, configPath string, dryRun bool) (gira.PortfolioReport, error) {

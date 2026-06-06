@@ -152,18 +152,21 @@ func TestBuildWorkspaceDashboardExportPlanUsesWorkspaceQueues(t *testing.T) {
 		},
 	}
 
-	plan, bundle, err := BuildWorkspaceDashboardExportPlan(config, "./out/dashboard", time.Date(2026, 5, 31, 9, 0, 0, 0, time.UTC), true, client, 14, WorkspaceStatusOptions{})
+	plan, bundle, err := BuildWorkspaceDashboardExportPlanWithSignals(config, "./out/dashboard", time.Date(2026, 5, 31, 9, 0, 0, 0, time.UTC), true, client, 14, WorkspaceStatusOptions{}, fakeDashboardSignalBuilder{signals: dashboardTestSignals()})
 	if err != nil {
 		t.Fatalf("BuildWorkspaceDashboardExportPlan returned error: %v", err)
 	}
 	if plan.Workspace == nil || plan.Workspace.Name != "personal" || plan.Repo != "" {
 		t.Fatalf("plan workspace/repo mismatch: %+v", plan)
 	}
-	if plan.Counts.WorkspaceRepos != 1 || plan.Counts.WorkspaceQueueItems != 2 {
+	if plan.Counts.WorkspaceRepos != 1 || plan.Counts.WorkspaceQueueItems != 2 || plan.Counts.PulseItems != 1 || plan.Counts.StorageSurfaces != 2 {
 		t.Fatalf("plan counts = %+v", plan.Counts)
 	}
 	if bundle.WorkspaceStatus == nil || bundle.WorkspaceQueues == nil || bundle.WorkspaceDashboard == nil {
 		t.Fatalf("workspace bundle artifacts missing: %+v", bundle)
+	}
+	if bundle.WorkspacePulse == nil || bundle.StorageDiagnostics == nil {
+		t.Fatalf("workspace signal artifacts missing: %+v", bundle)
 	}
 	if bundle.WorkspaceDashboard.SchemaVersion != WorkspaceDashboardSchemaVersion {
 		t.Fatalf("workspace dashboard schema = %s", bundle.WorkspaceDashboard.SchemaVersion)
@@ -176,6 +179,9 @@ func TestBuildWorkspaceDashboardExportPlanUsesWorkspaceQueues(t *testing.T) {
 		artifacts.WorkspaceQueues != "derived/workspace_queues.json" ||
 		artifacts.WorkspaceDashboard != "derived/workspace_dashboard.json" ||
 		artifacts.QueueItemsCSV != "csv/workspace_queue_items.csv" ||
+		artifacts.WorkspacePulse != "derived/workspace_pulse.json" ||
+		artifacts.PulseItemsCSV != "csv/workspace_pulse_items.csv" ||
+		artifacts.StorageDiagnostics != "derived/storage_diagnostics.json" ||
 		artifacts.IndexHTML != "index.html" {
 		t.Fatalf("workspace dashboard artifact index = %+v", artifacts)
 	}
@@ -192,13 +198,22 @@ func TestBuildWorkspaceDashboardExportPlanUsesWorkspaceQueues(t *testing.T) {
 		{Path: "tickets/statpan-gira-ticket-10.html", Kind: "html", WillWrite: true},
 		{Path: "tickets/statpan-gira-ticket-11.html", Kind: "html", WillWrite: true},
 		{Path: "reviews/statpan-gira-pr-101.html", Kind: "html", WillWrite: true},
+		{Path: "derived/workspace_pulse.json", Kind: "derived_json", WillWrite: true},
+		{Path: "csv/workspace_pulse_items.csv", Kind: "csv", WillWrite: true},
+		{Path: "derived/storage_diagnostics.json", Kind: "derived_json", WillWrite: true},
 	} {
 		if !containsDashboardArtifact(plan.Artifacts, want) || !containsDashboardArtifact(bundle.Manifest.Artifacts, want) {
 			t.Fatalf("missing deep-link artifact %+v\nplan=%+v\nmanifest=%+v", want, plan.Artifacts, bundle.Manifest.Artifacts)
 		}
 	}
+	if bundle.WorkspaceDashboard.Pulse == nil || bundle.WorkspaceDashboard.Pulse.Summary.Finished != 1 || bundle.WorkspaceDashboard.Pulse.Items != 1 {
+		t.Fatalf("pulse summary missing: %+v", bundle.WorkspaceDashboard.Pulse)
+	}
+	if bundle.WorkspaceDashboard.Storage == nil || bundle.WorkspaceDashboard.Storage.Surfaces != 2 || bundle.WorkspaceDashboard.Storage.PrivateRunEvidenceIncluded {
+		t.Fatalf("storage summary missing or unsafe: %+v", bundle.WorkspaceDashboard.Storage)
+	}
 	text := FormatDashboardExportPlan(plan)
-	for _, want := range []string{"workspace: personal (StatPan)", "workspace_repos: 1", "workspace_queue_items: 2"} {
+	for _, want := range []string{"workspace: personal (StatPan)", "workspace_repos: 1", "workspace_queue_items: 2", "pulse_items: 1", "storage_surfaces: 2"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("plan text missing %q:\n%s", want, text)
 		}
@@ -298,7 +313,7 @@ func TestWriteWorkspaceDashboardExportBundleWritesArtifactsAndEscapesHTML(t *tes
 			},
 		},
 	}
-	_, bundle, err := BuildWorkspaceDashboardExportPlan(config, "./out/dashboard", time.Date(2026, 5, 31, 9, 0, 0, 0, time.UTC), false, client, 14, WorkspaceStatusOptions{})
+	_, bundle, err := BuildWorkspaceDashboardExportPlanWithSignals(config, "./out/dashboard", time.Date(2026, 5, 31, 9, 0, 0, 0, time.UTC), false, client, 14, WorkspaceStatusOptions{}, fakeDashboardSignalBuilder{signals: dashboardTestSignals()})
 	if err != nil {
 		t.Fatalf("BuildWorkspaceDashboardExportPlan returned error: %v", err)
 	}
@@ -311,7 +326,10 @@ func TestWriteWorkspaceDashboardExportBundleWritesArtifactsAndEscapesHTML(t *tes
 		"raw/workspace_status.json",
 		"derived/workspace_queues.json",
 		"derived/workspace_dashboard.json",
+		"derived/workspace_pulse.json",
+		"derived/storage_diagnostics.json",
 		"csv/workspace_queue_items.csv",
+		"csv/workspace_pulse_items.csv",
 		"index.html",
 		"tickets/statpan-gira-ticket-10.html",
 		"tickets/statpan-gira-ticket-11.html",
@@ -341,6 +359,9 @@ func TestWriteWorkspaceDashboardExportBundleWritesArtifactsAndEscapesHTML(t *tes
 		{Path: "raw/workspace_status.json", Kind: "raw_json", WillWrite: true},
 		{Path: "derived/workspace_queues.json", Kind: "derived_json", WillWrite: true},
 		{Path: "derived/workspace_dashboard.json", Kind: "derived_json", WillWrite: true},
+		{Path: "derived/workspace_pulse.json", Kind: "derived_json", WillWrite: true},
+		{Path: "csv/workspace_pulse_items.csv", Kind: "csv", WillWrite: true},
+		{Path: "derived/storage_diagnostics.json", Kind: "derived_json", WillWrite: true},
 		{Path: "csv/workspace_queue_items.csv", Kind: "csv", WillWrite: true},
 		{Path: "index.html", Kind: "html", WillWrite: true},
 		{Path: "tickets/statpan-gira-ticket-10.html", Kind: "html", WillWrite: true},
@@ -364,8 +385,21 @@ func TestWriteWorkspaceDashboardExportBundleWritesArtifactsAndEscapesHTML(t *tes
 	if dashboard.Artifacts.WorkspaceDashboard != "derived/workspace_dashboard.json" || dashboard.Artifacts.IndexHTML != "index.html" || dashboard.Artifacts.Manifest != "manifest.json" {
 		t.Fatalf("workspace dashboard artifact index incomplete: %+v", dashboard.Artifacts)
 	}
+	if dashboard.Pulse == nil || dashboard.Pulse.Path != "derived/workspace_pulse.json" || dashboard.Pulse.Summary.Finished != 1 {
+		t.Fatalf("workspace dashboard pulse summary incomplete: %+v", dashboard.Pulse)
+	}
+	if dashboard.Storage == nil || dashboard.Storage.Path != "derived/storage_diagnostics.json" || dashboard.Storage.PrivateRunEvidenceIncluded {
+		t.Fatalf("workspace dashboard storage summary incomplete: %+v", dashboard.Storage)
+	}
 	if len(dashboard.TopActions) != 2 || dashboard.TopActions[0].LocalTicketHTML == "" || dashboard.TopActions[1].LocalReviewHTML == "" {
 		t.Fatalf("workspace dashboard top actions missing local links: %+v", dashboard.TopActions)
+	}
+	pulseCSV, err := os.ReadFile(filepath.Join(outputRoot, "csv/workspace_pulse_items.csv"))
+	if err != nil {
+		t.Fatalf("read workspace pulse csv: %v", err)
+	}
+	if !strings.HasPrefix(string(pulseCSV), "kind,repo,issue,pr,title,confidence,occurred_at,evidence,source_refs\n") {
+		t.Fatalf("unexpected workspace pulse csv:\n%s", pulseCSV)
 	}
 	htmlContent, err := os.ReadFile(filepath.Join(outputRoot, "index.html"))
 	if err != nil {
@@ -379,6 +413,12 @@ func TestWriteWorkspaceDashboardExportBundleWritesArtifactsAndEscapesHTML(t *tes
 	}
 	if !strings.Contains(string(htmlContent), `reviews/statpan-gira-pr-101.html`) {
 		t.Fatalf("HTML missing local review report link:\n%s", htmlContent)
+	}
+	if !strings.Contains(string(htmlContent), "Pulse") || !strings.Contains(string(htmlContent), "Storage") {
+		t.Fatalf("HTML missing pulse/storage summaries:\n%s", htmlContent)
+	}
+	if strings.Contains(string(htmlContent), "secret prompt text") {
+		t.Fatalf("HTML leaked private run detail:\n%s", htmlContent)
 	}
 	ticketHTML, err := os.ReadFile(filepath.Join(outputRoot, "tickets/statpan-gira-ticket-10.html"))
 	if err != nil {
@@ -435,6 +475,53 @@ func TestRenderWorkspaceDashboardHTMLShowsEmptyStateAndWarnings(t *testing.T) {
 	if strings.Contains(output, "No warnings.") {
 		t.Fatalf("workspace dashboard html showed no-warning empty state despite warning:\n%s", output)
 	}
+}
+
+type fakeDashboardSignalBuilder struct {
+	signals DashboardWorkspaceSignals
+}
+
+func (b fakeDashboardSignalBuilder) BuildWorkspaceDashboardSignals(config WorkspaceConfigResolved, report WorkspaceReport, snapshotAt time.Time) (DashboardWorkspaceSignals, error) {
+	return b.signals, nil
+}
+
+func dashboardTestSignals() DashboardWorkspaceSignals {
+	pulse := PulseReport{
+		SchemaVersion: "pulse-report/v1alpha1",
+		Command:       "workspace pulse",
+		Scope:         PulseScope{Kind: "workspace", Workspace: "StatPan/personal"},
+		Window:        PulseWindow{Since: "7d", SinceAt: "2026-05-24T09:00:00Z", Until: "2026-05-31T09:00:00Z", Label: "7d", Limit: 100},
+		Source:        StatsSource{Backend: "github", ReadOnly: true},
+		Summary:       PulseSummary{Finished: 1, Reviewed: 1},
+		Health:        PulseHealth{Ready: 1},
+		Items: []PulseItem{{
+			Kind:       "finished",
+			Repo:       "StatPan/gira",
+			Issue:      10,
+			PR:         101,
+			Title:      "Finish dashboard signal",
+			Confidence: "high",
+			OccurredAt: "2026-05-31T08:00:00Z",
+			Evidence:   []string{"merged_pr", "closing_reference"},
+			SourceRefs: []string{"issue:StatPan/gira#10", "pr:StatPan/gira#101"},
+		}},
+		PrivacyBoundary: PulsePrivacyBoundary{
+			Scope:      "work_item_state_only",
+			Prohibited: []string{"people_ranking", "private_run_artifact_contents"},
+		},
+	}
+	storage := ConfigStorageReport{
+		SchemaVersion: ConfigStorageReportSchemaVersion,
+		Command:       "config storage",
+		Repo:          "StatPan/gira",
+		Source:        "flag",
+		ConfigRoot:    "/home/test/.config/gira",
+		Surfaces: []ConfigStorageSurface{
+			{Name: "workspace_status_cache", Kind: "cache", Path: "/cache/workspace-status", Visibility: "private_local", SourceOfTruth: "github_issue_pr_milestone_state"},
+			{Name: "run_manifests", Kind: "runtime_evidence", Path: "/state/runs", Visibility: "private_local", SourceOfTruth: "optional_worker_evidence", Notes: []string{"secret prompt text should stay out of HTML"}},
+		},
+	}
+	return DashboardWorkspaceSignals{Pulse: &pulse, Storage: &storage}
 }
 
 func containsDashboardArtifact(values []DashboardExportArtifact, want DashboardExportArtifact) bool {

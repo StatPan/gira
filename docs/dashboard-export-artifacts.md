@@ -76,8 +76,11 @@ out/dashboard/
   derived/
     workspace_queues.json
     workspace_dashboard.json
+    workspace_pulse.json
+    storage_diagnostics.json
   csv/
     workspace_queue_items.csv
+    workspace_pulse_items.csv
   index.html
   tickets/
     OWNER-REPO-ticket-N.html
@@ -85,16 +88,23 @@ out/dashboard/
     OWNER-REPO-pr-N.html
 ```
 
-The next dashboard signal projection step is documented in
-[dashboard-signal-projection.md](dashboard-signal-projection.md). It adds
-`pulse` and `storage` as local export signals before introducing GitHub
-Projects view expansion or SQLite.
+The dashboard signal projection step is documented in
+[dashboard-signal-projection.md](dashboard-signal-projection.md). Workspace
+mode includes `pulse` and `storage` as local export signals before introducing
+GitHub Projects view expansion or SQLite.
 
 Workspace-mode HTML deep links are generated from `workspace-queues/v1`.
 Ticket pages are static `ticket-status/v1` views synthesized from queue item
 state. Review pages are static reviewer packet views for queue items with a
 linked PR. The top-level `index.html` links to these local pages when present
 and keeps GitHub issue/PR links available as canonical evidence.
+
+`derived/workspace_pulse.json` reuses `pulse-report/v1alpha1` as an aggregated
+workspace snapshot over the exported repos. `csv/workspace_pulse_items.csv`
+flattens that pulse item list for spreadsheet and shell inspection.
+`derived/storage_diagnostics.json` reuses `config-storage-report/v1` and should
+be rendered in HTML only as a compact boundary summary; private run artifact
+contents are not copied into the dashboard page.
 
 Workspace-mode export starts from:
 

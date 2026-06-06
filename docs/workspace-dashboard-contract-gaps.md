@@ -219,9 +219,12 @@ Suggested shape:
     }
   ],
   "artifacts": {
+    "manifest": "manifest.json",
     "workspace_status": "raw/workspace_status.json",
     "workspace_queues": "derived/workspace_queues.json",
-    "queue_items_csv": "csv/workspace_queue_items.csv"
+    "workspace_dashboard": "derived/workspace_dashboard.json",
+    "queue_items_csv": "csv/workspace_queue_items.csv",
+    "index_html": "index.html"
   }
 }
 ```

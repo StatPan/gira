@@ -171,6 +171,14 @@ func TestBuildWorkspaceDashboardExportPlanUsesWorkspaceQueues(t *testing.T) {
 	if bundle.WorkspaceDashboard.Source.Contract != WorkspaceStatusSourceContract {
 		t.Fatalf("workspace source = %+v", bundle.WorkspaceDashboard.Source)
 	}
+	if artifacts := bundle.WorkspaceDashboard.Artifacts; artifacts.Manifest != "manifest.json" ||
+		artifacts.WorkspaceStatus != "raw/workspace_status.json" ||
+		artifacts.WorkspaceQueues != "derived/workspace_queues.json" ||
+		artifacts.WorkspaceDashboard != "derived/workspace_dashboard.json" ||
+		artifacts.QueueItemsCSV != "csv/workspace_queue_items.csv" ||
+		artifacts.IndexHTML != "index.html" {
+		t.Fatalf("workspace dashboard artifact index = %+v", artifacts)
+	}
 	if len(bundle.WorkspaceDashboard.TopActions) != 2 || bundle.WorkspaceDashboard.TopActions[0].Issue != 10 {
 		t.Fatalf("top actions = %+v", bundle.WorkspaceDashboard.TopActions)
 	}
@@ -321,6 +329,44 @@ func TestWriteWorkspaceDashboardExportBundleWritesArtifactsAndEscapesHTML(t *tes
 	if !strings.HasPrefix(string(csvContent), "queue,repo,issue,title,state,status,pr_number,pr_state,reason_codes,next_safe_command,url\n") {
 		t.Fatalf("unexpected workspace queue csv:\n%s", csvContent)
 	}
+	manifestContent, err := os.ReadFile(filepath.Join(outputRoot, "manifest.json"))
+	if err != nil {
+		t.Fatalf("read manifest json: %v", err)
+	}
+	var manifest DashboardExportManifest
+	if err := json.Unmarshal(manifestContent, &manifest); err != nil {
+		t.Fatalf("parse manifest json: %v\n%s", err, manifestContent)
+	}
+	for _, want := range []DashboardExportArtifact{
+		{Path: "raw/workspace_status.json", Kind: "raw_json", WillWrite: true},
+		{Path: "derived/workspace_queues.json", Kind: "derived_json", WillWrite: true},
+		{Path: "derived/workspace_dashboard.json", Kind: "derived_json", WillWrite: true},
+		{Path: "csv/workspace_queue_items.csv", Kind: "csv", WillWrite: true},
+		{Path: "index.html", Kind: "html", WillWrite: true},
+		{Path: "tickets/statpan-gira-ticket-10.html", Kind: "html", WillWrite: true},
+		{Path: "reviews/statpan-gira-pr-101.html", Kind: "html", WillWrite: true},
+	} {
+		if !containsDashboardArtifact(manifest.Artifacts, want) {
+			t.Fatalf("manifest missing artifact %+v\nmanifest=%+v", want, manifest.Artifacts)
+		}
+	}
+	dashboardContent, err := os.ReadFile(filepath.Join(outputRoot, "derived/workspace_dashboard.json"))
+	if err != nil {
+		t.Fatalf("read workspace dashboard json: %v", err)
+	}
+	var dashboard DashboardWorkspaceDashboard
+	if err := json.Unmarshal(dashboardContent, &dashboard); err != nil {
+		t.Fatalf("parse workspace dashboard json: %v\n%s", err, dashboardContent)
+	}
+	if dashboard.SchemaVersion != WorkspaceDashboardSchemaVersion || dashboard.Source.Contract != WorkspaceStatusSourceContract || dashboard.Source.Path != "raw/workspace_status.json" {
+		t.Fatalf("workspace dashboard contract mismatch: %+v", dashboard)
+	}
+	if dashboard.Artifacts.WorkspaceDashboard != "derived/workspace_dashboard.json" || dashboard.Artifacts.IndexHTML != "index.html" || dashboard.Artifacts.Manifest != "manifest.json" {
+		t.Fatalf("workspace dashboard artifact index incomplete: %+v", dashboard.Artifacts)
+	}
+	if len(dashboard.TopActions) != 2 || dashboard.TopActions[0].LocalTicketHTML == "" || dashboard.TopActions[1].LocalReviewHTML == "" {
+		t.Fatalf("workspace dashboard top actions missing local links: %+v", dashboard.TopActions)
+	}
 	htmlContent, err := os.ReadFile(filepath.Join(outputRoot, "index.html"))
 	if err != nil {
 		t.Fatalf("read index html: %v", err)
@@ -350,6 +396,44 @@ func TestWriteWorkspaceDashboardExportBundleWritesArtifactsAndEscapesHTML(t *tes
 	}
 	if _, err := os.Stat(filepath.Join(outputRoot, "raw/github.json")); !os.IsNotExist(err) {
 		t.Fatalf("workspace-only export should not write repo raw github artifact, stat err=%v", err)
+	}
+}
+
+func TestRenderWorkspaceDashboardHTMLShowsEmptyStateAndWarnings(t *testing.T) {
+	html, err := renderWorkspaceDashboardHTML(DashboardWorkspaceDashboard{
+		SchemaVersion: WorkspaceDashboardSchemaVersion,
+		SnapshotAt:    "2026-05-31T09:00:00Z",
+		Workspace:     WorkspaceSummary{Name: "personal", Owner: "StatPan"},
+		Source:        DashboardWorkspaceSource{Contract: WorkspaceStatusSourceContract, Path: "raw/workspace_status.json"},
+		Artifacts: DashboardWorkspaceArtifacts{
+			Manifest:           "manifest.json",
+			WorkspaceStatus:    "raw/workspace_status.json",
+			WorkspaceQueues:    "derived/workspace_queues.json",
+			WorkspaceDashboard: "derived/workspace_dashboard.json",
+			QueueItemsCSV:      "csv/workspace_queue_items.csv",
+			IndexHTML:          "index.html",
+		},
+		Warnings: []DashboardWorkspaceWarning{
+			{Code: "workspace_cache_stale", Severity: "warning", Message: "1 workspace status cache entry was stale."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("renderWorkspaceDashboardHTML returned error: %v", err)
+	}
+	output := string(html)
+	for _, want := range []string{
+		"Snapshot: 2026-05-31T09:00:00Z",
+		"Source: workspace-status/v1 at raw/workspace_status.json",
+		"No queue actions in this snapshot.",
+		"workspace_cache_stale",
+		"1 workspace status cache entry was stale.",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("workspace dashboard html missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "No warnings.") {
+		t.Fatalf("workspace dashboard html showed no-warning empty state despite warning:\n%s", output)
 	}
 }
 

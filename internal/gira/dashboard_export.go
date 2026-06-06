@@ -18,6 +18,12 @@ const WorkspaceStatusSourceContract = "workspace-status/v1"
 const dashboardExportGeneratorName = "gira"
 const dashboardExportGeneratorMode = "dashboard_export"
 const workspaceDashboardTopActionLimit = 10
+const workspaceDashboardManifestPath = "manifest.json"
+const workspaceDashboardRawStatusPath = "raw/workspace_status.json"
+const workspaceDashboardQueuesPath = "derived/workspace_queues.json"
+const workspaceDashboardIndexPath = "derived/workspace_dashboard.json"
+const workspaceDashboardQueueCSVPath = "csv/workspace_queue_items.csv"
+const workspaceDashboardHTMLPath = "index.html"
 
 var dashboardExecutionCSVHeaders = []string{"id", "kind", "title", "status", "priority", "owner", "milestone", "target_date", "source_refs"}
 var dashboardRoadmapCSVHeaders = []string{"id", "title", "start_date", "target_date", "status", "phase", "source_refs"}
@@ -216,11 +222,14 @@ type DashboardWorkspaceWarning struct {
 }
 
 type DashboardWorkspaceArtifacts struct {
-	WorkspaceStatus string   `json:"workspace_status"`
-	WorkspaceQueues string   `json:"workspace_queues"`
-	QueueItemsCSV   string   `json:"queue_items_csv"`
-	TicketReports   []string `json:"ticket_reports,omitempty"`
-	ReviewReports   []string `json:"review_reports,omitempty"`
+	Manifest           string   `json:"manifest"`
+	WorkspaceStatus    string   `json:"workspace_status"`
+	WorkspaceQueues    string   `json:"workspace_queues"`
+	WorkspaceDashboard string   `json:"workspace_dashboard"`
+	QueueItemsCSV      string   `json:"queue_items_csv"`
+	IndexHTML          string   `json:"index_html"`
+	TicketReports      []string `json:"ticket_reports,omitempty"`
+	ReviewReports      []string `json:"review_reports,omitempty"`
 }
 
 type DashboardWorkspaceDashboard struct {
@@ -264,12 +273,12 @@ func DashboardExportArtifacts() []DashboardExportArtifact {
 
 func DashboardExportWorkspaceArtifacts() []DashboardExportArtifact {
 	return []DashboardExportArtifact{
-		{Path: "manifest.json", Kind: "manifest_json", WillWrite: true},
-		{Path: "raw/workspace_status.json", Kind: "raw_json", WillWrite: true},
-		{Path: "derived/workspace_queues.json", Kind: "derived_json", WillWrite: true},
-		{Path: "derived/workspace_dashboard.json", Kind: "derived_json", WillWrite: true},
-		{Path: "csv/workspace_queue_items.csv", Kind: "csv", WillWrite: true},
-		{Path: "index.html", Kind: "html", WillWrite: true},
+		{Path: workspaceDashboardManifestPath, Kind: "manifest_json", WillWrite: true},
+		{Path: workspaceDashboardRawStatusPath, Kind: "raw_json", WillWrite: true},
+		{Path: workspaceDashboardQueuesPath, Kind: "derived_json", WillWrite: true},
+		{Path: workspaceDashboardIndexPath, Kind: "derived_json", WillWrite: true},
+		{Path: workspaceDashboardQueueCSVPath, Kind: "csv", WillWrite: true},
+		{Path: workspaceDashboardHTMLPath, Kind: "html", WillWrite: true},
 	}
 }
 
@@ -608,11 +617,14 @@ func buildWorkspaceDashboard(report WorkspaceReport, snapshotAt string, deepLink
 		TopActions:  buildWorkspaceDashboardTopActions(report.Queues, deepLinks),
 		Warnings:    warnings,
 		Artifacts: DashboardWorkspaceArtifacts{
-			WorkspaceStatus: "raw/workspace_status.json",
-			WorkspaceQueues: "derived/workspace_queues.json",
-			QueueItemsCSV:   "csv/workspace_queue_items.csv",
-			TicketReports:   ticketReports,
-			ReviewReports:   reviewReports,
+			Manifest:           workspaceDashboardManifestPath,
+			WorkspaceStatus:    workspaceDashboardRawStatusPath,
+			WorkspaceQueues:    workspaceDashboardQueuesPath,
+			WorkspaceDashboard: workspaceDashboardIndexPath,
+			QueueItemsCSV:      workspaceDashboardQueueCSVPath,
+			IndexHTML:          workspaceDashboardHTMLPath,
+			TicketReports:      ticketReports,
+			ReviewReports:      reviewReports,
 		},
 	}
 }
@@ -1167,31 +1179,31 @@ func WriteDashboardExportBundle(outputRoot string, bundle DashboardExportBundle)
 		}
 	}
 	if bundle.WorkspaceStatus != nil {
-		if err := writeDashboardExportJSON(scope, "raw/workspace_status.json", bundle.WorkspaceStatus); err != nil {
+		if err := writeDashboardExportJSON(scope, workspaceDashboardRawStatusPath, bundle.WorkspaceStatus); err != nil {
 			return err
 		}
 	}
 	if bundle.WorkspaceQueues != nil {
-		if err := writeDashboardExportJSON(scope, "derived/workspace_queues.json", bundle.WorkspaceQueues); err != nil {
+		if err := writeDashboardExportJSON(scope, workspaceDashboardQueuesPath, bundle.WorkspaceQueues); err != nil {
 			return err
 		}
 		queueCSV, err := renderDashboardWorkspaceQueueCSV(*bundle.WorkspaceQueues)
 		if err != nil {
 			return err
 		}
-		if err := scope.WriteFile("csv/workspace_queue_items.csv", queueCSV, 0o644); err != nil {
+		if err := scope.WriteFile(workspaceDashboardQueueCSVPath, queueCSV, 0o644); err != nil {
 			return err
 		}
 	}
 	if bundle.WorkspaceDashboard != nil {
-		if err := writeDashboardExportJSON(scope, "derived/workspace_dashboard.json", bundle.WorkspaceDashboard); err != nil {
+		if err := writeDashboardExportJSON(scope, workspaceDashboardIndexPath, bundle.WorkspaceDashboard); err != nil {
 			return err
 		}
 		html, err := renderWorkspaceDashboardHTML(*bundle.WorkspaceDashboard)
 		if err != nil {
 			return err
 		}
-		if err := scope.WriteFile("index.html", html, 0o644); err != nil {
+		if err := scope.WriteFile(workspaceDashboardHTMLPath, html, 0o644); err != nil {
 			return err
 		}
 	}

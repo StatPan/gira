@@ -69,6 +69,9 @@ optional workspace repo filter. Repo-only export remains compatible.
 - structured warning codes
 - artifact paths
 
+The artifact path index should include the manifest, raw workspace status,
+workspace queues, workspace dashboard JSON, queue CSV, and local HTML index.
+
 The full queue items stay in `derived/workspace_queues.json`.
 
 ## Warning Codes

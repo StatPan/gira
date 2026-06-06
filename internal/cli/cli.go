@@ -340,18 +340,22 @@ const queueHelp = `Agent-ready workspace queue selection commands.
 Usage:
   gira queue list [--config .gira/config.yaml] [--repo OWNER/REPO] [--queue ready|review|finish|blocked|failed|human] [--limit N] [--compact] [--cache-ttl 5m] [--refresh] [--json]
   gira queue next [--config .gira/config.yaml] [--repo OWNER/REPO] [--role implementer] [--profile default] [--compact] [--cache-ttl 5m] [--refresh] [--json]
+  gira queue handoff [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] [--cache-ttl 5m] [--refresh] [--json]
 
 Commands:
-  list  Show queue items derived from workspace-queues/v1
-  next  Select the first agent-ready item and print handoff/run commands
+  list     Show queue items derived from workspace-queues/v1
+  next     Select the first agent-ready item and print handoff/run commands
+  handoff  Select or inspect an agent-ready item and embed worker-handoff/v1
 
 Flags:
   --config string       Explicit workspace config path; defaults to global registry, then ".gira/config.yaml"
   --repo string         Narrow queue selection to an execution repo. Repeatable or comma-separated
   --queue string        Queue filter for list: ready, review, finish, blocked, failed, or human
   --limit int           Maximum queue items to print for list. Default: all
-  --role string         Handoff role for next: planner, implementer, or reviewer. Default: implementer
-  --profile string      Handoff profile for next: default or python. Default: default
+  --ticket int          Explicit ticket number for handoff
+  --issue int           Compatibility alias for --ticket on handoff
+  --role string         Handoff role: planner, implementer, or reviewer. Default: implementer
+  --profile string      Handoff profile: default or python. Default: default
   --compact             Print compact text output
   --max-concurrency int Maximum concurrent repo status fetches (default 4)
   --cache-ttl duration  Reuse recent per-repo status cache (default 5m)
@@ -6599,6 +6603,8 @@ func runQueue(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runQueueList(args[1:], stdout, stderr)
 	case "next":
 		return runQueueNext(args[1:], stdout, stderr)
+	case "handoff":
+		return runQueueHandoff(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown queue command: %s\n\n", args[0])
 		fmt.Fprint(stderr, queueHelp)
@@ -6769,6 +6775,121 @@ func runQueueNext(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatQueueNext(report, *compact))
+	return 0
+}
+
+func runQueueHandoff(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("queue handoff", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", "", "Workspace config path")
+	var repos repeatedStringFlag
+	fs.Var(&repos, "repo", "Execution repo to include. Repeatable or comma-separated")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	roleValue := fs.String("role", gira.AgentPromptRoleImplementer, "Handoff role: planner|implementer|reviewer")
+	profileValue := fs.String("profile", gira.AgentPromptProfileDefault, "Handoff profile: default|python")
+	compact := fs.Bool("compact", false, "Print compact text output")
+	maxConcurrency := fs.Int("max-concurrency", 4, "Maximum concurrent repo status fetches")
+	cacheTTL := fs.Duration("cache-ttl", 5*time.Minute, "Reuse recent per-repo status cache for this duration. Use 0 to disable")
+	refresh := fs.Bool("refresh", false, "Ignore cached workspace status and fetch fresh data")
+	cacheRoot := fs.String("cache-root", "", "Workspace status cache root")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, queueHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *issue > 0 {
+		if *ticket > 0 && *ticket != *issue {
+			fmt.Fprint(stderr, "--ticket and --issue must refer to the same number\n\n")
+			fmt.Fprint(stderr, queueHelp)
+			return 2
+		}
+		*ticket = *issue
+	}
+	if *maxConcurrency < 1 {
+		fmt.Fprint(stderr, "--max-concurrency must be at least 1\n\n")
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *cacheTTL < 0 {
+		fmt.Fprint(stderr, "--cache-ttl must be non-negative\n\n")
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	role, err := gira.NormalizeQueueRole(*roleValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	profile, err := gira.NormalizeQueueProfile(*profileValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	selectedRepos, repoFilters, err := parseQueueRepoFilters(repos)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *ticket > 0 && len(repoFilters) == 0 {
+		repo, err := gira.ResolveRepoContext("", repoContextRunner)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		selectedRepos = []gira.RepoRef{repo}
+		repoFilters = []string{repo.FullName()}
+	}
+	if *ticket > 0 && len(repoFilters) != 1 {
+		fmt.Fprint(stderr, "--ticket requires exactly one --repo or an inferable current repo\n\n")
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	workspaceReport, err := newWorkspaceStatusReportWithOptions(*configPath, gira.WorkspaceStatusOptions{
+		Repos:          selectedRepos,
+		MaxConcurrency: *maxConcurrency,
+		CacheTTL:       *cacheTTL,
+		Refresh:        *refresh,
+		CacheRoot:      *cacheRoot,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := queueHandoffReport(workspaceReport, repoFilters, *ticket, role, profile)
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode queue handoff JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatQueueHandoff(report, *compact))
 	return 0
 }
 
@@ -9215,6 +9336,80 @@ func parseQueueRepoFilters(values repeatedStringFlag) ([]gira.RepoRef, []string,
 		}
 	}
 	return selected, filters, nil
+}
+
+func queueHandoffReport(workspaceReport gira.WorkspaceReport, repoFilters []string, ticket int, role string, profile string) (gira.QueueHandoffReport, error) {
+	if ticket > 0 {
+		return queueExplicitHandoffReport(workspaceReport, repoFilters, ticket, role, profile)
+	}
+	next, err := gira.BuildQueueNextReport(workspaceReport, gira.QueueNextOptions{RepoFilters: repoFilters, Role: role, Profile: profile})
+	if err != nil {
+		return gira.QueueHandoffReport{}, err
+	}
+	if next.Selected == nil {
+		return gira.BuildQueueHandoffReportFromNext(next, nil, role, profile), nil
+	}
+	repo, err := gira.ParseRepoRef(next.Selected.Repo)
+	if err != nil {
+		return gira.BuildQueueHandoffReportFromNext(next, nil, role, profile), err
+	}
+	handoff, err := newTicketHandoffReport(gira.TicketHandoffInput{
+		Repo:    repo,
+		Ticket:  next.Selected.Issue,
+		Role:    role,
+		Profile: profile,
+	})
+	report := gira.BuildQueueHandoffReportFromNext(next, &handoff, role, profile)
+	return report, err
+}
+
+func queueExplicitHandoffReport(workspaceReport gira.WorkspaceReport, repoFilters []string, ticket int, role string, profile string) (gira.QueueHandoffReport, error) {
+	filters := gira.QueueFilterSummary{Queues: gira.WorkspaceQueueOrder(), Repos: append([]string(nil), repoFilters...)}
+	nextStep := "gira queue list"
+	if strings.TrimSpace(workspaceReport.ConfigPath) != "" {
+		nextStep += " --config " + gira.QuoteShellArg(workspaceReport.ConfigPath)
+	}
+	for _, repo := range repoFilters {
+		nextStep += " --repo " + gira.QuoteShellArg(repo)
+	}
+	item, ok := gira.FindWorkspaceQueueItem(workspaceReport.Queues, repoFilters[0], ticket)
+	if !ok {
+		return gira.BuildQueueHandoffStopReport(workspaceReport, filters, role, profile, []string{"ticket_not_in_workspace_queue"}, nextStep), nil
+	}
+	if !gira.WorkspaceQueueItemHandoffSafe(item) {
+		step := item.NextSafeCommand
+		if strings.TrimSpace(step) == "" {
+			step = nextStep
+		}
+		return gira.BuildQueueHandoffStopReport(workspaceReport, filters, role, profile, gira.QueueHandoffStopReasonsForItem(item), step), nil
+	}
+	selection := gira.QueueNextSelectionFromItem(item, role, profile)
+	next := gira.QueueNextReport{
+		SchemaVersion:  gira.QueueNextSchemaVersion,
+		Command:        "queue next",
+		Workspace:      workspaceReport.Workspace,
+		SourceContract: gira.WorkspaceQueuesSchemaVersion,
+		ConfigPath:     workspaceReport.ConfigPath,
+		Filters:        filters,
+		Counts:         workspaceReport.Queues.Counts,
+		Selected:       &selection,
+		NextAction:     "handoff_ticket",
+		NextStep:       selection.HandoffCommand,
+		Warnings:       append([]string(nil), workspaceReport.Warnings...),
+		FetchedAt:      workspaceReport.FetchedAt,
+	}
+	repo, err := gira.ParseRepoRef(item.Repo)
+	if err != nil {
+		return gira.BuildQueueHandoffReportFromNext(next, nil, role, profile), err
+	}
+	handoff, err := newTicketHandoffReport(gira.TicketHandoffInput{
+		Repo:    repo,
+		Ticket:  item.Issue,
+		Role:    role,
+		Profile: profile,
+	})
+	report := gira.BuildQueueHandoffReportFromNext(next, &handoff, role, profile)
+	return report, err
 }
 
 func appendAuditRecord(repo gira.RepoRef, record gira.AuditRecord) error {

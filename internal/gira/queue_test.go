@@ -100,6 +100,92 @@ func TestBuildQueueNextReportStopsWhenNoAgentReadyItem(t *testing.T) {
 	}
 }
 
+func TestBuildQueueHandoffReportFromNextEmbedsWorkerHandoff(t *testing.T) {
+	workspace := WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+	queues := BuildWorkspaceQueues(workspace, []WorkStatusResult{
+		{Repo: "StatPan/app", Issue: 42, Title: "Implement queue handoff", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+	})
+	next, err := BuildQueueNextReport(WorkspaceReport{
+		Workspace:  workspace,
+		ConfigPath: ".gira/config.yaml",
+		Queues:     queues,
+	}, QueueNextOptions{Role: AgentPromptRoleReviewer, Profile: AgentPromptProfilePython})
+	if err != nil {
+		t.Fatalf("BuildQueueNextReport error: %v", err)
+	}
+	handoff := TicketHandoffReport{
+		Command:       "ticket handoff",
+		SchemaVersion: WorkerHandoffSchemaVersion,
+		Repo:          "StatPan/app",
+		Issue:         42,
+		Role:          AgentPromptRoleReviewer,
+		Profile:       AgentPromptProfilePython,
+		Readiness:     TicketReadinessReport{SchemaVersion: TicketReadinessSchemaVersion, Readiness: "ready"},
+		NextAction:    "request_review",
+	}
+	report := BuildQueueHandoffReportFromNext(next, &handoff, AgentPromptRoleReviewer, AgentPromptProfilePython)
+	if report.SchemaVersion != QueueHandoffSchemaVersion || report.WorkerHandoff == nil || report.WorkerHandoff.SchemaVersion != WorkerHandoffSchemaVersion {
+		t.Fatalf("unexpected handoff report: %+v", report)
+	}
+	if report.Selected == nil || report.Selected.Issue != 42 || report.NextAction != "start_run" {
+		t.Fatalf("selected/action = %+v next=%s", report.Selected, report.NextAction)
+	}
+	if !strings.Contains(report.RunCommand, "--profile python") || report.NextStep != report.RunCommand {
+		t.Fatalf("run command/next step = %q %q", report.RunCommand, report.NextStep)
+	}
+}
+
+func TestBuildQueueHandoffReportStopsWhenWorkerHandoffNeedsRefinement(t *testing.T) {
+	workspace := WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+	queues := BuildWorkspaceQueues(workspace, []WorkStatusResult{
+		{Repo: "StatPan/app", Issue: 42, Title: "Refine before handoff", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+	})
+	next, err := BuildQueueNextReport(WorkspaceReport{Workspace: workspace, Queues: queues}, QueueNextOptions{})
+	if err != nil {
+		t.Fatalf("BuildQueueNextReport error: %v", err)
+	}
+	handoff := TicketHandoffReport{
+		Command:       "ticket handoff",
+		SchemaVersion: WorkerHandoffSchemaVersion,
+		Repo:          "StatPan/app",
+		Issue:         42,
+		Role:          AgentPromptRoleImplementer,
+		Profile:       AgentPromptProfileDefault,
+		Readiness: TicketReadinessReport{
+			SchemaVersion: TicketReadinessSchemaVersion,
+			Readiness:     "needs_refinement",
+			Findings:      []TicketReadinessFinding{{Severity: "error", Kind: "missing_scope"}},
+		},
+		NextAction:      "refine_ticket",
+		NextSafeCommand: "gira ticket view --repo StatPan/app --ticket 42",
+	}
+	report := BuildQueueHandoffReportFromNext(next, &handoff, AgentPromptRoleImplementer, AgentPromptProfileDefault)
+	if report.NextAction != "refine_ticket" || report.NextStep != handoff.NextSafeCommand {
+		t.Fatalf("next action/step = %s %s", report.NextAction, report.NextStep)
+	}
+	for _, want := range []string{"worker_handoff_not_ready", "readiness_needs_refinement", "finding_missing_scope"} {
+		if !containsString(report.StopReasons, want) {
+			t.Fatalf("stop reasons missing %q: %+v", want, report.StopReasons)
+		}
+	}
+	if !strings.Contains(FormatQueueHandoff(report, false), "worker handoff: schema=worker-handoff/v1 readiness=needs_refinement") {
+		t.Fatalf("format should include worker handoff readiness")
+	}
+}
+
+func TestQueueHandoffStopReasonsForBlockedItem(t *testing.T) {
+	item := WorkspaceQueueItem{Queue: "blocked", ReasonCodes: []string{"status_blocked"}}
+	reasons := QueueHandoffStopReasonsForItem(item)
+	for _, want := range []string{"queue_not_handoff_safe", "queue_blocked", "reason_status_blocked"} {
+		if !containsString(reasons, want) {
+			t.Fatalf("stop reasons missing %q: %+v", want, reasons)
+		}
+	}
+	if WorkspaceQueueItemHandoffSafe(item) {
+		t.Fatalf("blocked item should not be handoff-safe")
+	}
+}
+
 func TestNormalizeWorkspaceQueueNameRejectsUnknownQueue(t *testing.T) {
 	if _, err := NormalizeWorkspaceQueueName("later"); err == nil {
 		t.Fatalf("expected unknown queue error")

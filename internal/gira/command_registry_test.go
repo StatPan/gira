@@ -12,6 +12,8 @@ func TestCoreCommandSpecsCoverHighValueCommands(t *testing.T) {
 		{"setup", "global"},
 		{"workspace", "repos", "sync"},
 		{"workspace", "status"},
+		{"queue", "list"},
+		{"queue", "next"},
 		{"jira", "init"},
 		{"jira", "mirror"},
 		{"jira", "transition"},
@@ -98,6 +100,8 @@ func TestCommandCapabilitiesCoverAdapterClasses(t *testing.T) {
 	}
 	assertCapability("gira ticket status", AdapterCapabilityRead)
 	assertCapability("gira goal report", AdapterCapabilityRead)
+	assertCapability("gira queue list", AdapterCapabilityRead)
+	assertCapability("gira queue next", AdapterCapabilityRead)
 	assertCapability("gira completion", AdapterCapabilityRead)
 	assertCapability("gira goal plan", AdapterCapabilityApplyMutation)
 	assertCapability("gira ticket start", AdapterCapabilityApplyMutation)

@@ -39,6 +39,8 @@ summarize that skill instead of redefining it.
 - `gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]`: Propose or create same-repo or target-repo child ticket packets from a goal issue.
 - `gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]`: Build a visible report for one goal from stable Goal Mode state. Alias: gira goal dossier.
 - `gira goal status [GOAL] [--repo OWNER/REPO] [--json]`: Summarize a goal issue, child ticket graph, blockers, and next safe action.
+- `gira queue list [--config .gira/config.yaml] [--repo OWNER/REPO] [--queue ready|review|finish|blocked|failed|human] [--limit N] [--compact] [--json]`: List workspace queue items derived from workspace-queues/v1.
+- `gira queue next [--config .gira/config.yaml] [--repo OWNER/REPO] [--role implementer] [--profile default] [--compact] [--json]`: Select the first agent-ready workspace queue item and print handoff and run-start commands.
 
 ## Rules
 

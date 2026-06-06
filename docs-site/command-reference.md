@@ -615,6 +615,68 @@ gira milestone status "2.0 Alpha - State-Aware Ticket Runtime"
 
 Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
 
+## `queue list`
+
+List workspace queue items derived from workspace-queues/v1.
+
+Usage:
+
+```bash
+gira queue list [--config .gira/config.yaml] [--repo OWNER/REPO] [--queue ready|review|finish|blocked|failed|human] [--limit N] [--compact] [--json]
+```
+
+Since: `v2.1.0`
+
+Flags:
+
+- `--config`: Explicit workspace config path. Defaults to global registry, then .gira/config.yaml.
+- `--repo`: Narrow queue items to one or more execution repos.
+- `--queue`: Filter by queue alias: ready, review, finish, blocked, failed, or human.
+- `--limit`: Maximum queue items to print. Default: all.
+- `--compact`: Print compact text output.
+- `--json`: Emit stable queue-list/v1 JSON.
+
+Examples:
+
+- List agent-ready work
+
+```bash
+gira queue list --queue ready --json
+```
+
+Documented in: `docs/workspace.md`, `docs-site/command-reference.md`
+
+## `queue next`
+
+Select the first agent-ready workspace queue item and print handoff and run-start commands.
+
+Usage:
+
+```bash
+gira queue next [--config .gira/config.yaml] [--repo OWNER/REPO] [--role implementer] [--profile default] [--compact] [--json]
+```
+
+Since: `v2.1.0`
+
+Flags:
+
+- `--config`: Explicit workspace config path. Defaults to global registry, then .gira/config.yaml.
+- `--repo`: Narrow selection to one or more execution repos.
+- `--role`: Handoff role: planner, implementer, or reviewer. Default: implementer.
+- `--profile`: Handoff profile: default or python. Default: default.
+- `--compact`: Print compact text output.
+- `--json`: Emit stable queue-next/v1 JSON.
+
+Examples:
+
+- Select the next LLM-ready item
+
+```bash
+gira queue next --json
+```
+
+Documented in: `docs/workspace.md`, `docs-site/command-reference.md`
+
 ## `setup global`
 
 Create or update the OS-user global config, workspace registry, and repo registry.

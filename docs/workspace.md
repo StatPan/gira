@@ -303,6 +303,20 @@ does not launch Codex by default. `queue list`, `queue next`, and `queue
 handoff` are read-only. `queue take --apply` is the mutating boundary and still
 derives its selection from `workspace-queues/v1`.
 
+The queue commands are intentionally layered:
+
+- `queue list` is inventory.
+- `queue next` is deterministic selection.
+- `queue handoff` is the worker packet gate.
+- `queue take` is the safe `ticket start` delegation gate.
+
+Stop reasons such as `queue_not_handoff_safe`, `queue_blocked`,
+`queue_failed_check`, `queue_review_needed`, `queue_finish_ready`,
+`queue_human_decision`, and `worker_handoff_not_ready` are policy output. They
+tell an operator or adapter to run the item's next safe command instead of
+starting new implementation work. The full 3.1 operating model is documented in
+[Agent Handoff Queue](agent-handoff-queue.md).
+
 The privacy boundary is part of the contract: workspace queues describe
 work-item state and safe next commands only. They must not rank people or
 agents, score productivity, infer availability from time online, or turn token

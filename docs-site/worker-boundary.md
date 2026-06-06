@@ -45,6 +45,18 @@ transitions, and human decision gates back to the GitHub issue or PR. Gira can
 export that manifest for dashboards, but it still does not start, stop, retry,
 or supervise the worker process.
 
+## Queue Placement
+
+The Agent Handoff Queue sits before worker execution. `gira queue list` and
+`gira queue next` select from `workspace-queues/v1`; `gira queue handoff`
+embeds `worker-handoff/v1`; and `gira queue take` delegates only to
+`ticket start`.
+
+Queue commands can choose work, produce a worker packet, or start a trusted
+branch, but they do not invoke Codex, route a model, supervise retries, or mark
+work complete. See [Agent Handoff Queue](/agent-handoff-queue) for command
+roles and stop reasons.
+
 ## Ownership
 
 Gira owns:

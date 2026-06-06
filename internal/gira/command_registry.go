@@ -138,7 +138,7 @@ func CoreCommandSpecs() []CommandSpec {
 				{Name: "--compact", Summary: "Print compact text output."},
 				{Name: "--json", Summary: "Emit stable queue-list/v1 JSON."},
 			},
-			Docs:        []string{"docs/workspace.md", "docs-site/command-reference.md"},
+			Docs:        []string{"docs/workspace.md", "docs/agent-handoff-queue.md", "docs-site/agent-handoff-queue.md", "docs-site/command-reference.md"},
 			GuideTopics: []string{"agent", "quickstart"},
 			Examples: []CommandExample{
 				{Summary: "List agent-ready work", Command: "gira queue list --queue ready --json"},
@@ -158,7 +158,7 @@ func CoreCommandSpecs() []CommandSpec {
 				{Name: "--compact", Summary: "Print compact text output."},
 				{Name: "--json", Summary: "Emit stable queue-next/v1 JSON."},
 			},
-			Docs:        []string{"docs/workspace.md", "docs-site/command-reference.md"},
+			Docs:        []string{"docs/workspace.md", "docs/agent-handoff-queue.md", "docs-site/agent-handoff-queue.md", "docs-site/command-reference.md"},
 			GuideTopics: []string{"agent", "quickstart"},
 			Examples: []CommandExample{
 				{Summary: "Select the next LLM-ready item", Command: "gira queue next --json"},
@@ -179,7 +179,7 @@ func CoreCommandSpecs() []CommandSpec {
 				{Name: "--compact", Summary: "Print compact text output."},
 				{Name: "--json", Summary: "Emit stable queue-handoff/v1 JSON with worker-handoff/v1 embedded."},
 			},
-			Docs:        []string{"docs/workspace.md", "docs-site/command-reference.md"},
+			Docs:        []string{"docs/workspace.md", "docs/agent-handoff-queue.md", "docs-site/agent-handoff-queue.md", "docs-site/command-reference.md"},
 			GuideTopics: []string{"agent", "quickstart"},
 			Examples: []CommandExample{
 				{Summary: "Build a handoff packet for the next LLM-ready item", Command: "gira queue handoff --json"},
@@ -202,7 +202,7 @@ func CoreCommandSpecs() []CommandSpec {
 				{Name: "--apply", Summary: "Start only a handoff-safe and worker-ready queue item."},
 				{Name: "--json", Summary: "Emit stable queue-take/v1 JSON with worker-handoff/v1 and work-start-result/v1 embedded."},
 			},
-			Docs:        []string{"docs/workspace.md", "docs-site/command-reference.md"},
+			Docs:        []string{"docs/workspace.md", "docs/agent-handoff-queue.md", "docs-site/agent-handoff-queue.md", "docs-site/command-reference.md"},
 			GuideTopics: []string{"agent", "quickstart"},
 			Examples: []CommandExample{
 				{Summary: "Preview taking the next safe queue item", Command: "gira queue take --dry-run --json"},

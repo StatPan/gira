@@ -94,18 +94,32 @@ work that needs operator attention:
 | Queue | Meaning |
 | --- | --- |
 | `agent_ready` | Executable agent-lane issues that are ready to start. |
-| `review` | Reviewable PR or in-review ticket work. |
-| `finish` | Work that appears ready for finish or closure convergence. |
+| `review_needed` | Reviewable PR or in-review ticket work. |
+| `finish_ready` | Work that appears ready for finish or closure convergence. |
 | `blocked` | Tickets blocked by labels, missing evidence, or human decisions. |
-| `failed_checks` | PR-backed work with failed or pending check evidence. |
+| `failed_check` | PR-backed work with failed or failing check evidence. |
+| `human_decision` | Work that should stop for an operator decision. |
 
-Use the printed next steps before mutating anything. Workspace commands are
-read-first; repo and ticket lifecycle commands still own branch, PR, note, and
-finish mutations.
+Use queue commands when an operator or adapter needs a smaller task-selection
+surface:
+
+```bash
+gira queue list --queue ready --json
+gira queue next --json
+gira queue handoff --json
+gira queue take --dry-run --json
+```
+
+`queue list`, `queue next`, and `queue handoff` are read-only. `queue take
+--apply` is the queue mutating boundary, and it delegates to `ticket start`
+only after the selected item is both `agent_ready` and worker-ready. It does not
+launch Codex or another worker by default. See [Agent Handoff Queue](/agent-handoff-queue)
+for the full operating model and stop reason contract.
 
 ## Related Pages
 
 - [Global Config](/global-config)
+- [Agent Handoff Queue](/agent-handoff-queue)
 - [Ticket Workflow](/ticket-workflow)
 - [State Model](/state-model)
 - [Readiness And Audit](/readiness-audit)

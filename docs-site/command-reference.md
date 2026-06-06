@@ -645,7 +645,7 @@ Examples:
 gira queue handoff --json
 ```
 
-Documented in: `docs/workspace.md`, `docs-site/command-reference.md`
+Documented in: `docs/workspace.md`, `docs/agent-handoff-queue.md`, `docs-site/agent-handoff-queue.md`, `docs-site/command-reference.md`
 
 ## `queue list`
 
@@ -676,7 +676,7 @@ Examples:
 gira queue list --queue ready --json
 ```
 
-Documented in: `docs/workspace.md`, `docs-site/command-reference.md`
+Documented in: `docs/workspace.md`, `docs/agent-handoff-queue.md`, `docs-site/agent-handoff-queue.md`, `docs-site/command-reference.md`
 
 ## `queue next`
 
@@ -707,7 +707,7 @@ Examples:
 gira queue next --json
 ```
 
-Documented in: `docs/workspace.md`, `docs-site/command-reference.md`
+Documented in: `docs/workspace.md`, `docs/agent-handoff-queue.md`, `docs-site/agent-handoff-queue.md`, `docs-site/command-reference.md`
 
 ## `queue take`
 
@@ -741,7 +741,7 @@ Examples:
 gira queue take --dry-run --json
 ```
 
-Documented in: `docs/workspace.md`, `docs-site/command-reference.md`
+Documented in: `docs/workspace.md`, `docs/agent-handoff-queue.md`, `docs-site/agent-handoff-queue.md`, `docs-site/command-reference.md`
 
 ## `setup global`
 

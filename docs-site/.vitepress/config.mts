@@ -17,6 +17,7 @@ export default defineConfig({
       { text: 'Gira 2.0', link: '/v2-control-plane' },
       { text: 'Gira 3.0', link: '/gira-3-local-report-bundle' },
       { text: 'Workspace', link: '/workspace' },
+      { text: 'Agent Queue', link: '/agent-handoff-queue' },
       { text: 'Workflow', link: '/ticket-workflow' },
       { text: 'Goal Mode', link: '/goal-mode' },
       { text: 'Readiness', link: '/readiness-audit' },
@@ -48,6 +49,7 @@ export default defineConfig({
         text: 'Operate',
         items: [
           { text: 'Workspace', link: '/workspace' },
+          { text: 'Agent Handoff Queue', link: '/agent-handoff-queue' },
           { text: 'Ticket Workflow', link: '/ticket-workflow' },
           { text: 'Feature Map', link: '/feature-map' },
           { text: 'Gira 2.0 Control Plane', link: '/v2-control-plane' },

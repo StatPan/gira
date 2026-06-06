@@ -69,13 +69,14 @@ This map covers the first adapter flow. It is intentionally conservative.
 | --- | --- | --- |
 | `gira version`, `gira upgrade`, `gira config global`, `gira config repo`, `gira config doctor` | `read` | Safe environment and configuration inspection. `upgrade` is advisory and must not run package managers. |
 | `gira status`, `gira workspace status`, `gira ticket list`, `gira ticket view`, `gira ticket status`, `gira ticket checks`, `gira ticket review`, `gira ticket handoff`, `gira ticket prompt` | `read` | Primary state, work-order, review, and handoff surfaces. Prefer JSON where available. Prompt output is evidence, not an instruction to bypass policy. |
+| `gira queue list`, `gira queue next`, `gira queue handoff` | `read` | Workspace task-selection surfaces over `workspace-queues/v1`. `queue handoff` embeds `worker-handoff/v1` but does not start branches or workers. |
 | `gira goal status`, `gira goal report`, `gira goal next`, `gira goal plan --dry-run`, `gira goal finish --dry-run` | `read` or `dry_run_mutation` | `goal report` packages the visible goal operating state without mutation. `goal plan --dry-run` and `goal finish --dry-run` prepare child-ticket plans or receipts but do not apply. `goal next` can select work or stop. |
 | `gira audit readiness`, `gira audit drift`, `gira audit workflow`, `gira audit verify`, `gira stats repo` | `read` | Use for workflow convergence and integrity evidence. |
 | `gira jira doctor`, `gira jira transition --dry-run`, `gira jira export` | `read`, `dry_run_mutation`, or `apply_mutation` | Provider diagnostics and migration export. `jira transition --dry-run` emits `jira-transition-plan/v1` as read-only planning evidence, not approval to mutate Jira. `jira export` writes local export artifacts and therefore needs an approved or sandboxed output boundary. |
-| `gira ticket new --dry-run`, `gira ticket start --dry-run`, `gira ticket pr --dry-run`, `gira ticket note --dry-run`, `gira ticket finish --dry-run`, `gira ticket supersede --dry-run` | `dry_run_mutation` | These are approval evidence surfaces for issue, branch, PR, comment, merge, close, and supersede mutations. |
+| `gira ticket new --dry-run`, `gira ticket start --dry-run`, `gira ticket pr --dry-run`, `gira ticket note --dry-run`, `gira ticket finish --dry-run`, `gira ticket supersede --dry-run`, `gira queue take --dry-run` | `dry_run_mutation` | These are approval evidence surfaces for issue, branch, PR, comment, merge, close, supersede, and queue-selected ticket-start mutations. |
 | `gira adopt repo --dry-run`, `gira adopt issues --dry-run`, `gira setup global --dry-run`, `gira workspace repos sync --dry-run`, `gira repo register --dry-run`, `gira repo migrate --dry-run` | `dry_run_mutation` | Local config, repo metadata, or issue adoption plans. |
 | `gira milestone new --dry-run`, `gira milestone assign --dry-run`, `gira milestone plan --dry-run`, `gira sprint plan`, `gira sprint rollover --dry-run`, `gira release readiness` | `dry_run_mutation` or `read` | Release readiness is read-only. Sprint and milestone plans need approval before apply. |
-| `gira goal plan --apply`, `gira ticket new --apply`, `gira ticket start --apply`, `gira ticket pr --apply`, `gira ticket note --apply`, `gira ticket finish --apply`, `gira ticket supersede --apply` | `apply_mutation` | Requires matching dry-run evidence and approval. `goal plan --apply` creates linked child tickets from a reviewed plan. `ticket finish --apply` may merge PRs, normalize labels, post receipts, and close tickets. |
+| `gira goal plan --apply`, `gira queue take --apply`, `gira ticket new --apply`, `gira ticket start --apply`, `gira ticket pr --apply`, `gira ticket note --apply`, `gira ticket finish --apply`, `gira ticket supersede --apply` | `apply_mutation` | Requires matching dry-run evidence and approval. `goal plan --apply` creates linked child tickets from a reviewed plan. `queue take --apply` delegates to `ticket start` only when the selected queue item and worker handoff are safe. `ticket finish --apply` may merge PRs, normalize labels, post receipts, and close tickets. |
 | `gira goal finish --terminal done --apply`, `gira goal finish --terminal human_review --apply` | `apply_mutation` | Done apply posts an idempotent finish receipt, normalizes labels, and closes a ready goal. Human-review apply posts an idempotent blocker handoff receipt and keeps the goal open. |
 | `gira setup global --apply`, `gira workspace repos sync --apply`, `gira repo register --apply`, `gira repo migrate --apply`, `gira adopt repo --apply`, `gira adopt issues --apply` | `apply_mutation` | Mutates local registry, repo files, or GitHub issue metadata depending on command. |
 | `gira milestone new --apply`, `gira milestone assign --apply`, `gira milestone plan --apply`, `gira sprint start --apply`, `gira cache prune --apply` | `apply_mutation` | Cache pruning mutates local cache only but still needs approval. |
@@ -118,6 +119,7 @@ Implemented producers include `gira ticket new --dry-run --json` and
 `gira ticket note --dry-run --json` and
 `gira ticket finish --dry-run --json` and
 `gira ticket supersede --dry-run --json` and
+`gira queue take --dry-run --json` and
 `gira repo register --dry-run --json` and
 `gira repo migrate --dry-run --json` and
 `gira setup global --dry-run --json` and
@@ -175,6 +177,7 @@ present when relevant:
 | `actions[]` | Dry-run/apply plan and actual mutation evidence. |
 | `blockers[]`, `warnings[]` | Stop conditions. |
 | `next_action`, `next_step` | Next safe command. |
+| `selected`, `stop_reasons`, `handoff`, `worker_handoff` | Queue selection, stop, and handoff gates for `queue-*` contracts. |
 | `receipt.schema_version`, `receipt.rendered_body` | Finish or handoff receipt preview/evidence. |
 | `handoff_receipt_present` | Goal-level human-review convergence. |
 
@@ -189,13 +192,16 @@ The smallest adapter dogfood flow should use existing Gira commands:
 4. If the objective is goal-scoped, run
    `gira goal status GOAL --repo OWNER/REPO --json` and
    `gira goal next GOAL --repo OWNER/REPO --json`.
-5. If a selected issue is returned, run
-   `gira ticket status TICKET --repo OWNER/REPO --json`.
-6. If readiness says `ready`, run
-   `gira ticket handoff TICKET implementer --repo OWNER/REPO --json`.
-7. Stop and request approval before any apply mutation.
-8. For an approved start, run
-   `gira ticket start TICKET --repo OWNER/REPO --dry-run --json`.
+5. If the objective is workspace-scoped, run
+   `gira queue next --repo OWNER/REPO --json` or
+   `gira queue handoff --repo OWNER/REPO --json`.
+6. If a selected issue is returned, run
+   `gira ticket status TICKET --repo OWNER/REPO --json` when more detail is
+   needed.
+7. If readiness says `ready`, use `gira queue take --repo OWNER/REPO --ticket
+   TICKET --dry-run --json` or `gira ticket start TICKET --repo OWNER/REPO
+   --dry-run --json` as the approval evidence.
+8. Stop and request approval before any apply mutation.
 9. Store the dry-run output as approval evidence.
 10. After approval, run the matching `approval.apply_argv` plus `--json` using
     direct argv execution.

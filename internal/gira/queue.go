@@ -9,6 +9,7 @@ const (
 	QueueListSchemaVersion    = "queue-list/v1"
 	QueueNextSchemaVersion    = "queue-next/v1"
 	QueueHandoffSchemaVersion = "queue-handoff/v1"
+	QueueTakeSchemaVersion    = "queue-take/v1"
 )
 
 type QueueFilterSummary struct {
@@ -85,6 +86,21 @@ type QueueHandoffReport struct {
 	NextStep       string               `json:"next_step"`
 	Warnings       []string             `json:"warnings,omitempty"`
 	FetchedAt      string               `json:"fetched_at,omitempty"`
+}
+
+type QueueTakeReport struct {
+	SchemaVersion string             `json:"schema_version"`
+	Command       string             `json:"command"`
+	DryRun        bool               `json:"dry_run"`
+	Apply         bool               `json:"apply"`
+	Handoff       QueueHandoffReport `json:"handoff"`
+	StartResult   *WorkStartResult   `json:"start_result"`
+	StopReasons   []string           `json:"stop_reasons,omitempty"`
+	NextAction    string             `json:"next_action"`
+	NextStep      string             `json:"next_step"`
+	Approval      *ApprovalEvidence  `json:"approval,omitempty"`
+	Warnings      []string           `json:"warnings,omitempty"`
+	FetchedAt     string             `json:"fetched_at,omitempty"`
 }
 
 func BuildQueueListReport(workspaceReport WorkspaceReport, options QueueListOptions) (QueueListReport, error) {
@@ -261,6 +277,85 @@ func BuildQueueHandoffStopReport(workspaceReport WorkspaceReport, filters QueueF
 	}
 }
 
+func BuildQueueTakeReport(handoff QueueHandoffReport, start *WorkStartResult, dryRun bool, apply bool) QueueTakeReport {
+	report := QueueTakeReport{
+		SchemaVersion: QueueTakeSchemaVersion,
+		Command:       "queue take",
+		DryRun:        dryRun,
+		Apply:         apply,
+		Handoff:       handoff,
+		Warnings:      append([]string(nil), handoff.Warnings...),
+		FetchedAt:     handoff.FetchedAt,
+	}
+	if handoff.Selected == nil || len(handoff.StopReasons) > 0 || handoff.WorkerHandoff == nil {
+		report.StopReasons = append([]string(nil), handoff.StopReasons...)
+		if handoff.Selected == nil && len(report.StopReasons) == 0 {
+			report.StopReasons = append(report.StopReasons, "missing_queue_selection")
+		}
+		if handoff.Selected != nil && handoff.WorkerHandoff == nil && len(report.StopReasons) == 0 {
+			report.StopReasons = append(report.StopReasons, "missing_worker_handoff")
+		}
+		report.NextAction = strings.TrimSpace(handoff.NextAction)
+		if report.NextAction == "" {
+			report.NextAction = "inspect_queues"
+		}
+		report.NextStep = handoff.NextStep
+		return report
+	}
+	if start == nil {
+		report.StopReasons = []string{"missing_start_result"}
+		report.NextAction = "start_ticket"
+		report.NextStep = QueueTakeCommand(handoff.Selected.WorkspaceQueueItem, handoff.Role, handoff.Profile, "--apply")
+		return report
+	}
+	EnsureWorkStartResultSchema(start)
+	if dryRun && start.Approval == nil {
+		start.Approval = WorkStartApprovalEvidence(*start, "gira ticket start")
+	}
+	report.StartResult = start
+	if dryRun {
+		report.NextAction = "apply_ticket_start"
+		report.NextStep = QueueTakeCommand(handoff.Selected.WorkspaceQueueItem, handoff.Role, handoff.Profile, "--apply")
+		report.Approval = QueueTakeApprovalEvidence(report)
+		return report
+	}
+	report.NextAction = "handoff_ticket"
+	report.NextStep = handoff.HandoffCommand
+	if strings.TrimSpace(report.NextStep) == "" {
+		report.NextStep = handoff.Selected.HandoffCommand
+	}
+	return report
+}
+
+func QueueTakeApprovalEvidence(report QueueTakeReport) *ApprovalEvidence {
+	if report.Handoff.Selected == nil {
+		return nil
+	}
+	item := *report.Handoff.Selected
+	queueItem := item.WorkspaceQueueItem
+	actions := []ApprovalPlannedAction{
+		{Action: "queue:select", Target: fmt.Sprintf("%s#%d", item.Repo, item.Issue), Detail: item.SelectionReason},
+		{Action: "ticket_start:delegate", Target: fmt.Sprintf("%s#%d", item.Repo, item.Issue), Detail: "use ticket start branch and status policy"},
+	}
+	if report.StartResult != nil && strings.TrimSpace(report.StartResult.Branch) != "" {
+		actions = append(actions, ApprovalPlannedAction{Action: "branch:create_or_reuse", Target: report.StartResult.Branch, Detail: "planned by ticket start"})
+	}
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira queue take",
+		DryRunCommand:         QueueTakeCommand(queueItem, report.Handoff.Role, report.Handoff.Profile, "--dry-run"),
+		ApplyCommand:          QueueTakeCommand(queueItem, report.Handoff.Role, report.Handoff.Profile, "--apply"),
+		Repo:                  item.Repo,
+		Issue:                 item.Issue,
+		OutputSchema:          QueueTakeSchemaVersion,
+		PlannedActions:        actions,
+		Blockers:              []string{},
+		Warnings:              append([]string(nil), report.Warnings...),
+		PostApplyVerification: fmt.Sprintf("gira ticket status %d --repo %s --json", item.Issue, item.Repo),
+	}
+}
+
 func QueueNextSelectionFromItem(item WorkspaceQueueItem, role string, profile string) QueueNextSelection {
 	return QueueNextSelection{
 		WorkspaceQueueItem: item,
@@ -405,6 +500,22 @@ func QueueRunCommand(item WorkspaceQueueItem, role string, profile string) strin
 	return command + " --dry-run"
 }
 
+func QueueTakeCommand(item WorkspaceQueueItem, role string, profile string, mode string) string {
+	role, _ = NormalizeQueueRole(role)
+	profile, _ = NormalizeQueueProfile(profile)
+	command := fmt.Sprintf("gira queue take --repo %s --ticket %d", QuoteShellArg(item.Repo), item.Issue)
+	if role != AgentPromptRoleImplementer {
+		command += " --role " + QuoteShellArg(role)
+	}
+	if profile != AgentPromptProfileDefault {
+		command += " --profile " + QuoteShellArg(profile)
+	}
+	if strings.TrimSpace(mode) != "" {
+		command += " " + strings.TrimSpace(mode)
+	}
+	return command
+}
+
 func FormatQueueList(report QueueListReport, compact bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "queue list: %s items=%d source=%s\n", workspaceQueueLabel(report.Workspace), len(report.Items), report.SourceContract)
@@ -484,6 +595,45 @@ func FormatQueueHandoff(report QueueHandoffReport, compact bool) string {
 	fmt.Fprintf(&b, "worker handoff: schema=%s next=%s\n", report.WorkerHandoff.SchemaVersion, report.WorkerHandoff.NextAction)
 	fmt.Fprintf(&b, "handoff command: %s\n", item.HandoffCommand)
 	fmt.Fprintf(&b, "run command: %s\n", item.RunCommand)
+	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
+	return b.String()
+}
+
+func FormatQueueTake(report QueueTakeReport, compact bool) string {
+	var b strings.Builder
+	if report.Handoff.Selected == nil || len(report.StopReasons) > 0 {
+		fmt.Fprintf(&b, "queue take: stop=%s next=%s\n", strings.Join(report.StopReasons, ","), report.NextAction)
+		if report.Handoff.Selected != nil {
+			fmt.Fprintf(&b, "ticket: %s#%d %s\n", report.Handoff.Selected.Repo, report.Handoff.Selected.Issue, report.Handoff.Selected.Title)
+		}
+		if report.Handoff.WorkerHandoff != nil && report.Handoff.WorkerHandoff.SchemaVersion != "" {
+			fmt.Fprintf(&b, "worker handoff: schema=%s readiness=%s next=%s\n", report.Handoff.WorkerHandoff.SchemaVersion, report.Handoff.WorkerHandoff.Readiness.Readiness, report.Handoff.WorkerHandoff.NextAction)
+		}
+		fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
+		return b.String()
+	}
+	item := report.Handoff.Selected
+	mode := "apply"
+	if report.DryRun {
+		mode = "dry-run"
+	}
+	branch := ""
+	if report.StartResult != nil {
+		branch = report.StartResult.Branch
+	}
+	if compact {
+		fmt.Fprintf(&b, "queue take: %s %s#%d branch=%s\n", mode, item.Repo, item.Issue, branch)
+		fmt.Fprintf(&b, "next: %s\n", report.NextStep)
+		return b.String()
+	}
+	fmt.Fprintf(&b, "queue take: %s %s#%d role=%s profile=%s\n", mode, item.Repo, item.Issue, report.Handoff.Role, report.Handoff.Profile)
+	fmt.Fprintf(&b, "queue: %s\n", ShortWorkspaceQueueName(item.Queue))
+	fmt.Fprintf(&b, "title: %s\n", item.Title)
+	fmt.Fprintf(&b, "handoff command: %s\n", report.Handoff.HandoffCommand)
+	if report.StartResult != nil {
+		fmt.Fprintf(&b, "ticket start: branch=%s status=%s next=%s\n", report.StartResult.Branch, report.StartResult.NextStatus, report.StartResult.NextStep)
+	}
+	fmt.Fprintf(&b, "run command: %s\n", report.Handoff.RunCommand)
 	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
 	return b.String()
 }

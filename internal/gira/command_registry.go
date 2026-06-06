@@ -187,6 +187,29 @@ func CoreCommandSpecs() []CommandSpec {
 			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only queue selection and ticket handoff packet assembly; does not start branches, write run state, or mutate GitHub."},
 		},
 		{
+			Path:    []string{"queue", "take"},
+			Summary: "Start a handoff-safe queue item through the existing ticket start policy.",
+			Usage:   "gira queue take [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] --dry-run|--apply [--json]",
+			Since:   "v2.1.0",
+			Flags: []FlagSpec{
+				{Name: "--config", Summary: "Explicit workspace config path. Defaults to global registry, then .gira/config.yaml."},
+				{Name: "--repo", Summary: "Narrow selection to one execution repo, or select the explicit ticket repo."},
+				{Name: "--ticket", Summary: "Explicit ticket number. Without it, take uses queue next selection."},
+				{Name: "--role", Summary: "Handoff role: planner, implementer, or reviewer. Default: implementer."},
+				{Name: "--profile", Summary: "Handoff profile: default or python. Default: default."},
+				{Name: "--compact", Summary: "Print compact text output."},
+				{Name: "--dry-run", Summary: "Preview selection, worker handoff, and ticket start without mutation."},
+				{Name: "--apply", Summary: "Start only a handoff-safe and worker-ready queue item."},
+				{Name: "--json", Summary: "Emit stable queue-take/v1 JSON with worker-handoff/v1 and work-start-result/v1 embedded."},
+			},
+			Docs:        []string{"docs/workspace.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "quickstart"},
+			Examples: []CommandExample{
+				{Summary: "Preview taking the next safe queue item", Command: "gira queue take --dry-run --json"},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityApplyMutation, MutationBoundary: "delegates to ticket start for a handoff-safe queue item; --dry-run previews selection, handoff readiness, and ticket start", JSONSupport: JSONSupportStable},
+		},
+		{
 			Path:    []string{"completion"},
 			Summary: "Generate static shell completion scripts for common commands, subcommands, and flags.",
 			Usage:   "gira completion bash|zsh|fish",
@@ -844,6 +867,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "queue handoff":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "queue take":
+			specs[i].Adapter = adapterApply("delegates to ticket start for a handoff-safe queue item; --dry-run previews selection, handoff readiness, and ticket start", JSONSupportStable)
 		case "completion":
 			specs[i].Adapter = adapterRead(JSONSupportNone)
 		case "feature list":

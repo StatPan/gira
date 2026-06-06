@@ -2084,6 +2084,250 @@ func TestQueueHandoffExplicitHumanTicketStopsWithoutCallingHandoff(t *testing.T)
 	}
 }
 
+func TestQueueTakeDryRunJSONDelegatesTicketStart(t *testing.T) {
+	restoreWorkspace := newWorkspaceStatusReportWithOptions
+	restoreHandoff := newTicketHandoffReport
+	restoreStart := newWorkStartResultWithOptions
+	t.Cleanup(func() {
+		newWorkspaceStatusReportWithOptions = restoreWorkspace
+		newTicketHandoffReport = restoreHandoff
+		newWorkStartResultWithOptions = restoreStart
+	})
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.WorkspaceReport{
+			Workspace:  workspace,
+			ConfigPath: ".gira/config.yaml",
+			Queues: gira.BuildWorkspaceQueues(workspace, []gira.WorkStatusResult{
+				{Repo: "StatPan/gira", Issue: 10, Title: "Ready issue", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+			}),
+		}, nil
+	}
+	newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 10 || input.Role != "implementer" || input.Profile != "default" {
+			t.Fatalf("unexpected handoff input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.TicketHandoffReport{
+			Command:       "ticket handoff",
+			SchemaVersion: gira.WorkerHandoffSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			Issue:         input.Ticket,
+			Role:          input.Role,
+			Profile:       input.Profile,
+			Readiness:     gira.TicketReadinessReport{SchemaVersion: gira.TicketReadinessSchemaVersion, Readiness: "ready"},
+			NextAction:    "implement",
+		}, nil
+	}
+	startCalled := false
+	newWorkStartResultWithOptions = func(repo gira.RepoRef, issue int, options gira.WorkStartOptions) (gira.WorkStartResult, error) {
+		startCalled = true
+		if repo.FullName() != "StatPan/gira" || issue != 10 || !options.DryRun {
+			t.Fatalf("unexpected start input: repo=%s issue=%d options=%+v", repo.FullName(), issue, options)
+		}
+		return gira.WorkStartResult{
+			Repo:       repo.FullName(),
+			Issue:      issue,
+			Title:      "Ready issue",
+			Branch:     "issue-10-ready-issue",
+			DryRun:     true,
+			Status:     "Ready",
+			NextStatus: "In progress",
+			NextStep:   "gira ticket start 10 --apply",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"queue", "take", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !startCalled {
+		t.Fatalf("ticket start builder was not called")
+	}
+	for _, want := range []string{
+		`"schema_version": "queue-take/v1"`,
+		`"dry_run": true`,
+		`"apply": false`,
+		`"worker_handoff"`,
+		`"start_result"`,
+		`"schema_version": "work-start-result/v1"`,
+		`"branch": "issue-10-ready-issue"`,
+		`"next_action": "apply_ticket_start"`,
+		`"next_step": "gira queue take --repo StatPan/gira --ticket 10 --apply"`,
+		`"canonical_command": "gira queue take"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("queue take dry-run JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestQueueTakeApplyJSONDelegatesTicketStart(t *testing.T) {
+	restoreWorkspace := newWorkspaceStatusReportWithOptions
+	restoreHandoff := newTicketHandoffReport
+	restoreStart := newWorkStartResultWithOptions
+	t.Cleanup(func() {
+		newWorkspaceStatusReportWithOptions = restoreWorkspace
+		newTicketHandoffReport = restoreHandoff
+		newWorkStartResultWithOptions = restoreStart
+	})
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.WorkspaceReport{
+			Workspace:  workspace,
+			ConfigPath: ".gira/config.yaml",
+			Queues: gira.BuildWorkspaceQueues(workspace, []gira.WorkStatusResult{
+				{Repo: "StatPan/gira", Issue: 10, Title: "Ready issue", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+			}),
+		}, nil
+	}
+	newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+		return gira.TicketHandoffReport{
+			Command:       "ticket handoff",
+			SchemaVersion: gira.WorkerHandoffSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			Issue:         input.Ticket,
+			Role:          input.Role,
+			Profile:       input.Profile,
+			Readiness:     gira.TicketReadinessReport{SchemaVersion: gira.TicketReadinessSchemaVersion, Readiness: "ready"},
+			NextAction:    "implement",
+		}, nil
+	}
+	startCalled := false
+	newWorkStartResultWithOptions = func(repo gira.RepoRef, issue int, options gira.WorkStartOptions) (gira.WorkStartResult, error) {
+		startCalled = true
+		if repo.FullName() != "StatPan/gira" || issue != 10 || options.DryRun {
+			t.Fatalf("unexpected start input: repo=%s issue=%d options=%+v", repo.FullName(), issue, options)
+		}
+		return gira.WorkStartResult{
+			Repo:       repo.FullName(),
+			Issue:      issue,
+			Title:      "Ready issue",
+			Branch:     "issue-10-ready-issue",
+			DryRun:     false,
+			Status:     "Ready",
+			NextStatus: "In progress",
+			NextStep:   "gira ticket pr --dry-run",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"queue", "take", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !startCalled {
+		t.Fatalf("ticket start builder was not called")
+	}
+	for _, want := range []string{
+		`"schema_version": "queue-take/v1"`,
+		`"dry_run": false`,
+		`"apply": true`,
+		`"next_action": "handoff_ticket"`,
+		`"next_step": "gira ticket handoff --repo StatPan/gira --ticket 10 implementer --json"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("queue take apply JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestQueueTakeApplyRefusesUnsafeQueuesWithoutCallingStart(t *testing.T) {
+	restoreWorkspace := newWorkspaceStatusReportWithOptions
+	restoreHandoff := newTicketHandoffReport
+	restoreStart := newWorkStartResultWithOptions
+	t.Cleanup(func() {
+		newWorkspaceStatusReportWithOptions = restoreWorkspace
+		newTicketHandoffReport = restoreHandoff
+		newWorkStartResultWithOptions = restoreStart
+	})
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		if len(options.Repos) != 1 || options.Repos[0].FullName() != "StatPan/gira" {
+			t.Fatalf("unexpected repo filter: %+v", options.Repos)
+		}
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.WorkspaceReport{
+			Workspace:  workspace,
+			ConfigPath: ".gira/config.yaml",
+			Queues: gira.BuildWorkspaceQueues(workspace, []gira.WorkStatusResult{
+				{Repo: "StatPan/gira", Issue: 11, Title: "Blocked issue", State: "open", Status: "Blocked", Labels: []string{"status:blocked"}},
+			}),
+		}, nil
+	}
+	newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+		t.Fatalf("handoff builder should not be called for blocked queue item")
+		return gira.TicketHandoffReport{}, nil
+	}
+	newWorkStartResultWithOptions = func(repo gira.RepoRef, issue int, options gira.WorkStartOptions) (gira.WorkStartResult, error) {
+		t.Fatalf("ticket start builder should not be called for blocked queue item")
+		return gira.WorkStartResult{}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"queue", "take", "--repo", "StatPan/gira", "--ticket", "11", "--apply", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s stdout: %s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{`"schema_version": "queue-take/v1"`, `"queue_not_handoff_safe"`, `"queue_blocked"`, `"start_result": null`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("queue take blocked JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestQueueTakeApplyRefusesWorkerHandoffNotReadyWithoutCallingStart(t *testing.T) {
+	restoreWorkspace := newWorkspaceStatusReportWithOptions
+	restoreHandoff := newTicketHandoffReport
+	restoreStart := newWorkStartResultWithOptions
+	t.Cleanup(func() {
+		newWorkspaceStatusReportWithOptions = restoreWorkspace
+		newTicketHandoffReport = restoreHandoff
+		newWorkStartResultWithOptions = restoreStart
+	})
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.WorkspaceReport{
+			Workspace:  workspace,
+			ConfigPath: ".gira/config.yaml",
+			Queues: gira.BuildWorkspaceQueues(workspace, []gira.WorkStatusResult{
+				{Repo: "StatPan/gira", Issue: 10, Title: "Weak ticket", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+			}),
+		}, nil
+	}
+	newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+		return gira.TicketHandoffReport{
+			Command:       "ticket handoff",
+			SchemaVersion: gira.WorkerHandoffSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			Issue:         input.Ticket,
+			Role:          input.Role,
+			Profile:       input.Profile,
+			Readiness: gira.TicketReadinessReport{
+				SchemaVersion: gira.TicketReadinessSchemaVersion,
+				Readiness:     "needs_refinement",
+				Findings:      []gira.TicketReadinessFinding{{Severity: "error", Kind: "missing_scope"}},
+			},
+			NextAction:      "refine_ticket",
+			NextSafeCommand: "gira ticket view --repo StatPan/gira --ticket 10",
+		}, nil
+	}
+	newWorkStartResultWithOptions = func(repo gira.RepoRef, issue int, options gira.WorkStartOptions) (gira.WorkStartResult, error) {
+		t.Fatalf("ticket start builder should not be called when worker handoff is not ready")
+		return gira.WorkStartResult{}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"queue", "take", "--apply", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s stdout: %s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{`"worker_handoff_not_ready"`, `"readiness_needs_refinement"`, `"finding_missing_scope"`, `"next_action": "refine_ticket"`, `"start_result": null`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("queue take worker-not-ready JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestWorkspaceListAliasesBacklog(t *testing.T) {
 	restore := newWorkspaceStatusReportWithOptions
 	t.Cleanup(func() { newWorkspaceStatusReportWithOptions = restore })

@@ -26,6 +26,8 @@ Schema version: `gira-command-capabilities/v1`
 | `gira milestone new` | none | `apply_mutation` | `stable_json` | creates a GitHub milestone; --dry-run previews payload and target repo | docs-site/sprint-release.md, docs-site/ticket-workflow.md |
 | `gira milestone plan` | none | `apply_mutation` | `stable_json` | selects and assigns candidate tickets; --dry-run previews candidate set and mutations | docs-site/sprint-release.md, docs-site/ticket-workflow.md |
 | `gira milestone status` | none | `read` | `stable_json` | none | docs-site/sprint-release.md, docs-site/ticket-workflow.md |
+| `gira queue list` | none | `read` | `stable_json` | none | docs/workspace.md, docs-site/command-reference.md |
+| `gira queue next` | none | `read` | `stable_json` | none | docs/workspace.md, docs-site/command-reference.md |
 | `gira setup global` | none | `apply_mutation` | `stable_json` | writes global config and repo registry files; --dry-run previews file changes | README.md, docs/global-config-registry.md, docs-site/global-config.md, docs/workspace.md |
 | `gira stats repo` | none | `read` | `stable_json` | none | README.md, docs/closure-funnel-stats.md, docs-site/closure-funnel-stats.md |
 | `gira stats workspace` | none | `unsupported` | `planned` | none | docs/closure-funnel-stats.md, docs-site/closure-funnel-stats.md |

@@ -28,6 +28,7 @@ Daily commands:
   guide       Built-in quickstart and workflow guides
   setup       Intention-based first-run and global registry setup
   workspace   Personal workspace inbox and backlog overview
+  queue       Agent-ready workspace queue selection commands
   projects    Sync visible GitHub Projects board items
   repo        Manage global registry entries for repositories
   adopt       Plan or apply adoption for existing repositories and issues
@@ -327,6 +328,31 @@ Flags:
   --repo string         Narrow status/backlog/list to execution repo. Repeatable or comma-separated
   --limit int           Maximum execution repos to inspect for status/backlog/list
   --active-only         Show only repos with open work or active milestone
+  --max-concurrency int Maximum concurrent repo status fetches (default 4)
+  --cache-ttl duration  Reuse recent per-repo status cache (default 5m)
+  --refresh             Ignore cached workspace status and fetch fresh data
+  --json                Emit stable JSON output
+  -h, --help            Show help
+`
+
+const queueHelp = `Agent-ready workspace queue selection commands.
+
+Usage:
+  gira queue list [--config .gira/config.yaml] [--repo OWNER/REPO] [--queue ready|review|finish|blocked|failed|human] [--limit N] [--compact] [--cache-ttl 5m] [--refresh] [--json]
+  gira queue next [--config .gira/config.yaml] [--repo OWNER/REPO] [--role implementer] [--profile default] [--compact] [--cache-ttl 5m] [--refresh] [--json]
+
+Commands:
+  list  Show queue items derived from workspace-queues/v1
+  next  Select the first agent-ready item and print handoff/run commands
+
+Flags:
+  --config string       Explicit workspace config path; defaults to global registry, then ".gira/config.yaml"
+  --repo string         Narrow queue selection to an execution repo. Repeatable or comma-separated
+  --queue string        Queue filter for list: ready, review, finish, blocked, failed, or human
+  --limit int           Maximum queue items to print for list. Default: all
+  --role string         Handoff role for next: planner, implementer, or reviewer. Default: implementer
+  --profile string      Handoff profile for next: default or python. Default: default
+  --compact             Print compact text output
   --max-concurrency int Maximum concurrent repo status fetches (default 4)
   --cache-ttl duration  Reuse recent per-repo status cache (default 5m)
   --refresh             Ignore cached workspace status and fetch fresh data
@@ -1612,6 +1638,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runInit(args[1:], stdout, stderr)
 	case "workspace":
 		return runWorkspace(args[1:], stdout, stderr)
+	case "queue":
+		return runQueue(args[1:], stdout, stderr)
 	case "projects":
 		return runProjects(args[1:], stdout, stderr)
 	case "repo":
@@ -6561,6 +6589,189 @@ func runPortfolio(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 }
 
+func runQueue(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, queueHelp)
+		return 0
+	}
+	switch args[0] {
+	case "list":
+		return runQueueList(args[1:], stdout, stderr)
+	case "next":
+		return runQueueNext(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown queue command: %s\n\n", args[0])
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+}
+
+func runQueueList(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("queue list", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", "", "Workspace config path")
+	var repos repeatedStringFlag
+	var queues repeatedStringFlag
+	fs.Var(&repos, "repo", "Execution repo to include. Repeatable or comma-separated")
+	fs.Var(&queues, "queue", "Queue filter. Repeatable or comma-separated")
+	limit := fs.Int("limit", 0, "Maximum queue items to print")
+	compact := fs.Bool("compact", false, "Print compact text output")
+	maxConcurrency := fs.Int("max-concurrency", 4, "Maximum concurrent repo status fetches")
+	cacheTTL := fs.Duration("cache-ttl", 5*time.Minute, "Reuse recent per-repo status cache for this duration. Use 0 to disable")
+	refresh := fs.Bool("refresh", false, "Ignore cached workspace status and fetch fresh data")
+	cacheRoot := fs.String("cache-root", "", "Workspace status cache root")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, queueHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *limit < 0 {
+		fmt.Fprint(stderr, "--limit must be at least 0\n\n")
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *maxConcurrency < 1 {
+		fmt.Fprint(stderr, "--max-concurrency must be at least 1\n\n")
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *cacheTTL < 0 {
+		fmt.Fprint(stderr, "--cache-ttl must be non-negative\n\n")
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	selectedRepos, repoFilters, err := parseQueueRepoFilters(repos)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	workspaceReport, err := newWorkspaceStatusReportWithOptions(*configPath, gira.WorkspaceStatusOptions{
+		Repos:          selectedRepos,
+		MaxConcurrency: *maxConcurrency,
+		CacheTTL:       *cacheTTL,
+		Refresh:        *refresh,
+		CacheRoot:      *cacheRoot,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildQueueListReport(workspaceReport, gira.QueueListOptions{
+		QueueNames:  append([]string(nil), queues...),
+		RepoFilters: repoFilters,
+		Limit:       *limit,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode queue list JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatQueueList(report, *compact))
+	return 0
+}
+
+func runQueueNext(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("queue next", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", "", "Workspace config path")
+	var repos repeatedStringFlag
+	fs.Var(&repos, "repo", "Execution repo to include. Repeatable or comma-separated")
+	role := fs.String("role", gira.AgentPromptRoleImplementer, "Handoff role: planner|implementer|reviewer")
+	profile := fs.String("profile", gira.AgentPromptProfileDefault, "Handoff profile: default|python")
+	compact := fs.Bool("compact", false, "Print compact text output")
+	maxConcurrency := fs.Int("max-concurrency", 4, "Maximum concurrent repo status fetches")
+	cacheTTL := fs.Duration("cache-ttl", 5*time.Minute, "Reuse recent per-repo status cache for this duration. Use 0 to disable")
+	refresh := fs.Bool("refresh", false, "Ignore cached workspace status and fetch fresh data")
+	cacheRoot := fs.String("cache-root", "", "Workspace status cache root")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, queueHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *maxConcurrency < 1 {
+		fmt.Fprint(stderr, "--max-concurrency must be at least 1\n\n")
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *cacheTTL < 0 {
+		fmt.Fprint(stderr, "--cache-ttl must be non-negative\n\n")
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	selectedRepos, repoFilters, err := parseQueueRepoFilters(repos)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	workspaceReport, err := newWorkspaceStatusReportWithOptions(*configPath, gira.WorkspaceStatusOptions{
+		Repos:          selectedRepos,
+		MaxConcurrency: *maxConcurrency,
+		CacheTTL:       *cacheTTL,
+		Refresh:        *refresh,
+		CacheRoot:      *cacheRoot,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := gira.BuildQueueNextReport(workspaceReport, gira.QueueNextOptions{
+		RepoFilters: repoFilters,
+		Role:        *role,
+		Profile:     *profile,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, queueHelp)
+		return 2
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode queue next JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatQueueNext(report, *compact))
+	return 0
+}
+
 func runWorkspace(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(stdout, workspaceHelp)
@@ -8984,6 +9195,26 @@ func (f *repeatedStringFlag) String() string {
 func (f *repeatedStringFlag) Set(value string) error {
 	*f = append(*f, strings.TrimSpace(value))
 	return nil
+}
+
+func parseQueueRepoFilters(values repeatedStringFlag) ([]gira.RepoRef, []string, error) {
+	selected := []gira.RepoRef{}
+	filters := []string{}
+	for _, raw := range values {
+		for _, value := range strings.Split(raw, ",") {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			repo, err := gira.ParseRepoRef(value)
+			if err != nil {
+				return nil, nil, fmt.Errorf("--repo must be in OWNER/REPO format: %w", err)
+			}
+			selected = append(selected, repo)
+			filters = append(filters, repo.FullName())
+		}
+	}
+	return selected, filters, nil
 }
 
 func appendAuditRecord(repo gira.RepoRef, record gira.AuditRecord) error {

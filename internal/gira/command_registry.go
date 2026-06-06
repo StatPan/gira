@@ -126,6 +126,46 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"queue", "list"},
+			Summary: "List workspace queue items derived from workspace-queues/v1.",
+			Usage:   "gira queue list [--config .gira/config.yaml] [--repo OWNER/REPO] [--queue ready|review|finish|blocked|failed|human] [--limit N] [--compact] [--json]",
+			Since:   "v2.1.0",
+			Flags: []FlagSpec{
+				{Name: "--config", Summary: "Explicit workspace config path. Defaults to global registry, then .gira/config.yaml."},
+				{Name: "--repo", Summary: "Narrow queue items to one or more execution repos."},
+				{Name: "--queue", Summary: "Filter by queue alias: ready, review, finish, blocked, failed, or human."},
+				{Name: "--limit", Summary: "Maximum queue items to print. Default: all."},
+				{Name: "--compact", Summary: "Print compact text output."},
+				{Name: "--json", Summary: "Emit stable queue-list/v1 JSON."},
+			},
+			Docs:        []string{"docs/workspace.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "quickstart"},
+			Examples: []CommandExample{
+				{Summary: "List agent-ready work", Command: "gira queue list --queue ready --json"},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Derived from workspace-queues/v1; does not mutate GitHub or local run state."},
+		},
+		{
+			Path:    []string{"queue", "next"},
+			Summary: "Select the first agent-ready workspace queue item and print handoff and run-start commands.",
+			Usage:   "gira queue next [--config .gira/config.yaml] [--repo OWNER/REPO] [--role implementer] [--profile default] [--compact] [--json]",
+			Since:   "v2.1.0",
+			Flags: []FlagSpec{
+				{Name: "--config", Summary: "Explicit workspace config path. Defaults to global registry, then .gira/config.yaml."},
+				{Name: "--repo", Summary: "Narrow selection to one or more execution repos."},
+				{Name: "--role", Summary: "Handoff role: planner, implementer, or reviewer. Default: implementer."},
+				{Name: "--profile", Summary: "Handoff profile: default or python. Default: default."},
+				{Name: "--compact", Summary: "Print compact text output."},
+				{Name: "--json", Summary: "Emit stable queue-next/v1 JSON."},
+			},
+			Docs:        []string{"docs/workspace.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "quickstart"},
+			Examples: []CommandExample{
+				{Summary: "Select the next LLM-ready item", Command: "gira queue next --json"},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only selection layer over workspace-queues/v1; reports ticket handoff and run start commands without executing them."},
+		},
+		{
 			Path:    []string{"completion"},
 			Summary: "Generate static shell completion scripts for common commands, subcommands, and flags.",
 			Usage:   "gira completion bash|zsh|fish",
@@ -776,6 +816,10 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 		case "workspace repos sync":
 			specs[i].Adapter = adapterApply("updates workspace repo allowlist; --dry-run previews selected repositories", JSONSupportStable)
 		case "workspace status":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "queue list":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "queue next":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "completion":
 			specs[i].Adapter = adapterRead(JSONSupportNone)

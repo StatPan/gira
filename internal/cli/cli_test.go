@@ -1805,6 +1805,135 @@ func TestWorkspaceStatusPassesOptimizationOptions(t *testing.T) {
 	}
 }
 
+func TestQueueListJSONUsesWorkspaceQueuesContract(t *testing.T) {
+	restore := newWorkspaceStatusReportWithOptions
+	t.Cleanup(func() { newWorkspaceStatusReportWithOptions = restore })
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		if configPath != "testdata/workspace.yaml" {
+			t.Fatalf("unexpected config path: %s", configPath)
+		}
+		if len(options.Repos) != 1 || options.Repos[0].FullName() != "StatPan/gira" || options.CacheTTL != time.Minute || options.MaxConcurrency != 2 || !options.Refresh {
+			t.Fatalf("unexpected workspace options: %+v", options)
+		}
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.WorkspaceReport{
+			Workspace:  workspace,
+			ConfigPath: configPath,
+			Queues: gira.BuildWorkspaceQueues(workspace, []gira.WorkStatusResult{
+				{Repo: "StatPan/gira", Issue: 10, Title: "Ready issue", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+				{Repo: "StatPan/gira", Issue: 11, Title: "Blocked issue", State: "open", Status: "Blocked", Labels: []string{"status:blocked"}},
+			}),
+			FetchedAt: "2026-06-06T00:00:00Z",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"queue", "list",
+		"--config", "testdata/workspace.yaml",
+		"--repo", "StatPan/gira",
+		"--queue", "ready",
+		"--limit", "1",
+		"--max-concurrency", "2",
+		"--cache-ttl", "1m",
+		"--refresh",
+		"--json",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"schema_version": "queue-list/v1"`, `"source_contract": "workspace-queues/v1"`, `"agent_ready"`, `"queue": "agent_ready"`, `"limit": 1`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("queue list JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "Blocked issue") {
+		t.Fatalf("queue filter leaked blocked item:\n%s", stdout.String())
+	}
+}
+
+func TestQueueListTextUsesShortQueueNames(t *testing.T) {
+	restore := newWorkspaceStatusReportWithOptions
+	t.Cleanup(func() { newWorkspaceStatusReportWithOptions = restore })
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.WorkspaceReport{
+			Workspace:  workspace,
+			ConfigPath: ".gira/config.yaml",
+			Queues: gira.BuildWorkspaceQueues(workspace, []gira.WorkStatusResult{
+				{Repo: "StatPan/gira", Issue: 10, Title: "Ready issue", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+			}),
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"queue", "list", "--compact"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "ready   ") || !strings.Contains(stdout.String(), "StatPan/gira#10") {
+		t.Fatalf("queue list text missing short queue name:\n%s", stdout.String())
+	}
+}
+
+func TestQueueNextJSONSelectsHandoffAndRunCommands(t *testing.T) {
+	restore := newWorkspaceStatusReportWithOptions
+	t.Cleanup(func() { newWorkspaceStatusReportWithOptions = restore })
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.WorkspaceReport{
+			Workspace:  workspace,
+			ConfigPath: ".gira/config.yaml",
+			Queues: gira.BuildWorkspaceQueues(workspace, []gira.WorkStatusResult{
+				{Repo: "StatPan/gira", Issue: 10, Title: "Ready issue", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+			}),
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"queue", "next", "--role", "planner", "--profile", "python", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "queue-next/v1"`,
+		`"next_action": "handoff_ticket"`,
+		`"selection_reason": "first_agent_ready:ticket_ready"`,
+		`"handoff_command": "gira ticket handoff --repo StatPan/gira --ticket 10 planner --profile python --json"`,
+		`"run_command": "gira run start 10 --repo StatPan/gira --role planner --profile python --dry-run"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("queue next JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestQueueNextJSONReportsStopReasonsWithoutSelection(t *testing.T) {
+	restore := newWorkspaceStatusReportWithOptions
+	t.Cleanup(func() { newWorkspaceStatusReportWithOptions = restore })
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.WorkspaceReport{
+			Workspace:  workspace,
+			ConfigPath: ".gira/config.yaml",
+			Queues: gira.BuildWorkspaceQueues(workspace, []gira.WorkStatusResult{
+				{Repo: "StatPan/gira", Issue: 11, Title: "Blocked issue", State: "open", Status: "Blocked", Labels: []string{"status:blocked"}},
+			}),
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"queue", "next", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"selected": null`, `"no_agent_ready_item"`, `"blocked_present"`, `"next_action": "inspect_queues"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("queue next stop JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestWorkspaceListAliasesBacklog(t *testing.T) {
 	restore := newWorkspaceStatusReportWithOptions
 	t.Cleanup(func() { newWorkspaceStatusReportWithOptions = restore })

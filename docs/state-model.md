@@ -19,7 +19,7 @@ Local files/cache = configuration, bindings, and acceleration
 | --- | --- | --- | --- |
 | GitHub labels | `status:ready`, `status:in-progress`, `status:in-review`, `status:blocked`, `status:done`, `type:*`, `priority:*`, `area:*`, `agent:*`, optional `lane:*` | Small public taxonomy that humans can scan in GitHub. | GitHub issue labels. |
 | GitHub issue/PR state | Open or closed issue, linked PR, draft PR, merged PR, reviews, checks, milestones, assignees, comments. | Durable execution evidence. | GitHub issue, PR, check, review, milestone, and comment APIs. |
-| Gira computed JSON | `ticket_readiness`, `pr_readiness`, `finish-readiness/v1`, `workspace-queues/v1`, `queue-list/v1`, `queue-next/v1`, `queue-handoff/v1`, `queue-take/v1`, `goal-next/v1`, `blockers`, `reason_codes`, `next_action`, `next_step`, `remaining_autonomous_work`. | High-cardinality operating state for agents, adapters, dashboards, and CLI decisions. | Recomputed from GitHub evidence and Gira config. |
+| Gira computed JSON | `ticket_readiness`, `pr_readiness`, `finish-readiness/v1`, `workspace-queues/v1`, `queue-list/v1`, `queue-next/v1`, `queue-handoff/v1`, `queue-take/v1`, `goal-next/v1`, `config-storage-report/v1`, `blockers`, `reason_codes`, `next_action`, `next_step`, `remaining_autonomous_work`. | High-cardinality operating state for agents, adapters, dashboards, and CLI decisions. | Recomputed from GitHub evidence and Gira config. |
 | Receipt/comment state | `finish-receipt/v1`, `goal-finish-receipt/v1`, supersede decision notes, worker handoff notes, progress notes. | Durable audit trail that explains why a transition or handoff happened. | GitHub issue or PR comments. |
 | Local or global config | `.gira/config.yaml`, global repo registry, workspace registry, branch policy defaults, provider config pointers. | Operator configuration and repo/workspace selection. | Local files unless explicitly committed as repo-local contract. |
 | Local cache/state | Workspace status cache, API budget-friendly snapshots, recent command state, checkout path metadata. | Speed and ergonomics only. | Disposable local cache; never the authoritative workflow state. |
@@ -100,6 +100,8 @@ Appropriate local state:
 - Branch policy defaults and recorded branch binding evidence.
 - Cache entries for bounded workspace reads.
 - Provider configuration pointers that do not contain secrets.
+- Private `gira run` prompts, event logs, stderr, results, and manifests when
+  the operator explicitly uses local run evidence.
 
 Inappropriate local state:
 
@@ -110,6 +112,11 @@ Inappropriate local state:
 If local state disappears, Gira should be able to reconstruct the workflow from
 GitHub plus repo/global configuration, possibly with less performance or less
 ergonomic command resolution.
+
+Use `gira config storage --repo OWNER/REPO` to inspect the local storage map.
+It reports config, state, cache, run evidence, audit, export, and distribution
+cache surfaces with durability, privacy, rebuild, and source-of-truth
+classifications. It is a diagnostic report, not a local database.
 
 ## Vocabulary
 

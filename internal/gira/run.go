@@ -477,17 +477,14 @@ func selectRunManifest(input RunSelectInput) (*RunManifest, []RunManifest, error
 
 func runStateRoot(override string) (string, error) {
 	if strings.TrimSpace(override) != "" {
-		return filepath.Abs(override)
+		return filepath.Abs(expandUserPath(override))
 	}
 	root, err := DefaultGlobalConfigRoot()
 	if err != nil {
 		return "", err
 	}
-	cfg, err := LoadGlobalConfig(root)
-	if err == nil && strings.TrimSpace(cfg.Paths.StateRoot) != "" {
-		return filepath.Abs(cfg.Paths.StateRoot)
-	}
-	return filepath.Join(root, "state"), nil
+	stateRoot, _, err := DefaultGiraStateRoot(root)
+	return stateRoot, err
 }
 
 func generateRunID(now time.Time, repo RepoRef, ticket int) string {

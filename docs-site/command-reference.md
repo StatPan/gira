@@ -36,6 +36,34 @@ gira completion fish
 
 Documented in: `README.md`, `docs-site/command-reference.md`
 
+## `config storage`
+
+Show local storage roots, durability, privacy, and rebuild boundaries.
+
+Usage:
+
+```bash
+gira config storage [--repo OWNER/REPO] [--config-root PATH] [--json]
+```
+
+Since: `v2.3.0`
+
+Flags:
+
+- `--repo`: Target repo used to include selected repo registry and repo-local contract paths.
+- `--config-root`: Override global config root for diagnostics.
+- `--json`: Emit stable config-storage-report/v1 JSON.
+
+Examples:
+
+- Inspect local storage boundaries
+
+```bash
+gira config storage --repo OWNER/app --json
+```
+
+Documented in: `docs/global-config-registry.md`, `docs/state-model.md`, `docs-site/global-config.md`, `docs-site/command-reference.md`
+
 ## `feature check`
 
 Validate optional feature map records and work links without mutating GitHub.

@@ -123,6 +123,31 @@ func TestConfigDoctorCommandJSON(t *testing.T) {
 	}
 }
 
+func TestConfigStorageCommandJSON(t *testing.T) {
+	t.Chdir(t.TempDir())
+	root := t.TempDir()
+	stateRoot := filepath.Join(t.TempDir(), "state")
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("paths:\n  state_root: "+filepath.ToSlash(stateRoot)+"\n"), 0o644); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"config", "storage", "--repo", "StatPan/gira", "--config-root", root, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.ConfigStorageReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode config storage JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.ConfigStorageReportSchemaVersion || report.Command != "config storage" || report.Repo != "StatPan/gira" {
+		t.Fatalf("unexpected config storage report: %+v", report)
+	}
+	if !strings.Contains(stdout.String(), `"runtime_state_root"`) || !strings.Contains(stdout.String(), filepath.ToSlash(stateRoot)) {
+		t.Fatalf("config storage JSON missing state root evidence:\n%s", stdout.String())
+	}
+}
+
 func TestConfigUnknownCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"config", "missing"}, &stdout, &stderr)

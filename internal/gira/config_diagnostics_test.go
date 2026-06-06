@@ -97,3 +97,78 @@ func TestBuildConfigDoctorReportDefaultsNextStep(t *testing.T) {
 		t.Fatalf("next steps = %+v", report.NextSteps)
 	}
 }
+
+func TestBuildConfigStorageReportClassifiesLocalSurfaces(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeTestFile(t, filepath.Join(".gira", "config.yaml"), "repo: StatPan/gira\n")
+	root := t.TempDir()
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	stateRoot := filepath.Join(t.TempDir(), "state")
+	if err := os.MkdirAll(filepath.Join(cacheRoot, "workspace-status"), 0o755); err != nil {
+		t.Fatalf("mkdir cache: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(stateRoot, "runs"), 0o755); err != nil {
+		t.Fatalf("mkdir state: %v", err)
+	}
+	writeTestFile(t, filepath.Join(root, "config.yaml"), "paths:\n  cache_root: "+filepath.ToSlash(cacheRoot)+"\n  state_root: "+filepath.ToSlash(stateRoot)+"\n")
+	writeTestFile(t, filepath.Join(root, "repos", "StatPan", "gira.yaml"), "repo: StatPan/gira\npath: /workspace/gira\n")
+
+	report, err := BuildConfigStorageReport("StatPan/gira", root, fakeRegisterRunner{})
+	if err != nil {
+		t.Fatalf("BuildConfigStorageReport error: %v", err)
+	}
+	if report.SchemaVersion != ConfigStorageReportSchemaVersion || report.Command != "config storage" || report.Repo != "StatPan/gira" {
+		t.Fatalf("unexpected storage report header: %+v", report)
+	}
+	state := findStorageSurface(t, report, "runtime_state_root")
+	if state.Path != stateRoot || state.PathSource != "global_config.paths.state_root" || state.Durability != "private_runtime_state" || state.SourceOfTruth == "github" {
+		t.Fatalf("unexpected state surface: %+v", state)
+	}
+	cache := findStorageSurface(t, report, "workspace_status_cache")
+	if cache.Path != filepath.Join(cacheRoot, "workspace-status") || !cache.Exists || cache.Durability != "disposable_cache" {
+		t.Fatalf("unexpected workspace cache surface: %+v", cache)
+	}
+	contract := findStorageSurface(t, report, "repo_local_contract")
+	if contract.Path != ".gira/config.yaml" || !contract.Exists || contract.Durability != "shared_repo_contract" {
+		t.Fatalf("unexpected repo contract surface: %+v", contract)
+	}
+	export := findStorageSurface(t, report, "dashboard_export_bundle")
+	if export.Durability != "regenerable_export" || export.SourceOfTruth != "github_and_gira_computed_state" {
+		t.Fatalf("unexpected export surface: %+v", export)
+	}
+	text := FormatConfigStorageReport(report)
+	for _, want := range []string{"config storage:", "runtime_state_root", "workspace_status_cache", "durability=private_runtime_state", "dashboard_export_bundle"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("formatted storage report missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestBuildConfigStorageReportWarnsWhenGlobalConfigInvalid(t *testing.T) {
+	t.Chdir(t.TempDir())
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "config.yaml"), "default_owner: [")
+
+	report, err := BuildConfigStorageReport("", root, fakeRegisterRunner{})
+	if err != nil {
+		t.Fatalf("BuildConfigStorageReport error: %v", err)
+	}
+	if len(report.Warnings) != 1 || report.Warnings[0].Code != "invalid_global_config" {
+		t.Fatalf("warnings = %+v, want invalid_global_config", report.Warnings)
+	}
+	state := findStorageSurface(t, report, "runtime_state_root")
+	if state.Path != filepath.Join(root, "state") || state.PathSource != "config_root_state_default" {
+		t.Fatalf("state root should fall back under config root when config is invalid: %+v", state)
+	}
+}
+
+func findStorageSurface(t *testing.T, report ConfigStorageReport, name string) ConfigStorageSurface {
+	t.Helper()
+	for _, surface := range report.Surfaces {
+		if surface.Name == name {
+			return surface
+		}
+	}
+	t.Fatalf("missing storage surface %q in %+v", name, report.Surfaces)
+	return ConfigStorageSurface{}
+}

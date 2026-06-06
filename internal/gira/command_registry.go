@@ -88,6 +88,22 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"config", "storage"},
+			Summary: "Show local storage roots, durability, privacy, and rebuild boundaries.",
+			Usage:   "gira config storage [--repo OWNER/REPO] [--config-root PATH] [--json]",
+			Since:   "v2.3.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target repo used to include selected repo registry and repo-local contract paths."},
+				{Name: "--config-root", Summary: "Override global config root for diagnostics."},
+				{Name: "--json", Summary: "Emit stable config-storage-report/v1 JSON."},
+			},
+			Docs:        []string{"docs/global-config-registry.md", "docs/state-model.md", "docs-site/global-config.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"quickstart", "agent"},
+			Examples: []CommandExample{
+				{Summary: "Inspect local storage boundaries", Command: "gira config storage --repo OWNER/app --json"},
+			},
+		},
+		{
 			Path:    []string{"workspace", "repos", "sync"},
 			Summary: "Discover GitHub owner/org repos and update a global workspace execution repo allowlist.",
 			Usage:   "gira workspace repos sync [--owner OWNER] [--workspace NAME] --dry-run|--apply [--include-archived]",
@@ -877,6 +893,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterApply("writes global config and repo registry files; --dry-run previews file changes", JSONSupportStable)
 		case "workspace repos sync":
 			specs[i].Adapter = adapterApply("updates workspace repo allowlist; --dry-run previews selected repositories", JSONSupportStable)
+		case "config storage":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only config-storage-report/v1 over local paths; does not read private run artifact contents or mutate files."}
 		case "workspace status":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "queue list":

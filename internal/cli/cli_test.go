@@ -884,6 +884,67 @@ func TestStatsRepoCommandJSON(t *testing.T) {
 	}
 }
 
+func TestStatsPulseCommandText(t *testing.T) {
+	restore := newStatsPulseReport
+	t.Cleanup(func() { newStatsPulseReport = restore })
+	newStatsPulseReport = func(input gira.StatsPulseOptions) (gira.PulseReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Since != "14d" || input.Limit != 25 {
+			t.Fatalf("unexpected pulse input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.PulseReport{
+			SchemaVersion: "pulse-report/v1alpha1",
+			Command:       "stats pulse",
+			Scope:         gira.PulseScope{Kind: "repo", Repo: input.Repo.FullName()},
+			Window:        gira.PulseWindow{Since: input.Since, Until: "2026-05-11T00:00:00Z"},
+			Source:        gira.StatsSource{Backend: "github", ReadOnly: true},
+			Summary:       gira.PulseSummary{Finished: 1, Reviewed: 1},
+			Health:        gira.PulseHealth{ReviewNeeded: 2},
+			Items: []gira.PulseItem{{
+				Kind: "finished", Repo: input.Repo.FullName(), Issue: 7, PR: 10, Title: "Finish pulse", Evidence: []string{"merged_pr", "closing_reference"},
+			}},
+			PrivacyBoundary: gira.PulsePrivacyBoundary{Scope: "work_item_state_only"},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"stats", "pulse", "--repo", "StatPan/gira", "--since", "14d", "--limit", "25"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"Gira Pulse", "finished: 1", "review needed: 2", "Finish pulse"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("pulse output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestStatsPulseCommandJSON(t *testing.T) {
+	restore := newStatsPulseReport
+	t.Cleanup(func() { newStatsPulseReport = restore })
+	newStatsPulseReport = func(input gira.StatsPulseOptions) (gira.PulseReport, error) {
+		return gira.PulseReport{
+			SchemaVersion: "pulse-report/v1alpha1",
+			Command:       "stats pulse",
+			Scope:         gira.PulseScope{Kind: "repo", Repo: input.Repo.FullName()},
+			Window:        gira.PulseWindow{Since: input.Since},
+			Summary:       gira.PulseSummary{Finished: 1},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"stats", "pulse", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.PulseReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode pulse JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != "pulse-report/v1alpha1" || report.Command != "stats pulse" || report.Scope.Repo != "StatPan/gira" {
+		t.Fatalf("unexpected pulse report: %+v", report)
+	}
+}
+
 func TestStatsWorkspacePlannedAndUnknownCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"stats", "workspace", "--since", "30d"}, &stdout, &stderr)
@@ -929,6 +990,22 @@ func TestStatsRepoRejectsDuplicateRepoAndReportsBuilderError(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "--limit must be greater than 0") {
 		t.Fatalf("stderr missing builder error:\n%s", stderr.String())
+	}
+
+	restorePulse := newStatsPulseReport
+	t.Cleanup(func() { newStatsPulseReport = restorePulse })
+	newStatsPulseReport = func(input gira.StatsPulseOptions) (gira.PulseReport, error) {
+		return gira.PulseReport{}, fmt.Errorf("--since must be a positive day window like 90d or YYYY-MM-DD")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"stats", "pulse", "--repo", "StatPan/gira", "--since", "0d"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--since must be a positive day window") {
+		t.Fatalf("stderr missing pulse builder error:\n%s", stderr.String())
 	}
 }
 

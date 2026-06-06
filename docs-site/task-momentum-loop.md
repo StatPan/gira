@@ -40,7 +40,7 @@ Pulse should group evidence into named signals instead of one opaque score:
 
 ## First Command
 
-Start with a read-only repo command:
+The first implemented surface is a read-only repo command:
 
 ```bash
 gira stats pulse --repo OWNER/REPO --since 7d --json

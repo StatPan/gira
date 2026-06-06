@@ -175,7 +175,7 @@ Workspace-level pulse can keep the same schema with:
 
 ## Command Shape
 
-The first implementation should add a read-only stats command:
+The first repo-level implementation is a read-only stats command:
 
 ```bash
 gira stats pulse --repo OWNER/REPO --since 7d --json

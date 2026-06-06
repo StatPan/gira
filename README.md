@@ -42,6 +42,8 @@ long-running human and agent work:
 - `queue list`, `queue next`, `queue handoff`, and `queue take` expose the
   Agent Handoff Queue for LLM task selection, handoff packet assembly, and safe
   ticket start without launching a worker by default.
+- `stats pulse` reports recent evidence-backed workflow movement for a repo
+  without turning operator activity into a people or agent ranking.
 - Adapter-facing command metadata and approval evidence, including
   `gira-approval-plan/v1`, let durable agent runtimes treat Gira dry-runs as
   auditable plans before any matching `--apply`.

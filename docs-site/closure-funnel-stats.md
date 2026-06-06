@@ -8,10 +8,23 @@ from issue to PR to checks to merge and closed issue.
 ```bash
 gira stats repo --repo OWNER/REPO --since 90d
 gira stats repo OWNER/REPO --since 90d --json
+gira stats pulse --repo OWNER/REPO --since 7d
+gira stats pulse OWNER/REPO --since 7d --json
 ```
 
 Text output is the default for humans. Use `--json` for automation and
 dashboard exports.
+
+## Pulse
+
+`gira stats pulse` reports recent evidence-backed workflow movement for one
+repo. It emits `pulse-report/v1alpha1` and groups movement into named signals:
+`finished`, `reviewed`, `refined`, `unblocked`, `superseded`, `started`, and
+`checked`.
+
+Pulse also shows current attention counts for ready, review-needed,
+finish-ready, blocked, failed-check, and human-decision work. It is not a
+ranking surface.
 
 ## Metrics
 

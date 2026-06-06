@@ -86,8 +86,9 @@ type PulseReport struct {
 }
 
 type PulseScope struct {
-	Kind string `json:"kind"`
-	Repo string `json:"repo"`
+	Kind      string `json:"kind"`
+	Repo      string `json:"repo,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
 }
 
 type PulseWindow struct {

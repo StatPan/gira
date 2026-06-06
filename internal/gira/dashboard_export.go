@@ -23,11 +23,15 @@ const workspaceDashboardRawStatusPath = "raw/workspace_status.json"
 const workspaceDashboardQueuesPath = "derived/workspace_queues.json"
 const workspaceDashboardIndexPath = "derived/workspace_dashboard.json"
 const workspaceDashboardQueueCSVPath = "csv/workspace_queue_items.csv"
+const workspaceDashboardPulsePath = "derived/workspace_pulse.json"
+const workspaceDashboardPulseCSVPath = "csv/workspace_pulse_items.csv"
+const workspaceDashboardStoragePath = "derived/storage_diagnostics.json"
 const workspaceDashboardHTMLPath = "index.html"
 
 var dashboardExecutionCSVHeaders = []string{"id", "kind", "title", "status", "priority", "owner", "milestone", "target_date", "source_refs"}
 var dashboardRoadmapCSVHeaders = []string{"id", "title", "start_date", "target_date", "status", "phase", "source_refs"}
 var dashboardWorkspaceQueueCSVHeaders = []string{"queue", "repo", "issue", "title", "state", "status", "pr_number", "pr_state", "reason_codes", "next_safe_command", "url"}
+var dashboardWorkspacePulseCSVHeaders = []string{"kind", "repo", "issue", "pr", "title", "confidence", "occurred_at", "evidence", "source_refs"}
 
 var dashboardExportSourceGoogleCalendarReason = "not_enabled"
 
@@ -54,6 +58,8 @@ type DashboardExportCounts struct {
 	Transitions         int `json:"transitions"`
 	WorkspaceRepos      int `json:"workspace_repos,omitempty"`
 	WorkspaceQueueItems int `json:"workspace_queue_items,omitempty"`
+	PulseItems          int `json:"pulse_items,omitempty"`
+	StorageSurfaces     int `json:"storage_surfaces,omitempty"`
 	Warnings            int `json:"warnings"`
 }
 
@@ -227,21 +233,62 @@ type DashboardWorkspaceArtifacts struct {
 	WorkspaceQueues    string   `json:"workspace_queues"`
 	WorkspaceDashboard string   `json:"workspace_dashboard"`
 	QueueItemsCSV      string   `json:"queue_items_csv"`
+	WorkspacePulse     string   `json:"workspace_pulse,omitempty"`
+	PulseItemsCSV      string   `json:"pulse_items_csv,omitempty"`
+	StorageDiagnostics string   `json:"storage_diagnostics,omitempty"`
 	IndexHTML          string   `json:"index_html"`
 	TicketReports      []string `json:"ticket_reports,omitempty"`
 	ReviewReports      []string `json:"review_reports,omitempty"`
 }
 
+type DashboardWorkspacePulseSummary struct {
+	SchemaVersion   string               `json:"schema_version"`
+	Path            string               `json:"path"`
+	Items           int                  `json:"items"`
+	Summary         PulseSummary         `json:"summary"`
+	Health          PulseHealth          `json:"health"`
+	Warnings        int                  `json:"warnings"`
+	PrivacyBoundary PulsePrivacyBoundary `json:"privacy_boundary"`
+}
+
+type DashboardWorkspaceStorageSummary struct {
+	SchemaVersion              string `json:"schema_version"`
+	Path                       string `json:"path"`
+	Surfaces                   int    `json:"surfaces"`
+	PrivateSurfaces            int    `json:"private_surfaces"`
+	LocalDatabase              bool   `json:"local_database"`
+	PrivateRunEvidenceIncluded bool   `json:"private_run_evidence_included"`
+	Warnings                   int    `json:"warnings"`
+}
+
 type DashboardWorkspaceDashboard struct {
-	SchemaVersion string                        `json:"schema_version"`
-	SnapshotAt    string                        `json:"snapshot_at"`
-	Workspace     WorkspaceSummary              `json:"workspace"`
-	Source        DashboardWorkspaceSource      `json:"source"`
-	Counts        WorkspaceCounts               `json:"counts"`
-	QueueCounts   WorkspaceQueueCounts          `json:"queue_counts"`
-	TopActions    []DashboardWorkspaceTopAction `json:"top_actions"`
-	Warnings      []DashboardWorkspaceWarning   `json:"warnings"`
-	Artifacts     DashboardWorkspaceArtifacts   `json:"artifacts"`
+	SchemaVersion string                            `json:"schema_version"`
+	SnapshotAt    string                            `json:"snapshot_at"`
+	Workspace     WorkspaceSummary                  `json:"workspace"`
+	Source        DashboardWorkspaceSource          `json:"source"`
+	Counts        WorkspaceCounts                   `json:"counts"`
+	QueueCounts   WorkspaceQueueCounts              `json:"queue_counts"`
+	TopActions    []DashboardWorkspaceTopAction     `json:"top_actions"`
+	Pulse         *DashboardWorkspacePulseSummary   `json:"pulse,omitempty"`
+	Storage       *DashboardWorkspaceStorageSummary `json:"storage,omitempty"`
+	Warnings      []DashboardWorkspaceWarning       `json:"warnings"`
+	Artifacts     DashboardWorkspaceArtifacts       `json:"artifacts"`
+}
+
+type DashboardWorkspaceSignals struct {
+	Pulse   *PulseReport
+	Storage *ConfigStorageReport
+}
+
+type WorkspaceDashboardSignalBuilder interface {
+	BuildWorkspaceDashboardSignals(config WorkspaceConfigResolved, report WorkspaceReport, snapshotAt time.Time) (DashboardWorkspaceSignals, error)
+}
+
+type GHDashboardSignalBuilder struct {
+	Runner     CommandRunner
+	PulseSince string
+	PulseLimit int
+	ConfigRoot string
 }
 
 type DashboardExportBundle struct {
@@ -255,6 +302,8 @@ type DashboardExportBundle struct {
 	WorkspaceStatus    *WorkspaceReport               `json:"workspace_status,omitempty"`
 	WorkspaceQueues    *WorkspaceQueuesReport         `json:"workspace_queues,omitempty"`
 	WorkspaceDashboard *DashboardWorkspaceDashboard   `json:"workspace_dashboard,omitempty"`
+	WorkspacePulse     *PulseReport                   `json:"workspace_pulse,omitempty"`
+	StorageDiagnostics *ConfigStorageReport           `json:"storage_diagnostics,omitempty"`
 }
 
 func DashboardExportArtifacts() []DashboardExportArtifact {
@@ -421,6 +470,10 @@ func BuildDashboardExportPlan(repo RepoRef, outputRoot string, snapshotAt time.T
 }
 
 func BuildWorkspaceDashboardExportPlan(config WorkspaceConfigResolved, outputRoot string, snapshotAt time.Time, dryRun bool, client WorkspaceClient, staleDays int, options WorkspaceStatusOptions) (DashboardExportPlan, DashboardExportBundle, error) {
+	return BuildWorkspaceDashboardExportPlanWithSignals(config, outputRoot, snapshotAt, dryRun, client, staleDays, options, nil)
+}
+
+func BuildWorkspaceDashboardExportPlanWithSignals(config WorkspaceConfigResolved, outputRoot string, snapshotAt time.Time, dryRun bool, client WorkspaceClient, staleDays int, options WorkspaceStatusOptions, signalBuilder WorkspaceDashboardSignalBuilder) (DashboardExportPlan, DashboardExportBundle, error) {
 	if client == nil {
 		return DashboardExportPlan{}, DashboardExportBundle{}, fmt.Errorf("workspace dashboard export client is required")
 	}
@@ -436,8 +489,16 @@ func BuildWorkspaceDashboardExportPlan(config WorkspaceConfigResolved, outputRoo
 	workspace := report.Workspace
 	sources := dashboardWorkspaceExportSources(snapshotText)
 	deepLinks := workspaceDashboardDeepLinks(report.Queues)
-	artifacts := append(DashboardExportWorkspaceArtifacts(), workspaceDashboardDeepLinkArtifacts(deepLinks)...)
-	dashboard := buildWorkspaceDashboard(report, snapshotText, deepLinks)
+	signals := DashboardWorkspaceSignals{}
+	if signalBuilder != nil {
+		signals, err = signalBuilder.BuildWorkspaceDashboardSignals(config, report, snapshotAt)
+		if err != nil {
+			return DashboardExportPlan{}, DashboardExportBundle{}, err
+		}
+	}
+	artifacts := append(DashboardExportWorkspaceArtifacts(), workspaceDashboardSignalArtifacts(signals)...)
+	artifacts = append(artifacts, workspaceDashboardDeepLinkArtifacts(deepLinks)...)
+	dashboard := buildWorkspaceDashboard(report, snapshotText, deepLinks, signals)
 	warnings := workspaceDashboardWarningMessages(dashboard.Warnings)
 
 	plan := DashboardExportPlan{
@@ -452,6 +513,8 @@ func BuildWorkspaceDashboardExportPlan(config WorkspaceConfigResolved, outputRoo
 		Counts: DashboardExportCounts{
 			WorkspaceRepos:      len(report.Repos),
 			WorkspaceQueueItems: countWorkspaceQueueItems(report.Queues),
+			PulseItems:          countDashboardPulseItems(signals.Pulse),
+			StorageSurfaces:     countDashboardStorageSurfaces(signals.Storage),
 			Warnings:            len(dashboard.Warnings),
 		},
 		Warnings: warnings,
@@ -478,6 +541,8 @@ func BuildWorkspaceDashboardExportPlan(config WorkspaceConfigResolved, outputRoo
 		WorkspaceStatus:    &report,
 		WorkspaceQueues:    &queues,
 		WorkspaceDashboard: &dashboard,
+		WorkspacePulse:     signals.Pulse,
+		StorageDiagnostics: signals.Storage,
 	}
 
 	return plan, bundle, nil
@@ -496,6 +561,132 @@ func dashboardWorkspaceExportSources(snapshotAt string) []DashboardExportSource 
 	return []DashboardExportSource{
 		{Name: "workspace_status", Included: true, SnapshotAt: &workspace},
 	}
+}
+
+func (b GHDashboardSignalBuilder) BuildWorkspaceDashboardSignals(config WorkspaceConfigResolved, report WorkspaceReport, snapshotAt time.Time) (DashboardWorkspaceSignals, error) {
+	runner := b.Runner
+	if runner == nil {
+		runner = ExecCommandRunner{}
+	}
+	repos := workspaceDashboardReportRepos(report, config)
+	pulseReports := make([]PulseReport, 0, len(repos))
+	for _, repo := range repos {
+		pulse, err := BuildStatsPulseReport(StatsPulseOptions{
+			Repo:  repo,
+			Since: b.PulseSince,
+			Now:   snapshotAt,
+			Limit: b.PulseLimit,
+		}, runner)
+		if err != nil {
+			return DashboardWorkspaceSignals{}, fmt.Errorf("build workspace pulse for %s: %w", repo.FullName(), err)
+		}
+		pulseReports = append(pulseReports, pulse)
+	}
+	pulse := buildWorkspacePulseReport(report.Workspace, pulseReports, snapshotAt)
+	storageRepo := workspaceDashboardStorageRepoValue(repos, config)
+	storage, err := BuildConfigStorageReport(storageRepo, b.ConfigRoot, runner)
+	if err != nil {
+		return DashboardWorkspaceSignals{}, fmt.Errorf("build storage diagnostics: %w", err)
+	}
+	return DashboardWorkspaceSignals{Pulse: &pulse, Storage: &storage}, nil
+}
+
+func workspaceDashboardReportRepos(report WorkspaceReport, config WorkspaceConfigResolved) []RepoRef {
+	repos := make([]RepoRef, 0, len(report.Repos))
+	seen := map[string]struct{}{}
+	for _, summary := range report.Repos {
+		repo, err := ParseRepoRef(summary.Repo)
+		if err != nil {
+			continue
+		}
+		key := repo.FullName()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		repos = append(repos, repo)
+		seen[key] = struct{}{}
+	}
+	if len(repos) == 0 {
+		for _, repo := range config.Repos {
+			key := repo.FullName()
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			repos = append(repos, repo)
+			seen[key] = struct{}{}
+		}
+	}
+	if len(repos) == 0 && repoRefIsSet(config.InboxRepo) {
+		repos = append(repos, config.InboxRepo)
+	}
+	return repos
+}
+
+func workspaceDashboardStorageRepoValue(repos []RepoRef, config WorkspaceConfigResolved) string {
+	if len(repos) > 0 {
+		return repos[0].FullName()
+	}
+	if repoRefIsSet(config.InboxRepo) {
+		return config.InboxRepo.FullName()
+	}
+	return ""
+}
+
+func buildWorkspacePulseReport(workspace WorkspaceSummary, reports []PulseReport, snapshotAt time.Time) PulseReport {
+	pulse := PulseReport{
+		SchemaVersion: "pulse-report/v1alpha1",
+		Command:       "workspace pulse",
+		Scope:         PulseScope{Kind: "workspace", Workspace: workspace.Name},
+		Window: PulseWindow{
+			Since: "7d",
+			Until: snapshotAt.UTC().Format(time.RFC3339),
+			Label: "7d",
+		},
+		Source: StatsSource{
+			Backend:  "github",
+			ReadOnly: true,
+			Notes:    "Aggregates repo pulse reports for the exported workspace; no source code, diffs, private run prompts, or local run logs are read.",
+		},
+		PrivacyBoundary: pulsePrivacyBoundary(),
+	}
+	if workspace.Owner != "" && workspace.Name != "" {
+		pulse.Scope.Workspace = workspace.Owner + "/" + workspace.Name
+	}
+	for _, report := range reports {
+		if pulse.Window.Since == "7d" && strings.TrimSpace(report.Window.Since) != "" {
+			pulse.Window.Since = report.Window.Since
+			pulse.Window.Label = report.Window.Label
+			pulse.Window.SinceAt = report.Window.SinceAt
+			pulse.Window.Limit = report.Window.Limit
+		}
+		pulse.Summary = addPulseSummary(pulse.Summary, report.Summary)
+		pulse.Health = addPulseHealth(pulse.Health, report.Health)
+		pulse.Items = append(pulse.Items, report.Items...)
+		pulse.Warnings = append(pulse.Warnings, report.Warnings...)
+	}
+	sortPulseItems(pulse.Items)
+	return pulse
+}
+
+func addPulseSummary(left PulseSummary, right PulseSummary) PulseSummary {
+	left.Finished += right.Finished
+	left.Reviewed += right.Reviewed
+	left.Refined += right.Refined
+	left.Unblocked += right.Unblocked
+	left.Superseded += right.Superseded
+	left.Started += right.Started
+	left.Checked += right.Checked
+	return left
+}
+
+func addPulseHealth(left PulseHealth, right PulseHealth) PulseHealth {
+	left.Ready += right.Ready
+	left.ReviewNeeded += right.ReviewNeeded
+	left.FinishReady += right.FinishReady
+	left.Blocked += right.Blocked
+	left.FailedCheck += right.FailedCheck
+	left.HumanDecision += right.HumanDecision
+	return left
 }
 
 func buildDashboardExecutionItems(issues []DashboardRawIssue, pulls []DashboardRawPullRequest) []DashboardExecutionBoardItem {
@@ -601,10 +792,10 @@ func buildDashboardRoadmapItems(milestones []DashboardRawMilestone, projectItems
 	return items
 }
 
-func buildWorkspaceDashboard(report WorkspaceReport, snapshotAt string, deepLinks []dashboardWorkspaceDeepLink) DashboardWorkspaceDashboard {
+func buildWorkspaceDashboard(report WorkspaceReport, snapshotAt string, deepLinks []dashboardWorkspaceDeepLink, signals DashboardWorkspaceSignals) DashboardWorkspaceDashboard {
 	warnings := buildWorkspaceDashboardWarnings(report)
 	ticketReports, reviewReports := workspaceDashboardDeepLinkPaths(deepLinks)
-	return DashboardWorkspaceDashboard{
+	dashboard := DashboardWorkspaceDashboard{
 		SchemaVersion: WorkspaceDashboardSchemaVersion,
 		SnapshotAt:    snapshotAt,
 		Workspace:     report.Workspace,
@@ -627,6 +818,78 @@ func buildWorkspaceDashboard(report WorkspaceReport, snapshotAt string, deepLink
 			ReviewReports:      reviewReports,
 		},
 	}
+	if signals.Pulse != nil {
+		dashboard.Pulse = buildWorkspaceDashboardPulseSummary(*signals.Pulse)
+		dashboard.Artifacts.WorkspacePulse = workspaceDashboardPulsePath
+		dashboard.Artifacts.PulseItemsCSV = workspaceDashboardPulseCSVPath
+	}
+	if signals.Storage != nil {
+		dashboard.Storage = buildWorkspaceDashboardStorageSummary(*signals.Storage)
+		dashboard.Artifacts.StorageDiagnostics = workspaceDashboardStoragePath
+	}
+	return dashboard
+}
+
+func workspaceDashboardSignalArtifacts(signals DashboardWorkspaceSignals) []DashboardExportArtifact {
+	artifacts := []DashboardExportArtifact{}
+	if signals.Pulse != nil {
+		artifacts = append(artifacts,
+			DashboardExportArtifact{Path: workspaceDashboardPulsePath, Kind: "derived_json", WillWrite: true},
+			DashboardExportArtifact{Path: workspaceDashboardPulseCSVPath, Kind: "csv", WillWrite: true},
+		)
+	}
+	if signals.Storage != nil {
+		artifacts = append(artifacts, DashboardExportArtifact{Path: workspaceDashboardStoragePath, Kind: "derived_json", WillWrite: true})
+	}
+	return artifacts
+}
+
+func buildWorkspaceDashboardPulseSummary(pulse PulseReport) *DashboardWorkspacePulseSummary {
+	return &DashboardWorkspacePulseSummary{
+		SchemaVersion:   pulse.SchemaVersion,
+		Path:            workspaceDashboardPulsePath,
+		Items:           len(pulse.Items),
+		Summary:         pulse.Summary,
+		Health:          pulse.Health,
+		Warnings:        len(pulse.Warnings),
+		PrivacyBoundary: pulse.PrivacyBoundary,
+	}
+}
+
+func buildWorkspaceDashboardStorageSummary(report ConfigStorageReport) *DashboardWorkspaceStorageSummary {
+	privateSurfaces := 0
+	localDatabase := false
+	for _, surface := range report.Surfaces {
+		if strings.Contains(surface.Visibility, "private") {
+			privateSurfaces++
+		}
+		if strings.Contains(strings.ToLower(surface.Kind), "database") || strings.Contains(strings.ToLower(surface.Name), "sqlite") {
+			localDatabase = true
+		}
+	}
+	return &DashboardWorkspaceStorageSummary{
+		SchemaVersion:              report.SchemaVersion,
+		Path:                       workspaceDashboardStoragePath,
+		Surfaces:                   len(report.Surfaces),
+		PrivateSurfaces:            privateSurfaces,
+		LocalDatabase:              localDatabase,
+		PrivateRunEvidenceIncluded: false,
+		Warnings:                   len(report.Warnings),
+	}
+}
+
+func countDashboardPulseItems(pulse *PulseReport) int {
+	if pulse == nil {
+		return 0
+	}
+	return len(pulse.Items)
+}
+
+func countDashboardStorageSurfaces(report *ConfigStorageReport) int {
+	if report == nil {
+		return 0
+	}
+	return len(report.Surfaces)
 }
 
 func buildWorkspaceDashboardTopActions(report WorkspaceQueuesReport, deepLinks []dashboardWorkspaceDeepLink) []DashboardWorkspaceTopAction {
@@ -1121,6 +1384,12 @@ func FormatDashboardExportPlan(plan DashboardExportPlan) string {
 	if plan.Counts.WorkspaceQueueItems > 0 {
 		lines = append(lines, fmt.Sprintf("  workspace_queue_items: %d", plan.Counts.WorkspaceQueueItems))
 	}
+	if plan.Counts.PulseItems > 0 {
+		lines = append(lines, fmt.Sprintf("  pulse_items: %d", plan.Counts.PulseItems))
+	}
+	if plan.Counts.StorageSurfaces > 0 {
+		lines = append(lines, fmt.Sprintf("  storage_surfaces: %d", plan.Counts.StorageSurfaces))
+	}
 	lines = append(lines, fmt.Sprintf("  warnings: %d", plan.Counts.Warnings))
 	lines = append(lines, "warnings:")
 	if len(plan.Warnings) == 0 {
@@ -1192,6 +1461,23 @@ func WriteDashboardExportBundle(outputRoot string, bundle DashboardExportBundle)
 			return err
 		}
 		if err := scope.WriteFile(workspaceDashboardQueueCSVPath, queueCSV, 0o644); err != nil {
+			return err
+		}
+	}
+	if bundle.WorkspacePulse != nil {
+		if err := writeDashboardExportJSON(scope, workspaceDashboardPulsePath, bundle.WorkspacePulse); err != nil {
+			return err
+		}
+		pulseCSV, err := renderDashboardWorkspacePulseCSV(*bundle.WorkspacePulse)
+		if err != nil {
+			return err
+		}
+		if err := scope.WriteFile(workspaceDashboardPulseCSVPath, pulseCSV, 0o644); err != nil {
+			return err
+		}
+	}
+	if bundle.StorageDiagnostics != nil {
+		if err := writeDashboardExportJSON(scope, workspaceDashboardStoragePath, bundle.StorageDiagnostics); err != nil {
 			return err
 		}
 	}
@@ -1319,6 +1605,40 @@ func renderDashboardWorkspaceQueueCSV(report WorkspaceQueuesReport) ([]byte, err
 	return buffer.Bytes(), writer.Error()
 }
 
+func renderDashboardWorkspacePulseCSV(report PulseReport) ([]byte, error) {
+	buffer := &bytes.Buffer{}
+	writer := csv.NewWriter(buffer)
+	if err := writer.Write(dashboardWorkspacePulseCSVHeaders); err != nil {
+		return nil, err
+	}
+	for _, item := range report.Items {
+		prNumber := ""
+		if item.PR > 0 {
+			prNumber = strconv.Itoa(item.PR)
+		}
+		issueNumber := ""
+		if item.Issue > 0 {
+			issueNumber = strconv.Itoa(item.Issue)
+		}
+		row := []string{
+			item.Kind,
+			item.Repo,
+			issueNumber,
+			prNumber,
+			item.Title,
+			item.Confidence,
+			item.OccurredAt,
+			strings.Join(item.Evidence, ","),
+			strings.Join(item.SourceRefs, ","),
+		}
+		if err := writer.Write(row); err != nil {
+			return nil, err
+		}
+	}
+	writer.Flush()
+	return buffer.Bytes(), writer.Error()
+}
+
 var workspaceDashboardHTMLTemplate = template.Must(template.New("workspace-dashboard").Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -1369,6 +1689,33 @@ var workspaceDashboardHTMLTemplate = template.Must(template.New("workspace-dashb
       <div><dt>Human Decision</dt><dd>{{.QueueCounts.HumanDecision}}</dd></div>
     </dl>
   </section>
+  {{if .Pulse}}
+  <section>
+    <h2>Pulse</h2>
+    <p>Source: {{.Pulse.SchemaVersion}} at {{.Pulse.Path}} | Items: {{.Pulse.Items}} | Warnings: {{.Pulse.Warnings}}</p>
+    <dl>
+      <div><dt>Finished</dt><dd>{{.Pulse.Summary.Finished}}</dd></div>
+      <div><dt>Reviewed</dt><dd>{{.Pulse.Summary.Reviewed}}</dd></div>
+      <div><dt>Refined</dt><dd>{{.Pulse.Summary.Refined}}</dd></div>
+      <div><dt>Unblocked</dt><dd>{{.Pulse.Summary.Unblocked}}</dd></div>
+      <div><dt>Started</dt><dd>{{.Pulse.Summary.Started}}</dd></div>
+      <div><dt>Checked</dt><dd>{{.Pulse.Summary.Checked}}</dd></div>
+    </dl>
+  </section>
+  {{end}}
+  {{if .Storage}}
+  <section>
+    <h2>Storage</h2>
+    <p>Source: {{.Storage.SchemaVersion}} at {{.Storage.Path}}</p>
+    <dl>
+      <div><dt>Surfaces</dt><dd>{{.Storage.Surfaces}}</dd></div>
+      <div><dt>Private</dt><dd>{{.Storage.PrivateSurfaces}}</dd></div>
+      <div><dt>Local DB</dt><dd>{{.Storage.LocalDatabase}}</dd></div>
+      <div><dt>Private Runs Included</dt><dd>{{.Storage.PrivateRunEvidenceIncluded}}</dd></div>
+      <div><dt>Warnings</dt><dd>{{.Storage.Warnings}}</dd></div>
+    </dl>
+  </section>
+  {{end}}
   <section>
     <h2>Top Actions</h2>
     <table>

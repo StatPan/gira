@@ -1934,6 +1934,156 @@ func TestQueueNextJSONReportsStopReasonsWithoutSelection(t *testing.T) {
 	}
 }
 
+func TestQueueHandoffJSONEmbedsWorkerHandoff(t *testing.T) {
+	restoreWorkspace := newWorkspaceStatusReportWithOptions
+	restoreHandoff := newTicketHandoffReport
+	t.Cleanup(func() {
+		newWorkspaceStatusReportWithOptions = restoreWorkspace
+		newTicketHandoffReport = restoreHandoff
+	})
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.WorkspaceReport{
+			Workspace:  workspace,
+			ConfigPath: ".gira/config.yaml",
+			Queues: gira.BuildWorkspaceQueues(workspace, []gira.WorkStatusResult{
+				{Repo: "StatPan/gira", Issue: 10, Title: "Ready issue", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+			}),
+		}, nil
+	}
+	newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 10 || input.Role != "reviewer" || input.Profile != "python" {
+			t.Fatalf("unexpected handoff input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.TicketHandoffReport{
+			Command:       "ticket handoff",
+			SchemaVersion: gira.WorkerHandoffSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			Issue:         input.Ticket,
+			Role:          input.Role,
+			Profile:       input.Profile,
+			Readiness:     gira.TicketReadinessReport{SchemaVersion: gira.TicketReadinessSchemaVersion, Readiness: "ready"},
+			NextAction:    "request_review",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"queue", "handoff", "--role", "reviewer", "--profile", "python", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "queue-handoff/v1"`,
+		`"worker_handoff"`,
+		`"schema_version": "worker-handoff/v1"`,
+		`"next_action": "start_run"`,
+		`"run_command": "gira run start 10 --repo StatPan/gira --role reviewer --profile python --dry-run"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("queue handoff JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestQueueHandoffJSONReportsNoWorkWithoutCallingHandoff(t *testing.T) {
+	restoreWorkspace := newWorkspaceStatusReportWithOptions
+	restoreHandoff := newTicketHandoffReport
+	t.Cleanup(func() {
+		newWorkspaceStatusReportWithOptions = restoreWorkspace
+		newTicketHandoffReport = restoreHandoff
+	})
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.WorkspaceReport{Workspace: workspace, ConfigPath: ".gira/config.yaml", Queues: gira.BuildWorkspaceQueues(workspace, nil)}, nil
+	}
+	newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+		t.Fatalf("handoff builder should not be called for no-work report")
+		return gira.TicketHandoffReport{}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"queue", "handoff", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"selected": null`, `"worker_handoff": null`, `"no_agent_ready_item"`, `"no_queue_items"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("queue handoff no-work JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestQueueHandoffExplicitBlockedTicketStopsWithoutCallingHandoff(t *testing.T) {
+	restoreWorkspace := newWorkspaceStatusReportWithOptions
+	restoreHandoff := newTicketHandoffReport
+	t.Cleanup(func() {
+		newWorkspaceStatusReportWithOptions = restoreWorkspace
+		newTicketHandoffReport = restoreHandoff
+	})
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		if len(options.Repos) != 1 || options.Repos[0].FullName() != "StatPan/gira" {
+			t.Fatalf("unexpected repo filter: %+v", options.Repos)
+		}
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.WorkspaceReport{
+			Workspace:  workspace,
+			ConfigPath: ".gira/config.yaml",
+			Queues: gira.BuildWorkspaceQueues(workspace, []gira.WorkStatusResult{
+				{Repo: "StatPan/gira", Issue: 11, Title: "Blocked issue", State: "open", Status: "Blocked", Labels: []string{"status:blocked"}},
+			}),
+		}, nil
+	}
+	newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+		t.Fatalf("handoff builder should not be called for blocked queue item")
+		return gira.TicketHandoffReport{}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"queue", "handoff", "--repo", "StatPan/gira", "--ticket", "11", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"queue_not_handoff_safe"`, `"queue_blocked"`, `"worker_handoff": null`, `"next_action": "inspect_queues"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("queue handoff blocked JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestQueueHandoffExplicitHumanTicketStopsWithoutCallingHandoff(t *testing.T) {
+	restoreWorkspace := newWorkspaceStatusReportWithOptions
+	restoreHandoff := newTicketHandoffReport
+	t.Cleanup(func() {
+		newWorkspaceStatusReportWithOptions = restoreWorkspace
+		newTicketHandoffReport = restoreHandoff
+	})
+	newWorkspaceStatusReportWithOptions = func(configPath string, options gira.WorkspaceStatusOptions) (gira.WorkspaceReport, error) {
+		workspace := gira.WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+		return gira.WorkspaceReport{
+			Workspace:  workspace,
+			ConfigPath: ".gira/config.yaml",
+			Queues: gira.BuildWorkspaceQueues(workspace, []gira.WorkStatusResult{
+				{Repo: "StatPan/gira", Issue: 12, Title: "Human decision", State: "open", Status: "Ready", Labels: []string{"status:ready", "needs:human"}},
+			}),
+		}, nil
+	}
+	newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHandoffReport, error) {
+		t.Fatalf("handoff builder should not be called for human-decision queue item")
+		return gira.TicketHandoffReport{}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"queue", "handoff", "--repo", "StatPan/gira", "--ticket", "12", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"queue_not_handoff_safe"`, `"queue_human_decision"`, `"reason_label_needs_human"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("queue handoff human JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestWorkspaceListAliasesBacklog(t *testing.T) {
 	restore := newWorkspaceStatusReportWithOptions
 	t.Cleanup(func() { newWorkspaceStatusReportWithOptions = restore })

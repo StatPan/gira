@@ -284,6 +284,7 @@ agents to parse the full workspace status payload:
 ```bash
 gira queue list --config .gira/config.yaml --queue ready --json
 gira queue next --config .gira/config.yaml --json
+gira queue handoff --config .gira/config.yaml --json
 ```
 
 `gira queue list` emits `queue-list/v1`, keeps canonical JSON queue names such
@@ -291,8 +292,10 @@ as `agent_ready` and `review_needed`, and uses short text labels such as
 `ready`, `review`, `finish`, `blocked`, `failed`, and `human` for compact human
 output. `gira queue next` emits `queue-next/v1`; it selects the first
 `agent_ready` item and reports the original `next_safe_command` plus explicit
-`handoff_command` and `run_command` fields. Both commands are read-only and
-derive their data from `workspace-queues/v1`.
+`handoff_command` and `run_command` fields. `gira queue handoff` emits
+`queue-handoff/v1`; it embeds the existing `worker-handoff/v1` payload for the
+selected item and refuses non-`agent_ready` queues with explicit stop reasons.
+These commands are read-only and derive their data from `workspace-queues/v1`.
 
 The privacy boundary is part of the contract: workspace queues describe
 work-item state and safe next commands only. They must not rank people or

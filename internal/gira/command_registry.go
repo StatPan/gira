@@ -166,6 +166,27 @@ func CoreCommandSpecs() []CommandSpec {
 			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only selection layer over workspace-queues/v1; reports ticket handoff and run start commands without executing them."},
 		},
 		{
+			Path:    []string{"queue", "handoff"},
+			Summary: "Select or inspect an agent-ready workspace queue item and embed the worker-handoff/v1 payload.",
+			Usage:   "gira queue handoff [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] [--json]",
+			Since:   "v2.1.0",
+			Flags: []FlagSpec{
+				{Name: "--config", Summary: "Explicit workspace config path. Defaults to global registry, then .gira/config.yaml."},
+				{Name: "--repo", Summary: "Narrow selection to one execution repo, or select the explicit ticket repo."},
+				{Name: "--ticket", Summary: "Explicit ticket number. Without it, handoff uses queue next selection."},
+				{Name: "--role", Summary: "Handoff role: planner, implementer, or reviewer. Default: implementer."},
+				{Name: "--profile", Summary: "Handoff profile: default or python. Default: default."},
+				{Name: "--compact", Summary: "Print compact text output."},
+				{Name: "--json", Summary: "Emit stable queue-handoff/v1 JSON with worker-handoff/v1 embedded."},
+			},
+			Docs:        []string{"docs/workspace.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "quickstart"},
+			Examples: []CommandExample{
+				{Summary: "Build a handoff packet for the next LLM-ready item", Command: "gira queue handoff --json"},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only queue selection and ticket handoff packet assembly; does not start branches, write run state, or mutate GitHub."},
+		},
+		{
 			Path:    []string{"completion"},
 			Summary: "Generate static shell completion scripts for common commands, subcommands, and flags.",
 			Usage:   "gira completion bash|zsh|fish",
@@ -820,6 +841,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 		case "queue list":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "queue next":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "queue handoff":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "completion":
 			specs[i].Adapter = adapterRead(JSONSupportNone)

@@ -615,6 +615,38 @@ gira milestone status "2.0 Alpha - State-Aware Ticket Runtime"
 
 Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
 
+## `queue handoff`
+
+Select or inspect an agent-ready workspace queue item and embed the worker-handoff/v1 payload.
+
+Usage:
+
+```bash
+gira queue handoff [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] [--json]
+```
+
+Since: `v2.1.0`
+
+Flags:
+
+- `--config`: Explicit workspace config path. Defaults to global registry, then .gira/config.yaml.
+- `--repo`: Narrow selection to one execution repo, or select the explicit ticket repo.
+- `--ticket`: Explicit ticket number. Without it, handoff uses queue next selection.
+- `--role`: Handoff role: planner, implementer, or reviewer. Default: implementer.
+- `--profile`: Handoff profile: default or python. Default: default.
+- `--compact`: Print compact text output.
+- `--json`: Emit stable queue-handoff/v1 JSON with worker-handoff/v1 embedded.
+
+Examples:
+
+- Build a handoff packet for the next LLM-ready item
+
+```bash
+gira queue handoff --json
+```
+
+Documented in: `docs/workspace.md`, `docs-site/command-reference.md`
+
 ## `queue list`
 
 List workspace queue items derived from workspace-queues/v1.

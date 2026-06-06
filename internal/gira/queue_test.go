@@ -173,6 +173,70 @@ func TestBuildQueueHandoffReportStopsWhenWorkerHandoffNeedsRefinement(t *testing
 	}
 }
 
+func TestBuildQueueTakeReportDryRunPlansTicketStart(t *testing.T) {
+	workspace := WorkspaceSummary{Name: "personal", Owner: "StatPan"}
+	queues := BuildWorkspaceQueues(workspace, []WorkStatusResult{
+		{Repo: "StatPan/app", Issue: 42, Title: "Implement queue take", State: "open", Status: "Ready", Labels: []string{"status:ready"}},
+	})
+	next, err := BuildQueueNextReport(WorkspaceReport{Workspace: workspace, Queues: queues}, QueueNextOptions{})
+	if err != nil {
+		t.Fatalf("BuildQueueNextReport error: %v", err)
+	}
+	handoff := TicketHandoffReport{
+		Command:       "ticket handoff",
+		SchemaVersion: WorkerHandoffSchemaVersion,
+		Repo:          "StatPan/app",
+		Issue:         42,
+		Role:          AgentPromptRoleImplementer,
+		Profile:       AgentPromptProfileDefault,
+		Readiness:     TicketReadinessReport{SchemaVersion: TicketReadinessSchemaVersion, Readiness: "ready"},
+		NextAction:    "implement",
+	}
+	queueHandoff := BuildQueueHandoffReportFromNext(next, &handoff, AgentPromptRoleImplementer, AgentPromptProfileDefault)
+	start := WorkStartResult{
+		Repo:       "StatPan/app",
+		Issue:      42,
+		Title:      "Implement queue take",
+		Branch:     "issue-42-implement-queue-take",
+		DryRun:     true,
+		Status:     "Ready",
+		NextStatus: "In progress",
+		NextStep:   "gira ticket start 42 --apply",
+	}
+	report := BuildQueueTakeReport(queueHandoff, &start, true, false)
+	if report.SchemaVersion != QueueTakeSchemaVersion || report.StartResult == nil || report.StartResult.SchemaVersion != WorkStartResultSchemaVersion {
+		t.Fatalf("unexpected take report: %+v", report)
+	}
+	if report.NextAction != "apply_ticket_start" || report.NextStep != "gira queue take --repo StatPan/app --ticket 42 --apply" {
+		t.Fatalf("next action/step = %s %s", report.NextAction, report.NextStep)
+	}
+	if report.Approval == nil || report.Approval.OutputSchema != QueueTakeSchemaVersion || report.StartResult.Approval == nil {
+		t.Fatalf("missing approval evidence: %+v start=%+v", report.Approval, report.StartResult)
+	}
+	if !strings.Contains(FormatQueueTake(report, false), "ticket start: branch=issue-42-implement-queue-take") {
+		t.Fatalf("queue take text missing ticket start summary")
+	}
+}
+
+func TestBuildQueueTakeReportStopsBeforeTicketStart(t *testing.T) {
+	handoff := QueueHandoffReport{
+		SchemaVersion: QueueHandoffSchemaVersion,
+		Command:       "queue handoff",
+		StopReasons:   []string{"queue_not_handoff_safe", "queue_blocked"},
+		NextAction:    "inspect_queues",
+		NextStep:      "gira queue list",
+	}
+	report := BuildQueueTakeReport(handoff, nil, false, true)
+	if report.StartResult != nil || report.NextAction != "inspect_queues" {
+		t.Fatalf("unexpected stopped report: %+v", report)
+	}
+	for _, want := range []string{"queue_not_handoff_safe", "queue_blocked"} {
+		if !containsString(report.StopReasons, want) {
+			t.Fatalf("stop reasons missing %q: %+v", want, report.StopReasons)
+		}
+	}
+}
+
 func TestQueueHandoffStopReasonsForBlockedItem(t *testing.T) {
 	item := WorkspaceQueueItem{Queue: "blocked", ReasonCodes: []string{"status_blocked"}}
 	reasons := QueueHandoffStopReasonsForItem(item)

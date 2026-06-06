@@ -709,6 +709,40 @@ gira queue next --json
 
 Documented in: `docs/workspace.md`, `docs-site/command-reference.md`
 
+## `queue take`
+
+Start a handoff-safe queue item through the existing ticket start policy.
+
+Usage:
+
+```bash
+gira queue take [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] --dry-run|--apply [--json]
+```
+
+Since: `v2.1.0`
+
+Flags:
+
+- `--config`: Explicit workspace config path. Defaults to global registry, then .gira/config.yaml.
+- `--repo`: Narrow selection to one execution repo, or select the explicit ticket repo.
+- `--ticket`: Explicit ticket number. Without it, take uses queue next selection.
+- `--role`: Handoff role: planner, implementer, or reviewer. Default: implementer.
+- `--profile`: Handoff profile: default or python. Default: default.
+- `--compact`: Print compact text output.
+- `--dry-run`: Preview selection, worker handoff, and ticket start without mutation.
+- `--apply`: Start only a handoff-safe and worker-ready queue item.
+- `--json`: Emit stable queue-take/v1 JSON with worker-handoff/v1 and work-start-result/v1 embedded.
+
+Examples:
+
+- Preview taking the next safe queue item
+
+```bash
+gira queue take --dry-run --json
+```
+
+Documented in: `docs/workspace.md`, `docs-site/command-reference.md`
+
 ## `setup global`
 
 Create or update the OS-user global config, workspace registry, and repo registry.

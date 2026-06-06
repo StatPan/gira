@@ -285,6 +285,7 @@ agents to parse the full workspace status payload:
 gira queue list --config .gira/config.yaml --queue ready --json
 gira queue next --config .gira/config.yaml --json
 gira queue handoff --config .gira/config.yaml --json
+gira queue take --config .gira/config.yaml --dry-run --json
 ```
 
 `gira queue list` emits `queue-list/v1`, keeps canonical JSON queue names such
@@ -295,7 +296,12 @@ output. `gira queue next` emits `queue-next/v1`; it selects the first
 `handoff_command` and `run_command` fields. `gira queue handoff` emits
 `queue-handoff/v1`; it embeds the existing `worker-handoff/v1` payload for the
 selected item and refuses non-`agent_ready` queues with explicit stop reasons.
-These commands are read-only and derive their data from `workspace-queues/v1`.
+`gira queue take` emits `queue-take/v1`; it previews or applies the selected
+item through the existing `ticket start` branch and status policy, refuses
+review, finish, blocked, failed, human-decision, or worker-not-ready items, and
+does not launch Codex by default. `queue list`, `queue next`, and `queue
+handoff` are read-only. `queue take --apply` is the mutating boundary and still
+derives its selection from `workspace-queues/v1`.
 
 The privacy boundary is part of the contract: workspace queues describe
 work-item state and safe next commands only. They must not rank people or

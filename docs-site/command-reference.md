@@ -771,6 +771,35 @@ gira setup global --repo OWNER/app --path . --workspace personal --inbox-repo OW
 
 Documented in: `README.md`, `docs/global-config-registry.md`, `docs-site/global-config.md`, `docs/workspace.md`
 
+## `stats pulse`
+
+Show a read-only recent workflow pulse for one GitHub repo.
+
+Usage:
+
+```bash
+gira stats pulse [OWNER/REPO] [--repo OWNER/REPO] [--since 7d] [--limit 100] [--json]
+```
+
+Since: `v2.2.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo. May also be positional.
+- `--since`: Reporting window such as 7d or YYYY-MM-DD. Default: 7d.
+- `--limit`: Max GitHub rows per query. Default: 100.
+- `--json`: Emit stable pulse-report/v1alpha1 JSON.
+
+Examples:
+
+- Render the recent repo pulse
+
+```bash
+gira stats pulse --repo OWNER/app --since 7d
+```
+
+Documented in: `docs/task-momentum-loop.md`, `docs/closure-funnel-stats.md`, `docs-site/task-momentum-loop.md`, `docs-site/closure-funnel-stats.md`
+
 ## `stats repo`
 
 Show a read-only Closure Funnel report for one GitHub repo.

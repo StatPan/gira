@@ -383,6 +383,24 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"stats", "pulse"},
+			Summary: "Show a read-only recent workflow pulse for one GitHub repo.",
+			Usage:   "gira stats pulse [OWNER/REPO] [--repo OWNER/REPO] [--since 7d] [--limit 100] [--json]",
+			Since:   "v2.2.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo. May also be positional."},
+				{Name: "--since", Summary: "Reporting window such as 7d or YYYY-MM-DD. Default: 7d."},
+				{Name: "--limit", Summary: "Max GitHub rows per query. Default: 100."},
+				{Name: "--json", Summary: "Emit stable pulse-report/v1alpha1 JSON."},
+			},
+			Docs:        []string{"docs/task-momentum-loop.md", "docs/closure-funnel-stats.md", "docs-site/task-momentum-loop.md", "docs-site/closure-funnel-stats.md"},
+			GuideTopics: []string{"stats"},
+			Examples: []CommandExample{
+				{Summary: "Render the recent repo pulse", Command: "gira stats pulse --repo OWNER/app --since 7d"},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only pulse-report/v1alpha1 over GitHub/Gira issue and PR evidence; does not score people or mutate state."},
+		},
+		{
 			Path:    []string{"stats", "workspace"},
 			Summary: "Planned multi-repo Closure Funnel rollup for a configured workspace.",
 			Usage:   "gira stats workspace [--since 90d]",
@@ -889,6 +907,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterApply("posts an idempotent goal finish receipt; explicit --terminal done may normalize labels and close the goal, while explicit --terminal human_review preserves blocker handoff", JSONSupportStable)
 		case "stats repo":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "stats pulse":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only pulse-report/v1alpha1 over GitHub/Gira issue and PR evidence; does not score people or mutate state."}
 		case "stats workspace":
 			specs[i].Adapter = adapterUnsupported("planned command; adapters should not expose it until implemented", JSONSupportPlanned)
 		case "milestone new":

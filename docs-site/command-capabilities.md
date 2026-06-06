@@ -31,6 +31,7 @@ Schema version: `gira-command-capabilities/v1`
 | `gira queue next` | none | `read` | `stable_json` | none | docs/workspace.md, docs/agent-handoff-queue.md, docs-site/agent-handoff-queue.md, docs-site/command-reference.md |
 | `gira queue take` | none | `apply_mutation` | `stable_json` | delegates to ticket start for a handoff-safe queue item; --dry-run previews selection, handoff readiness, and ticket start | docs/workspace.md, docs/agent-handoff-queue.md, docs-site/agent-handoff-queue.md, docs-site/command-reference.md |
 | `gira setup global` | none | `apply_mutation` | `stable_json` | writes global config and repo registry files; --dry-run previews file changes | README.md, docs/global-config-registry.md, docs-site/global-config.md, docs/workspace.md |
+| `gira stats pulse` | none | `read` | `stable_json` | none | docs/task-momentum-loop.md, docs/closure-funnel-stats.md, docs-site/task-momentum-loop.md, docs-site/closure-funnel-stats.md |
 | `gira stats repo` | none | `read` | `stable_json` | none | README.md, docs/closure-funnel-stats.md, docs-site/closure-funnel-stats.md |
 | `gira stats workspace` | none | `unsupported` | `planned` | none | docs/closure-funnel-stats.md, docs-site/closure-funnel-stats.md |
 | `gira ticket checks` | none | `read` | `stable_json` | none | README.md, docs-site/ticket-workflow.md, docs/dogfood.md |

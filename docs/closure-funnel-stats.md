@@ -11,6 +11,8 @@ issue?
 ```bash
 gira stats repo --repo OWNER/REPO --since 90d
 gira stats repo OWNER/REPO --since 90d --json
+gira stats pulse --repo OWNER/REPO --since 7d
+gira stats pulse OWNER/REPO --since 7d --json
 
 # planned multi-repo rollup
 gira stats workspace --since 90d
@@ -35,6 +37,25 @@ Gira-managed repositories raise confidence through:
   evidence linked.
 - Superseded tickets closed with `resolution:superseded` instead of
   `status:done`.
+
+## Pulse
+
+`gira stats pulse` is the first Gira-native recent movement report. It emits
+`pulse-report/v1alpha1` and groups evidence into named signals instead of one
+opaque score:
+
+- `finished`: merged PRs with closing references.
+- `reviewed`: open PRs that moved toward finish through review or passed
+  checks.
+- `refined`: older issues that became structured `status:ready` work.
+- `unblocked`: older issues with explicit unblock evidence.
+- `superseded`: closed issues carrying `resolution:superseded`.
+- `started`: older issues now in `status:in-progress`.
+- `checked`: report/checkpoint evidence when a later export slice supplies it.
+
+The report also includes current attention counts for ready, review-needed,
+finish-ready, blocked, failed-check, and human-decision work. Transition-history
+weaknesses are surfaced as warnings rather than hidden confidence.
 
 ## Metrics
 

@@ -156,3 +156,7 @@ The server uses stdio JSON-RPC and only publishes the read-only tools listed in 
 ## Mixed CLI/MCP workflow
 
 See [CLI And MCP Workflow Parity](cli-mcp-workflow-parity.md) for the recommended agent flow that uses MCP for read/context steps and CLI `--dry-run`/`--apply` for mutations.
+
+## Hosted MCP boundary
+
+See [Hosted MCP Service Boundary](hosted-mcp-service-boundary.md) for the deferred managed-service boundary. Hosted MCP must preserve the same lifecycle semantics and remain read-only by default unless a later ADR supersedes that rule.

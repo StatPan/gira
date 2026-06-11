@@ -155,6 +155,7 @@ Good UI candidates:
 - Agent handoff queue lanes using `workspace-queues/v1` and `queue-*` contracts.
 - Ticket detail evidence cards.
 - Finish readiness and receipt review.
+- Workflow pulse and CI reliability views that follow [Workflow Pulse And CI Reliability Boundary](workflow-pulse-ci-boundary.md).
 - Drift and missing evidence dashboards.
 
 Adapter runtimes should use command capability metadata and

@@ -1,0 +1,26 @@
+schema_version: agent-workflow-benchmark/v1
+name: human-decision
+repo: StatPan/example
+issue:
+  number: 106
+  title: Needs human decision
+  state: open
+  labels: [type:decision, priority:p2, status:ready, needs:human]
+  body: |
+    ## Goal
+    Choose one policy direction.
+    ## Scope
+    Capture decision context.
+    ## Acceptance Criteria
+    - Decision is recorded.
+    ## Evidence Plan
+    Human decision comment.
+status:
+  status: Ready
+expected:
+  ticket_readiness: ready
+  queue: human_decision
+  reason_code: label_needs_human
+  next_action: start_ticket
+  next_safe_command_contains: gira ticket handoff --repo StatPan/example --ticket 106 planner --json
+  blockers: []

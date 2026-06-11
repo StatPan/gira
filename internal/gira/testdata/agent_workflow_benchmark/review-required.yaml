@@ -1,0 +1,34 @@
+schema_version: agent-workflow-benchmark/v1
+name: review-required
+repo: StatPan/example
+issue:
+  number: 103
+  title: PR needs review
+  state: open
+  labels: [type:task, priority:p2, status:in-review]
+  body: |
+    ## Goal
+    Add a small feature.
+    ## Scope
+    Code and docs.
+    ## Acceptance Criteria
+    - Feature is implemented.
+    ## Doctor Impact
+    No doctor change.
+    ## Expected Delivery
+    Human review before merge.
+    ## Evidence Plan
+    Tests and PR review.
+status:
+  status: In review
+  pr_number: 203
+  pr_state: open
+  checks_status: passed
+  review_status: review_required
+expected:
+  ticket_readiness: ready
+  queue: review_needed
+  reason_code: review_required
+  next_action: start_ticket
+  next_safe_command_contains: gira ticket review --repo StatPan/example --ticket 103 --json
+  blockers: []

@@ -1,0 +1,26 @@
+schema_version: agent-workflow-benchmark/v1
+name: ready-ticket-start
+repo: StatPan/example
+issue:
+  number: 101
+  title: Ready ticket can start
+  state: open
+  labels: [type:task, priority:p2, status:ready]
+  body: |
+    ## Goal
+    Add a documented workflow contract.
+    ## Scope
+    Update docs only.
+    ## Acceptance Criteria
+    - Contract is documented.
+    ## Evidence Plan
+    Docs diff and PR checks.
+status:
+  status: Ready
+expected:
+  ticket_readiness: ready
+  queue: agent_ready
+  reason_code: ticket_ready
+  next_action: start_ticket
+  next_safe_command_contains: gira ticket start --repo StatPan/example --ticket 101 --apply
+  blockers: []

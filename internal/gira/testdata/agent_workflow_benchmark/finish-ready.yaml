@@ -1,0 +1,36 @@
+schema_version: agent-workflow-benchmark/v1
+name: finish-ready
+repo: StatPan/example
+issue:
+  number: 105
+  title: PR can finish
+  state: open
+  labels: [type:task, priority:p2, status:in-review]
+  body: |
+    ## Goal
+    Finish a documented change.
+    ## Scope
+    Merge the approved PR.
+    ## Acceptance Criteria
+    - PR is merged.
+    ## Doctor Impact
+    No doctor change.
+    ## Expected Delivery
+    Merge after checks and review.
+    ## Evidence Plan
+    Passing checks and approval.
+status:
+  status: In review
+  pr_number: 205
+  pr_state: open
+  checks_status: passed
+  review_status: approved
+  next_action: finish_ticket
+  finish_ready: true
+expected:
+  ticket_readiness: ready
+  queue: finish_ready
+  reason_code: next_action_finish
+  next_action: finish_ticket
+  next_safe_command_contains: gira ticket finish --repo StatPan/example --ticket 105 --dry-run
+  blockers: []

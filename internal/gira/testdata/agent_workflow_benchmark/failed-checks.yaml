@@ -1,0 +1,35 @@
+schema_version: agent-workflow-benchmark/v1
+name: failed-checks
+repo: StatPan/example
+issue:
+  number: 104
+  title: PR has failed checks
+  state: open
+  labels: [type:bug, priority:p1, status:in-review]
+  body: |
+    ## Goal
+    Fix a release blocker.
+    ## Scope
+    Correct the failing behavior.
+    ## Acceptance Criteria
+    - Required checks pass.
+    ## Doctor Impact
+    No doctor change.
+    ## Expected Delivery
+    Fix and update PR.
+    ## Evidence Plan
+    CI checks.
+status:
+  status: In review
+  pr_number: 204
+  pr_state: open
+  checks_status: failed
+  review_status: review_required
+  blockers: [checks_failed]
+expected:
+  ticket_readiness: ready
+  queue: failed_check
+  reason_code: checks_failed
+  next_action: start_ticket
+  next_safe_command_contains: gira ticket status --repo StatPan/example --ticket 104 --json
+  blockers: [checks_failed]

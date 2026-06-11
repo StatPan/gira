@@ -1,0 +1,22 @@
+schema_version: agent-workflow-benchmark/v1
+name: needs-refinement
+repo: StatPan/example
+issue:
+  number: 102
+  title: Missing acceptance criteria
+  state: open
+  labels: [type:task, priority:p2, status:ready]
+  body: |
+    ## Goal
+    Improve workflow docs.
+    ## Scope
+    _No response_
+status:
+  status: Ready
+expected:
+  ticket_readiness: needs_refinement
+  queue: blocked
+  reason_code: ticket_readiness_missing_scope
+  next_action: refine_ticket
+  next_safe_command_contains: gira ticket status --repo StatPan/example --ticket 102 --json
+  blockers: []

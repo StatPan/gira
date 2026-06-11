@@ -651,8 +651,16 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 		itemByIssue[key] = item
 		validItems = append(validItems, item)
 	}
+	repos := uniqueProjectRepos(config)
+	repoInScope := map[string]struct{}{}
+	for _, repo := range repos {
+		repoInScope[strings.ToLower(repo.FullName())] = struct{}{}
+	}
 	for _, item := range validItems {
 		if item.ID == "" || item.IssueState != "closed" {
+			continue
+		}
+		if _, ok := repoInScope[strings.ToLower(strings.TrimSpace(item.Repo))]; !ok {
 			continue
 		}
 		if opts.ArchiveClosed {
@@ -670,7 +678,6 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 		}
 		syncProjectDoneStatus(&report, client, project, statusField, item, dryRun)
 	}
-	repos := uniqueProjectRepos(config)
 	for _, repo := range repos {
 		report.Repos = append(report.Repos, repo.FullName())
 		linked, issues, err := fetchProjectsSyncRepoInputs(client, project, repo)

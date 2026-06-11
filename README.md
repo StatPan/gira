@@ -1,6 +1,10 @@
 # Gira
 
-Gira is a GitHub-native control plane for AI-assisted software work.
+Gira helps humans and coding agents finish GitHub issues safely.
+
+It is a GitHub-native control plane for AI-assisted software work: repository
+evidence stays in GitHub, while Gira makes the next safe workflow command
+explicit.
 
 It turns the GitHub issue-to-PR loop into a predictable workflow that humans and
 coding agents can both follow:
@@ -26,7 +30,7 @@ a Jira-like lifecycle that coding agents can operate safely:
 - `ticket finish` merges only when policy allows, then converges issue state.
 - `doctor` detects repo, workflow, label, and closed-issue status drift.
 
-The 2.0 control-plane contract extends that loop with stable surfaces for
+The 2.x control-plane contract extends that loop with stable surfaces for
 long-running human and agent work:
 
 - `goal status`, `goal report`, `goal next`, `goal plan --dry-run|--apply`,
@@ -50,9 +54,9 @@ long-running human and agent work:
 - `gira completion bash|zsh|fish` prints static shell completion scripts for
   common commands, lifecycle subcommands, and shared flags.
 
-`v2.0.0` is the release line for this CLI-first control-plane contract. It is
-not a hosted dashboard, UI/TUI launch, provider expansion, or Gira-native
-planning database. The release readiness boundary is documented in
+The 2.x release line is the CLI-first control-plane contract. It is not a
+hosted dashboard, UI/TUI launch, provider expansion, or Gira-native planning
+database. The release readiness boundary is documented in
 [docs/v2-release-readiness.md](docs/v2-release-readiness.md).
 
 The core safety model is Terraform-like:

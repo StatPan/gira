@@ -160,3 +160,7 @@ See [CLI And MCP Workflow Parity](cli-mcp-workflow-parity.md) for the recommende
 ## Hosted MCP boundary
 
 See [Hosted MCP Service Boundary](hosted-mcp-service-boundary.md) for the deferred managed-service boundary. Hosted MCP must preserve the same lifecycle semantics and remain read-only by default unless a later ADR supersedes that rule.
+
+## Local authentication
+
+`gira mcp serve` uses local `gh` authentication by default. MCP clients may instead pass `GIRA_MCP_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `GH_TOKEN` in the server process environment. See [MCP Authentication Interface](mcp-authentication-interface.md).

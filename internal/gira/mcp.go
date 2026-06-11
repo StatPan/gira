@@ -120,7 +120,7 @@ func MCPToolSpecs() []MCPToolSpec {
 
 func ExecuteMCPTool(name string, arguments map[string]json.RawMessage, runner CommandRunner) (MCPCommandEnvelope, *MCPToolError) {
 	if runner == nil {
-		runner = ExecCommandRunner{}
+		runner = NewMCPCommandRunnerFromEnv()
 	}
 	tool, ok := findMCPTool(name)
 	if !ok {

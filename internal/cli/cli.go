@@ -1767,9 +1767,11 @@ const mcpHelp = `Read-only MCP server over Gira CLI JSON.
 
 Usage:
   gira mcp serve
+  gira mcp doctor [--repo OWNER/REPO] [--json]
 
 Commands:
-  serve  Start a stdio JSON-RPC MCP server exposing read-only Gira tools
+  serve   Start a stdio JSON-RPC MCP server exposing read-only Gira tools
+  doctor  Diagnose local MCP GitHub authentication
 
 Tools:
   gira_ticket_view
@@ -1805,16 +1807,59 @@ func runMCP(args []string, stdout io.Writer, stderr io.Writer) int {
 			fmt.Fprint(stderr, mcpHelp)
 			return 2
 		}
-		if err := gira.ServeMCP(os.Stdin, stdout, gira.MCPOptions{Runner: gira.ExecCommandRunner{}}); err != nil {
+		if err := gira.ServeMCP(os.Stdin, stdout, gira.MCPOptions{Runner: gira.NewMCPCommandRunnerFromEnv()}); err != nil {
 			fmt.Fprintf(stderr, "mcp serve failed: %v\n", err)
 			return 2
 		}
 		return 0
+	case "doctor":
+		return runMCPDoctor(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown mcp command: %s\n\n", args[0])
 		fmt.Fprint(stderr, mcpHelp)
 		return 2
 	}
+}
+
+func runMCPDoctor(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("mcp doctor", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO form")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, mcpHelp)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, mcpHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, mcpHelp)
+		return 2
+	}
+	if strings.TrimSpace(*repoValue) != "" {
+		if _, err := gira.ParseRepoRef(*repoValue); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+	}
+	report := gira.BuildMCPAuthReport(*repoValue, os.Environ(), gira.ExecCommandRunner{})
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode mcp doctor JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatMCPAuthReport(report))
+	return 0
 }
 
 func runGuide(args []string, stdout io.Writer, stderr io.Writer) int {

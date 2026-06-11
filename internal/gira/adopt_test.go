@@ -208,6 +208,42 @@ func TestBuildAdoptRepoReportPlansMergeWithoutOverwritingExistingAgents(t *testi
 	}
 }
 
+func TestBuildAdoptRepoReportDoesNotPlanImplicitProjectsLink(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	dir := t.TempDir()
+	runner := adoptRepoRunner()
+
+	report, err := BuildAdoptRepoReport(AdoptRepoInput{Repo: repo, Path: dir, Strategy: "merge", DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildAdoptRepoReport error: %v", err)
+	}
+	if report.Counts.Projects != 1 || len(report.GitHub.Projects) != 1 || report.GitHub.Projects[0] != "Gira Backlog (#1)" {
+		t.Fatalf("discovered Projects should remain informational: %+v", report.GitHub)
+	}
+	if adoptRepoHasAction(report.Actions, "projects:link", "planned") {
+		t.Fatalf("passively discovered Projects should not become planned actions: %+v", report.Actions)
+	}
+	if report.Approval != nil && approvalHasAction(report.Approval.PlannedActions, "projects:link") {
+		t.Fatalf("approval evidence should not include implicit Project linkage: %+v", report.Approval)
+	}
+}
+
+func TestBuildAdoptRepoReportNormalizeDoesNotPlanImplicitProjectsLink(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	dir := t.TempDir()
+
+	report, err := BuildAdoptRepoReport(AdoptRepoInput{Repo: repo, Path: dir, Strategy: "normalize", DryRun: true}, adoptRepoRunner())
+	if err != nil {
+		t.Fatalf("BuildAdoptRepoReport error: %v", err)
+	}
+	if !adoptRepoHasAction(report.Actions, "metadata:normalize", "planned") {
+		t.Fatalf("normalize should preserve metadata action: %+v", report.Actions)
+	}
+	if adoptRepoHasAction(report.Actions, "projects:link", "planned") {
+		t.Fatalf("normalize should not add implicit Project linkage: %+v", report.Actions)
+	}
+}
+
 func TestBuildAdoptRepoReportQuotesDynamicNextStepPath(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	root := t.TempDir()

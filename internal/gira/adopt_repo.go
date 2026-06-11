@@ -294,9 +294,6 @@ func planAdoptRepoActions(report AdoptRepoReport, strategy AdoptRepoStrategy) []
 	if report.Counts.UnmappedIssues > 0 {
 		actions = append(actions, AdoptRepoAction{Action: "issues:map", Target: "existing GitHub issues", Status: "planned", Reason: "run targeted gira adopt issues mappings for missing type/status/milestone"})
 	}
-	if report.Counts.Projects > 0 {
-		actions = append(actions, AdoptRepoAction{Action: "projects:link", Target: "existing GitHub Projects", Status: "planned", Reason: "record selected project in .gira/config.yaml before projects sync"})
-	}
 	if strategy == AdoptRepoStrategyNormalize {
 		actions = append(actions, AdoptRepoAction{Action: "metadata:normalize", Target: "labels/milestones/issues", Status: "planned", Reason: "normalize strategy should be followed by explicit sync/adopt issue apply commands"})
 	}

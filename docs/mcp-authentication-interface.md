@@ -125,3 +125,5 @@ The diagnostic should report:
 ## Follow-up
 
 Accepted implementation follow-up: add local env-token support and MCP auth diagnostics.
+
+Implementation successor: #747.

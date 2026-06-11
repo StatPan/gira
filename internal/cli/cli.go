@@ -26,6 +26,7 @@ Usage:
 
 Daily commands:
   guide       Built-in quickstart and workflow guides
+  mcp         Read-only MCP server over Gira CLI JSON
   setup       Intention-based first-run and global registry setup
   workspace   Personal workspace inbox and backlog overview
   queue       Agent-ready workspace queue selection commands
@@ -1663,6 +1664,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "guide", "docs":
 		return runGuide(args[1:], stdout, stderr)
+	case "mcp":
+		return runMCP(args[1:], stdout, stderr)
 	case "setup":
 		return runSetup(args[1:], stdout, stderr)
 	case "init":
@@ -1756,6 +1759,60 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
+		return 2
+	}
+}
+
+const mcpHelp = `Read-only MCP server over Gira CLI JSON.
+
+Usage:
+  gira mcp serve
+
+Commands:
+  serve  Start a stdio JSON-RPC MCP server exposing read-only Gira tools
+
+Tools:
+  gira_ticket_view
+  gira_ticket_status
+  gira_ticket_checks
+  gira_ticket_finish_plan
+  gira_ticket_handoff
+  gira_queue_list
+  gira_queue_next
+  gira_queue_handoff
+
+Safety:
+  MCP v1 only wraps allow-listed read-only or dry-run-only Gira JSON commands.
+  It never exposes --apply, raw gh, shell commands, or hosted worker behavior.
+
+Flags:
+  -h, --help  Show help
+`
+
+func runMCP(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(stdout, mcpHelp)
+		return 0
+	}
+	switch args[0] {
+	case "serve":
+		if len(args) > 1 {
+			if args[1] == "--help" || args[1] == "-h" {
+				fmt.Fprint(stdout, mcpHelp)
+				return 0
+			}
+			fmt.Fprintf(stderr, "unexpected argument: %s\n\n", args[1])
+			fmt.Fprint(stderr, mcpHelp)
+			return 2
+		}
+		if err := gira.ServeMCP(os.Stdin, stdout, gira.MCPOptions{Runner: gira.ExecCommandRunner{}}); err != nil {
+			fmt.Fprintf(stderr, "mcp serve failed: %v\n", err)
+			return 2
+		}
+		return 0
+	default:
+		fmt.Fprintf(stderr, "unknown mcp command: %s\n\n", args[0])
+		fmt.Fprint(stderr, mcpHelp)
 		return 2
 	}
 }

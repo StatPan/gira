@@ -91,6 +91,9 @@ run event logs.
 GitHub Projects should stay a visibility surface over GitHub issues, not a
 second dashboard database.
 
+The 3.4 native view adoption decision is captured in
+[GitHub Projects Native View Boundary](github-projects-native-view-boundary.md).
+
 The minimal native projection is the current `projects sync` shape:
 
 - issue membership

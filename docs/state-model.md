@@ -71,6 +71,9 @@ name precise blockers such as `missing_linked_pr`, `checks_failed`,
 `missing_review`, `child_524_missing_finish_receipt`, or
 `human_review_handoff_present` without asking users to maintain those as labels.
 
+See [Finish Readiness Contract](finish-readiness-contract.md) for the public
+`finish-readiness/v1` and `finish-receipt/v1` field contract.
+
 ## Receipt And Comment State
 
 Some state is too important to be only computed, but too contextual to be a

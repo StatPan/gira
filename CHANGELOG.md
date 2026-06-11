@@ -6,6 +6,23 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v2.2.0 - 2026-06-11
+
+- Added the local read-only MCP server with `gira mcp serve`, exposing stable
+  ticket and queue read/handoff tools over the existing Gira CLI JSON
+  contracts.
+- Defined the CLI/MCP parity boundary so CLI, CLI JSON, and MCP remain access
+  paths to one evidence-backed Gira lifecycle rather than separate workflow
+  models.
+- Documented the mixed CLI/MCP operating flow: use MCP for read/context
+  surfaces, CLI `--dry-run` for mutation plans, and CLI `--apply` for approved
+  mutations.
+- Added hosted MCP service boundary documentation that keeps managed MCP
+  read-only by default and preserves GitHub evidence plus Gira receipts as the
+  workflow source of truth.
+- Added local agent workflow benchmark fixtures for readiness, queue,
+  failed-check, review, finish-ready, and human-decision workflow decisions.
+
 ## v2.0.0 - 2026-05-29
 
 - Stabilizes Gira as a GitHub-native control plane for AI-assisted software

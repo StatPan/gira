@@ -142,3 +142,13 @@ The implementation should:
 ## Follow-up
 
 #730 should implement the first local read-only MCP server against this design. If implementation reveals a missing CLI JSON contract, the correct follow-up is to harden that CLI command first, not to bypass the CLI through MCP-specific logic.
+
+## Local server command
+
+The first implementation exposes the surface with:
+
+```bash
+gira mcp serve
+```
+
+The server uses stdio JSON-RPC and only publishes the read-only tools listed in this document. Harnesses should treat the MCP response payload as an envelope around the underlying Gira CLI JSON response and should fall back to the CLI when they need a command outside the read-only MCP allow-list.

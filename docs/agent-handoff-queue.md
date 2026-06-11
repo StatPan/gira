@@ -48,7 +48,9 @@ the original `next_safe_command`, a `handoff_command`, and a `run_command`.
 
 `queue handoff` is for worker packets. It calls the same ticket handoff builder
 as `gira ticket handoff`, embeds `worker-handoff/v1`, and stops when ticket
-readiness says the work needs refinement.
+readiness says the work needs refinement. See
+[Worker Handoff Contract](worker-handoff-contract.md) for the shared ticket and
+queue handoff schema.
 
 `queue take` is for safe work start. Dry-run previews the selected repo/ticket,
 selection reason, worker handoff, planned `ticket start`, approval evidence, and
@@ -129,3 +131,6 @@ truth question.
 - Keep queue output public-safe: work-item state and next safe commands only.
 - Keep local cache disposable; queue membership must be reconstructable from
   GitHub plus Gira config.
+- Keep `queue handoff` and `ticket handoff` aligned on
+  `worker-handoff/v1`; queue-specific fields should wrap the worker packet
+  rather than fork the handoff schema.

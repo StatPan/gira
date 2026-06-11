@@ -62,7 +62,7 @@ Computed state is where Gira can be expressive without polluting GitHub labels.
 | `pr-readiness/v1` | Linked PR, draft state, checks, reviews, closing reference, branch binding. | `ticket review`, `ticket finish`, review queues. |
 | `finish-readiness/v1` | Ticket status, linked PR, checks, review, labels, branch trust, telemetry. | `ticket finish --dry-run`. |
 | `workspace-queues/v1` | Workspace issue summaries plus targeted ticket status details. | Multi-repo operator queues and future UI dashboards. |
-| `queue-list/v1`, `queue-next/v1`, `queue-handoff/v1`, `queue-take/v1` | `workspace-queues/v1`, worker handoff readiness, and delegated ticket-start dry-runs. | CLI task selection, adapter handoff, and safe work start. |
+| `queue-list/v1`, `queue-next/v1`, `queue-handoff/v1`, `queue-take/v1` | `workspace-queues/v1`, [`worker-handoff/v1`](worker-handoff-contract.md) readiness, and delegated ticket-start dry-runs. | CLI task selection, adapter handoff, and safe work start. |
 | `goal-status/v1` and `goal-next/v1` | Goal issue, child issue links, child ticket state, PR evidence, receipts. | Long-running agent delegation and stop decisions. |
 | Adapter capability and approval reports | Command registry, dry-run result, planned actions. | Durable agent runtimes and approval gates. |
 
@@ -73,6 +73,9 @@ name precise blockers such as `missing_linked_pr`, `checks_failed`,
 
 See [Finish Readiness Contract](finish-readiness-contract.md) for the public
 `finish-readiness/v1` and `finish-receipt/v1` field contract.
+See [Worker Handoff Contract](worker-handoff-contract.md) for the public
+`worker-handoff/v1` field contract shared by ticket, queue, and goal handoff
+surfaces.
 
 ## Receipt And Comment State
 

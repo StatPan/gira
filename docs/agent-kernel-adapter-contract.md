@@ -68,8 +68,8 @@ This map covers the first adapter flow. It is intentionally conservative.
 | Command family | Capability | Notes |
 | --- | --- | --- |
 | `gira version`, `gira upgrade`, `gira config global`, `gira config repo`, `gira config doctor` | `read` | Safe environment and configuration inspection. `upgrade` is advisory and must not run package managers. |
-| `gira status`, `gira workspace status`, `gira ticket list`, `gira ticket view`, `gira ticket status`, `gira ticket checks`, `gira ticket review`, `gira ticket handoff`, `gira ticket prompt` | `read` | Primary state, work-order, review, and handoff surfaces. Prefer JSON where available. Prompt output is evidence, not an instruction to bypass policy. |
-| `gira queue list`, `gira queue next`, `gira queue handoff` | `read` | Workspace task-selection surfaces over `workspace-queues/v1`. `queue handoff` embeds `worker-handoff/v1` but does not start branches or workers. |
+| `gira status`, `gira workspace status`, `gira ticket list`, `gira ticket view`, `gira ticket status`, `gira ticket checks`, `gira ticket review`, `gira ticket handoff`, `gira ticket prompt` | `read` | Primary state, work-order, review, and handoff surfaces. Prefer JSON where available. `ticket handoff` emits the shared [`worker-handoff/v1`](worker-handoff-contract.md) contract. Prompt output is evidence, not an instruction to bypass policy. |
+| `gira queue list`, `gira queue next`, `gira queue handoff` | `read` | Workspace task-selection surfaces over `workspace-queues/v1`. `queue handoff` embeds [`worker-handoff/v1`](worker-handoff-contract.md) but does not start branches or workers. |
 | `gira goal status`, `gira goal report`, `gira goal next`, `gira goal plan --dry-run`, `gira goal finish --dry-run` | `read` or `dry_run_mutation` | `goal report` packages the visible goal operating state without mutation. `goal plan --dry-run` and `goal finish --dry-run` prepare child-ticket plans or receipts but do not apply. `goal next` can select work or stop. |
 | `gira audit readiness`, `gira audit drift`, `gira audit workflow`, `gira audit verify`, `gira stats repo` | `read` | Use for workflow convergence and integrity evidence. |
 | `gira jira doctor`, `gira jira transition --dry-run`, `gira jira export` | `read`, `dry_run_mutation`, or `apply_mutation` | Provider diagnostics and migration export. `jira transition --dry-run` emits `jira-transition-plan/v1` as read-only planning evidence, not approval to mutate Jira. `jira export` writes local export artifacts and therefore needs an approved or sandboxed output boundary. |
@@ -177,7 +177,7 @@ present when relevant:
 | `actions[]` | Dry-run/apply plan and actual mutation evidence. |
 | `blockers[]`, `warnings[]` | Stop conditions. |
 | `next_action`, `next_step` | Next safe command. |
-| `selected`, `stop_reasons`, `handoff`, `worker_handoff` | Queue selection, stop, and handoff gates for `queue-*` contracts. |
+| `selected`, `stop_reasons`, `handoff`, `worker_handoff` | Queue selection, stop, and [`worker-handoff/v1`](worker-handoff-contract.md) gates for `queue-*` contracts. |
 | `receipt.schema_version`, `receipt.rendered_body` | Finish or handoff receipt preview/evidence. |
 | `handoff_receipt_present` | Goal-level human-review convergence. |
 

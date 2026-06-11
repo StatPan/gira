@@ -25,10 +25,11 @@ status:
   pr_state: open
   checks_status: passed
   review_status: review_required
+  next_action: request_review
 expected:
   ticket_readiness: ready
   queue: review_needed
   reason_code: review_required
-  next_action: start_ticket
+  next_action: request_review
   next_safe_command_contains: gira ticket review --repo StatPan/example --ticket 103 --json
   blockers: []

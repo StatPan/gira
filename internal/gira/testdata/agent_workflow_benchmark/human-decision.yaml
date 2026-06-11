@@ -17,10 +17,11 @@ issue:
     Human decision comment.
 status:
   status: Ready
+  next_action: ask_human
 expected:
   ticket_readiness: ready
   queue: human_decision
   reason_code: label_needs_human
-  next_action: start_ticket
+  next_action: ask_human
   next_safe_command_contains: gira ticket handoff --repo StatPan/example --ticket 106 planner --json
   blockers: []

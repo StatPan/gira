@@ -25,11 +25,12 @@ status:
   pr_state: open
   checks_status: failed
   review_status: review_required
+  next_action: revise_pr
   blockers: [checks_failed]
 expected:
   ticket_readiness: ready
   queue: failed_check
   reason_code: checks_failed
-  next_action: start_ticket
+  next_action: revise_pr
   next_safe_command_contains: gira ticket status --repo StatPan/example --ticket 104 --json
   blockers: [checks_failed]

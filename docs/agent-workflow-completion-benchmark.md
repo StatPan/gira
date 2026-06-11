@@ -144,3 +144,18 @@ If a scenario cannot be expressed through those contracts, the first response sh
 #734 should implement the local fixture suite.
 
 It should not create a public benchmark brand, hosted service, or leaderboard. Its purpose is regression protection for Gira's workflow-control semantics.
+
+## Fixture Suite
+
+The accepted local fixture suite lives under `internal/gira/testdata/agent_workflow_benchmark/` and is exercised by `TestAgentWorkflowCompletionBenchmarkFixtures`.
+
+Each fixture declares normalized GitHub-like evidence plus expected workflow decisions:
+
+- `ticket_readiness`;
+- queue classification;
+- reason code;
+- next action;
+- next safe command;
+- blockers.
+
+The suite is intentionally local and deterministic. It does not call GitHub, execute model providers, or score individual humans or agents.

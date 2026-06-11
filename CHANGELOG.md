@@ -6,6 +6,18 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v2.3.0 - 2026-06-11
+
+- Added MCP env-token authentication selection for `gira mcp serve`, preferring
+  `GIRA_MCP_GITHUB_TOKEN`, then `GITHUB_TOKEN`, then `GH_TOKEN`, and finally
+  local `gh` authentication when no token env var is configured.
+- Added `gira mcp doctor --repo OWNER/REPO --json` so operators can inspect the
+  active MCP auth mode, token variable presence, GitHub host, and next setup
+  action without exposing credential values.
+- Documented the MCP authentication interface boundary for local env-token
+  usage, `gh` auth fallback, hosted-service OAuth expectations, and
+  non-goals such as credential storage or MCP mutation tools.
+
 ## v2.2.0 - 2026-06-11
 
 - Added the local read-only MCP server with `gira mcp serve`, exposing stable

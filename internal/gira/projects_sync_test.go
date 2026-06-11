@@ -640,6 +640,60 @@ func TestBuildProjectsSyncReportKeepsClosedProjectItemsAsDoneByDefault(t *testin
 	}
 }
 
+func TestBuildProjectsSyncReportIgnoresClosedItemsOutsideWorkspaceRepos(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+		Project:   ProjectConfig{Owner: "StatPan", Title: "Gira"},
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "Done": "done"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues:      map[string][]ProjectsSyncIssue{"StatPan/gira": {}},
+		items: []ProjectsSyncItem{
+			{ID: "item-199", Repo: "StatPan/gira", Number: 199, IssueState: "closed", Status: "In Progress"},
+			{ID: "item-75", Repo: "Other/repo", Number: 75, IssueState: "closed", Status: "In Progress"},
+		},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, true, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if report.Counts.StatusUpdates != 1 || report.Counts.ProjectItemsArchive != 0 {
+		t.Fatalf("out-of-scope closed item should not affect counts: %+v", report.Counts)
+	}
+	text := FormatProjectsSyncReport(report)
+	if !strings.Contains(text, "StatPan/gira#199") || strings.Contains(text, "Other/repo#75") {
+		t.Fatalf("out-of-scope closed item should not be planned:\n%s", text)
+	}
+
+	archiveClient := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_1", Owner: "StatPan", Number: 7, Title: "Gira"}},
+		fields:      allProjectsSyncCanonicalFields(),
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "Done": "done"}},
+		linked:      map[string]bool{"StatPan/gira": true},
+		issues:      map[string][]ProjectsSyncIssue{"StatPan/gira": {}},
+		items: []ProjectsSyncItem{
+			{ID: "item-199", Repo: "StatPan/gira", Number: 199, IssueState: "closed", Status: "Done"},
+			{ID: "item-75", Repo: "Other/repo", Number: 75, IssueState: "closed", Status: "Done"},
+		},
+	}
+	archiveReport, err := BuildProjectsSyncReportWithOptions(config, archiveClient, ProjectsSyncOptions{DryRun: false, ArchiveClosed: true, FetchedAt: time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport archive error: %v", err)
+	}
+	if archiveReport.Counts.ProjectItemsArchive != 1 || len(archiveClient.archived) != 1 || archiveClient.archived[0] != "item-199" {
+		t.Fatalf("archive should only apply to in-scope closed item: counts=%+v archived=%v", archiveReport.Counts, archiveClient.archived)
+	}
+}
+
 func TestBuildProjectsSyncReportArchiveClosedOptIn(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",

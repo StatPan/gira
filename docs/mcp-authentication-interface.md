@@ -127,3 +127,18 @@ The diagnostic should report:
 Accepted implementation follow-up: add local env-token support and MCP auth diagnostics.
 
 Implementation successor: #747.
+
+## Implemented local commands
+
+`gira mcp serve` now selects local authentication using the documented precedence and passes the selected token only through child process environment.
+
+`gira mcp doctor --repo OWNER/REPO --json` reports the selected auth mode, token variable presence without values, GitHub host, and next setup step.
+
+Example MCP client config with an env token:
+
+```toml
+[mcp_servers.gira]
+command = "gira"
+args = ["mcp", "serve"]
+env = { GIRA_MCP_GITHUB_TOKEN = "..." }
+```

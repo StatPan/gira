@@ -1774,6 +1774,7 @@ Commands:
   doctor  Diagnose local MCP GitHub authentication
 
 Tools:
+  gira_cli
   gira_workflow_guide
   gira_ticket_view
   gira_ticket_status
@@ -1785,8 +1786,9 @@ Tools:
   gira_queue_handoff
 
 Safety:
-  MCP v1 only wraps allow-listed read-only or dry-run-only Gira JSON commands.
-  It never exposes --apply, raw gh, shell commands, or hosted worker behavior.
+  MCP exposes the same Gira CLI lifecycle through explicit argv, plus focused
+  read/context tools. It never exposes raw shell, raw gh, or hosted worker
+  behavior.
 
 Flags:
   -h, --help  Show help

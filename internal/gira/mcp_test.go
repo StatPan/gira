@@ -15,6 +15,12 @@ type mcpRunner struct {
 	err  error
 }
 
+type mcpCLIExecutor struct {
+	args    []string
+	workdir string
+	result  MCPCommandExecution
+}
+
 func (r *mcpRunner) Run(name string, args ...string) ([]byte, error) {
 	r.name = name
 	r.args = append([]string(nil), args...)
@@ -22,6 +28,12 @@ func (r *mcpRunner) Run(name string, args ...string) ([]byte, error) {
 		return nil, r.err
 	}
 	return r.out, nil
+}
+
+func (e *mcpCLIExecutor) ExecuteGira(args []string, workdir string) MCPCommandExecution {
+	e.args = append([]string(nil), args...)
+	e.workdir = workdir
+	return e.result
 }
 
 func TestExecuteMCPToolWrapsReadOnlyGiraJSON(t *testing.T) {
@@ -42,6 +54,76 @@ func TestExecuteMCPToolWrapsReadOnlyGiraJSON(t *testing.T) {
 	}
 	if !bytes.Contains(envelope.Payload, []byte(`"ticket-status/v1"`)) {
 		t.Fatalf("payload = %s", envelope.Payload)
+	}
+}
+
+func TestExecuteMCPToolCLIParityExecutesGiraArgs(t *testing.T) {
+	executor := &mcpCLIExecutor{result: MCPCommandExecution{Stdout: "ticket start: dry-run\n", ExitCode: 0}}
+	payload, toolErr := ExecuteMCPToolWithOptions("gira_cli", mcpArgs(map[string]any{
+		"args":    []string{"ticket", "start", "754", "--repo", "StatPan/gira", "--dry-run"},
+		"workdir": "/tmp/repo",
+	}), MCPOptions{Executor: executor})
+	if toolErr != nil {
+		t.Fatalf("ExecuteMCPToolWithOptions error: %+v", toolErr)
+	}
+	envelope, ok := payload.(MCPCLICommandEnvelope)
+	if !ok {
+		t.Fatalf("payload type = %T", payload)
+	}
+	if strings.Join(executor.args, " ") != "ticket start 754 --repo StatPan/gira --dry-run" {
+		t.Fatalf("args = %#v", executor.args)
+	}
+	if executor.workdir != "/tmp/repo" {
+		t.Fatalf("workdir = %q", executor.workdir)
+	}
+	if envelope.ExitCode != 0 || !envelope.DryRun || envelope.Apply {
+		t.Fatalf("unexpected envelope: %+v", envelope)
+	}
+	if !strings.Contains(envelope.Stdout, "ticket start") {
+		t.Fatalf("stdout = %q", envelope.Stdout)
+	}
+}
+
+func TestExecuteMCPToolCLIParityReportsFailureWithoutRPCError(t *testing.T) {
+	executor := &mcpCLIExecutor{result: MCPCommandExecution{Stderr: "not ready\n", ExitCode: 2}}
+	payload, toolErr := ExecuteMCPToolWithOptions("gira_cli", mcpArgs(map[string]any{
+		"args": []string{"ticket", "finish", "754", "--repo", "StatPan/gira", "--apply"},
+	}), MCPOptions{Executor: executor})
+	if toolErr != nil {
+		t.Fatalf("CLI failures should be command envelopes, got %+v", toolErr)
+	}
+	envelope := payload.(MCPCLICommandEnvelope)
+	if envelope.ExitCode != 2 || !envelope.Apply || envelope.DryRun {
+		t.Fatalf("unexpected envelope: %+v", envelope)
+	}
+	if !strings.Contains(envelope.Stderr, "not ready") {
+		t.Fatalf("stderr = %q", envelope.Stderr)
+	}
+}
+
+func TestExecuteMCPToolCLIParityValidatesArgv(t *testing.T) {
+	executor := &mcpCLIExecutor{result: MCPCommandExecution{Stdout: "should not run"}}
+	_, toolErr := ExecuteMCPToolWithOptions("gira_cli", mcpArgs(map[string]any{
+		"args": []string{"gira", "ticket", "status"},
+	}), MCPOptions{Executor: executor})
+	if toolErr == nil || !strings.Contains(toolErr.Error, "omit") {
+		t.Fatalf("expected validation error, got %+v", toolErr)
+	}
+	if len(executor.args) != 0 {
+		t.Fatalf("invalid argv should not execute: %#v", executor.args)
+	}
+}
+
+func TestExecuteMCPToolCLIParityRejectsRecursiveServe(t *testing.T) {
+	executor := &mcpCLIExecutor{result: MCPCommandExecution{Stdout: "should not run"}}
+	_, toolErr := ExecuteMCPToolWithOptions("gira_cli", mcpArgs(map[string]any{
+		"args": []string{"mcp", "serve"},
+	}), MCPOptions{Executor: executor})
+	if toolErr == nil || !strings.Contains(toolErr.Error, "recursively") {
+		t.Fatalf("expected recursive serve validation error, got %+v", toolErr)
+	}
+	if len(executor.args) != 0 {
+		t.Fatalf("invalid argv should not execute: %#v", executor.args)
 	}
 }
 
@@ -118,7 +200,7 @@ func TestServeMCPListsAndCallsTools(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("responses = %q", output.String())
 	}
-	if !strings.Contains(lines[0], "gira_workflow_guide") || !strings.Contains(lines[0], "gira_ticket_view") || !strings.Contains(lines[1], "queue-next/v1") {
+	if !strings.Contains(lines[0], "gira_cli") || !strings.Contains(lines[0], "gira_workflow_guide") || !strings.Contains(lines[0], "gira_ticket_view") || !strings.Contains(lines[1], "queue-next/v1") {
 		t.Fatalf("unexpected responses:\n%s", output.String())
 	}
 }

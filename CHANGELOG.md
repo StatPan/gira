@@ -6,6 +6,9 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Added the `gira_cli` MCP tool so agents can execute the installed Gira CLI
+  through explicit argv with the same dry-run/apply semantics, exit code,
+  stdout, stderr, and GitHub-backed lifecycle evidence as direct CLI usage.
 - Added the `gira_workflow_guide` MCP tool so agents can read the recommended
   conversational MCP + CLI operating loop without treating MCP as a mutation
   surface.

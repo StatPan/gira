@@ -239,7 +239,7 @@ func executeMCPTool(name string, arguments map[string]json.RawMessage, options M
 	}
 	tool, ok := findMCPTool(name)
 	if !ok {
-		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: "unsupported Gira MCP tool"}
+		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: "unsupported Gira MCP tool"}, nil
 	}
 	repo, err := mcpStringArg(arguments, "repo", true)
 	if err != nil {

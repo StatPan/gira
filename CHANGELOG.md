@@ -6,6 +6,13 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Added the `gira_workflow_guide` MCP tool so agents can read the recommended
+  conversational MCP + CLI operating loop without treating MCP as a mutation
+  surface.
+- Documented MCP workflow best practices for local conversational agents,
+  explicit CLI dry-run/apply transitions, GitHub evidence, auth diagnostics,
+  and future hosted-service boundaries.
+
 ## v2.3.0 - 2026-06-11
 
 - Added MCP env-token authentication selection for `gira mcp serve`, preferring

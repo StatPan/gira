@@ -1774,6 +1774,7 @@ Commands:
   doctor  Diagnose local MCP GitHub authentication
 
 Tools:
+  gira_workflow_guide
   gira_ticket_view
   gira_ticket_status
   gira_ticket_checks

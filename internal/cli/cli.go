@@ -26,7 +26,7 @@ Usage:
 
 Daily commands:
   guide       Built-in quickstart and workflow guides
-  mcp         Read-only MCP server over Gira CLI JSON
+  mcp         MCP server for Gira CLI parity and context tools
   setup       Intention-based first-run and global registry setup
   workspace   Personal workspace inbox and backlog overview
   queue       Agent-ready workspace queue selection commands
@@ -1763,14 +1763,14 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 }
 
-const mcpHelp = `Read-only MCP server over Gira CLI JSON.
+const mcpHelp = `MCP server for Gira CLI parity and focused context tools.
 
 Usage:
   gira mcp serve
   gira mcp doctor [--repo OWNER/REPO] [--json]
 
 Commands:
-  serve   Start a stdio JSON-RPC MCP server exposing read-only Gira tools
+  serve   Start a stdio JSON-RPC MCP server exposing Gira CLI parity and context tools
   doctor  Diagnose local MCP GitHub authentication
 
 Tools:

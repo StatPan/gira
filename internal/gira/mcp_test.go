@@ -57,6 +57,26 @@ func TestExecuteMCPToolFinishPlanIsDryRunOnly(t *testing.T) {
 	}
 }
 
+func TestExecuteMCPToolWorkflowGuideIsReadOnlyAndDoesNotRunCommand(t *testing.T) {
+	runner := &mcpRunner{out: []byte(`{}`)}
+	envelope, toolErr := ExecuteMCPTool("gira_workflow_guide", nil, runner)
+	if toolErr != nil {
+		t.Fatalf("ExecuteMCPTool error: %+v", toolErr)
+	}
+	if runner.name != "" {
+		t.Fatalf("workflow guide should not run a command: %+v", runner)
+	}
+	if !envelope.ReadOnly || envelope.Tool != "gira_workflow_guide" {
+		t.Fatalf("unexpected envelope: %+v", envelope)
+	}
+	if !bytes.Contains(envelope.Payload, []byte(`"gira-mcp-workflow-guide/v1"`)) {
+		t.Fatalf("payload = %s", envelope.Payload)
+	}
+	if !bytes.Contains(envelope.Payload, []byte(`dry-run/apply`)) {
+		t.Fatalf("payload should explain dry-run/apply boundary: %s", envelope.Payload)
+	}
+}
+
 func TestExecuteMCPToolRejectsUnsupportedMutation(t *testing.T) {
 	runner := &mcpRunner{out: []byte(`{}`)}
 	_, toolErr := ExecuteMCPTool("gira_ticket_finish_apply", mcpArgs(map[string]any{"repo": "StatPan/gira", "ticket": 1}), runner)
@@ -98,7 +118,7 @@ func TestServeMCPListsAndCallsTools(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("responses = %q", output.String())
 	}
-	if !strings.Contains(lines[0], "gira_ticket_view") || !strings.Contains(lines[1], "queue-next/v1") {
+	if !strings.Contains(lines[0], "gira_workflow_guide") || !strings.Contains(lines[0], "gira_ticket_view") || !strings.Contains(lines[1], "queue-next/v1") {
 		t.Fatalf("unexpected responses:\n%s", output.String())
 	}
 }

@@ -40,6 +40,23 @@ type MCPToolSpec struct {
 	InputSchema map[string]any `json:"inputSchema"`
 }
 
+type MCPWorkflowGuide struct {
+	SchemaVersion  string            `json:"schema_version"`
+	Principle      string            `json:"principle"`
+	LocalFlow      []MCPWorkflowStep `json:"local_flow"`
+	Auth           []string          `json:"auth"`
+	Evidence       []string          `json:"evidence"`
+	Safety         []string          `json:"safety"`
+	HostedBoundary []string          `json:"hosted_boundary"`
+}
+
+type MCPWorkflowStep struct {
+	Name      string `json:"name"`
+	UseMCP    string `json:"use_mcp"`
+	UseCLI    string `json:"use_cli"`
+	UserCheck string `json:"user_check"`
+}
+
 type mcpToolTemplate struct {
 	Name        string
 	Description string
@@ -87,7 +104,16 @@ var mcpTools = []mcpToolTemplate{
 }
 
 func MCPToolSpecs() []MCPToolSpec {
-	out := make([]MCPToolSpec, 0, len(mcpTools))
+	out := []MCPToolSpec{{
+		Name:        "gira_workflow_guide",
+		Description: "Read the recommended conversational agent workflow for using MCP with the Gira CLI lifecycle.",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties":           map[string]any{},
+			"required":             []string{},
+		},
+	}}
 	for _, tool := range mcpTools {
 		properties := map[string]any{
 			"repo": map[string]any{"type": "string", "description": "GitHub repository in OWNER/REPO form."},
@@ -119,6 +145,22 @@ func MCPToolSpecs() []MCPToolSpec {
 }
 
 func ExecuteMCPTool(name string, arguments map[string]json.RawMessage, runner CommandRunner) (MCPCommandEnvelope, *MCPToolError) {
+	if name == "gira_workflow_guide" {
+		if len(arguments) > 0 {
+			return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: "gira_workflow_guide does not accept arguments"}
+		}
+		payload, err := json.Marshal(MCPAgentWorkflowGuide())
+		if err != nil {
+			return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}
+		}
+		return MCPCommandEnvelope{
+			SchemaVersion: MCPServerSchemaVersion,
+			Tool:          name,
+			Command:       []string{"gira", "mcp", "serve", "tool:gira_workflow_guide"},
+			ReadOnly:      true,
+			Payload:       payload,
+		}, nil
+	}
 	if runner == nil {
 		runner = NewMCPCommandRunnerFromEnv()
 	}
@@ -156,6 +198,68 @@ func ExecuteMCPTool(name string, arguments map[string]json.RawMessage, runner Co
 		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Command: command, Stdout: string(stdout), Error: "gira command did not emit valid JSON"}
 	}
 	return MCPCommandEnvelope{SchemaVersion: MCPServerSchemaVersion, Tool: name, Command: command, ReadOnly: true, Payload: append(json.RawMessage(nil), trimmed...)}, nil
+}
+
+func MCPAgentWorkflowGuide() MCPWorkflowGuide {
+	return MCPWorkflowGuide{
+		SchemaVersion: "gira-mcp-workflow-guide/v1",
+		Principle:     "MCP should make Gira feel conversational, but it must not make lifecycle changes implicit. Agents may continuously read and summarize project state through MCP while every mutation remains an explicit Gira CLI dry-run/apply transition with GitHub evidence.",
+		LocalFlow: []MCPWorkflowStep{
+			{
+				Name:      "adopt_or_select",
+				UseMCP:    "Read queue, ticket, and repository context when available.",
+				UseCLI:    "Use `gira adopt`, `gira queue`, or `gira ticket new` with `--dry-run` before creating or changing workflow state.",
+				UserCheck: "Confirm the target repo, issue, branch, and intended lifecycle transition before apply.",
+			},
+			{
+				Name:      "inspect_context",
+				UseMCP:    "Use ticket view/status/checks/handoff and queue tools for conversational context gathering.",
+				UseCLI:    "Use CLI status/review/checks commands when a human-readable or local command receipt is needed.",
+				UserCheck: "Surface blockers, stale assumptions, and missing auth before proposing mutation.",
+			},
+			{
+				Name:      "plan_mutation",
+				UseMCP:    "Summarize current state and explain the proposed next action.",
+				UseCLI:    "Run the matching Gira command with `--dry-run`; do not use MCP as an apply surface.",
+				UserCheck: "Show the dry-run result and ask for explicit agreement when the operation changes remote state.",
+			},
+			{
+				Name:      "apply_mutation",
+				UseMCP:    "Continue reading status after the mutation to keep the conversation current.",
+				UseCLI:    "Run the approved command with `--apply` and capture the resulting issue, PR, check, or release link.",
+				UserCheck: "Report exactly what changed and where the evidence was recorded.",
+			},
+			{
+				Name:      "review_and_finish",
+				UseMCP:    "Read checks, finish plan, handoff, and queue state while discussing readiness.",
+				UseCLI:    "Use `gira ticket finish --dry-run` before `--apply`; release tags and publishing remain explicit CLI/GitHub actions.",
+				UserCheck: "Do not finish work with failing checks, missing PR evidence, or unresolved human decisions.",
+			},
+		},
+		Auth: []string{
+			"Prefer `GIRA_MCP_GITHUB_TOKEN` for MCP-specific local credentials.",
+			"Fall back to `GITHUB_TOKEN`, then `GH_TOKEN`, then local `gh` authentication.",
+			"Use `gira mcp doctor --repo OWNER/REPO --json` before relying on MCP reads in a new environment.",
+			"Do not persist GitHub tokens in Gira repo config or MCP workflow documents.",
+		},
+		Evidence: []string{
+			"GitHub issues remain task packets.",
+			"Pull requests remain change units.",
+			"Checks, reviews, merge state, and issue comments remain completion evidence.",
+			"MCP context is advisory unless backed by a Gira command result or GitHub state.",
+		},
+		Safety: []string{
+			"MCP tools must stay read-only or dry-run-only unless a future ADR explicitly changes the boundary.",
+			"Do not expose raw shell, raw `gh`, or hidden `--apply` behavior through MCP.",
+			"Do not create a second MCP-only lifecycle vocabulary that diverges from Gira CLI states.",
+			"Prefer short conversational summaries, but include concrete issue, PR, workflow, and release links when state changes.",
+		},
+		HostedBoundary: []string{
+			"A hosted MCP service should preserve the same conversational flow and evidence model.",
+			"Hosted authentication should use per-user or per-installation authorization rather than shared environment tokens.",
+			"Hosted service behavior must not silently mutate GitHub state without an explicit dry-run/apply equivalent.",
+		},
+	}
 }
 
 func findMCPTool(name string) (mcpToolTemplate, bool) {

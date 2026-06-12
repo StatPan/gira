@@ -6,6 +6,12 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v2.4.1 - 2026-06-12
+
+- Fixed MCP help and server metadata wording so the released MCP surface is
+  described as Gira CLI parity plus focused context tools rather than a
+  read-only-only server.
+
 ## v2.4.0 - 2026-06-12
 
 - Added the `gira_cli` MCP tool so agents can execute the installed Gira CLI

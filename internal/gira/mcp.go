@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const MCPServerSchemaVersion = "gira-mcp-read-only/v1"
+const MCPServerSchemaVersion = "gira-mcp/v1"
 
 type MCPOptions struct {
 	Runner   CommandRunner

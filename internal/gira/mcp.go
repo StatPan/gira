@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -13,7 +14,8 @@ import (
 const MCPServerSchemaVersion = "gira-mcp-read-only/v1"
 
 type MCPOptions struct {
-	Runner CommandRunner
+	Runner   CommandRunner
+	Executor MCPCommandExecutor
 }
 
 type MCPCommandEnvelope struct {
@@ -32,6 +34,33 @@ type MCPToolError struct {
 	Stderr        string   `json:"stderr,omitempty"`
 	Stdout        string   `json:"stdout,omitempty"`
 	Error         string   `json:"error"`
+}
+
+type MCPCLICommandEnvelope struct {
+	SchemaVersion string   `json:"schema_version"`
+	Tool          string   `json:"tool"`
+	Command       []string `json:"command"`
+	Workdir       string   `json:"workdir,omitempty"`
+	ExitCode      int      `json:"exit_code"`
+	Stdout        string   `json:"stdout"`
+	Stderr        string   `json:"stderr,omitempty"`
+	DryRun        bool     `json:"dry_run"`
+	Apply         bool     `json:"apply"`
+	JSONRequested bool     `json:"json_requested"`
+}
+
+type MCPCommandExecution struct {
+	Stdout   string
+	Stderr   string
+	ExitCode int
+}
+
+type MCPCommandExecutor interface {
+	ExecuteGira(args []string, workdir string) MCPCommandExecution
+}
+
+type MCPDefaultCommandExecutor struct {
+	Auth MCPAuthConfig
 }
 
 type MCPToolSpec struct {
@@ -113,6 +142,26 @@ func MCPToolSpecs() []MCPToolSpec {
 			"properties":           map[string]any{},
 			"required":             []string{},
 		},
+	}, {
+		Name:        "gira_cli",
+		Description: "Execute the installed Gira CLI with explicit argv. This is CLI parity over MCP: no shell, no raw gh, no separate lifecycle.",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"args": map[string]any{
+					"type":        "array",
+					"description": "Gira CLI argv excluding the `gira` binary, for example [`ticket`,`status`,`42`,`--repo`,`OWNER/REPO`,`--json`].",
+					"minItems":    1,
+					"items":       map[string]any{"type": "string"},
+				},
+				"workdir": map[string]any{
+					"type":        "string",
+					"description": "Optional working directory for repo/branch inference. Defaults to the MCP server working directory.",
+				},
+			},
+			"required": []string{"args"},
+		},
 	}}
 	for _, tool := range mcpTools {
 		properties := map[string]any{
@@ -145,13 +194,30 @@ func MCPToolSpecs() []MCPToolSpec {
 }
 
 func ExecuteMCPTool(name string, arguments map[string]json.RawMessage, runner CommandRunner) (MCPCommandEnvelope, *MCPToolError) {
+	envelope, toolErr, _ := executeMCPTool(name, arguments, MCPOptions{Runner: runner})
+	return envelope, toolErr
+}
+
+func ExecuteMCPToolWithOptions(name string, arguments map[string]json.RawMessage, options MCPOptions) (any, *MCPToolError) {
+	envelope, toolErr, payload := executeMCPTool(name, arguments, options)
+	if toolErr != nil {
+		return nil, toolErr
+	}
+	if payload != nil {
+		return payload, nil
+	}
+	return envelope, nil
+}
+
+func executeMCPTool(name string, arguments map[string]json.RawMessage, options MCPOptions) (MCPCommandEnvelope, *MCPToolError, any) {
+	runner := options.Runner
 	if name == "gira_workflow_guide" {
 		if len(arguments) > 0 {
-			return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: "gira_workflow_guide does not accept arguments"}
+			return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: "gira_workflow_guide does not accept arguments"}, nil
 		}
 		payload, err := json.Marshal(MCPAgentWorkflowGuide())
 		if err != nil {
-			return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}
+			return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}, nil
 		}
 		return MCPCommandEnvelope{
 			SchemaVersion: MCPServerSchemaVersion,
@@ -159,45 +225,132 @@ func ExecuteMCPTool(name string, arguments map[string]json.RawMessage, runner Co
 			Command:       []string{"gira", "mcp", "serve", "tool:gira_workflow_guide"},
 			ReadOnly:      true,
 			Payload:       payload,
-		}, nil
+		}, nil, nil
+	}
+	if name == "gira_cli" {
+		payload, toolErr := executeMCPCLI(arguments, options.Executor)
+		if toolErr != nil {
+			return MCPCommandEnvelope{}, toolErr, nil
+		}
+		return MCPCommandEnvelope{}, nil, payload
 	}
 	if runner == nil {
 		runner = NewMCPCommandRunnerFromEnv()
 	}
 	tool, ok := findMCPTool(name)
 	if !ok {
-		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: "unsupported read-only MCP tool"}
+		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: "unsupported Gira MCP tool"}, nil
 	}
 	repo, err := mcpStringArg(arguments, "repo", true)
 	if err != nil {
-		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}
+		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}, nil
 	}
 	if _, err := ParseRepoRef(repo); err != nil {
-		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}
+		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}, nil
 	}
 	ticket, err := mcpIntArg(arguments, "ticket", tool.Ticket)
 	if err != nil {
-		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}
+		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}, nil
 	}
 	limit, err := mcpIntArg(arguments, "limit", false)
 	if err != nil {
-		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}
+		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}, nil
 	}
 	queue, err := mcpStringArg(arguments, "queue", false)
 	if err != nil {
-		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}
+		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Error: err.Error()}, nil
 	}
 	args := tool.Build(repo, ticket, limit, queue)
 	command := append([]string{"gira"}, args...)
 	stdout, runErr := runner.Run("gira", args...)
 	if runErr != nil {
-		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Command: command, ExitCode: 1, Stderr: runErr.Error(), Error: "gira command failed"}
+		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Command: command, ExitCode: 1, Stderr: runErr.Error(), Error: "gira command failed"}, nil
 	}
 	trimmed := bytes.TrimSpace(stdout)
 	if !json.Valid(trimmed) {
-		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Command: command, Stdout: string(stdout), Error: "gira command did not emit valid JSON"}
+		return MCPCommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: name, Command: command, Stdout: string(stdout), Error: "gira command did not emit valid JSON"}, nil
 	}
-	return MCPCommandEnvelope{SchemaVersion: MCPServerSchemaVersion, Tool: name, Command: command, ReadOnly: true, Payload: append(json.RawMessage(nil), trimmed...)}, nil
+	return MCPCommandEnvelope{SchemaVersion: MCPServerSchemaVersion, Tool: name, Command: command, ReadOnly: true, Payload: append(json.RawMessage(nil), trimmed...)}, nil, nil
+}
+
+func executeMCPCLI(arguments map[string]json.RawMessage, executor MCPCommandExecutor) (MCPCLICommandEnvelope, *MCPToolError) {
+	args, err := mcpStringSliceArg(arguments, "args", true)
+	if err != nil {
+		return MCPCLICommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: "gira_cli", Error: err.Error()}
+	}
+	workdir, err := mcpStringArg(arguments, "workdir", false)
+	if err != nil {
+		return MCPCLICommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: "gira_cli", Error: err.Error()}
+	}
+	if err := validateMCPCLIArgs(args); err != nil {
+		return MCPCLICommandEnvelope{}, &MCPToolError{SchemaVersion: MCPServerSchemaVersion, Tool: "gira_cli", Error: err.Error()}
+	}
+	if executor == nil {
+		executor = MCPDefaultCommandExecutor{Auth: ResolveMCPAuthConfig(NewMCPCommandRunnerFromEnv().commandEnv())}
+	}
+	result := executor.ExecuteGira(args, workdir)
+	return MCPCLICommandEnvelope{
+		SchemaVersion: "gira-mcp-cli-exec/v1",
+		Tool:          "gira_cli",
+		Command:       append([]string{"gira"}, args...),
+		Workdir:       workdir,
+		ExitCode:      result.ExitCode,
+		Stdout:        result.Stdout,
+		Stderr:        result.Stderr,
+		DryRun:        mcpArgsContain(args, "--dry-run"),
+		Apply:         mcpArgsContain(args, "--apply"),
+		JSONRequested: mcpArgsContain(args, "--json"),
+	}, nil
+}
+
+func (e MCPDefaultCommandExecutor) ExecuteGira(args []string, workdir string) MCPCommandExecution {
+	auth := e.Auth
+	if len(auth.env) == 0 {
+		auth = ResolveMCPAuthConfig(NewMCPCommandRunnerFromEnv().commandEnv())
+	}
+	cmd := exec.Command("gira", args...)
+	cmd.Env = (MCPCommandRunner{Auth: auth}).commandEnv()
+	if strings.TrimSpace(workdir) != "" {
+		cmd.Dir = strings.TrimSpace(workdir)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	exitCode := 0
+	if err != nil {
+		exitCode = 1
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		}
+	}
+	return MCPCommandExecution{
+		Stdout:   redactSecrets(stdout.String(), auth),
+		Stderr:   redactSecrets(stderr.String(), auth),
+		ExitCode: exitCode,
+	}
+}
+
+func validateMCPCLIArgs(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("args is required")
+	}
+	for i, arg := range args {
+		if strings.TrimSpace(arg) == "" {
+			return fmt.Errorf("args[%d] must be a non-empty string", i)
+		}
+		if strings.ContainsRune(arg, '\x00') {
+			return fmt.Errorf("args[%d] must not contain NUL bytes", i)
+		}
+	}
+	if args[0] == "gira" {
+		return fmt.Errorf("args must omit the `gira` binary")
+	}
+	if len(args) >= 2 && args[0] == "mcp" && args[1] == "serve" {
+		return fmt.Errorf("gira mcp serve cannot be started recursively through MCP")
+	}
+	return nil
 }
 
 func MCPAgentWorkflowGuide() MCPWorkflowGuide {
@@ -308,6 +461,33 @@ func mcpIntArg(args map[string]json.RawMessage, name string, required bool) (int
 	return value, nil
 }
 
+func mcpStringSliceArg(args map[string]json.RawMessage, name string, required bool) ([]string, error) {
+	raw, ok := args[name]
+	if !ok || len(raw) == 0 || string(raw) == "null" {
+		if required {
+			return nil, fmt.Errorf("%s is required", name)
+		}
+		return nil, nil
+	}
+	var value []string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, fmt.Errorf("%s must be an array of strings", name)
+	}
+	if required && len(value) == 0 {
+		return nil, fmt.Errorf("%s is required", name)
+	}
+	return value, nil
+}
+
+func mcpArgsContain(args []string, flag string) bool {
+	for _, arg := range args {
+		if arg == flag {
+			return true
+		}
+	}
+	return false
+}
+
 type mcpRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id,omitempty"`
@@ -378,12 +558,12 @@ func handleMCPRequest(req mcpRequest, options MCPOptions) mcpResponse {
 		if params.Arguments == nil {
 			params.Arguments = map[string]json.RawMessage{}
 		}
-		envelope, toolErr := ExecuteMCPTool(params.Name, params.Arguments, options.Runner)
+		payload, toolErr := ExecuteMCPToolWithOptions(params.Name, params.Arguments, options)
 		if toolErr != nil {
 			resp.Result = mcpToolResult(toolErr, true)
 			return resp
 		}
-		resp.Result = mcpToolResult(envelope, false)
+		resp.Result = mcpToolResult(payload, false)
 	default:
 		resp.Error = &mcpRPCError{Code: -32601, Message: "method not found"}
 	}

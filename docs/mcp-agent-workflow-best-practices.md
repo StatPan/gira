@@ -7,8 +7,9 @@ through MCP while every mutation remains an explicit Gira CLI `--dry-run` and
 
 ## Product boundary
 
-MCP is the conversational read surface. Gira CLI is the lifecycle mutation
-surface. GitHub remains the execution record.
+MCP is the agent transport for the same Gira CLI lifecycle. Direct CLI usage and
+MCP-assisted usage should have the same semantics. GitHub remains the execution
+record.
 
 This keeps local CLI work, MCP-assisted agent work, and future hosted MCP work
 inside one product model instead of creating separate workflows.
@@ -16,9 +17,9 @@ inside one product model instead of creating separate workflows.
 ## Local operating loop
 
 1. Select or adopt work.
-   Use MCP queue and ticket reads when available. Use `gira adopt`, `gira queue`,
-   or `gira ticket new` with `--dry-run` before creating or changing workflow
-   state.
+   Use MCP queue and ticket reads when available. Use `gira_cli` to run
+   `gira adopt`, `gira queue`, or `gira ticket new` with `--dry-run` before
+   creating or changing workflow state.
 
 2. Inspect context.
    Use MCP ticket view, status, checks, finish-plan, handoff, and queue tools to
@@ -26,14 +27,16 @@ inside one product model instead of creating separate workflows.
    assumptions before proposing a mutation.
 
 3. Plan the mutation.
-   Run the matching Gira CLI command with `--dry-run`. The agent should show the
-   dry-run result in the conversation and identify the issue, branch, PR, check,
-   or release artifact that will change.
+   Run the matching Gira CLI command with `--dry-run`, either directly in a
+   terminal or through `gira_cli` over MCP. The agent should show the dry-run
+   result in the conversation and identify the issue, branch, PR, check, or
+   release artifact that will change.
 
 4. Apply explicitly.
    After user agreement or an established operating policy, run the approved CLI
-   command with `--apply`. MCP must not hide an apply transition behind a read
-   tool.
+   command with `--apply`, either directly in a terminal or through `gira_cli`.
+   MCP must not create a second mutation model; it should execute the same Gira
+   CLI lifecycle.
 
 5. Record evidence.
    Report GitHub issue, PR, check, workflow, release, or comment links. MCP
@@ -51,8 +54,9 @@ rules for mixing MCP and CLI. The tool returns `gira-mcp-workflow-guide/v1` JSON
 with the local flow, authentication expectations, evidence rules, safety rules,
 and hosted-service boundary notes.
 
-This is intentionally a read-only MCP tool. It explains how to operate; it does
-not mutate GitHub, run shell commands, or approve lifecycle transitions.
+The guide tool is intentionally read-only. Execution happens through `gira_cli`,
+which invokes the installed `gira` binary with explicit argv and returns exit
+code, stdout, stderr, and dry-run/apply metadata.
 
 ## Authentication
 
@@ -80,7 +84,8 @@ where it changed, and which evidence link proves it.
 
 ## Anti-patterns
 
-- Exposing raw shell, raw `gh`, or hidden `--apply` behavior through MCP.
+- Exposing raw shell, raw `gh`, or a mutation path that does not go through the
+  Gira CLI lifecycle.
 - Treating MCP context as a second source of truth.
 - Creating MCP-only lifecycle terms that do not map to Gira CLI states.
 - Storing tokens in repo files, Gira config, or generated workflow docs.

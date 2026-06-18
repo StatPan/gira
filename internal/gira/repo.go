@@ -219,6 +219,28 @@ type globalRepoRegistryCandidate struct {
 	Path  string
 }
 
+type GlobalRepoRegistryCandidate struct {
+	Repo  RepoRef
+	Entry GlobalRepoRegistryEntry
+	Path  string
+}
+
+func ListGlobalRepoRegistryEntries(configRoot string) ([]GlobalRepoRegistryCandidate, error) {
+	candidates, err := loadGlobalRepoRegistryEntries(configRoot)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]GlobalRepoRegistryCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		out = append(out, GlobalRepoRegistryCandidate{
+			Repo:  candidate.Repo,
+			Entry: candidate.Entry,
+			Path:  candidate.Path,
+		})
+	}
+	return out, nil
+}
+
 func (c globalRepoRegistryCandidate) Context(source string, detail string) ResolvedRepoContext {
 	entry := c.Entry
 	return ResolvedRepoContext{

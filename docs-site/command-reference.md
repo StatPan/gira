@@ -4,12 +4,12 @@ This page is generated from Gira's command metadata registry. Update `internal/g
 
 ## `completion`
 
-Generate static shell completion scripts for common commands, subcommands, and flags.
+Generate shell completion scripts and cache-first dynamic candidates.
 
 Usage:
 
 ```bash
-gira completion bash|zsh|fish
+gira completion bash|zsh|fish; gira completion candidates repo|ticket|label|milestone
 ```
 
 Since: `v2.1.0`
@@ -19,6 +19,7 @@ Flags:
 - `bash`: Print Bash completion script.
 - `zsh`: Print Zsh completion script.
 - `fish`: Print Fish completion script.
+- `candidates`: Print local dynamic candidates from the repo registry and workspace status cache.
 
 Examples:
 
@@ -32,6 +33,12 @@ gira completion bash > ~/.local/share/bash-completion/completions/gira
 
 ```bash
 gira completion fish
+```
+
+- Inspect cached label candidates
+
+```bash
+gira completion candidates label --repo OWNER/REPO --prefix status
 ```
 
 Documented in: `README.md`, `docs-site/command-reference.md`

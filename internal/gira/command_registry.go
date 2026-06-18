@@ -291,19 +291,21 @@ func CoreCommandSpecs() []CommandSpec {
 		},
 		{
 			Path:    []string{"completion"},
-			Summary: "Generate static shell completion scripts for common commands, subcommands, and flags.",
-			Usage:   "gira completion bash|zsh|fish",
+			Summary: "Generate shell completion scripts and cache-first dynamic candidates.",
+			Usage:   "gira completion bash|zsh|fish; gira completion candidates repo|ticket|label|milestone",
 			Since:   "v2.1.0",
 			Flags: []FlagSpec{
 				{Name: "bash", Summary: "Print Bash completion script."},
 				{Name: "zsh", Summary: "Print Zsh completion script."},
 				{Name: "fish", Summary: "Print Fish completion script."},
+				{Name: "candidates", Summary: "Print local dynamic candidates from the repo registry and workspace status cache."},
 			},
 			Docs:        []string{"README.md", "docs-site/command-reference.md"},
 			GuideTopics: []string{"quickstart"},
 			Examples: []CommandExample{
 				{Summary: "Install Bash completion locally", Command: "gira completion bash > ~/.local/share/bash-completion/completions/gira"},
 				{Summary: "Preview Fish completion", Command: "gira completion fish"},
+				{Summary: "Inspect cached label candidates", Command: "gira completion candidates label --repo OWNER/REPO --prefix status"},
 			},
 		},
 		{

@@ -33,16 +33,17 @@ type WBSRawIssue struct {
 }
 
 type WBSReport struct {
-	Command       string            `json:"command"`
-	SchemaVersion string            `json:"schema_version"`
-	Repo          string            `json:"repo"`
-	StateFilter   string            `json:"state_filter"`
-	GeneratedAt   string            `json:"generated_at"`
-	Items         []WBSReportItem   `json:"items"`
-	Counts        WBSReportCounts   `json:"counts"`
-	Warnings      []string          `json:"warnings,omitempty"`
-	WarningItems  []WBSWarningItem  `json:"warning_items,omitempty"`
-	Sources       []WBSReportSource `json:"sources"`
+	Command          string                    `json:"command"`
+	SchemaVersion    string                    `json:"schema_version"`
+	Repo             string                    `json:"repo"`
+	StateFilter      string                    `json:"state_filter"`
+	GeneratedAt      string                    `json:"generated_at"`
+	Items            []WBSReportItem           `json:"items"`
+	Counts           WBSReportCounts           `json:"counts"`
+	Warnings         []string                  `json:"warnings,omitempty"`
+	WarningItems     []WBSWarningItem          `json:"warning_items,omitempty"`
+	MilestoneCleanup []WBSMilestoneCleanupItem `json:"milestone_cleanup,omitempty"`
+	Sources          []WBSReportSource         `json:"sources"`
 }
 
 type WBSReportItem struct {
@@ -57,9 +58,11 @@ type WBSReportItem struct {
 	Status                 string               `json:"status,omitempty"`
 	Priority               string               `json:"priority,omitempty"`
 	Owner                  string               `json:"owner,omitempty"`
+	Workstream             string               `json:"workstream,omitempty"`
 	Milestone              string               `json:"milestone,omitempty"`
 	StartDate              string               `json:"start_date,omitempty"`
 	TargetDate             string               `json:"target_date,omitempty"`
+	Dependency             string               `json:"dependency,omitempty"`
 	Progress               int                  `json:"progress"`
 	Children               int                  `json:"children"`
 	Source                 string               `json:"source"`
@@ -78,6 +81,15 @@ type WBSWarningItem struct {
 	AffectedChildren []WBSAffectedChild   `json:"affected_children,omitempty"`
 	EvidenceSources  []string             `json:"evidence_sources,omitempty"`
 	Remediation      string               `json:"remediation,omitempty"`
+}
+
+type WBSMilestoneCleanupItem struct {
+	Milestone       string `json:"milestone"`
+	State           string `json:"state,omitempty"`
+	DueDate         string `json:"due_date,omitempty"`
+	TotalItems      int    `json:"total_items"`
+	ExecutableItems int    `json:"executable_items"`
+	Reason          string `json:"reason"`
 }
 
 type WBSParentCandidate struct {
@@ -216,6 +228,7 @@ func BuildWBSReportWithOptions(repo RepoRef, client WBSReportClient, generatedAt
 			report.Counts.UnlinkedItems++
 		}
 	}
+	report.MilestoneCleanup = buildWBSMilestoneCleanup(report.Items, milestones)
 	return report, nil
 }
 
@@ -592,10 +605,12 @@ func wbsItemFromIssue(repo RepoRef, issue WBSRawIssue, id string, parentID strin
 		State:      strings.ToLower(issue.State),
 		Status:     dashboardExportStatusFromLabels(issue.Labels),
 		Priority:   dashboardExportPriorityFromLabels(issue.Labels),
-		Owner:      dashboardExportOwnerFromLabels(issue.Labels),
+		Owner:      wbsOwnerLabel(issue.Labels),
+		Workstream: wbsAreaLabel(issue.Labels),
 		Milestone:  issue.Milestone,
 		StartDate:  datesForIssue.StartDate,
 		TargetDate: targetDate,
+		Dependency: wbsDependencyRefs(issue.Body),
 		Progress:   progress,
 		Source:     source,
 		URL:        issue.URL,
@@ -662,6 +677,106 @@ func wbsTypeLabel(labels []string) string {
 		}
 	}
 	return ""
+}
+
+func wbsAreaLabel(labels []string) string {
+	for _, label := range labels {
+		trimmed := strings.ToLower(strings.TrimSpace(label))
+		if strings.HasPrefix(trimmed, "area:") {
+			return strings.TrimPrefix(trimmed, "area:")
+		}
+	}
+	return ""
+}
+
+func wbsOwnerLabel(labels []string) string {
+	for _, label := range labels {
+		trimmed := strings.TrimSpace(label)
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "owner:") {
+			return strings.TrimPrefix(trimmed, "owner:")
+		}
+	}
+	return dashboardExportOwnerFromLabels(labels)
+}
+
+func wbsDependencyRefs(body string) string {
+	refs := []int{}
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.ToLower(strings.TrimSpace(line))
+		if !strings.Contains(trimmed, "depend") && !strings.Contains(trimmed, "blocked by") && !strings.Contains(trimmed, "blocks:") {
+			continue
+		}
+		for issueNumber := range extractIssueRefs(line) {
+			refs = append(refs, issueNumber)
+		}
+	}
+	sort.Ints(refs)
+	return wbsJoinInts(refs)
+}
+
+func buildWBSMilestoneCleanup(items []WBSReportItem, milestones []DashboardRawMilestone) []WBSMilestoneCleanupItem {
+	if len(milestones) == 0 {
+		return nil
+	}
+	totalByMilestone := map[string]int{}
+	executableByMilestone := map[string]int{}
+	for _, item := range items {
+		if strings.TrimSpace(item.Milestone) == "" {
+			continue
+		}
+		totalByMilestone[item.Milestone]++
+		if wbsItemIsExecutable(item) {
+			executableByMilestone[item.Milestone]++
+		}
+	}
+	cleanup := []WBSMilestoneCleanupItem{}
+	for _, milestone := range milestones {
+		total := totalByMilestone[milestone.Title]
+		executable := executableByMilestone[milestone.Title]
+		reason := ""
+		switch {
+		case total == 0:
+			reason = "empty_milestone"
+		case executable == 0:
+			reason = "no_executable_items"
+		}
+		if reason == "" {
+			continue
+		}
+		dueDate := ""
+		if milestone.DueOn != nil {
+			if normalized, ok := normalizeDate(*milestone.DueOn); ok {
+				dueDate = normalized
+			}
+		}
+		cleanup = append(cleanup, WBSMilestoneCleanupItem{
+			Milestone:       milestone.Title,
+			State:           strings.ToLower(milestone.State),
+			DueDate:         dueDate,
+			TotalItems:      total,
+			ExecutableItems: executable,
+			Reason:          reason,
+		})
+	}
+	sort.Slice(cleanup, func(i, j int) bool {
+		if cleanup[i].DueDate != cleanup[j].DueDate {
+			return cleanup[i].DueDate < cleanup[j].DueDate
+		}
+		return cleanup[i].Milestone < cleanup[j].Milestone
+	})
+	return cleanup
+}
+
+func wbsItemIsExecutable(item WBSReportItem) bool {
+	switch strings.ToLower(strings.TrimSpace(item.Kind)) {
+	case "epic":
+		return false
+	case "task", "story", "bug", "spike", "chore", "issue":
+		return true
+	default:
+		return item.Issue > 0 && item.Children == 0
+	}
 }
 
 func RenderWBSReportCSV(report WBSReport) ([]byte, error) {

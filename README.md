@@ -728,7 +728,7 @@ The dashboard signal projection strategy is documented in [docs/dashboard-signal
 
 The first local workspace report bundle can be generated with `gira export dashboard --config .gira/config.yaml --output out/dashboard --dry-run`, then applied by dropping `--dry-run`.
 
-WBS parent inference diagnostics for `gira report wbs` JSON, HTML, and bundle output are documented in [docs/wbs-report-diagnostics.md](docs/wbs-report-diagnostics.md).
+WBS parent inference diagnostics and the structural-vs-execution report split for `gira report wbs` and `gira report schedule` are documented in [docs/wbs-report-diagnostics.md](docs/wbs-report-diagnostics.md).
 
 This repository dogfoods Gira for its own work. The active operating loop, sprint commands, and maintainer handoff are documented in [docs/dogfood.md](docs/dogfood.md).
 

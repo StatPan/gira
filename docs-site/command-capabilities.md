@@ -42,6 +42,7 @@ Schema version: `gira-command-capabilities/v1`
 | `gira report milestone` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
 | `gira report qa-checklist` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
 | `gira report release-notes` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
+| `gira report schedule` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
 | `gira report wbs` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
 | `gira report weekly` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
 | `gira setup global` | none | `apply_mutation` | `stable_json` | writes global config and repo registry files; --dry-run previews file changes | README.md, docs/global-config-registry.md, docs-site/global-config.md, docs/workspace.md |

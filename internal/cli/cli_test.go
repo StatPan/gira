@@ -7298,6 +7298,66 @@ func TestReportWBSCommandRendersCSV(t *testing.T) {
 	}
 }
 
+func TestReportWBSCommandRendersExecutionCSV(t *testing.T) {
+	restoreClient, restoreNow := newWBSReportClient, reportNow
+	t.Cleanup(func() {
+		newWBSReportClient = restoreClient
+		reportNow = restoreNow
+	})
+	newWBSReportClient = func(repo gira.RepoRef) gira.WBSReportClient {
+		return &cliFakeWBSReportClient{
+			issues: []gira.WBSRawIssue{
+				{IssueNumber: 10, Title: "Planning epic", State: "open", Body: "Tracks #11", Labels: []string{"type:epic", "status:ready"}, Milestone: "M1"},
+				{IssueNumber: 11, Title: "Schedule table", State: "open", Body: "Depends on #9", Labels: []string{"type:task", "status:ready", "area:backend", "owner:kim"}, Milestone: "M1"},
+			},
+			milestones: []gira.DashboardRawMilestone{{MilestoneNumber: 1, Title: "M1", State: "open", DueOn: strPtr("2026-07-01T00:00:00Z")}},
+		}
+	}
+	reportNow = func() time.Time {
+		return time.Date(2026, 6, 18, 9, 0, 0, 0, time.UTC)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"report", "wbs", "--repo", "StatPan/gira", "--mode", "execution", "--format", "csv"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.HasPrefix(stdout.String(), "phase,workstream,task,owner,start_date,due_date,status,priority,dependency,milestone,issue_url") {
+		t.Fatalf("stdout missing execution CSV header:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "M1,backend,Schedule table,kim,,2026-07-01,ready,,#9,M1") {
+		t.Fatalf("stdout missing execution row:\n%s", stdout.String())
+	}
+}
+
+func TestReportScheduleCommandRendersScenarioJSON(t *testing.T) {
+	restoreClient, restoreNow := newWBSReportClient, reportNow
+	t.Cleanup(func() {
+		newWBSReportClient = restoreClient
+		reportNow = restoreNow
+	})
+	newWBSReportClient = func(repo gira.RepoRef) gira.WBSReportClient {
+		return &cliFakeWBSReportClient{
+			issues: []gira.WBSRawIssue{
+				{IssueNumber: 11, Title: "Schedule table", State: "open", Labels: []string{"type:task", "status:ready"}, Milestone: "M1"},
+			},
+			milestones: []gira.DashboardRawMilestone{{MilestoneNumber: 1, Title: "M1", State: "open", DueOn: strPtr("2026-07-01T00:00:00Z")}},
+		}
+	}
+	reportNow = func() time.Time {
+		return time.Date(2026, 6, 18, 9, 0, 0, 0, time.UTC)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"report", "schedule", "--repo", "StatPan/gira", "--scenario", "one-month", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"command": "report schedule"`) || !strings.Contains(stdout.String(), `"scenario": "one-month"`) || !strings.Contains(stdout.String(), `"scenario_due_date": "2026-06-18"`) {
+		t.Fatalf("stdout missing schedule scenario JSON:\n%s", stdout.String())
+	}
+}
+
 func TestReportWBSCommandWritesBundle(t *testing.T) {
 	restoreClient, restoreNow := newWBSReportClient, reportNow
 	t.Cleanup(func() {

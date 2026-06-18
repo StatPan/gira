@@ -108,6 +108,87 @@ func TestBuildWBSReportExplainsAmbiguousMilestoneParents(t *testing.T) {
 	}
 }
 
+func TestBuildExecutionReportFromWBSMarksActionableRowsAndDiagnostics(t *testing.T) {
+	client := &fakeWBSReportClient{
+		issues: []WBSRawIssue{
+			{IssueNumber: 10, Title: "Execution epic", State: "open", Body: "Tracks #11", Labels: []string{"type:epic", "status:ready"}, Milestone: "M1", URL: "u10"},
+			{IssueNumber: 11, Title: "Build report model", State: "open", Body: "Depends on #9", Labels: []string{"type:task", "status:ready", "priority:p1", "area:backend", "owner:kim"}, Milestone: "M1", URL: "u11"},
+			{IssueNumber: 12, Title: "Loose task", State: "open", Labels: []string{"type:task", "status:ready"}, URL: "u12"},
+		},
+		milestones: []DashboardRawMilestone{
+			{MilestoneNumber: 1, Title: "M1", State: "open", DueOn: wbsPtr("2026-07-15T00:00:00Z")},
+			{MilestoneNumber: 2, Title: "Empty", State: "open", DueOn: wbsPtr("2026-08-01T00:00:00Z")},
+		},
+	}
+	wbs, err := BuildWBSReport(ParseRepoRefMust("StatPan/gira"), client, time.Date(2026, 6, 18, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildWBSReport returned error: %v", err)
+	}
+	report, err := BuildExecutionReportFromWBS(wbs, ExecutionReportOptions{Command: "report wbs", Mode: "execution"})
+	if err != nil {
+		t.Fatalf("BuildExecutionReportFromWBS returned error: %v", err)
+	}
+	if report.SchemaVersion != ExecutionReportSchemaVersion || report.Counts.ActionableRows != 2 || report.Counts.SummaryRows != 1 {
+		t.Fatalf("unexpected execution counts: %+v", report.Counts)
+	}
+	if len(report.MilestoneCleanup) != 1 || report.MilestoneCleanup[0].Reason != "empty_milestone" {
+		t.Fatalf("unexpected milestone cleanup: %+v", report.MilestoneCleanup)
+	}
+	var linked ExecutionReportRow
+	var loose ExecutionReportRow
+	for _, row := range report.Rows {
+		switch row.Issue {
+		case 11:
+			linked = row
+		case 12:
+			loose = row
+		}
+	}
+	if linked.RowType != "actionable" || linked.Workstream != "backend" || linked.Dependency != "#9" || linked.DueDate != "2026-07-15" {
+		t.Fatalf("unexpected linked execution row: %+v", linked)
+	}
+	if loose.RowType != "actionable" || !containsString(loose.Diagnostics, "missing_owner") || !containsString(loose.Diagnostics, "missing_parent") || !containsString(loose.Diagnostics, "missing_date") {
+		t.Fatalf("loose row missing diagnostics: %+v", loose)
+	}
+	csvBytes, err := RenderExecutionReportCSV(report)
+	if err != nil {
+		t.Fatalf("RenderExecutionReportCSV returned error: %v", err)
+	}
+	if !strings.HasPrefix(string(csvBytes), "phase,workstream,task,owner,start_date,due_date,status,priority,dependency,milestone,issue_url") {
+		t.Fatalf("unexpected execution CSV header:\n%s", string(csvBytes))
+	}
+}
+
+func TestBuildExecutionReportScheduleSortsByWeekAndScenario(t *testing.T) {
+	wbs := WBSReport{
+		Command:       "report wbs",
+		SchemaVersion: WBSReportSchemaVersion,
+		Repo:          "StatPan/gira",
+		StateFilter:   "open",
+		GeneratedAt:   "2026-06-18T09:00:00Z",
+		Items: []WBSReportItem{
+			{WBSID: "2", Kind: "task", Issue: 20, Title: "Later", State: "open", Status: "Ready", TargetDate: "2026-08-01"},
+			{WBSID: "1", Kind: "task", Issue: 10, Title: "Sooner", State: "open", Status: "Ready", TargetDate: "2026-07-01"},
+		},
+	}
+	report, err := BuildExecutionReportFromWBS(wbs, ExecutionReportOptions{Command: "report schedule", Mode: "schedule", By: "week", Scenario: "one-month"})
+	if err != nil {
+		t.Fatalf("BuildExecutionReportFromWBS returned error: %v", err)
+	}
+	if report.Mode != "schedule" || report.By != "week" || report.Scenario != "one-month" {
+		t.Fatalf("unexpected schedule metadata: %+v", report)
+	}
+	if len(report.Rows) != 2 || report.Rows[0].Issue != 10 || report.Rows[1].Issue != 20 {
+		t.Fatalf("rows not sorted by source schedule order: %+v", report.Rows)
+	}
+	if report.Rows[0].SourceDueDate != "2026-07-01" || report.Rows[0].ScenarioDueDate == "" || report.Rows[0].DeltaDays >= 0 {
+		t.Fatalf("scenario fields not populated: %+v", report.Rows[0])
+	}
+	if report.Rows[0].Week != "2026-06-15" {
+		t.Fatalf("week bucket = %q, want 2026-06-15", report.Rows[0].Week)
+	}
+}
+
 func TestWriteWBSReportBundleWritesHumanAndMachineArtifacts(t *testing.T) {
 	report := WBSReport{
 		Command:       "report wbs",

@@ -1167,14 +1167,14 @@ gira report release-notes --repo OWNER/app --milestone v2.1.0 --format bundle --
 
 Documented in: `README.md`, `docs-site/command-reference.md`
 
-## `report wbs`
+## `report schedule`
 
-Build a human-readable work breakdown report from GitHub epics, issues, milestones, and roadmap dates.
+Build a schedule-oriented execution report sorted by date and week bucket.
 
 Usage:
 
 ```bash
-gira report wbs [--repo OWNER/REPO] [--state open|closed|all] [--format text|json|csv|html|bundle] [--output PATH]
+gira report schedule [--repo OWNER/REPO] [--state open|closed|all] [--by week] [--scenario current|one-month] [--format text|json|csv] [--output PATH]
 ```
 
 Since: `v2.5.0`
@@ -1183,6 +1183,47 @@ Flags:
 
 - `--repo`: Target GitHub repo in OWNER/REPO format.
 - `--state`: Issue state filter: open, closed, or all. Default: open.
+- `--by`: Schedule grouping. Currently supports week.
+- `--scenario`: Planning scenario: current or one-month.
+- `--format`: Output format: text, json, or csv.
+- `--output`: Output path for csv.
+- `--json`: Emit stable execution-report/v1alpha1 JSON.
+- `--csv`: Emit execution rows as CSV.
+
+Examples:
+
+- Render weekly schedule rows for Sheets
+
+```bash
+gira report schedule --repo OWNER/app --by week --format csv
+```
+
+- Compare a compressed one-month planning scenario
+
+```bash
+gira report schedule --repo OWNER/app --scenario one-month --format json
+```
+
+Documented in: `README.md`, `docs-site/command-reference.md`
+
+## `report wbs`
+
+Build structural or execution-focused WBS reports from GitHub epics, issues, milestones, and roadmap dates.
+
+Usage:
+
+```bash
+gira report wbs [--repo OWNER/REPO] [--state open|closed|all] [--mode structural|execution] [--scenario current|one-month] [--format text|json|csv|html|bundle] [--output PATH]
+```
+
+Since: `v2.5.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--state`: Issue state filter: open, closed, or all. Default: open.
+- `--mode`: Report model: structural preserves hierarchy-first WBS; execution emits actionable planning rows.
+- `--scenario`: Planning scenario for execution mode: current or one-month.
 - `--format`: Output format: text, json, csv, html, or bundle.
 - `--output`: Output path for csv/html, or output root for bundle.
 - `--json`: Emit stable wbs-report/v1alpha1 JSON.
@@ -1195,6 +1236,12 @@ Examples:
 
 ```bash
 gira report wbs --repo OWNER/app
+```
+
+- Render execution WBS rows for Sheets
+
+```bash
+gira report wbs --repo OWNER/app --mode execution --format csv
 ```
 
 - Write a shareable WBS report bundle

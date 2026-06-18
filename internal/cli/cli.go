@@ -1092,7 +1092,8 @@ Usage:
   gira report backlog-health [--repo OWNER/REPO] [--format text|md|json|csv|html|bundle] [--output PATH]
   gira report delivery-status [--repo OWNER/REPO] [--format text|md|json|csv|html|bundle] [--output PATH]
   gira report qa-checklist [--repo OWNER/REPO] [--milestone TITLE] [--format text|md|json|csv|html|bundle] [--output PATH]
-  gira report wbs [--repo OWNER/REPO] [--state open|closed|all] [--format text|json|csv|html|bundle] [--output PATH]
+  gira report wbs [--repo OWNER/REPO] [--state open|closed|all] [--mode structural|execution] [--scenario current|one-month] [--format text|json|csv|html|bundle] [--output PATH]
+  gira report schedule [--repo OWNER/REPO] [--state open|closed|all] [--by week] [--scenario current|one-month] [--format text|json|csv] [--output PATH]
 
 Commands:
   weekly          Weekly PM cockpit report with deterministic KPIs and top exceptions
@@ -1103,6 +1104,7 @@ Commands:
   delivery-status Delivery status report from milestones, issues, and PR evidence
   qa-checklist    QA checklist report from issue and PR readiness evidence
   wbs             Work breakdown report from GitHub epics, issues, milestones, and roadmap dates
+  schedule        Schedule-oriented execution report sorted by date and week bucket
 `
 
 const contractHelp = `CRUD capability matrix and command contract.
@@ -10668,6 +10670,8 @@ func runReport(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runReportProjectDocument(args[0], args[1:], stdout, stderr)
 	case "wbs":
 		return runReportWBS(args[1:], stdout, stderr)
+	case "schedule":
+		return runReportSchedule(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown report command: %s\n\n", args[0])
 		fmt.Fprint(stderr, reportHelp)
@@ -11149,6 +11153,8 @@ func runReportWBS(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs.SetOutput(io.Discard)
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	state := fs.String("state", "open", "Issue state filter: open, closed, or all")
+	mode := fs.String("mode", "structural", "Report model: structural or execution")
+	scenario := fs.String("scenario", "current", "Planning scenario: current or one-month")
 	format := fs.String("format", "text", "Output format: text, json, csv, html, or bundle")
 	output := fs.String("output", "", "Output path for csv/html, or output root for bundle")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON report")
@@ -11184,6 +11190,17 @@ func runReportWBS(args []string, stdout io.Writer, stderr io.Writer) int {
 	report, err := gira.BuildWBSReportWithOptions(repo, newWBSReportClient(repo), reportNow(), gira.WBSReportOptions{State: *state})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	selectedMode := strings.ToLower(strings.TrimSpace(*mode))
+	if selectedMode == "" {
+		selectedMode = "structural"
+	}
+	if selectedMode == "execution" {
+		return renderExecutionReportFromWBS(report, gira.ExecutionReportOptions{Command: "report wbs", Mode: "execution", Scenario: *scenario}, selectedFormat, *output, stdout, stderr)
+	}
+	if selectedMode != "structural" {
+		fmt.Fprintf(stderr, "invalid report wbs mode %q; expected structural or execution\n", *mode)
 		return 2
 	}
 	switch selectedFormat {
@@ -11238,6 +11255,93 @@ func runReportWBS(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	default:
 		fmt.Fprintf(stderr, "invalid report wbs format %q; expected text, json, csv, html, or bundle\n", *format)
+		return 2
+	}
+}
+
+func runReportSchedule(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprint(stdout, reportHelp)
+		return 0
+	}
+	fs := flag.NewFlagSet("report schedule", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	state := fs.String("state", "open", "Issue state filter: open, closed, or all")
+	by := fs.String("by", "week", "Schedule grouping: week")
+	scenario := fs.String("scenario", "current", "Planning scenario: current or one-month")
+	format := fs.String("format", "text", "Output format: text, json, or csv")
+	output := fs.String("output", "", "Output path for csv")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON report")
+	csvOutput := fs.Bool("csv", false, "Emit CSV rows")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	repo, ok := resolveRepoContext(*repoValue, stderr, reportHelp)
+	if !ok {
+		return 2
+	}
+	selectedFormat := strings.ToLower(strings.TrimSpace(*format))
+	if *jsonOutput {
+		selectedFormat = "json"
+	}
+	if *csvOutput {
+		selectedFormat = "csv"
+	}
+	if selectedFormat == "" {
+		selectedFormat = "text"
+	}
+	report, err := gira.BuildWBSReportWithOptions(repo, newWBSReportClient(repo), reportNow(), gira.WBSReportOptions{State: *state})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	return renderExecutionReportFromWBS(report, gira.ExecutionReportOptions{Command: "report schedule", Mode: "schedule", By: *by, Scenario: *scenario}, selectedFormat, *output, stdout, stderr)
+}
+
+func renderExecutionReportFromWBS(wbs gira.WBSReport, options gira.ExecutionReportOptions, selectedFormat string, output string, stdout io.Writer, stderr io.Writer) int {
+	report, err := gira.BuildExecutionReportFromWBS(wbs, options)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	switch selectedFormat {
+	case "text":
+		fmt.Fprint(stdout, gira.FormatExecutionReport(report))
+		return 0
+	case "json":
+		encoded, err := gira.RenderExecutionReportJSON(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode execution report JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", encoded)
+		return 0
+	case "csv":
+		if strings.TrimSpace(output) != "" {
+			if err := gira.WriteExecutionReportCSV(output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "execution csv written to %s\n", output)
+			return 0
+		}
+		encoded, err := gira.RenderExecutionReportCSV(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode execution report CSV: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s", encoded)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "invalid execution report format %q; expected text, json, or csv\n", selectedFormat)
 		return 2
 	}
 }

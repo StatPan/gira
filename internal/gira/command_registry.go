@@ -519,12 +519,14 @@ func CoreCommandSpecs() []CommandSpec {
 		},
 		{
 			Path:    []string{"report", "wbs"},
-			Summary: "Build a human-readable work breakdown report from GitHub epics, issues, milestones, and roadmap dates.",
-			Usage:   "gira report wbs [--repo OWNER/REPO] [--state open|closed|all] [--format text|json|csv|html|bundle] [--output PATH]",
+			Summary: "Build structural or execution-focused WBS reports from GitHub epics, issues, milestones, and roadmap dates.",
+			Usage:   "gira report wbs [--repo OWNER/REPO] [--state open|closed|all] [--mode structural|execution] [--scenario current|one-month] [--format text|json|csv|html|bundle] [--output PATH]",
 			Since:   "v2.5.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
 				{Name: "--state", Summary: "Issue state filter: open, closed, or all. Default: open."},
+				{Name: "--mode", Summary: "Report model: structural preserves hierarchy-first WBS; execution emits actionable planning rows."},
+				{Name: "--scenario", Summary: "Planning scenario for execution mode: current or one-month."},
 				{Name: "--format", Summary: "Output format: text, json, csv, html, or bundle."},
 				{Name: "--output", Summary: "Output path for csv/html, or output root for bundle."},
 				{Name: "--json", Summary: "Emit stable wbs-report/v1alpha1 JSON."},
@@ -535,7 +537,30 @@ func CoreCommandSpecs() []CommandSpec {
 			Docs:    []string{"README.md", "docs-site/command-reference.md"},
 			Examples: []CommandExample{
 				{Summary: "Render a terminal WBS summary", Command: "gira report wbs --repo OWNER/app"},
+				{Summary: "Render execution WBS rows for Sheets", Command: "gira report wbs --repo OWNER/app --mode execution --format csv"},
 				{Summary: "Write a shareable WBS report bundle", Command: "gira report wbs --repo OWNER/app --format bundle --output out/wbs"},
+			},
+		},
+		{
+			Path:    []string{"report", "schedule"},
+			Summary: "Build a schedule-oriented execution report sorted by date and week bucket.",
+			Usage:   "gira report schedule [--repo OWNER/REPO] [--state open|closed|all] [--by week] [--scenario current|one-month] [--format text|json|csv] [--output PATH]",
+			Since:   "v2.5.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--state", Summary: "Issue state filter: open, closed, or all. Default: open."},
+				{Name: "--by", Summary: "Schedule grouping. Currently supports week."},
+				{Name: "--scenario", Summary: "Planning scenario: current or one-month."},
+				{Name: "--format", Summary: "Output format: text, json, or csv."},
+				{Name: "--output", Summary: "Output path for csv."},
+				{Name: "--json", Summary: "Emit stable execution-report/v1alpha1 JSON."},
+				{Name: "--csv", Summary: "Emit execution rows as CSV."},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only schedule projection over WBS issue, milestone, and roadmap evidence; optional output writes local report artifacts only."},
+			Docs:    []string{"README.md", "docs-site/command-reference.md"},
+			Examples: []CommandExample{
+				{Summary: "Render weekly schedule rows for Sheets", Command: "gira report schedule --repo OWNER/app --by week --format csv"},
+				{Summary: "Compare a compressed one-month planning scenario", Command: "gira report schedule --repo OWNER/app --scenario one-month --format json"},
 			},
 		},
 		{
@@ -1220,6 +1245,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and PR inspection; optional output writes local report artifacts only."}
 		case "report wbs":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and roadmap inspection; optional output writes local report artifacts only."}
+		case "report schedule":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only schedule projection over WBS issue, milestone, and roadmap evidence; optional output writes local report artifacts only."}
 		case "report release-notes":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, merged PR, milestone, and closing-reference inspection; optional output writes local report artifacts only."}
 		case "report changelog":

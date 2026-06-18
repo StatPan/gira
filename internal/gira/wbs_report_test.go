@@ -53,6 +53,61 @@ func TestBuildWBSReportLinksEpicChildrenAndRendersCSV(t *testing.T) {
 	}
 }
 
+func TestBuildWBSReportExplainsAmbiguousMilestoneParents(t *testing.T) {
+	client := &fakeWBSReportClient{
+		issues: []WBSRawIssue{
+			{IssueNumber: 10, Title: "Planning epic", State: "open", Body: "Related: #12", Labels: []string{"type:epic", "status:ready"}, Milestone: "M1", URL: "u10"},
+			{IssueNumber: 11, Title: "Delivery epic", State: "open", Body: "- [ ] #13", Labels: []string{"type:epic", "status:ready"}, Milestone: "M1", URL: "u11"},
+			{IssueNumber: 12, Title: "Ambiguous child", State: "open", Body: "", Labels: []string{"type:task", "status:ready"}, Milestone: "M1", URL: "u12"},
+			{IssueNumber: 13, Title: "Checklist child", State: "open", Body: "", Labels: []string{"type:task", "status:ready"}, Milestone: "M1", URL: "u13"},
+		},
+	}
+	report, err := BuildWBSReport(ParseRepoRefMust("StatPan/gira"), client, time.Date(2026, 6, 18, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildWBSReport returned error: %v", err)
+	}
+	if !containsString(report.Warnings, "ambiguous_milestone_parent:M1") {
+		t.Fatalf("missing ambiguous milestone warning: %+v", report.Warnings)
+	}
+	if len(report.WarningItems) != 1 {
+		t.Fatalf("warning items = %d, want 1: %+v", len(report.WarningItems), report.WarningItems)
+	}
+	warning := report.WarningItems[0]
+	if warning.Code != "ambiguous_milestone_parent" || warning.Milestone != "M1" || len(warning.CandidateParents) != 2 || len(warning.AffectedChildren) != 2 {
+		t.Fatalf("unexpected warning detail: %+v", warning)
+	}
+	if !containsString(warning.EvidenceSources, "related") || !containsString(warning.EvidenceSources, "checklist") || !containsString(warning.EvidenceSources, "milestone") {
+		t.Fatalf("warning evidence missing weak/strong sources: %+v", warning.EvidenceSources)
+	}
+	var ambiguousItem WBSReportItem
+	var checklistItem WBSReportItem
+	for _, item := range report.Items {
+		switch item.Issue {
+		case 12:
+			ambiguousItem = item
+		case 13:
+			checklistItem = item
+		}
+	}
+	if ambiguousItem.ParentID != "" || ambiguousItem.Source != "unlinked" || ambiguousItem.ParentResolutionReason != "ambiguous_parent_candidates" || len(ambiguousItem.ParentCandidates) != 2 {
+		t.Fatalf("ambiguous child should remain unlinked with candidates: %+v", ambiguousItem)
+	}
+	if checklistItem.ParentID == "" || checklistItem.ParentSource != "checklist,milestone" || checklistItem.ParentResolutionReason != "selected_unique_strongest_candidate" {
+		t.Fatalf("checklist child should select strong parent evidence: %+v", checklistItem)
+	}
+	jsonBytes, err := RenderWBSReportJSON(report)
+	if err != nil {
+		t.Fatalf("RenderWBSReportJSON returned error: %v", err)
+	}
+	if !strings.Contains(string(jsonBytes), `"warning_items"`) || !strings.Contains(string(jsonBytes), `"parent_candidates"`) {
+		t.Fatalf("JSON missing structured diagnostics:\n%s", string(jsonBytes))
+	}
+	htmlText := RenderWBSReportHTML(report)
+	if !strings.Contains(htmlText, "Warning Details") || !strings.Contains(htmlText, "Candidate parents") {
+		t.Fatalf("HTML missing warning diagnostics:\n%s", htmlText)
+	}
+}
+
 func TestWriteWBSReportBundleWritesHumanAndMachineArtifacts(t *testing.T) {
 	report := WBSReport{
 		Command:       "report wbs",

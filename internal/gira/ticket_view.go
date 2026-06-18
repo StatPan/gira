@@ -98,9 +98,16 @@ func ticketLifecycleNextStep(status WorkStatusResult) string {
 	if next == "" {
 		next = workStatusNextStep(status)
 	}
-	next = strings.ReplaceAll(next, "gira work status", "gira ticket status")
-	next = strings.ReplaceAll(next, "gira work pr", "gira ticket pr")
-	next = strings.ReplaceAll(next, "gira work start", "gira ticket start")
-	next = strings.ReplaceAll(next, "--issue", "--ticket")
+	next = ticketAliasNextStep(next, "gira work status", "gira ticket status")
+	next = ticketAliasNextStep(next, "gira work pr", "gira ticket pr")
+	next = ticketAliasNextStep(next, "gira work start", "gira ticket start")
 	return strings.Join(strings.Fields(next), " ")
+}
+
+func ticketAliasNextStep(next string, workCommand string, ticketCommand string) string {
+	if !strings.Contains(next, workCommand) {
+		return next
+	}
+	next = strings.ReplaceAll(next, workCommand, ticketCommand)
+	return strings.ReplaceAll(next, "--issue", "--ticket")
 }

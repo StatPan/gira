@@ -727,6 +727,8 @@ The dashboard signal projection strategy is documented in [docs/dashboard-signal
 
 The first local workspace report bundle can be generated with `gira export dashboard --config .gira/config.yaml --output out/dashboard --dry-run`, then applied by dropping `--dry-run`.
 
+WBS parent inference diagnostics for `gira report wbs` JSON, HTML, and bundle output are documented in [docs/wbs-report-diagnostics.md](docs/wbs-report-diagnostics.md).
+
 This repository dogfoods Gira for its own work. The active operating loop, sprint commands, and maintainer handoff are documented in [docs/dogfood.md](docs/dogfood.md).
 
 Explicit non-goals for 2.0: full GitHub Projects v2 view automation, LLM PRD-to-issue decomposition, Web UI/TUI, chat-bot integration, hosted dashboards, GitLab/Forgejo/Gitea providers, Notion integration, SQLite or another Gira-native planning database as the source of truth, background Jira sync, full bidirectional Jira sync, and Jira workflow mutation. Gira may keep explicit migration helpers, but the 2.0 source of truth is the GitHub execution loop unless a repo explicitly enables Jira-primary planning/status.

@@ -41,29 +41,61 @@ type WBSReport struct {
 	Items         []WBSReportItem   `json:"items"`
 	Counts        WBSReportCounts   `json:"counts"`
 	Warnings      []string          `json:"warnings,omitempty"`
+	WarningItems  []WBSWarningItem  `json:"warning_items,omitempty"`
 	Sources       []WBSReportSource `json:"sources"`
 }
 
 type WBSReportItem struct {
-	WBSID      string   `json:"wbs_id"`
-	ParentID   string   `json:"parent_id,omitempty"`
-	Level      int      `json:"level"`
-	Kind       string   `json:"kind"`
-	Repo       string   `json:"repo"`
-	Issue      int      `json:"issue,omitempty"`
-	Title      string   `json:"title"`
-	State      string   `json:"state,omitempty"`
-	Status     string   `json:"status,omitempty"`
-	Priority   string   `json:"priority,omitempty"`
-	Owner      string   `json:"owner,omitempty"`
-	Milestone  string   `json:"milestone,omitempty"`
-	StartDate  string   `json:"start_date,omitempty"`
-	TargetDate string   `json:"target_date,omitempty"`
-	Progress   int      `json:"progress"`
-	Children   int      `json:"children"`
-	Source     string   `json:"source"`
-	URL        string   `json:"url,omitempty"`
-	SourceRefs []string `json:"source_refs,omitempty"`
+	WBSID                  string               `json:"wbs_id"`
+	ParentID               string               `json:"parent_id,omitempty"`
+	Level                  int                  `json:"level"`
+	Kind                   string               `json:"kind"`
+	Repo                   string               `json:"repo"`
+	Issue                  int                  `json:"issue,omitempty"`
+	Title                  string               `json:"title"`
+	State                  string               `json:"state,omitempty"`
+	Status                 string               `json:"status,omitempty"`
+	Priority               string               `json:"priority,omitempty"`
+	Owner                  string               `json:"owner,omitempty"`
+	Milestone              string               `json:"milestone,omitempty"`
+	StartDate              string               `json:"start_date,omitempty"`
+	TargetDate             string               `json:"target_date,omitempty"`
+	Progress               int                  `json:"progress"`
+	Children               int                  `json:"children"`
+	Source                 string               `json:"source"`
+	ParentSource           string               `json:"parent_source,omitempty"`
+	ParentCandidates       []WBSParentCandidate `json:"parent_candidates,omitempty"`
+	ParentResolutionReason string               `json:"parent_resolution_reason,omitempty"`
+	URL                    string               `json:"url,omitempty"`
+	SourceRefs             []string             `json:"source_refs,omitempty"`
+}
+
+type WBSWarningItem struct {
+	Code             string               `json:"code"`
+	Warning          string               `json:"warning"`
+	Milestone        string               `json:"milestone,omitempty"`
+	CandidateParents []WBSParentCandidate `json:"candidate_parents,omitempty"`
+	AffectedChildren []WBSAffectedChild   `json:"affected_children,omitempty"`
+	EvidenceSources  []string             `json:"evidence_sources,omitempty"`
+	Remediation      string               `json:"remediation,omitempty"`
+}
+
+type WBSParentCandidate struct {
+	Issue    int      `json:"issue"`
+	Title    string   `json:"title,omitempty"`
+	Evidence []string `json:"evidence,omitempty"`
+	Strength string   `json:"strength,omitempty"`
+	URL      string   `json:"url,omitempty"`
+}
+
+type WBSAffectedChild struct {
+	Issue            int      `json:"issue"`
+	Title            string   `json:"title,omitempty"`
+	CandidateParents []int    `json:"candidate_parents,omitempty"`
+	Evidence         []string `json:"evidence,omitempty"`
+	Resolution       string   `json:"resolution,omitempty"`
+	ResolutionReason string   `json:"resolution_reason,omitempty"`
+	URL              string   `json:"url,omitempty"`
 }
 
 type WBSReportCounts struct {
@@ -173,7 +205,7 @@ func BuildWBSReportWithOptions(repo RepoRef, client WBSReportClient, generatedAt
 			{Name: "project_snapshot"},
 		},
 	}
-	report.Items, report.Warnings = buildWBSReportItems(repo, issues, milestones, projectSnapshot, report.Warnings)
+	report.Items, report.Warnings, report.WarningItems = buildWBSReportItems(repo, issues, milestones, projectSnapshot, report.Warnings)
 	for _, item := range report.Items {
 		if item.Kind == "epic" {
 			report.Counts.Epics++
@@ -213,7 +245,7 @@ func filterWBSIssuesByState(issues []WBSRawIssue, state string) []WBSRawIssue {
 	return out
 }
 
-func buildWBSReportItems(repo RepoRef, issues []WBSRawIssue, milestones []DashboardRawMilestone, projectSnapshot ProjectSyncSnapshot, warnings []string) ([]WBSReportItem, []string) {
+func buildWBSReportItems(repo RepoRef, issues []WBSRawIssue, milestones []DashboardRawMilestone, projectSnapshot ProjectSyncSnapshot, warnings []string) ([]WBSReportItem, []string, []WBSWarningItem) {
 	datesByIssue := wbsProjectDates(projectSnapshot.RoadmapItems)
 	milestoneDue := wbsMilestoneDueDates(milestones)
 	epics := []WBSRawIssue{}
@@ -228,43 +260,47 @@ func buildWBSReportItems(repo RepoRef, issues []WBSRawIssue, milestones []Dashbo
 	sort.Slice(epics, func(i, j int) bool { return epics[i].IssueNumber < epics[j].IssueNumber })
 	sort.Slice(nonEpics, func(i, j int) bool { return nonEpics[i].IssueNumber < nonEpics[j].IssueNumber })
 
-	childrenByEpic := map[int][]WBSRawIssue{}
-	linked := map[int]struct{}{}
+	epicByNumber := map[int]WBSRawIssue{}
 	for _, epic := range epics {
-		refs := extractIssueRefs(epic.Body)
-		for _, issue := range nonEpics {
-			if _, ok := refs[issue.IssueNumber]; ok {
-				childrenByEpic[epic.IssueNumber] = append(childrenByEpic[epic.IssueNumber], issue)
-				linked[issue.IssueNumber] = struct{}{}
+		epicByNumber[epic.IssueNumber] = epic
+	}
+	epicEvidenceByChild := map[int]map[int][]string{}
+	for _, epic := range epics {
+		for childNumber, evidence := range extractWBSIssueRefEvidence(epic.Body) {
+			if _, ok := epicEvidenceByChild[childNumber]; !ok {
+				epicEvidenceByChild[childNumber] = map[int][]string{}
 			}
+			epicEvidenceByChild[childNumber][epic.IssueNumber] = appendUniqueStrings(epicEvidenceByChild[childNumber][epic.IssueNumber], evidence...)
 		}
 	}
-
+	childrenByEpic := map[int][]WBSRawIssue{}
+	linked := map[int]struct{}{}
 	epicsByMilestone := map[string][]WBSRawIssue{}
 	for _, epic := range epics {
 		if strings.TrimSpace(epic.Milestone) != "" {
 			epicsByMilestone[epic.Milestone] = append(epicsByMilestone[epic.Milestone], epic)
 		}
 	}
+	candidatesByIssue := map[int][]WBSParentCandidate{}
+	resolutionByIssue := map[int]wbsParentResolution{}
+	for _, issue := range nonEpics {
+		candidates := wbsParentCandidatesForIssue(issue, epicsByMilestone, epicEvidenceByChild, epicByNumber)
+		candidatesByIssue[issue.IssueNumber] = candidates
+		parent, source, reason, ok := resolveWBSParent(candidates)
+		resolutionByIssue[issue.IssueNumber] = wbsParentResolution{Parent: parent, Source: source, Reason: reason}
+		if !ok {
+			continue
+		}
+		childrenByEpic[parent] = append(childrenByEpic[parent], issue)
+		linked[issue.IssueNumber] = struct{}{}
+	}
+	warningItems := []WBSWarningItem{}
 	for milestone, milestoneEpics := range epicsByMilestone {
 		if len(milestoneEpics) > 1 {
-			warnings = appendUniqueStrings(warnings, "ambiguous_milestone_parent:"+milestone)
+			warning := "ambiguous_milestone_parent:" + milestone
+			warnings = appendUniqueStrings(warnings, warning)
+			warningItems = append(warningItems, buildWBSMilestoneParentWarning(warning, milestone, milestoneEpics, nonEpics, candidatesByIssue, resolutionByIssue))
 		}
-	}
-	for _, issue := range nonEpics {
-		if _, ok := linked[issue.IssueNumber]; ok {
-			continue
-		}
-		if strings.TrimSpace(issue.Milestone) == "" {
-			continue
-		}
-		milestoneEpics := epicsByMilestone[issue.Milestone]
-		if len(milestoneEpics) != 1 {
-			continue
-		}
-		epic := milestoneEpics[0]
-		childrenByEpic[epic.IssueNumber] = append(childrenByEpic[epic.IssueNumber], issue)
-		linked[issue.IssueNumber] = struct{}{}
 	}
 	for epicNumber := range childrenByEpic {
 		sort.Slice(childrenByEpic[epicNumber], func(i, j int) bool {
@@ -283,16 +319,12 @@ func buildWBSReportItems(repo RepoRef, issues []WBSRawIssue, milestones []Dashbo
 		items = append(items, item)
 		for i, child := range children {
 			childID := fmt.Sprintf("%s.%d", topID, i+1)
-			source := "milestone"
-			if refs := extractIssueRefs(epic.Body); len(refs) > 0 {
-				if _, ok := refs[child.IssueNumber]; ok {
-					source = "body"
-					if strings.TrimSpace(child.Milestone) != "" && child.Milestone == epic.Milestone {
-						source = "body,milestone"
-					}
-				}
-			}
-			items = append(items, wbsItemFromIssue(repo, child, childID, topID, 2, datesByIssue, milestoneDue, source))
+			resolution := resolutionByIssue[child.IssueNumber]
+			childItem := wbsItemFromIssue(repo, child, childID, topID, 2, datesByIssue, milestoneDue, resolution.Source)
+			childItem.ParentSource = resolution.Source
+			childItem.ParentCandidates = candidatesByIssue[child.IssueNumber]
+			childItem.ParentResolutionReason = resolution.Reason
+			items = append(items, childItem)
 		}
 		nextTop++
 	}
@@ -300,10 +332,239 @@ func buildWBSReportItems(repo RepoRef, issues []WBSRawIssue, milestones []Dashbo
 		if _, ok := linked[issue.IssueNumber]; ok {
 			continue
 		}
-		items = append(items, wbsItemFromIssue(repo, issue, strconv.Itoa(nextTop), "", 1, datesByIssue, milestoneDue, "unlinked"))
+		item := wbsItemFromIssue(repo, issue, strconv.Itoa(nextTop), "", 1, datesByIssue, milestoneDue, "unlinked")
+		item.ParentCandidates = candidatesByIssue[issue.IssueNumber]
+		if resolution := resolutionByIssue[issue.IssueNumber]; resolution.Reason != "" {
+			item.ParentResolutionReason = resolution.Reason
+		}
+		items = append(items, item)
 		nextTop++
 	}
-	return items, warnings
+	return items, warnings, warningItems
+}
+
+type wbsParentResolution struct {
+	Parent int
+	Source string
+	Reason string
+}
+
+func wbsParentCandidatesForIssue(issue WBSRawIssue, epicsByMilestone map[string][]WBSRawIssue, epicEvidenceByChild map[int]map[int][]string, epicByNumber map[int]WBSRawIssue) []WBSParentCandidate {
+	byEpic := map[int]WBSParentCandidate{}
+	for parentNumber, evidence := range extractWBSParentRefs(issue.Body) {
+		if epic, ok := epicByNumber[parentNumber]; ok {
+			addWBSParentCandidate(byEpic, epic, evidence...)
+		}
+	}
+	for parentNumber, evidence := range epicEvidenceByChild[issue.IssueNumber] {
+		if epic, ok := epicByNumber[parentNumber]; ok {
+			addWBSParentCandidate(byEpic, epic, evidence...)
+		}
+	}
+	if strings.TrimSpace(issue.Milestone) != "" {
+		for _, epic := range epicsByMilestone[issue.Milestone] {
+			addWBSParentCandidate(byEpic, epic, "milestone")
+		}
+	}
+	candidates := make([]WBSParentCandidate, 0, len(byEpic))
+	for _, candidate := range byEpic {
+		candidate.Evidence = sortWBSEvidence(candidate.Evidence)
+		candidate.Strength = wbsEvidenceStrengthLabel(candidate.Evidence)
+		candidates = append(candidates, candidate)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if wbsEvidenceRank(candidates[i].Evidence) != wbsEvidenceRank(candidates[j].Evidence) {
+			return wbsEvidenceRank(candidates[i].Evidence) > wbsEvidenceRank(candidates[j].Evidence)
+		}
+		return candidates[i].Issue < candidates[j].Issue
+	})
+	return candidates
+}
+
+func addWBSParentCandidate(byEpic map[int]WBSParentCandidate, epic WBSRawIssue, evidence ...string) {
+	candidate := byEpic[epic.IssueNumber]
+	if candidate.Issue == 0 {
+		candidate = WBSParentCandidate{
+			Issue: epic.IssueNumber,
+			Title: epic.Title,
+			URL:   epic.URL,
+		}
+	}
+	candidate.Evidence = appendUniqueStrings(candidate.Evidence, evidence...)
+	byEpic[epic.IssueNumber] = candidate
+}
+
+func resolveWBSParent(candidates []WBSParentCandidate) (int, string, string, bool) {
+	if len(candidates) == 0 {
+		return 0, "", "no_parent_candidates", false
+	}
+	if len(candidates) == 1 {
+		source := strings.Join(candidates[0].Evidence, ",")
+		return candidates[0].Issue, source, "selected_only_candidate", true
+	}
+	topRank := wbsEvidenceRank(candidates[0].Evidence)
+	top := []WBSParentCandidate{}
+	for _, candidate := range candidates {
+		if wbsEvidenceRank(candidate.Evidence) == topRank {
+			top = append(top, candidate)
+		}
+	}
+	if len(top) == 1 && topRank > wbsEvidenceRank([]string{"milestone"}) {
+		source := strings.Join(top[0].Evidence, ",")
+		return top[0].Issue, source, "selected_unique_strongest_candidate", true
+	}
+	return 0, "", "ambiguous_parent_candidates", false
+}
+
+func buildWBSMilestoneParentWarning(warning string, milestone string, milestoneEpics []WBSRawIssue, nonEpics []WBSRawIssue, candidatesByIssue map[int][]WBSParentCandidate, resolutionByIssue map[int]wbsParentResolution) WBSWarningItem {
+	parentEvidence := map[int][]string{}
+	parentByNumber := map[int]WBSRawIssue{}
+	for _, epic := range milestoneEpics {
+		parentByNumber[epic.IssueNumber] = epic
+		parentEvidence[epic.IssueNumber] = appendUniqueStrings(parentEvidence[epic.IssueNumber], "milestone")
+	}
+	affected := []WBSAffectedChild{}
+	evidenceSources := []string{"milestone"}
+	for _, child := range nonEpics {
+		if child.Milestone != milestone {
+			continue
+		}
+		childCandidates := []int{}
+		childEvidence := []string{}
+		for _, candidate := range candidatesByIssue[child.IssueNumber] {
+			if _, ok := parentByNumber[candidate.Issue]; !ok {
+				continue
+			}
+			childCandidates = append(childCandidates, candidate.Issue)
+			childEvidence = appendUniqueStrings(childEvidence, candidate.Evidence...)
+			parentEvidence[candidate.Issue] = appendUniqueStrings(parentEvidence[candidate.Issue], candidate.Evidence...)
+			evidenceSources = appendUniqueStrings(evidenceSources, candidate.Evidence...)
+		}
+		sort.Ints(childCandidates)
+		resolution := resolutionByIssue[child.IssueNumber]
+		affected = append(affected, WBSAffectedChild{
+			Issue:            child.IssueNumber,
+			Title:            child.Title,
+			CandidateParents: childCandidates,
+			Evidence:         sortWBSEvidence(childEvidence),
+			Resolution:       wbsParentResolutionValue(resolution),
+			ResolutionReason: resolution.Reason,
+			URL:              child.URL,
+		})
+	}
+	candidates := make([]WBSParentCandidate, 0, len(milestoneEpics))
+	for _, epic := range milestoneEpics {
+		evidence := sortWBSEvidence(parentEvidence[epic.IssueNumber])
+		candidates = append(candidates, WBSParentCandidate{
+			Issue:    epic.IssueNumber,
+			Title:    epic.Title,
+			Evidence: evidence,
+			Strength: wbsEvidenceStrengthLabel(evidence),
+			URL:      epic.URL,
+		})
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Issue < candidates[j].Issue })
+	sort.Slice(affected, func(i, j int) bool { return affected[i].Issue < affected[j].Issue })
+	return WBSWarningItem{
+		Code:             "ambiguous_milestone_parent",
+		Warning:          warning,
+		Milestone:        milestone,
+		CandidateParents: candidates,
+		AffectedChildren: affected,
+		EvidenceSources:  sortWBSEvidence(evidenceSources),
+		Remediation:      "Add explicit Parent: #EPIC to affected child issues, convert weak Related links to epic checklist items, or leave multiple root epics in the milestone intentionally.",
+	}
+}
+
+func wbsParentResolutionValue(resolution wbsParentResolution) string {
+	if resolution.Parent <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("#%d", resolution.Parent)
+}
+
+func extractWBSIssueRefEvidence(body string) map[int][]string {
+	out := map[int][]string{}
+	for _, line := range strings.Split(body, "\n") {
+		evidence := wbsLineEvidence(line)
+		for issueNumber := range extractIssueRefs(line) {
+			out[issueNumber] = appendUniqueStrings(out[issueNumber], evidence)
+		}
+	}
+	return out
+}
+
+func extractWBSParentRefs(body string) map[int][]string {
+	out := map[int][]string{}
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.Contains(strings.ToLower(line), "parent:") {
+			continue
+		}
+		for issueNumber := range extractIssueRefs(line) {
+			out[issueNumber] = appendUniqueStrings(out[issueNumber], "parent")
+		}
+	}
+	return out
+}
+
+func wbsLineEvidence(line string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(line))
+	if strings.HasPrefix(trimmed, "- [ ]") || strings.HasPrefix(trimmed, "- [x]") || strings.HasPrefix(trimmed, "* [ ]") || strings.HasPrefix(trimmed, "* [x]") {
+		return "checklist"
+	}
+	if strings.Contains(trimmed, "parent:") {
+		return "parent"
+	}
+	if strings.Contains(trimmed, "related:") || strings.Contains(trimmed, "relates:") || strings.Contains(trimmed, "relates to") {
+		return "related"
+	}
+	return "body"
+}
+
+func sortWBSEvidence(evidence []string) []string {
+	order := map[string]int{"parent": 0, "checklist": 1, "body": 2, "related": 3, "milestone": 4}
+	out := append([]string(nil), evidence...)
+	sort.Slice(out, func(i, j int) bool {
+		if order[out[i]] != order[out[j]] {
+			return order[out[i]] < order[out[j]]
+		}
+		return out[i] < out[j]
+	})
+	return out
+}
+
+func wbsEvidenceRank(evidence []string) int {
+	rank := 0
+	for _, value := range evidence {
+		switch value {
+		case "parent", "checklist":
+			if rank < 3 {
+				rank = 3
+			}
+		case "body":
+			if rank < 2 {
+				rank = 2
+			}
+		case "related", "milestone":
+			if rank < 1 {
+				rank = 1
+			}
+		}
+	}
+	return rank
+}
+
+func wbsEvidenceStrengthLabel(evidence []string) string {
+	switch wbsEvidenceRank(evidence) {
+	case 3:
+		return "strong"
+	case 2:
+		return "inferred"
+	case 1:
+		return "weak"
+	default:
+		return ""
+	}
 }
 
 func wbsItemFromIssue(repo RepoRef, issue WBSRawIssue, id string, parentID string, level int, dates map[int]wbsDates, milestoneDue map[string]string, source string) WBSReportItem {
@@ -529,6 +790,43 @@ th { color: var(--muted); font-weight: 600; }
 		}
 		b.WriteString("</ul>\n</section>\n")
 	}
+	if len(report.WarningItems) > 0 {
+		b.WriteString("<section>\n<h2>Warning Details</h2>\n")
+		for _, warning := range report.WarningItems {
+			fmt.Fprintf(&b, "<h3>%s</h3>\n", html.EscapeString(warning.Warning))
+			if warning.Remediation != "" {
+				fmt.Fprintf(&b, "<p class=\"muted\">%s</p>\n", html.EscapeString(warning.Remediation))
+			}
+			if len(warning.CandidateParents) > 0 {
+				b.WriteString("<p><strong>Candidate parents:</strong> ")
+				for i, candidate := range warning.CandidateParents {
+					if i > 0 {
+						b.WriteString(", ")
+					}
+					fmt.Fprintf(&b, "#%d %s (%s)", candidate.Issue, html.EscapeString(candidate.Title), html.EscapeString(strings.Join(candidate.Evidence, "+")))
+				}
+				b.WriteString("</p>\n")
+			}
+			if len(warning.AffectedChildren) > 0 {
+				b.WriteString("<ul>\n")
+				for _, child := range warning.AffectedChildren {
+					resolution := "unresolved"
+					if child.Resolution != "" {
+						resolution = child.Resolution
+					}
+					fmt.Fprintf(&b, "<li>#%d %s · candidates %s · evidence %s · %s</li>\n",
+						child.Issue,
+						html.EscapeString(child.Title),
+						html.EscapeString(wbsJoinInts(child.CandidateParents)),
+						html.EscapeString(strings.Join(child.Evidence, "+")),
+						html.EscapeString(resolution),
+					)
+				}
+				b.WriteString("</ul>\n")
+			}
+		}
+		b.WriteString("</section>\n")
+	}
 	b.WriteString("<section>\n<h2>Work Breakdown</h2>\n<table>\n")
 	b.WriteString("<thead><tr><th>WBS</th><th>Work item</th><th>Status</th><th>Milestone</th><th>Target</th><th>Progress</th></tr></thead>\n<tbody>\n")
 	for _, item := range report.Items {
@@ -600,6 +898,17 @@ func wbsIssueNumber(number int) string {
 		return ""
 	}
 	return strconv.Itoa(number)
+}
+
+func wbsJoinInts(values []int) string {
+	if len(values) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, fmt.Sprintf("#%d", value))
+	}
+	return strings.Join(parts, ",")
 }
 
 func wbsMaxInt(a int, b int) int {

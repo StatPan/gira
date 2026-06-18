@@ -21,6 +21,32 @@ func TestBuildTicketViewReportUsesWorkStatus(t *testing.T) {
 	}
 }
 
+func TestTicketLifecycleNextStepPreservesAdoptIssueFlag(t *testing.T) {
+	result := WorkStatusResult{
+		Repo:       "StatPan/gira",
+		Issue:      760,
+		State:      "open",
+		Status:     "null",
+		NextAction: "start_work",
+	}
+	got := ticketLifecycleNextStep(result)
+	want := "gira adopt issues --repo StatPan/gira --issue 760 --label status:ready --apply"
+	if got != want {
+		t.Fatalf("next step = %q, want %q", got, want)
+	}
+}
+
+func TestTicketLifecycleNextStepConvertsWorkIssueFlagOnlyForWorkAliases(t *testing.T) {
+	result := WorkStatusResult{
+		NextStep: "gira work start --repo StatPan/gira --issue 760 --apply",
+	}
+	got := ticketLifecycleNextStep(result)
+	want := "gira ticket start --repo StatPan/gira --ticket 760 --apply"
+	if got != want {
+		t.Fatalf("next step = %q, want %q", got, want)
+	}
+}
+
 func TestTicketNoteDryRunRendersContextWithoutComment(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{

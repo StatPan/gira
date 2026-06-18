@@ -8,10 +8,13 @@ Schema version: `gira-command-capabilities/v1`
 | --- | --- | --- | --- | --- | --- |
 | `gira completion` | none | `read` | `none` | none | README.md, docs-site/command-reference.md |
 | `gira config storage` | none | `read` | `stable_json` | none | docs/global-config-registry.md, docs/state-model.md, docs-site/global-config.md, docs-site/command-reference.md |
+| `gira dispatch goal` | none | `read` | `stable_json` | none | docs/dispatch-operating-model.md, docs/dispatch-reflection.md, docs/goal-operating-model.md, docs-site/command-reference.md |
 | `gira feature check` | gira feat check | `read` | `stable_json` | none | docs/feature-map.md, docs-site/feature-map.md, docs-site/command-reference.md |
 | `gira feature for` | gira feat for | `read` | `stable_json` | none | docs/feature-map.md, docs-site/feature-map.md, docs-site/command-reference.md |
 | `gira feature list` | gira feat list | `read` | `stable_json` | none | docs/feature-map.md, docs-site/feature-map.md, docs-site/command-reference.md |
 | `gira goal finish` | none | `apply_mutation` | `stable_json` | posts an idempotent goal finish receipt; explicit --terminal done may normalize labels and close the goal, while explicit --terminal human_review preserves blocker handoff | docs/goal-operating-model.md, docs-site/command-reference.md |
+| `gira goal handoff` | none | `read` | `stable_json` | none | docs/goal-operating-model.md, docs-site/command-reference.md |
+| `gira goal new` | none | `apply_mutation` | `stable_json` | creates a GitHub issue with Goal Mode operating sections; --dry-run previews payload, labels, and approval evidence | docs/goal-operating-model.md, docs-site/command-reference.md |
 | `gira goal next` | none | `read` | `stable_json` | none | docs/goal-operating-model.md, docs-site/command-reference.md |
 | `gira goal plan` | none | `apply_mutation` | `stable_json` | creates linked child tickets from reviewed goal-plan proposals when run with --apply; --dry-run previews the same plan | docs/goal-operating-model.md, docs-site/command-reference.md |
 | `gira goal report` | gira goal dossier | `read` | `stable_json` | none | docs/goal-operating-model.md, docs-site/goal-mode.md, docs-site/command-reference.md |
@@ -27,10 +30,20 @@ Schema version: `gira-command-capabilities/v1`
 | `gira milestone new` | none | `apply_mutation` | `stable_json` | creates a GitHub milestone; --dry-run previews payload and target repo | docs-site/sprint-release.md, docs-site/ticket-workflow.md |
 | `gira milestone plan` | none | `apply_mutation` | `stable_json` | selects and assigns candidate tickets; --dry-run previews candidate set and mutations | docs-site/sprint-release.md, docs-site/ticket-workflow.md |
 | `gira milestone status` | none | `read` | `stable_json` | none | docs-site/sprint-release.md, docs-site/ticket-workflow.md |
+| `gira pm qa` | none | `read` | `stable_json` | none | docs/pm-skill.md, docs-site/command-reference.md |
+| `gira pm spec` | none | `read` | `stable_json` | none | docs/pm-skill.md, docs-site/command-reference.md |
 | `gira queue handoff` | none | `read` | `stable_json` | none | docs/workspace.md, docs/agent-handoff-queue.md, docs-site/agent-handoff-queue.md, docs-site/command-reference.md |
 | `gira queue list` | none | `read` | `stable_json` | none | docs/workspace.md, docs/agent-handoff-queue.md, docs-site/agent-handoff-queue.md, docs-site/command-reference.md |
 | `gira queue next` | none | `read` | `stable_json` | none | docs/workspace.md, docs/agent-handoff-queue.md, docs-site/agent-handoff-queue.md, docs-site/command-reference.md |
 | `gira queue take` | none | `apply_mutation` | `stable_json` | delegates to ticket start for a handoff-safe queue item; --dry-run previews selection, handoff readiness, and ticket start | docs/workspace.md, docs/agent-handoff-queue.md, docs-site/agent-handoff-queue.md, docs-site/command-reference.md |
+| `gira report backlog-health` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
+| `gira report changelog` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
+| `gira report delivery-status` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
+| `gira report milestone` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
+| `gira report qa-checklist` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
+| `gira report release-notes` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
+| `gira report wbs` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
+| `gira report weekly` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
 | `gira setup global` | none | `apply_mutation` | `stable_json` | writes global config and repo registry files; --dry-run previews file changes | README.md, docs/global-config-registry.md, docs-site/global-config.md, docs/workspace.md |
 | `gira stats pulse` | none | `read` | `stable_json` | none | docs/task-momentum-loop.md, docs/closure-funnel-stats.md, docs-site/task-momentum-loop.md, docs-site/closure-funnel-stats.md |
 | `gira stats repo` | none | `read` | `stable_json` | none | README.md, docs/closure-funnel-stats.md, docs-site/closure-funnel-stats.md |

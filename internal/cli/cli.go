@@ -32,15 +32,18 @@ Daily commands:
   queue       Agent-ready workspace queue selection commands
   projects    Sync visible GitHub Projects board items
   repo        Manage global registry entries for repositories
+  pm          PM skill commands for task-local PM state and worker-ready specs
   adopt       Plan or apply adoption for existing repositories and issues
   ticket      Jira-style ticket lifecycle commands
   run         Local Codex run manifests and execution state
+  dispatch    Build official AI work-order packets
   feature     Optional issue-backed feature map commands. Alias: feat
   goal        Goal-mode planning, status, and visible report commands
   epic        Numberless epic status and finish commands
   milestone   Milestone lifecycle and bulk ticket assignment
   sprint      Sprint iteration planning/start/close workflow
   release     Release readiness gate report
+  report      Human-readable project reports
   status      Show a compact read-only GitHub status summary
   stats       Read-only workflow closure statistics
   config      Inspect global and repo-local Gira config sources
@@ -370,6 +373,50 @@ Flags:
   --refresh             Ignore cached workspace status and fetch fresh data
   --json                Emit stable JSON output
   -h, --help            Show help
+`
+
+const dispatchHelp = `Official AI work-order dispatch commands.
+
+Usage:
+  gira dispatch goal [GOAL] [--repo OWNER/REPO] [--role implementer] [--profile default] [--json|--compact-json|--prompt]
+
+Commands:
+  goal  Build a dispatch-packet/v1 from a Goal Mode issue and next safe child ticket
+
+Flags:
+  --repo string     Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
+  --goal int        Goal issue number. Can also be numeric positional; inferred when omitted
+  --role string     Handoff role: planner, implementer, or reviewer. Default: implementer
+  --profile string  Handoff profile: default or python. Default: default
+  --json            Emit stable dispatch-packet/v1 JSON
+  --compact-json    Emit compact dispatch-compact/v1 JSON for LLM context
+  --prompt          Emit a compact prompt for direct LLM handoff
+  --context-budget int Maximum compact context size in characters. Default: 12000
+  -h, --help        Show help
+`
+
+const pmHelp = `PM skill commands for worker-ready task packets.
+
+Usage:
+  gira pm spec [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode plan] [--json]
+  gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]
+
+Commands:
+  spec  Render a durable PM state and worker-ready task packet from raw intent
+  qa    Render a PM acceptance QA prompt from task-local PM state and PR evidence
+
+Flags:
+  --title string       Task title. Defaults to the first non-empty intent line
+  --repo string        Optional target GitHub repo in OWNER/REPO format
+  --intent string      Raw product/development intent
+  --from-file string   Read raw intent from file, or "-" for stdin
+  --worker-mode string Suggested worker mode: research|plan|implement|review|fix_review|pm_qa. Default: plan
+  --ticket int        Ticket number for PM QA
+  --pr int            Explicit PR number for PM QA
+  --diff-summary      Include changed files and diff stat in PM QA
+  --include-diff      Include full diff when used with --diff-summary
+  --json              Emit stable gira-pm-task-packet/v1 JSON with Markdown embedded
+  -h, --help          Show help
 `
 
 const workspaceProjectHelp = `Manage workspace GitHub Projects v2 visibility.
@@ -923,22 +970,42 @@ Flags:
 const goalHelp = `Goal-mode commands for long-running AI-assisted work.
 
 Usage:
+  gira goal new "Title" --dry-run|--apply [--objective TEXT] [--scope TEXT] [--json]
   gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]
   gira goal status [GOAL] [--repo OWNER/REPO] [--json]
   gira goal next [GOAL] [--repo OWNER/REPO] [--json]
+  gira goal handoff [GOAL] [--repo OWNER/REPO] [--role implementer] [--profile default] [--json]
   gira goal finish [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]
 
 Commands:
+  new     Create a goal issue with the Goal Mode operating sections
   plan    Propose or create child ticket packets from a goal issue
   report  Build a visible goal report. Alias: dossier
   status  Summarize a goal issue, child ticket graph, blockers, and next safe action
   next    Select the next safe child ticket or explain why the goal must stop
+  handoff Build a goal-level LLM handoff around the next safe child ticket
   finish  Preview goal finish readiness, then close ready goals or preserve handoffs
 
 Flags:
   --repo string  Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
-  --goal int     Goal issue number. Can also be numeric positional
+  --title string Goal title for goal new. Can also be positional
+  --objective string Goal objective. Defaults to title
+  --direction string Strategic guidance for valid paths
+  --scope string  Included work, repos, milestones, and non-goals
+  --autonomy string Agent lane and permission policy
+  --decomposition string Semicolon-separated child planning notes
+  --quality-bar string Semicolon-separated verification/review requirements
+  --stop-condition string Semicolon-separated stop conditions
+  --type string   Goal issue type label: epic or goal. Default: epic
+  --priority string Priority label: p0, p1, p2, or p3
+  --label string  Additional existing repo label. Repeatable or comma-separated
+  --body string   Full goal issue body for goal new
+  --body-file path Read full goal issue body from file or - for stdin
+  --milestone string Milestone title
+  --goal int     Goal issue number. Can also be numeric positional; inferred when omitted
+  --role string  Handoff role: planner, implementer, or reviewer
+  --profile string Handoff profile: default or python
   --dry-run      Preview without mutation
   --apply        Apply goal plan child ticket creation or explicit supported goal finish mutations
   --terminal string Goal terminal recommendation override for finish
@@ -1015,10 +1082,27 @@ Usage:
   gira release readiness --repo OWNER/REPO [--json]
 `
 
-const reportHelp = `Weekly PM cockpit report with deterministic KPIs and top exceptions.
+const reportHelp = `Human-readable project reports.
 
 Usage:
-  gira report weekly [--repo OWNER/REPO] [--json|--md]
+  gira report weekly [--repo OWNER/REPO] [--format text|md|json|csv|html|bundle] [--output PATH]
+  gira report release-notes --repo OWNER/REPO --milestone TITLE [--format text|md|json|csv|html|bundle] [--output PATH]
+  gira report changelog --repo OWNER/REPO --milestone TITLE [--format text|md|json|csv|html|bundle] [--output PATH]
+  gira report milestone --repo OWNER/REPO --milestone TITLE [--format text|md|json|csv|html|bundle] [--output PATH]
+  gira report backlog-health [--repo OWNER/REPO] [--format text|md|json|csv|html|bundle] [--output PATH]
+  gira report delivery-status [--repo OWNER/REPO] [--format text|md|json|csv|html|bundle] [--output PATH]
+  gira report qa-checklist [--repo OWNER/REPO] [--milestone TITLE] [--format text|md|json|csv|html|bundle] [--output PATH]
+  gira report wbs [--repo OWNER/REPO] [--state open|closed|all] [--format text|json|csv|html|bundle] [--output PATH]
+
+Commands:
+  weekly          Weekly PM cockpit report with deterministic KPIs and top exceptions
+  release-notes   Release notes from milestone issues and merged PR evidence
+  changelog       Changelog document using release-note evidence
+  milestone       Milestone progress report from issue and milestone evidence
+  backlog-health  Backlog health report from open issue evidence
+  delivery-status Delivery status report from milestones, issues, and PR evidence
+  qa-checklist    QA checklist report from issue and PR readiness evidence
+  wbs             Work breakdown report from GitHub epics, issues, milestones, and roadmap dates
 `
 
 const contractHelp = `CRUD capability matrix and command contract.
@@ -1198,6 +1282,14 @@ var newProjectTransitionsApplyReport = func(repo gira.RepoRef) (gira.ProjectTran
 
 var newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
 	return gira.NewGHDashboardExportClient(repo, gira.ExecCommandRunner{})
+}
+
+var newWBSReportClient = func(repo gira.RepoRef) gira.WBSReportClient {
+	return gira.NewGHWBSReportClient(repo, gira.ExecCommandRunner{})
+}
+
+var newReleaseNotesClient = func(repo gira.RepoRef) gira.ReleaseNotesClient {
+	return gira.NewGHReleaseNotesClient(repo, gira.ExecCommandRunner{})
 }
 
 var newWorkspaceDashboardExportBundle = func(configPath string, outputRoot string, snapshotAt time.Time, dryRun bool, options gira.WorkspaceStatusOptions) (gira.DashboardExportPlan, gira.DashboardExportBundle, error) {
@@ -1550,6 +1642,10 @@ var newTicketHandoffReport = func(input gira.TicketHandoffInput) (gira.TicketHan
 	return gira.BuildTicketHandoffReport(input, devCommandRunner)
 }
 
+var newGoalNewReport = func(input gira.GoalNewInput) (gira.GoalNewReport, error) {
+	return gira.BuildGoalNewReport(input, devCommandRunner)
+}
+
 var newGoalStatusReport = func(input gira.GoalStatusInput) (gira.GoalStatusReport, error) {
 	return gira.BuildGoalStatusReport(input, devCommandRunner)
 }
@@ -1560,6 +1656,22 @@ var newGoalDossierReport = func(input gira.GoalDossierInput) (gira.GoalDossierRe
 
 var newGoalNextReport = func(input gira.GoalNextInput) (gira.GoalNextReport, error) {
 	return gira.BuildGoalNextReport(input, devCommandRunner)
+}
+
+var newGoalHandoffReport = func(input gira.GoalHandoffInput) (gira.GoalHandoffReport, error) {
+	return gira.BuildGoalHandoffReport(input, devCommandRunner)
+}
+
+var newDispatchGoalPacket = func(input gira.DispatchGoalInput) (gira.DispatchPacket, error) {
+	return gira.BuildDispatchGoalPacket(input, devCommandRunner)
+}
+
+var newPMTaskSpecReport = func(input gira.PMTaskSpecInput) (gira.PMTaskSpecReport, error) {
+	return gira.BuildPMTaskSpecReport(input)
+}
+
+var newPMAcceptanceQAReport = func(input gira.PMAcceptanceQAInput) (gira.PMAcceptanceQAReport, error) {
+	return gira.BuildPMAcceptanceQAReport(input, devCommandRunner)
 }
 
 var newGoalPlanReport = func(input gira.GoalPlanInput) (gira.GoalPlanReport, error) {
@@ -1678,6 +1790,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runProjects(args[1:], stdout, stderr)
 	case "repo":
 		return runRepo(args[1:], stdout, stderr)
+	case "pm":
+		return runPM(args[1:], stdout, stderr)
 	case "adopt":
 		return runAdopt(args[1:], stdout, stderr)
 	case "start":
@@ -1686,6 +1800,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTicket(args[1:], stdout, stderr)
 	case "run":
 		return runRun(args[1:], stdout, stderr)
+	case "dispatch":
+		return runDispatch(args[1:], stdout, stderr)
 	case "feature", "feat":
 		return runFeature(args[1:], stdout, stderr)
 	case "goal":
@@ -1863,6 +1979,158 @@ func runMCPDoctor(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	fmt.Fprint(stdout, gira.FormatMCPAuthReport(report))
 	return 0
+}
+
+func runPM(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		_, _ = io.WriteString(stdout, pmHelp)
+		return 0
+	}
+	switch args[0] {
+	case "spec":
+		return runPMSpec(args[1:], stdout, stderr)
+	case "qa":
+		return runPMQA(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown pm command: %s\n\n", args[0])
+		_, _ = io.WriteString(stderr, pmHelp)
+		return 2
+	}
+}
+
+func runPMQA(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pm qa", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	prNumber := fs.Int("pr", 0, "Explicit PR number")
+	diffSummary := fs.Bool("diff-summary", false, "Include changed files and diff stat")
+	includeDiff := fs.Bool("include-diff", false, "Include full diff with --diff-summary")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, pmHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, pmHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, pmHelp)
+		return 2
+	}
+	if *ticket == 0 && *issue > 0 {
+		*ticket = *issue
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newPMAcceptanceQAReport(gira.PMAcceptanceQAInput{
+		Repo:               repo,
+		Ticket:             *ticket,
+		PRNumber:           *prNumber,
+		IncludeDiffSummary: *diffSummary,
+		IncludeDiff:        *includeDiff,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode pm qa JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, report.Prompt)
+	return 0
+}
+
+func runPMSpec(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pm spec", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	title := fs.String("title", "", "Task title")
+	repo := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	intent := fs.String("intent", "", "Raw product/development intent")
+	fromFile := fs.String("from-file", "", "Read raw intent from file, or - for stdin")
+	workerMode := fs.String("worker-mode", "plan", "Suggested worker mode")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, pmHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, pmHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, pmHelp)
+		return 2
+	}
+	rawIntent, err := readPMIntent(*intent, *fromFile, os.Stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newPMTaskSpecReport(gira.PMTaskSpecInput{
+		Title:               *title,
+		Repo:                *repo,
+		RawIntent:           rawIntent,
+		SuggestedWorkerMode: *workerMode,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := gira.FormatPMTaskSpecJSON(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode pm spec JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatPMTaskSpec(report))
+	return 0
+}
+
+func readPMIntent(intent string, fromFile string, stdin io.Reader) (string, error) {
+	if strings.TrimSpace(intent) != "" && strings.TrimSpace(fromFile) != "" {
+		return "", fmt.Errorf("use either --intent or --from-file, not both")
+	}
+	if strings.TrimSpace(intent) != "" {
+		return strings.TrimSpace(intent), nil
+	}
+	if strings.TrimSpace(fromFile) == "-" {
+		data, err := io.ReadAll(stdin)
+		if err != nil {
+			return "", fmt.Errorf("read stdin: %w", err)
+		}
+		return strings.TrimSpace(string(data)), nil
+	}
+	if strings.TrimSpace(fromFile) != "" {
+		data, err := os.ReadFile(fromFile)
+		if err != nil {
+			return "", fmt.Errorf("read --from-file: %w", err)
+		}
+		return strings.TrimSpace(string(data)), nil
+	}
+	return "", fmt.Errorf("--intent or --from-file is required")
 }
 
 func runGuide(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -3857,6 +4125,8 @@ func runGoal(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	switch args[0] {
+	case "new":
+		return runGoalNew(args[1:], stdout, stderr)
 	case "plan":
 		return runGoalPlan(args[1:], stdout, stderr)
 	case "report":
@@ -3867,6 +4137,8 @@ func runGoal(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runGoalStatus(args[1:], stdout, stderr)
 	case "next":
 		return runGoalNext(args[1:], stdout, stderr)
+	case "handoff":
+		return runGoalHandoff(args[1:], stdout, stderr)
 	case "finish":
 		return runGoalFinish(args[1:], stdout, stderr)
 	default:
@@ -3874,6 +4146,201 @@ func runGoal(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, goalHelp)
 		return 2
 	}
+}
+
+func runDispatch(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		_, _ = io.WriteString(stdout, dispatchHelp)
+		return 0
+	}
+	switch args[0] {
+	case "goal":
+		return runDispatchGoal(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown dispatch command: %s\n\n", args[0])
+		_, _ = io.WriteString(stderr, dispatchHelp)
+		return 2
+	}
+}
+
+func runDispatchGoal(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalGoal, positionalOK := extractNumericPositional(args, "goal", stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, dispatchHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("dispatch goal", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	goal := fs.Int("goal", 0, "Goal issue number")
+	role := fs.String("role", gira.AgentPromptRoleImplementer, "Handoff role: planner|implementer|reviewer")
+	profile := fs.String("profile", gira.AgentPromptProfileDefault, "Handoff profile: default|python")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	compactJSON := fs.Bool("compact-json", false, "Emit compact dispatch JSON output")
+	promptOutput := fs.Bool("prompt", false, "Emit compact prompt output")
+	contextBudget := fs.Int("context-budget", 0, "Maximum compact context size in characters")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, dispatchHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, dispatchHelp)
+		return 0
+	}
+	if positionalGoal > 0 {
+		if *goal > 0 && *goal != positionalGoal {
+			fmt.Fprint(stderr, "--goal and positional goal must refer to the same number\n\n")
+			_, _ = io.WriteString(stderr, dispatchHelp)
+			return 2
+		}
+		*goal = positionalGoal
+	}
+	if boolCount(*jsonOutput, *compactJSON, *promptOutput) > 1 {
+		fmt.Fprint(stderr, "choose at most one output format: --json, --compact-json, or --prompt\n\n")
+		_, _ = io.WriteString(stderr, dispatchHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newDispatchGoalPacket(gira.DispatchGoalInput{Repo: repo, Goal: *goal, Role: *role, Profile: *profile})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode dispatch goal JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	if *compactJSON {
+		compact := gira.BuildDispatchCompactPacket(report, *contextBudget)
+		out, err := json.MarshalIndent(compact, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode compact dispatch JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	if *promptOutput {
+		fmt.Fprint(stdout, gira.FormatDispatchPrompt(report, *contextBudget))
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatDispatchPacket(report))
+	return 0
+}
+
+func runGoalNew(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalTitle, titleOK := extractTitlePositional(args, stderr)
+	if !titleOK {
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("goal new", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	title := fs.String("title", "", "Goal title")
+	objective := fs.String("objective", "", "Goal objective")
+	direction := fs.String("direction", "", "Strategic direction")
+	scope := fs.String("scope", "", "Goal scope")
+	autonomy := fs.String("autonomy", "", "Autonomy policy")
+	decomposition := fs.String("decomposition", "", "Semicolon-separated decomposition notes")
+	qualityBar := fs.String("quality-bar", "", "Semicolon-separated quality bar items")
+	stopConditions := fs.String("stop-condition", "", "Semicolon-separated stop conditions")
+	body := fs.String("body", "", "Full goal issue body")
+	bodyFile := fs.String("body-file", "", "Read goal body from file")
+	goalType := fs.String("type", "epic", "Goal issue type: epic|goal")
+	priority := fs.String("priority", "", "Priority: p0|p1|p2|p3")
+	milestone := fs.String("milestone", "", "Milestone title")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply changes")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	var labels repeatedStringFlag
+	fs.Var(&labels, "label", "Additional GitHub label")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, goalHelp)
+		return 0
+	}
+	resolvedTitle, ok := resolveGoalNewTitle(positionalTitle, *title, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required for goal new\n\n")
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	resolvedBody, err := readTicketNewBody(*body, *bodyFile, os.Stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newGoalNewReport(gira.GoalNewInput{
+		Repo:           repo,
+		Title:          resolvedTitle,
+		Objective:      *objective,
+		Direction:      *direction,
+		Scope:          *scope,
+		Autonomy:       *autonomy,
+		Decomposition:  splitList(*decomposition),
+		QualityBar:     splitList(*qualityBar),
+		StopConditions: splitList(*stopConditions),
+		Body:           resolvedBody,
+		Type:           *goalType,
+		Priority:       *priority,
+		Milestone:      *milestone,
+		Labels:         labels,
+		DryRun:         *dryRun,
+	})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if *dryRun {
+			report.Approval = gira.GoalNewApprovalEvidence(report)
+		}
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode goal new JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatGoalNew(report))
+	return 0
 }
 
 func runGoalPlan(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -3907,11 +4374,6 @@ func runGoalPlan(args []string, stdout io.Writer, stderr io.Writer) int {
 			return 2
 		}
 		*goal = positionalGoal
-	}
-	if *goal <= 0 {
-		fmt.Fprint(stderr, "--goal or positional goal is required\n\n")
-		_, _ = io.WriteString(stderr, goalHelp)
-		return 2
 	}
 	if *dryRun == *apply {
 		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required for goal plan\n\n")
@@ -3978,11 +4440,6 @@ func runGoalFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		*goal = positionalGoal
 	}
-	if *goal <= 0 {
-		fmt.Fprint(stderr, "--goal or positional goal is required\n\n")
-		_, _ = io.WriteString(stderr, goalHelp)
-		return 2
-	}
 	if *dryRun == *apply {
 		fmt.Fprint(stderr, "exactly one of --dry-run or --apply is required\n\n")
 		_, _ = io.WriteString(stderr, goalHelp)
@@ -4045,11 +4502,6 @@ func runGoalStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		*goal = positionalGoal
 	}
-	if *goal <= 0 {
-		fmt.Fprint(stderr, "--goal or positional goal is required\n\n")
-		_, _ = io.WriteString(stderr, goalHelp)
-		return 2
-	}
 	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -4108,11 +4560,6 @@ func runGoalReport(args []string, commandName string, stdout io.Writer, stderr i
 			return 2
 		}
 		*goal = positionalGoal
-	}
-	if *goal <= 0 {
-		fmt.Fprint(stderr, "--goal or positional goal is required\n\n")
-		_, _ = io.WriteString(stderr, goalHelp)
-		return 2
 	}
 	if *jsonOutput && *htmlOutput {
 		fmt.Fprint(stderr, "choose exactly one output format: --json or --html\n\n")
@@ -4198,11 +4645,6 @@ func runGoalNext(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		*goal = positionalGoal
 	}
-	if *goal <= 0 {
-		fmt.Fprint(stderr, "--goal or positional goal is required\n\n")
-		_, _ = io.WriteString(stderr, goalHelp)
-		return 2
-	}
 	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -4227,6 +4669,65 @@ func runGoalNext(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatGoalNext(report))
+	return 0
+}
+
+func runGoalHandoff(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalGoal, positionalOK := extractNumericPositional(args, "goal", stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("goal handoff", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	goal := fs.Int("goal", 0, "Goal issue number")
+	role := fs.String("role", gira.AgentPromptRoleImplementer, "Handoff role: planner|implementer|reviewer")
+	profile := fs.String("profile", gira.AgentPromptProfileDefault, "Handoff profile: default|python")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, goalHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, goalHelp)
+		return 0
+	}
+	if positionalGoal > 0 {
+		if *goal > 0 && *goal != positionalGoal {
+			fmt.Fprint(stderr, "--goal and positional goal must refer to the same number\n\n")
+			_, _ = io.WriteString(stderr, goalHelp)
+			return 2
+		}
+		*goal = positionalGoal
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newGoalHandoffReport(gira.GoalHandoffInput{Repo: repo, Goal: *goal, Role: *role, Profile: *profile})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode goal handoff JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatGoalHandoff(report))
 	return 0
 }
 
@@ -5694,7 +6195,7 @@ func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bo
 func extractNumericPositional(args []string, noun string, stderr io.Writer) ([]string, int, bool) {
 	cleaned := make([]string, 0, len(args))
 	positional := 0
-	valueFlags := map[string]struct{}{"--repo": {}, "--goal": {}, "--terminal": {}, "--output": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--goal": {}, "--terminal": {}, "--output": {}, "--role": {}, "--profile": {}, "--context-budget": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)
@@ -5918,7 +6419,7 @@ func extractTicketNotePositionals(args []string, stderr io.Writer) ([]string, in
 func extractTitlePositional(args []string, stderr io.Writer) ([]string, string, bool) {
 	cleaned := make([]string, 0, len(args))
 	title := ""
-	valueFlags := map[string]struct{}{"--repo": {}, "--title": {}, "--goal": {}, "--scope": {}, "--acceptance": {}, "--notes": {}, "--body": {}, "--type": {}, "--priority": {}, "--milestone": {}, "--label": {}, "--body-file": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--title": {}, "--goal": {}, "--scope": {}, "--acceptance": {}, "--notes": {}, "--body": {}, "--type": {}, "--priority": {}, "--milestone": {}, "--label": {}, "--body-file": {}, "--objective": {}, "--direction": {}, "--autonomy": {}, "--decomposition": {}, "--quality-bar": {}, "--stop-condition": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)
@@ -5957,6 +6458,33 @@ func resolveTicketNewTitle(positional string, title string, stderr io.Writer) (s
 	}
 	fmt.Fprint(stderr, "ticket title is required\n\n")
 	return "", false
+}
+
+func resolveGoalNewTitle(positional string, title string, stderr io.Writer) (string, bool) {
+	positional = strings.TrimSpace(positional)
+	title = strings.TrimSpace(title)
+	if positional != "" && title != "" && positional != title {
+		fmt.Fprint(stderr, "positional title and --title must match when both are provided\n\n")
+		return "", false
+	}
+	if title != "" {
+		return title, true
+	}
+	if positional != "" {
+		return positional, true
+	}
+	fmt.Fprint(stderr, "goal title is required\n\n")
+	return "", false
+}
+
+func boolCount(values ...bool) int {
+	count := 0
+	for _, value := range values {
+		if value {
+			count++
+		}
+	}
+	return count
 }
 
 func readTicketNewBody(body string, bodyFile string, stdin io.Reader) (string, error) {
@@ -10129,18 +10657,45 @@ func runReport(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stdout, reportHelp)
 		return 0
 	}
-	if args[0] != "weekly" {
+	switch args[0] {
+	case "weekly":
+		return runReportWeekly(args[1:], stdout, stderr)
+	case "release-notes":
+		return runReportReleaseNotes(args[1:], stdout, stderr)
+	case "changelog":
+		return runReportChangelog(args[1:], stdout, stderr)
+	case "milestone", "backlog-health", "delivery-status", "qa-checklist":
+		return runReportProjectDocument(args[0], args[1:], stdout, stderr)
+	case "wbs":
+		return runReportWBS(args[1:], stdout, stderr)
+	default:
 		fmt.Fprintf(stderr, "unknown report command: %s\n\n", args[0])
 		fmt.Fprint(stderr, reportHelp)
 		return 2
 	}
+}
+
+func runReportWeekly(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprint(stdout, reportHelp)
+		return 0
+	}
 	fs := flag.NewFlagSet("report weekly", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	format := fs.String("format", "md", "Output format: text, md, json, csv, html, or bundle")
+	output := fs.String("output", "", "Output path for md/csv/html, or output root for bundle")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON summary")
 	mdOutput := fs.Bool("md", false, "Emit markdown report")
-	if err := fs.Parse(args[1:]); err != nil {
+	csvOutput := fs.Bool("csv", false, "Emit CSV rows")
+	htmlOutput := fs.Bool("html", false, "Emit static HTML report")
+	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
 		fmt.Fprint(stderr, reportHelp)
 		return 2
 	}
@@ -10153,20 +10708,538 @@ func runReport(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
+	selectedFormat := strings.ToLower(strings.TrimSpace(*format))
 	if *jsonOutput {
-		output, err := json.MarshalIndent(report, "", "  ")
+		selectedFormat = "json"
+	}
+	if *mdOutput {
+		selectedFormat = "md"
+	}
+	if *csvOutput {
+		selectedFormat = "csv"
+	}
+	if *htmlOutput {
+		selectedFormat = "html"
+	}
+	if selectedFormat == "" {
+		selectedFormat = "md"
+	}
+	switch selectedFormat {
+	case "text", "md":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteWeeklyReportMarkdown(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "weekly markdown written to %s\n", *output)
+			return 0
+		}
+		fmt.Fprint(stdout, gira.FormatWeeklyReportMarkdown(report))
+		return 0
+	case "json":
+		encoded, err := gira.RenderWeeklyReportJSON(report)
 		if err != nil {
 			fmt.Fprintf(stderr, "encode report JSON: %v\n", err)
 			return 2
 		}
-		fmt.Fprintf(stdout, "%s\n", output)
+		fmt.Fprintf(stdout, "%s\n", encoded)
+		return 0
+	case "csv":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteWeeklyReportCSV(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "weekly csv written to %s\n", *output)
+			return 0
+		}
+		encoded, err := gira.RenderWeeklyReportCSV(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode weekly CSV: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s", encoded)
+		return 0
+	case "html":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteWeeklyReportHTML(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "weekly html written to %s\n", *output)
+			return 0
+		}
+		fmt.Fprint(stdout, gira.RenderWeeklyReportHTML(report))
+		return 0
+	case "bundle":
+		outputRoot := strings.TrimSpace(*output)
+		if outputRoot == "" {
+			outputRoot = "out/weekly"
+		}
+		if err := gira.WriteWeeklyReportBundle(outputRoot, report); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "weekly report bundle written to %s\n", outputRoot)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "invalid report weekly format %q; expected text, md, json, csv, html, or bundle\n", *format)
+		return 2
+	}
+}
+
+func runReportReleaseNotes(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprint(stdout, reportHelp)
 		return 0
 	}
-	if *mdOutput || !*jsonOutput {
-		fmt.Fprint(stdout, gira.FormatWeeklyReportMarkdown(report))
+	fs := flag.NewFlagSet("report release-notes", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	milestone := fs.String("milestone", "", "Release milestone title")
+	format := fs.String("format", "text", "Output format: text, md, json, csv, html, or bundle")
+	output := fs.String("output", "", "Output path for md/csv/html, or output root for bundle")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON report")
+	mdOutput := fs.Bool("md", false, "Emit Markdown release notes")
+	csvOutput := fs.Bool("csv", false, "Emit CSV rows")
+	htmlOutput := fs.Bool("html", false, "Emit static HTML report")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	repo, ok := resolveRepoContext(*repoValue, stderr, reportHelp)
+	if !ok {
+		return 2
+	}
+	selectedFormat := strings.ToLower(strings.TrimSpace(*format))
+	if *jsonOutput {
+		selectedFormat = "json"
+	}
+	if *mdOutput {
+		selectedFormat = "md"
+	}
+	if *csvOutput {
+		selectedFormat = "csv"
+	}
+	if *htmlOutput {
+		selectedFormat = "html"
+	}
+	if selectedFormat == "" {
+		selectedFormat = "text"
+	}
+	report, err := gira.BuildReleaseNotesReport(repo, *milestone, newReleaseNotesClient(repo), reportNow())
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	switch selectedFormat {
+	case "text":
+		fmt.Fprint(stdout, gira.FormatReleaseNotesReport(report))
+		return 0
+	case "json":
+		encoded, err := gira.RenderReleaseNotesJSON(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode release notes JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", encoded)
+		return 0
+	case "md":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteReleaseNotesMarkdown(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "release notes markdown written to %s\n", *output)
+			return 0
+		}
+		fmt.Fprint(stdout, gira.RenderReleaseNotesMarkdown(report))
+		return 0
+	case "csv":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteReleaseNotesCSV(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "release notes csv written to %s\n", *output)
+			return 0
+		}
+		encoded, err := gira.RenderReleaseNotesCSV(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode release notes CSV: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s", encoded)
+		return 0
+	case "html":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteReleaseNotesHTML(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "release notes html written to %s\n", *output)
+			return 0
+		}
+		fmt.Fprint(stdout, gira.RenderReleaseNotesHTML(report))
+		return 0
+	case "bundle":
+		outputRoot := strings.TrimSpace(*output)
+		if outputRoot == "" {
+			outputRoot = "out/release-notes"
+		}
+		if err := gira.WriteReleaseNotesBundle(outputRoot, report); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "release notes bundle written to %s\n", outputRoot)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "invalid report release-notes format %q; expected text, md, json, csv, html, or bundle\n", *format)
+		return 2
+	}
+}
+
+func runReportChangelog(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprint(stdout, reportHelp)
 		return 0
 	}
-	return 0
+	fs := flag.NewFlagSet("report changelog", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	milestone := fs.String("milestone", "", "Release milestone title")
+	format := fs.String("format", "text", "Output format: text, md, json, csv, html, or bundle")
+	output := fs.String("output", "", "Output path for md/csv/html, or output root for bundle")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON report")
+	mdOutput := fs.Bool("md", false, "Emit Markdown changelog")
+	csvOutput := fs.Bool("csv", false, "Emit CSV rows")
+	htmlOutput := fs.Bool("html", false, "Emit static HTML report")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	repo, ok := resolveRepoContext(*repoValue, stderr, reportHelp)
+	if !ok {
+		return 2
+	}
+	selectedFormat := strings.ToLower(strings.TrimSpace(*format))
+	if *jsonOutput {
+		selectedFormat = "json"
+	}
+	if *mdOutput {
+		selectedFormat = "md"
+	}
+	if *csvOutput {
+		selectedFormat = "csv"
+	}
+	if *htmlOutput {
+		selectedFormat = "html"
+	}
+	if selectedFormat == "" {
+		selectedFormat = "text"
+	}
+	report, err := gira.BuildReleaseNotesReport(repo, *milestone, newReleaseNotesClient(repo), reportNow())
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report = gira.AsChangelogReport(report)
+	switch selectedFormat {
+	case "text":
+		fmt.Fprint(stdout, gira.FormatChangelogReport(report))
+		return 0
+	case "json":
+		encoded, err := gira.RenderReleaseNotesJSON(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode changelog JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", encoded)
+		return 0
+	case "md":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteChangelogMarkdown(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "changelog markdown written to %s\n", *output)
+			return 0
+		}
+		fmt.Fprint(stdout, gira.RenderChangelogMarkdown(report))
+		return 0
+	case "csv":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteReleaseNotesCSV(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "changelog csv written to %s\n", *output)
+			return 0
+		}
+		encoded, err := gira.RenderReleaseNotesCSV(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode changelog CSV: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s", encoded)
+		return 0
+	case "html":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteChangelogHTML(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "changelog html written to %s\n", *output)
+			return 0
+		}
+		fmt.Fprint(stdout, gira.RenderChangelogHTML(report))
+		return 0
+	case "bundle":
+		outputRoot := strings.TrimSpace(*output)
+		if outputRoot == "" {
+			outputRoot = "out/changelog"
+		}
+		if err := gira.WriteChangelogBundle(outputRoot, report); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "changelog bundle written to %s\n", outputRoot)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "invalid report changelog format %q; expected text, md, json, csv, html, or bundle\n", *format)
+		return 2
+	}
+}
+
+func runReportProjectDocument(kind string, args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprint(stdout, reportHelp)
+		return 0
+	}
+	fs := flag.NewFlagSet("report "+kind, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	milestone := fs.String("milestone", "", "Milestone title for scoped reports")
+	format := fs.String("format", "text", "Output format: text, md, json, csv, html, or bundle")
+	output := fs.String("output", "", "Output path for md/csv/html, or output root for bundle")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON report")
+	mdOutput := fs.Bool("md", false, "Emit Markdown report")
+	csvOutput := fs.Bool("csv", false, "Emit CSV rows")
+	htmlOutput := fs.Bool("html", false, "Emit static HTML report")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	repo, ok := resolveRepoContext(*repoValue, stderr, reportHelp)
+	if !ok {
+		return 2
+	}
+	selectedFormat := strings.ToLower(strings.TrimSpace(*format))
+	if *jsonOutput {
+		selectedFormat = "json"
+	}
+	if *mdOutput {
+		selectedFormat = "md"
+	}
+	if *csvOutput {
+		selectedFormat = "csv"
+	}
+	if *htmlOutput {
+		selectedFormat = "html"
+	}
+	if selectedFormat == "" {
+		selectedFormat = "text"
+	}
+	report, err := gira.BuildProjectReport(repo, newDashboardExportClient(repo), newReviewGateClient(repo), reportNow(), gira.ProjectReportOptions{Kind: kind, Milestone: *milestone})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	switch selectedFormat {
+	case "text":
+		fmt.Fprint(stdout, gira.FormatProjectReport(report))
+		return 0
+	case "json":
+		encoded, err := gira.RenderProjectReportJSON(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode project report JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", encoded)
+		return 0
+	case "md":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteProjectReportMarkdown(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "%s markdown written to %s\n", kind, *output)
+			return 0
+		}
+		fmt.Fprint(stdout, gira.RenderProjectReportMarkdown(report))
+		return 0
+	case "csv":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteProjectReportCSV(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "%s csv written to %s\n", kind, *output)
+			return 0
+		}
+		encoded, err := gira.RenderProjectReportCSV(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode project report CSV: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s", encoded)
+		return 0
+	case "html":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteProjectReportHTML(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "%s html written to %s\n", kind, *output)
+			return 0
+		}
+		fmt.Fprint(stdout, gira.RenderProjectReportHTML(report))
+		return 0
+	case "bundle":
+		outputRoot := strings.TrimSpace(*output)
+		if outputRoot == "" {
+			outputRoot = "out/" + kind
+		}
+		if err := gira.WriteProjectReportBundle(outputRoot, report); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s report bundle written to %s\n", kind, outputRoot)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "invalid report %s format %q; expected text, md, json, csv, html, or bundle\n", kind, *format)
+		return 2
+	}
+}
+
+func runReportWBS(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprint(stdout, reportHelp)
+		return 0
+	}
+	fs := flag.NewFlagSet("report wbs", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	state := fs.String("state", "open", "Issue state filter: open, closed, or all")
+	format := fs.String("format", "text", "Output format: text, json, csv, html, or bundle")
+	output := fs.String("output", "", "Output path for csv/html, or output root for bundle")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON report")
+	csvOutput := fs.Bool("csv", false, "Emit CSV rows")
+	htmlOutput := fs.Bool("html", false, "Emit static HTML report")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	repo, ok := resolveRepoContext(*repoValue, stderr, reportHelp)
+	if !ok {
+		return 2
+	}
+	selectedFormat := strings.ToLower(strings.TrimSpace(*format))
+	if *jsonOutput {
+		selectedFormat = "json"
+	}
+	if *csvOutput {
+		selectedFormat = "csv"
+	}
+	if *htmlOutput {
+		selectedFormat = "html"
+	}
+	if selectedFormat == "" {
+		selectedFormat = "text"
+	}
+	report, err := gira.BuildWBSReportWithOptions(repo, newWBSReportClient(repo), reportNow(), gira.WBSReportOptions{State: *state})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	switch selectedFormat {
+	case "text":
+		fmt.Fprint(stdout, gira.FormatWBSReport(report))
+		return 0
+	case "json":
+		encoded, err := gira.RenderWBSReportJSON(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode wbs report JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", encoded)
+		return 0
+	case "csv":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteWBSReportCSV(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "wbs csv written to %s\n", *output)
+			return 0
+		}
+		encoded, err := gira.RenderWBSReportCSV(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode wbs report CSV: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s", encoded)
+		return 0
+	case "html":
+		if strings.TrimSpace(*output) != "" {
+			if err := gira.WriteWBSReportHTML(*output, report); err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 2
+			}
+			fmt.Fprintf(stdout, "wbs html written to %s\n", *output)
+			return 0
+		}
+		fmt.Fprint(stdout, gira.RenderWBSReportHTML(report))
+		return 0
+	case "bundle":
+		outputRoot := strings.TrimSpace(*output)
+		if outputRoot == "" {
+			outputRoot = "out/wbs"
+		}
+		if err := gira.WriteWBSReportBundle(outputRoot, report); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "wbs report bundle written to %s\n", outputRoot)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "invalid report wbs format %q; expected text, json, csv, html, or bundle\n", *format)
+		return 2
+	}
 }
 
 func runStats(args []string, stdout io.Writer, stderr io.Writer) int {

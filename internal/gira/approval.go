@@ -495,6 +495,66 @@ func ticketNewApprovalExtraLabels(report TicketNewReport) []string {
 	return labels
 }
 
+func GoalNewApprovalEvidence(report GoalNewReport) *ApprovalEvidence {
+	applyCommand := goalNewApprovalCommand(report, "--apply")
+	dryRunCommand := goalNewApprovalCommand(report, "--dry-run")
+	return &ApprovalEvidence{
+		SchemaVersion:         ApprovalPlanSchemaVersion,
+		Capability:            AdapterCapabilityApplyMutation,
+		CanonicalCommand:      "gira goal new",
+		DryRunCommand:         dryRunCommand,
+		ApplyCommand:          applyCommand,
+		Repo:                  report.Repo,
+		OutputSchema:          GoalNewReportSchemaVersion,
+		PlannedActions:        goalNewApprovalActions(report),
+		Blockers:              []string{},
+		Warnings:              []string{},
+		PostApplyVerification: "gira goal status <created-goal> --repo " + report.Repo + " --json",
+	}
+}
+
+func goalNewApprovalCommand(report GoalNewReport, mode string) string {
+	args := []string{
+		"gira goal new",
+		QuoteShellArg(report.Title),
+		"--repo", report.Repo,
+		"--body", QuoteShellArg(report.Body),
+	}
+	if strings.TrimSpace(report.Type) != "" && report.Type != "epic" {
+		args = append(args, "--type", report.Type)
+	}
+	if strings.TrimSpace(report.Priority) != "" {
+		args = append(args, "--priority", report.Priority)
+	}
+	for _, label := range goalNewApprovalExtraLabels(report) {
+		args = append(args, "--label", QuoteShellArg(label))
+	}
+	if strings.TrimSpace(report.Milestone) != "" {
+		args = append(args, "--milestone", QuoteShellArg(report.Milestone))
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
+func goalNewApprovalActions(report GoalNewReport) []ApprovalPlannedAction {
+	return []ApprovalPlannedAction{
+		{Action: "goal:create", Target: report.Repo, Detail: report.Title},
+	}
+}
+
+func goalNewApprovalExtraLabels(report GoalNewReport) []string {
+	labels := []string{}
+	for _, label := range report.Labels {
+		trimmed := strings.TrimSpace(label)
+		lower := strings.ToLower(trimmed)
+		if trimmed == "" || lower == "status:ready" || strings.HasPrefix(lower, "type:") || strings.HasPrefix(lower, "priority:") {
+			continue
+		}
+		labels = append(labels, trimmed)
+	}
+	return labels
+}
+
 func RepoRegisterApprovalEvidence(report RepoRegisterReport) *ApprovalEvidence {
 	applyCommand := repoRegisterApprovalCommand(report, "--apply")
 	dryRunCommand := repoRegisterApprovalCommand(report, "--dry-run")

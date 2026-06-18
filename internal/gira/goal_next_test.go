@@ -21,6 +21,21 @@ func TestBuildGoalNextReportSelectsReadyChild(t *testing.T) {
 	}
 }
 
+func TestBuildGoalNextReportPreservesCrossRepoChild(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "backlog"}
+	status := goalNextTestStatus([]GoalStatusChild{
+		{Repo: "StatPan/gira", Number: 202, Title: "Ready", State: "open", Status: "Ready", Category: "ready", NextAction: "start_work"},
+	})
+
+	report := BuildGoalNextReportFromStatus(repo, status)
+	if report.SelectedTicket == nil || report.SelectedTicket.Repo != "StatPan/gira" {
+		t.Fatalf("unexpected selected ticket: %+v", report.SelectedTicket)
+	}
+	if !strings.Contains(report.NextStep, "--repo StatPan/gira") || strings.Contains(report.NextStep, "--repo StatPan/backlog") {
+		t.Fatalf("cross-repo next step used wrong repo: %q", report.NextStep)
+	}
+}
+
 func TestBuildGoalNextReportStopsForBlockedChild(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	status := goalNextTestStatus([]GoalStatusChild{

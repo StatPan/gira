@@ -75,6 +75,17 @@ control layer over GitHub Issues, branches, PRs, checks, labels, and milestones.
 Repo-linked Projects are visibility surfaces; Project-only items stay intake or
 planning until routed to a repository issue.
 
+Gira PM mode turns raw intent into durable, task-local PM state for coding
+workers. It does not use `needs human` as a terminal state; it decomposes
+missing judgment into context retrieval, decision policy derivation, risk
+reduction, verification, scope splitting, or follow-up task packets.
+
+```bash
+gira pm spec --repo OWNER/REPO --from-file request.md > pm-task.md
+gira ticket new --repo OWNER/REPO --title "TITLE" --body-file pm-task.md --type task --dry-run
+gira pm qa --repo OWNER/REPO --ticket 123 --diff-summary
+```
+
 Jira-primary provider mode is optional. In that mode Jira owns planning and status while GitHub still owns execution evidence. See [docs/jira-primary-provider.md](docs/jira-primary-provider.md).
 
 The core flow is:

@@ -64,6 +64,45 @@ gira config storage --repo OWNER/app --json
 
 Documented in: `docs/global-config-registry.md`, `docs/state-model.md`, `docs-site/global-config.md`, `docs-site/command-reference.md`
 
+## `dispatch goal`
+
+Build an official dispatch packet from a goal issue, goal handoff, and next safe child ticket worker handoff.
+
+Usage:
+
+```bash
+gira dispatch goal [GOAL] [--repo OWNER/REPO] [--role implementer] [--profile default] [--json|--compact-json|--prompt]
+```
+
+Since: `v2.4.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
+- `--role`: Handoff role: planner, implementer, or reviewer. Default: implementer.
+- `--profile`: Handoff profile: default or python. Default: default.
+- `--json`: Emit stable dispatch-packet/v1 JSON.
+- `--compact-json`: Emit compact dispatch-compact/v1 JSON without full issue bodies or role packets.
+- `--prompt`: Emit a compact prompt for direct LLM handoff.
+- `--context-budget`: Maximum compact context size in characters. Default: 12000.
+
+Examples:
+
+- Build a goal dispatch packet for an implementer
+
+```bash
+gira dispatch goal --repo OWNER/backlog --role implementer --json
+```
+
+- Build a compact LLM handoff prompt
+
+```bash
+gira dispatch goal --repo OWNER/backlog --prompt --context-budget 8000
+```
+
+Documented in: `docs/dispatch-operating-model.md`, `docs/dispatch-reflection.md`, `docs/goal-operating-model.md`, `docs-site/command-reference.md`
+
 ## `feature check`
 
 Validate optional feature map records and work links without mutating GitHub.
@@ -164,7 +203,7 @@ Since: `v1.17.0`
 Flags:
 
 - `--repo`: Target GitHub repo in OWNER/REPO format.
-- `--goal`: Goal issue number. Can also be numeric positional.
+- `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
 - `--dry-run`: Preview readiness and receipt without mutation.
 - `--apply`: Apply an explicit done close or human_review handoff mutation.
 - `--terminal`: Explicit terminal recommendation override for apply: done, human_review, blocked, superseded, or abandoned.
@@ -176,6 +215,85 @@ Examples:
 
 ```bash
 gira goal finish 521 --repo OWNER/app --dry-run --json
+```
+
+Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
+
+## `goal handoff`
+
+Build a goal-level LLM handoff that includes goal context and the next safe child ticket worker packet.
+
+Usage:
+
+```bash
+gira goal handoff [GOAL] [--repo OWNER/REPO] [--role implementer] [--profile default] [--json]
+```
+
+Since: `v2.4.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
+- `--role`: Handoff role: planner, implementer, or reviewer. Default: implementer.
+- `--profile`: Handoff profile: default or python. Default: default.
+- `--json`: Emit stable goal-handoff/v1 JSON with worker-handoff/v1 embedded when a child is selected.
+
+Examples:
+
+- Build an implementer handoff for the next goal child
+
+```bash
+gira goal handoff 521 --repo OWNER/app --role implementer --json
+```
+
+Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
+
+## `goal new`
+
+Create a Goal Mode issue with objective, scope, autonomy, quality, stop, and child-ticket planning sections.
+
+Usage:
+
+```bash
+gira goal new "Title" --dry-run|--apply [--repo OWNER/REPO] [--objective TEXT] [--scope TEXT] [--json]
+```
+
+Since: `v2.4.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--title`: Goal title. Can also be positional.
+- `--objective`: Durable goal outcome. Defaults to the title.
+- `--direction`: Strategic guidance, priorities, and tradeoffs.
+- `--scope`: Included work, target repos, milestones, and explicit non-goals.
+- `--autonomy`: Agent lane and permission policy.
+- `--decomposition`: Semicolon-separated child planning notes.
+- `--quality-bar`: Semicolon-separated verification, review, docs, or release evidence requirements.
+- `--stop-condition`: Semicolon-separated conditions that require human input.
+- `--type`: Goal issue type label: epic or goal. Default: epic.
+- `--priority`: Priority label: p0, p1, p2, or p3.
+- `--label`: Additional existing repo label. Repeatable or comma-separated.
+- `--body`: Full goal issue body. Overrides structured fields.
+- `--body-file`: Read full goal issue body from a file or - for stdin.
+- `--milestone`: Milestone title.
+- `--dry-run`: Preview issue payload and labels without mutation.
+- `--apply`: Create the goal issue.
+- `--json`: Emit stable goal-new-report/v1 JSON.
+
+Examples:
+
+- Preview a new goal
+
+```bash
+gira goal new "Ship Goal Mode" --repo OWNER/app --objective "Make goal tracking executable" --scope "CLI goal commands" --decomposition "Add goal new;Update docs" --dry-run --json
+```
+
+- Create a reviewed goal issue
+
+```bash
+gira goal new "Ship Goal Mode" --repo OWNER/app --body-file goal.md --apply
 ```
 
 Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
@@ -195,7 +313,7 @@ Since: `v1.17.0`
 Flags:
 
 - `--repo`: Target GitHub repo in OWNER/REPO format.
-- `--goal`: Goal issue number. Can also be numeric positional.
+- `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
 - `--json`: Emit stable goal-next/v1 JSON.
 
 Examples:
@@ -223,7 +341,7 @@ Since: `v1.17.0`
 Flags:
 
 - `--repo`: Target GitHub repo in OWNER/REPO format.
-- `--goal`: Goal issue number. Can also be numeric positional.
+- `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
 - `--dry-run`: Preview proposed child tickets, including target_repo, without mutation.
 - `--apply`: Create reviewed child tickets in their target repos from the proposed plan.
 - `--json`: Emit stable goal-plan/v1 JSON.
@@ -259,7 +377,7 @@ Since: `v2.1.0`
 Flags:
 
 - `--repo`: Target GitHub repo in OWNER/REPO format.
-- `--goal`: Goal issue number. Can also be numeric positional.
+- `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
 - `--json`: Emit stable goal-dossier/v1 JSON.
 - `--html`: Write a static local HTML report.
 - `--output`: Output path for --html.
@@ -295,7 +413,7 @@ Since: `v1.17.0`
 Flags:
 
 - `--repo`: Target GitHub repo in OWNER/REPO format.
-- `--goal`: Goal issue number. Can also be numeric positional.
+- `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
 - `--json`: Emit stable goal-status/v1 JSON.
 
 Examples:
@@ -643,6 +761,75 @@ gira milestone status "2.0 Alpha - State-Aware Ticket Runtime"
 
 Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
 
+## `pm qa`
+
+Render a PM acceptance QA prompt from task-local PM state and PR evidence.
+
+Usage:
+
+```bash
+gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]
+```
+
+Since: `v2.5.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--ticket`: Ticket number.
+- `--issue`: Compatibility alias for --ticket.
+- `--pr`: Explicit PR number.
+- `--diff-summary`: Include changed files and diff stat.
+- `--include-diff`: Include full diff when used with --diff-summary.
+- `--json`: Emit stable gira-pm-qa/v1 JSON with prompt embedded.
+
+Examples:
+
+- Render PM acceptance QA for a ticket PR
+
+```bash
+gira pm qa --repo OWNER/app --ticket 123 --diff-summary
+```
+
+Documented in: `docs/pm-skill.md`, `docs-site/command-reference.md`
+
+## `pm spec`
+
+Render a durable PM state and worker-ready task packet from raw intent.
+
+Usage:
+
+```bash
+gira pm spec [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode plan] [--json]
+```
+
+Since: `v2.5.0`
+
+Flags:
+
+- `--title`: Task title; defaults to the first non-empty intent line.
+- `--repo`: Optional target GitHub repo in OWNER/REPO format.
+- `--intent`: Raw product/development intent.
+- `--from-file`: Read raw intent from file, or '-' for stdin.
+- `--worker-mode`: Suggested worker mode: research, plan, implement, review, fix_review, or pm_qa.
+- `--json`: Emit stable gira-pm-task-packet/v1 JSON with Markdown embedded.
+
+Examples:
+
+- Render a PM task packet from stdin
+
+```bash
+gira pm spec --repo OWNER/app --from-file - > pm-task.md
+```
+
+- Create a ticket from a rendered packet
+
+```bash
+gira ticket new --repo OWNER/app --title "TITLE" --body-file pm-task.md --type task --dry-run
+```
+
+Documented in: `docs/pm-skill.md`, `docs-site/command-reference.md`
+
 ## `queue handoff`
 
 Select or inspect an agent-ready workspace queue item and embed the worker-handoff/v1 payload.
@@ -770,6 +957,284 @@ gira queue take --dry-run --json
 ```
 
 Documented in: `docs/workspace.md`, `docs/agent-handoff-queue.md`, `docs-site/agent-handoff-queue.md`, `docs-site/command-reference.md`
+
+## `report backlog-health`
+
+Build a backlog health report from open issue status, age, labels, and planning evidence.
+
+Usage:
+
+```bash
+gira report backlog-health [--repo OWNER/REPO] [--format text|md|json|csv|html|bundle] [--output PATH]
+```
+
+Since: `v2.5.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--format`: Output format: text, md, json, csv, html, or bundle.
+- `--output`: Output path for md/csv/html, or output root for bundle.
+- `--json`: Emit stable project-report/v1alpha1 JSON.
+- `--md`: Emit Markdown report.
+- `--csv`: Emit CSV rows.
+- `--html`: Emit a static local HTML report.
+
+Examples:
+
+- Render backlog health
+
+```bash
+gira report backlog-health --repo OWNER/app
+```
+
+Documented in: `README.md`, `docs-site/command-reference.md`
+
+## `report changelog`
+
+Build a changelog document from the same milestone and merged PR evidence as release notes.
+
+Usage:
+
+```bash
+gira report changelog --repo OWNER/REPO --milestone TITLE [--format text|md|json|csv|html|bundle] [--output PATH]
+```
+
+Since: `v2.5.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--milestone`: Release milestone title to include.
+- `--format`: Output format: text, md, json, csv, html, or bundle.
+- `--output`: Output path for md/csv/html, or output root for bundle.
+- `--json`: Emit stable release-notes-report/v1alpha1 JSON.
+- `--md`: Emit Markdown changelog.
+- `--csv`: Emit changelog CSV rows.
+- `--html`: Emit a static local HTML report.
+
+Examples:
+
+- Render changelog markdown
+
+```bash
+gira report changelog --repo OWNER/app --milestone v2.1.0 --format md
+```
+
+Documented in: `README.md`, `docs-site/command-reference.md`
+
+## `report delivery-status`
+
+Build a delivery status report from milestone progress, blockers, and PR readiness evidence.
+
+Usage:
+
+```bash
+gira report delivery-status [--repo OWNER/REPO] [--format text|md|json|csv|html|bundle] [--output PATH]
+```
+
+Since: `v2.5.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--format`: Output format: text, md, json, csv, html, or bundle.
+- `--output`: Output path for md/csv/html, or output root for bundle.
+- `--json`: Emit stable project-report/v1alpha1 JSON.
+- `--md`: Emit Markdown report.
+- `--csv`: Emit CSV rows.
+- `--html`: Emit a static local HTML report.
+
+Examples:
+
+- Render delivery status
+
+```bash
+gira report delivery-status --repo OWNER/app --format md
+```
+
+Documented in: `README.md`, `docs-site/command-reference.md`
+
+## `report milestone`
+
+Build a milestone progress report from GitHub milestone and issue evidence.
+
+Usage:
+
+```bash
+gira report milestone --repo OWNER/REPO --milestone TITLE [--format text|md|json|csv|html|bundle] [--output PATH]
+```
+
+Since: `v2.5.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--milestone`: Milestone title to inspect.
+- `--format`: Output format: text, md, json, csv, html, or bundle.
+- `--output`: Output path for md/csv/html, or output root for bundle.
+- `--json`: Emit stable project-report/v1alpha1 JSON.
+- `--md`: Emit Markdown report.
+- `--csv`: Emit CSV rows.
+- `--html`: Emit a static local HTML report.
+
+Examples:
+
+- Render milestone progress
+
+```bash
+gira report milestone --repo OWNER/app --milestone v2.1.0 --format md
+```
+
+Documented in: `README.md`, `docs-site/command-reference.md`
+
+## `report qa-checklist`
+
+Build a QA checklist report from issue labels, open PR checks, review state, and closure-link evidence.
+
+Usage:
+
+```bash
+gira report qa-checklist [--repo OWNER/REPO] [--milestone TITLE] [--format text|md|json|csv|html|bundle] [--output PATH]
+```
+
+Since: `v2.5.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--milestone`: Optional milestone title to scope issue checks.
+- `--format`: Output format: text, md, json, csv, html, or bundle.
+- `--output`: Output path for md/csv/html, or output root for bundle.
+- `--json`: Emit stable project-report/v1alpha1 JSON.
+- `--md`: Emit Markdown report.
+- `--csv`: Emit CSV rows.
+- `--html`: Emit a static local HTML report.
+
+Examples:
+
+- Render milestone QA checklist
+
+```bash
+gira report qa-checklist --repo OWNER/app --milestone v2.1.0 --format md
+```
+
+Documented in: `README.md`, `docs-site/command-reference.md`
+
+## `report release-notes`
+
+Build human-readable release notes from milestone issues and merged PR closing evidence.
+
+Usage:
+
+```bash
+gira report release-notes --repo OWNER/REPO --milestone TITLE [--format text|md|json|csv|html|bundle] [--output PATH]
+```
+
+Since: `v2.5.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--milestone`: Release milestone title to include.
+- `--format`: Output format: text, md, json, csv, html, or bundle.
+- `--output`: Output path for md/csv/html, or output root for bundle.
+- `--json`: Emit stable release-notes-report/v1alpha1 JSON.
+- `--md`: Emit Markdown release notes.
+- `--csv`: Emit release item CSV rows.
+- `--html`: Emit a static local HTML report.
+
+Examples:
+
+- Render release notes markdown
+
+```bash
+gira report release-notes --repo OWNER/app --milestone v2.1.0 --format md
+```
+
+- Write a release notes bundle
+
+```bash
+gira report release-notes --repo OWNER/app --milestone v2.1.0 --format bundle --output out/release-notes
+```
+
+Documented in: `README.md`, `docs-site/command-reference.md`
+
+## `report wbs`
+
+Build a human-readable work breakdown report from GitHub epics, issues, milestones, and roadmap dates.
+
+Usage:
+
+```bash
+gira report wbs [--repo OWNER/REPO] [--state open|closed|all] [--format text|json|csv|html|bundle] [--output PATH]
+```
+
+Since: `v2.5.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--state`: Issue state filter: open, closed, or all. Default: open.
+- `--format`: Output format: text, json, csv, html, or bundle.
+- `--output`: Output path for csv/html, or output root for bundle.
+- `--json`: Emit stable wbs-report/v1alpha1 JSON.
+- `--csv`: Emit WBS CSV rows.
+- `--html`: Emit a static local HTML report.
+
+Examples:
+
+- Render a terminal WBS summary
+
+```bash
+gira report wbs --repo OWNER/app
+```
+
+- Write a shareable WBS report bundle
+
+```bash
+gira report wbs --repo OWNER/app --format bundle --output out/wbs
+```
+
+Documented in: `README.md`, `docs-site/command-reference.md`
+
+## `report weekly`
+
+Build a weekly PM cockpit report with deterministic KPIs and top exceptions.
+
+Usage:
+
+```bash
+gira report weekly [--repo OWNER/REPO] [--format text|md|json|csv|html|bundle] [--output PATH]
+```
+
+Since: `v2.5.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--format`: Output format: text, md, json, csv, html, or bundle.
+- `--output`: Output path for md/csv/html, or output root for bundle.
+- `--json`: Emit stable weekly-report/v1alpha1 JSON.
+- `--md`: Emit Markdown report.
+- `--csv`: Emit CSV rows.
+- `--html`: Emit a static local HTML report.
+
+Examples:
+
+- Render weekly PM cockpit markdown
+
+```bash
+gira report weekly --repo OWNER/app --format md
+```
+
+- Write a weekly report bundle
+
+```bash
+gira report weekly --repo OWNER/app --format bundle --output out/weekly
+```
+
+Documented in: `README.md`, `docs-site/command-reference.md`
 
 ## `setup global`
 

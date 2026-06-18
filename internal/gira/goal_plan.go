@@ -80,9 +80,6 @@ func BuildGoalPlanReport(input GoalPlanInput, runner CommandRunner) (GoalPlanRep
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
-	if input.Goal <= 0 {
-		return GoalPlanReport{}, fmt.Errorf("goal must be > 0")
-	}
 	if strings.TrimSpace(input.Repo.Owner) == "" || strings.TrimSpace(input.Repo.Name) == "" {
 		return GoalPlanReport{
 			Command:       "goal plan",
@@ -96,6 +93,11 @@ func BuildGoalPlanReport(input GoalPlanInput, runner CommandRunner) (GoalPlanRep
 			NextStep:   "rerun with --repo OWNER/REPO",
 		}, nil
 	}
+	goalNumber, _, err := ResolveGoalNumber(input.Repo, input.Goal, runner)
+	if err != nil {
+		return GoalPlanReport{}, err
+	}
+	input.Goal = goalNumber
 	status, err := BuildGoalStatusReport(GoalStatusInput{Repo: input.Repo, Goal: input.Goal}, runner)
 	if err != nil {
 		return GoalPlanReport{}, err

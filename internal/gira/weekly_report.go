@@ -1,14 +1,24 @@
 package gira
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"html"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
+const WeeklyReportSchemaVersion = "weekly-report/v1alpha1"
+
+var weeklyReportCSVHeaders = []string{"kind", "title", "owner", "age_days", "url"}
+
 type WeeklyReport struct {
+	Command    string                  `json:"command"`
+	Schema     string                  `json:"schema_version"`
 	Repo       string                  `json:"repo"`
 	Generated  string                  `json:"generated_at"`
 	KPIs       WeeklyReportKPIs        `json:"kpis"`
@@ -143,7 +153,7 @@ func BuildWeeklyReport(repo RepoRef, now time.Time, dashboard DashboardExportCli
 		exceptions = exceptions[:10]
 	}
 
-	return WeeklyReport{Repo: repo.FullName(), Generated: now.UTC().Format(time.RFC3339), KPIs: kpis, Exceptions: exceptions}, nil
+	return WeeklyReport{Command: "report weekly", Schema: WeeklyReportSchemaVersion, Repo: repo.FullName(), Generated: now.UTC().Format(time.RFC3339), KPIs: kpis, Exceptions: exceptions}, nil
 }
 
 func FormatWeeklyReportMarkdown(report WeeklyReport) string {
@@ -209,4 +219,92 @@ func (r WeeklyReport) MarshalJSON() ([]byte, error) {
 	copy := alias(r)
 	copy.KPIs.ReviewLatencyHoursAverage = float64(int(copy.KPIs.ReviewLatencyHoursAverage*10+0.5)) / 10
 	return json.Marshal(copy)
+}
+
+func RenderWeeklyReportJSON(report WeeklyReport) ([]byte, error) {
+	return json.MarshalIndent(report, "", "  ")
+}
+
+func RenderWeeklyReportCSV(report WeeklyReport) ([]byte, error) {
+	var buf bytes.Buffer
+	writer := csv.NewWriter(&buf)
+	if err := writer.Write(weeklyReportCSVHeaders); err != nil {
+		return nil, err
+	}
+	for _, ex := range report.Exceptions {
+		if err := writer.Write([]string{ex.Kind, ex.Title, ex.Owner, strconv.Itoa(ex.Age), ex.URL}); err != nil {
+			return nil, err
+		}
+	}
+	writer.Flush()
+	return buf.Bytes(), writer.Error()
+}
+
+func RenderWeeklyReportHTML(report WeeklyReport) string {
+	var b strings.Builder
+	b.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><title>Weekly PM Cockpit</title><style>body{font-family:Inter,Arial,sans-serif;margin:32px;color:#17202a;background:#f7f8fa}main{max-width:1120px;margin:0 auto}h1{font-size:28px;margin:0 0 8px}.meta{color:#5f6b7a}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:24px 0}.metric{background:#fff;border:1px solid #dde3ea;border-radius:8px;padding:14px}.metric strong{display:block;font-size:24px}table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #dde3ea}th,td{text-align:left;border-bottom:1px solid #edf0f3;padding:9px 10px;font-size:13px}th{background:#eef2f6}</style></head><body><main>")
+	fmt.Fprintf(&b, "<h1>Weekly PM Cockpit</h1><p class=\"meta\">%s · generated %s</p>", html.EscapeString(report.Repo), html.EscapeString(report.Generated))
+	b.WriteString("<section class=\"grid\">")
+	weeklyHTMLMetric(&b, "backlog health", report.KPIs.BacklogHealth)
+	weeklyHTMLMetric(&b, "open issues", strconv.Itoa(report.KPIs.OpenIssues))
+	weeklyHTMLMetric(&b, "blocked", strconv.Itoa(report.KPIs.BlockedIssues))
+	weeklyHTMLMetric(&b, "review pending", strconv.Itoa(report.KPIs.ReviewPendingPRs))
+	weeklyHTMLMetric(&b, "release blockers", strconv.Itoa(report.KPIs.ReleaseBlockers))
+	b.WriteString("</section><table><thead><tr><th>kind</th><th>title</th><th>owner</th><th>age</th></tr></thead><tbody>")
+	for _, ex := range report.Exceptions {
+		fmt.Fprintf(&b, "<tr><td>%s</td><td>", html.EscapeString(ex.Kind))
+		if ex.URL != "" {
+			fmt.Fprintf(&b, "<a href=\"%s\">%s</a>", html.EscapeString(ex.URL), html.EscapeString(ex.Title))
+		} else {
+			b.WriteString(html.EscapeString(ex.Title))
+		}
+		fmt.Fprintf(&b, "</td><td>%s</td><td>%dd</td></tr>", html.EscapeString(ex.Owner), ex.Age)
+	}
+	b.WriteString("</tbody></table></main></body></html>")
+	return b.String()
+}
+
+func WriteWeeklyReportBundle(outputRoot string, report WeeklyReport) error {
+	scope, err := newLocalWriteScope(outputRoot)
+	if err != nil {
+		return err
+	}
+	csvBytes, err := RenderWeeklyReportCSV(report)
+	if err != nil {
+		return err
+	}
+	jsonBytes, err := RenderWeeklyReportJSON(report)
+	if err != nil {
+		return err
+	}
+	if err := scope.WriteFile("index.html", []byte(RenderWeeklyReportHTML(report)), 0o644); err != nil {
+		return err
+	}
+	if err := scope.WriteFile("weekly.md", []byte(FormatWeeklyReportMarkdown(report)), 0o644); err != nil {
+		return err
+	}
+	if err := scope.WriteFile("derived/weekly_report.json", append(jsonBytes, '\n'), 0o644); err != nil {
+		return err
+	}
+	return scope.WriteFile("csv/weekly_exceptions.csv", csvBytes, 0o644)
+}
+
+func WriteWeeklyReportHTML(path string, report WeeklyReport) error {
+	return writeSafeLocalFile(path, []byte(RenderWeeklyReportHTML(report)), 0o644)
+}
+
+func WriteWeeklyReportMarkdown(path string, report WeeklyReport) error {
+	return writeSafeLocalFile(path, []byte(FormatWeeklyReportMarkdown(report)), 0o644)
+}
+
+func WriteWeeklyReportCSV(path string, report WeeklyReport) error {
+	csvBytes, err := RenderWeeklyReportCSV(report)
+	if err != nil {
+		return err
+	}
+	return writeSafeLocalFile(path, csvBytes, 0o644)
+}
+
+func weeklyHTMLMetric(b *strings.Builder, label string, value string) {
+	fmt.Fprintf(b, "<div class=\"metric\"><span>%s</span><strong>%s</strong></div>", html.EscapeString(label), html.EscapeString(value))
 }

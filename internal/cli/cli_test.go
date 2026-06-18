@@ -6160,14 +6160,114 @@ func TestGoalStatusJSONUsesInjectedBuilder(t *testing.T) {
 	}
 }
 
-func TestGoalStatusTextRequiresGoal(t *testing.T) {
+func TestGoalStatusTextAllowsInferredGoal(t *testing.T) {
+	restore := newGoalStatusReport
+	t.Cleanup(func() { newGoalStatusReport = restore })
+	newGoalStatusReport = func(input gira.GoalStatusInput) (gira.GoalStatusReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 0 {
+			t.Fatalf("unexpected inferred goal status input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.GoalStatusReport{
+			Command:       "goal status",
+			SchemaVersion: gira.GoalStatusSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			Goal:          gira.GoalStatusIssue{Number: 521, Title: "Inferred", State: "open", Status: "Ready"},
+			Counts:        map[string]int{"total": 0},
+			NextAction:    "plan_children",
+			NextStep:      "gira goal plan --repo StatPan/gira --goal 521 --dry-run",
+		}, nil
+	}
+
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"goal", "status", "--repo", "StatPan/gira"}, &stdout, &stderr)
-	if code != 2 {
-		t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "--goal or positional goal is required") {
-		t.Fatalf("stderr missing goal requirement:\n%s", stderr.String())
+	if !strings.Contains(stdout.String(), "goal status: #521") {
+		t.Fatalf("stdout missing inferred goal status:\n%s", stdout.String())
+	}
+}
+
+func TestGoalNewJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newGoalNewReport
+	t.Cleanup(func() { newGoalNewReport = restore })
+	newGoalNewReport = func(input gira.GoalNewInput) (gira.GoalNewReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Title != "Ship goal mode" || !input.DryRun {
+			t.Fatalf("unexpected goal new input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		if input.Objective != "Make goal mode executable" || input.Scope != "CLI" || input.Type != "epic" || input.Priority != "p1" {
+			t.Fatalf("unexpected goal new fields: %+v", input)
+		}
+		return gira.GoalNewReport{
+			Command:       "goal new",
+			SchemaVersion: gira.GoalNewReportSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			Title:         input.Title,
+			DryRun:        true,
+			Type:          input.Type,
+			Priority:      input.Priority,
+			Labels:        []string{"type:epic", "status:ready", "priority:p1"},
+			Body:          "## Goal\nMake goal mode executable\n",
+			NextStep:      "gira goal new --apply",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "new", "Ship goal mode", "--repo", "StatPan/gira", "--objective", "Make goal mode executable", "--scope", "CLI", "--priority", "p1", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "goal new"`, `"schema_version": "goal-new-report/v1"`, `"approval"`, `"canonical_command": "gira goal new"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("goal new JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestGoalNewApplyTextUsesInjectedBuilder(t *testing.T) {
+	restore := newGoalNewReport
+	t.Cleanup(func() { newGoalNewReport = restore })
+	newGoalNewReport = func(input gira.GoalNewInput) (gira.GoalNewReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Title != "Ship goal mode" || input.DryRun {
+			t.Fatalf("unexpected goal new apply input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.GoalNewReport{
+			Command:       "goal new",
+			SchemaVersion: gira.GoalNewReportSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			Title:         input.Title,
+			Type:          "epic",
+			Labels:        []string{"type:epic", "status:ready"},
+			Created:       gira.TicketCreatedIssue{Repo: input.Repo.FullName(), Number: 521},
+			NextStep:      "gira goal status 521 --repo StatPan/gira --json",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "new", "--title", "Ship goal mode", "--repo", "StatPan/gira", "--apply"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"goal new: goal #521 Ship goal mode", "next step: gira goal status 521 --repo StatPan/gira --json"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("goal new text missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestGoalNewRequiresExactlyOneMode(t *testing.T) {
+	for _, args := range [][]string{
+		{"goal", "new", "Ship goal mode", "--repo", "StatPan/gira"},
+		{"goal", "new", "Ship goal mode", "--repo", "StatPan/gira", "--dry-run", "--apply"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := Run(args, &stdout, &stderr)
+		if code != 2 {
+			t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "exactly one of --dry-run or --apply is required for goal new") {
+			t.Fatalf("stderr missing goal new mode requirement:\n%s", stderr.String())
+		}
 	}
 }
 
@@ -6349,6 +6449,200 @@ func TestGoalNextJSONUsesInjectedBuilder(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("goal next JSON missing %q:\n%s", want, stdout.String())
 		}
+	}
+}
+
+func TestGoalHandoffJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newGoalHandoffReport
+	t.Cleanup(func() { newGoalHandoffReport = restore })
+	newGoalHandoffReport = func(input gira.GoalHandoffInput) (gira.GoalHandoffReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 || input.Role != "reviewer" || input.Profile != "python" {
+			t.Fatalf("unexpected goal handoff input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		selected := gira.GoalNextCandidate{Repo: "StatPan/gira", Number: 573, Title: "Next", Category: "in_review", Reason: "review_or_finish_before_new_work", NextStep: "gira ticket review --repo StatPan/gira --ticket 573 --json"}
+		worker := gira.TicketHandoffReport{
+			Command:         "ticket handoff",
+			SchemaVersion:   gira.WorkerHandoffSchemaVersion,
+			Role:            "reviewer",
+			Profile:         "python",
+			Repo:            input.Repo.FullName(),
+			Issue:           573,
+			Title:           "Next",
+			Readiness:       gira.TicketReadinessReport{SchemaVersion: gira.TicketReadinessSchemaVersion, Readiness: "ready"},
+			NextAction:      "request_review",
+			NextSafeCommand: "gira ticket review --repo StatPan/gira --ticket 573 --json",
+			PrivateStorage:  true,
+			StorageNotice:   "private",
+		}
+		return gira.GoalHandoffReport{
+			Command:         "goal handoff",
+			SchemaVersion:   gira.GoalHandoffSchemaVersion,
+			Repo:            input.Repo.FullName(),
+			Role:            input.Role,
+			Profile:         input.Profile,
+			Goal:            gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 3.0", State: "open", Status: "Ready"},
+			GoalContext:     gira.GoalHandoffContext{Objective: "Ship goal delegation"},
+			SelectedTicket:  &selected,
+			WorkerHandoff:   &worker,
+			NextAction:      "handoff_child",
+			NextSafeCommand: worker.NextSafeCommand,
+			PrivateStorage:  true,
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "handoff", "521", "--repo", "StatPan/gira", "--role", "reviewer", "--profile", "python", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "goal handoff"`, `"schema_version": "goal-handoff/v1"`, `"worker_handoff"`, `"schema_version": "worker-handoff/v1"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("goal handoff JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestDispatchGoalJSONAllowsInferredGoal(t *testing.T) {
+	restore := newDispatchGoalPacket
+	t.Cleanup(func() { newDispatchGoalPacket = restore })
+	newDispatchGoalPacket = func(input gira.DispatchGoalInput) (gira.DispatchPacket, error) {
+		if input.Repo.FullName() != "StatPan/backlog" || input.Goal != 0 || input.Role != "implementer" || input.Profile != "python" {
+			t.Fatalf("unexpected dispatch goal input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return gira.DispatchPacket{
+			Command:       "dispatch goal",
+			SchemaVersion: gira.DispatchPacketSchemaVersion,
+			Source:        gira.DispatchSource{Kind: "goal", Repo: input.Repo.FullName(), Number: 521},
+			Role:          input.Role,
+			Profile:       input.Profile,
+			Authority: []gira.DispatchReference{
+				{Kind: "goal", Repo: input.Repo.FullName(), Number: 521, Title: "Dispatch goal"},
+			},
+			Instruction:     gira.DispatchInstruction{Objective: "Issue official AI work orders", SelectedWork: "StatPan/gira#573 Add dispatch"},
+			NextAction:      "handoff_child",
+			NextSafeCommand: "gira ticket start --repo StatPan/gira --ticket 573 --apply",
+			PrivateStorage:  true,
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"dispatch", "goal", "--repo", "StatPan/backlog", "--role", "implementer", "--profile", "python", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"command": "dispatch goal"`, `"schema_version": "dispatch-packet/v1"`, `"source"`, `"authority"`, `"selected_work": "StatPan/gira#573 Add dispatch"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("dispatch goal JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestDispatchGoalCompactJSONUsesInjectedBuilder(t *testing.T) {
+	restore := newDispatchGoalPacket
+	t.Cleanup(func() { newDispatchGoalPacket = restore })
+	newDispatchGoalPacket = func(input gira.DispatchGoalInput) (gira.DispatchPacket, error) {
+		if input.Repo.FullName() != "StatPan/backlog" || input.Goal != 0 {
+			t.Fatalf("unexpected dispatch compact input: %+v repo=%s", input, input.Repo.FullName())
+		}
+		return dispatchGoalCLITestPacket(input), nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"dispatch", "goal", "--repo", "StatPan/backlog", "--compact-json", "--context-budget", "1200"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"schema_version": "dispatch-compact/v1"`, `"selected_ticket"`, `"acceptance"`, `"next_safe_command"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("compact dispatch JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+	for _, leaked := range []string{"FULL TICKET BODY SHOULD NOT APPEAR", "ticket_body", "role_packet"} {
+		if strings.Contains(stdout.String(), leaked) {
+			t.Fatalf("compact dispatch JSON leaked %q:\n%s", leaked, stdout.String())
+		}
+	}
+}
+
+func TestDispatchGoalPromptUsesInjectedBuilder(t *testing.T) {
+	restore := newDispatchGoalPacket
+	t.Cleanup(func() { newDispatchGoalPacket = restore })
+	newDispatchGoalPacket = func(input gira.DispatchGoalInput) (gira.DispatchPacket, error) {
+		return dispatchGoalCLITestPacket(input), nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"dispatch", "goal", "--repo", "StatPan/backlog", "--prompt", "--context-budget", "1200"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"# Gira Dispatch", "## Selected Work", "## Acceptance", "## Next Safe Command"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("dispatch prompt missing %q:\n%s", want, stdout.String())
+		}
+	}
+	if len(stdout.String()) > 1200 || strings.Contains(stdout.String(), "FULL TICKET BODY SHOULD NOT APPEAR") {
+		t.Fatalf("dispatch prompt not compact enough len=%d:\n%s", len(stdout.String()), stdout.String())
+	}
+}
+
+func TestDispatchGoalRejectsMultipleOutputFormats(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"dispatch", "goal", "--repo", "StatPan/backlog", "--json", "--prompt"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "choose at most one output format") {
+		t.Fatalf("stderr missing output conflict:\n%s", stderr.String())
+	}
+}
+
+func dispatchGoalCLITestPacket(input gira.DispatchGoalInput) gira.DispatchPacket {
+	selected := gira.GoalNextCandidate{Repo: "StatPan/gira", Number: 573, Title: "Compact dispatch", State: "open", Status: "Ready", Category: "ready", URL: "https://github.com/StatPan/gira/issues/573"}
+	worker := gira.TicketHandoffReport{
+		SchemaVersion: gira.WorkerHandoffSchemaVersion,
+		Role:          input.Role,
+		Profile:       input.Profile,
+		Repo:          "StatPan/gira",
+		Issue:         573,
+		Title:         "Compact dispatch",
+		Readiness:     gira.TicketReadinessReport{SchemaVersion: gira.TicketReadinessSchemaVersion, Readiness: "ready"},
+		WorkOrder: gira.TicketHandoffWorkOrder{
+			Goal:       "Reduce context waste",
+			Scope:      strings.Repeat("compact scope ", 200),
+			Acceptance: []string{"compact output omits full ticket body", "prompt fits budget"},
+			TicketBody: "FULL TICKET BODY SHOULD NOT APPEAR",
+		},
+		RequiredChecks:       []string{"go test ./..."},
+		EvidenceExpectations: []string{"compact output includes selected work"},
+		NextSafeCommand:      "gira ticket start --repo StatPan/gira --ticket 573 --apply",
+	}
+	handoff := gira.GoalHandoffReport{
+		Repo:            input.Repo.FullName(),
+		Role:            input.Role,
+		Profile:         input.Profile,
+		Goal:            gira.GoalStatusIssue{Number: 521, Title: "Dispatch goal", State: "open", Status: "Ready"},
+		GoalContext:     gira.GoalHandoffContext{Objective: "Reduce token waste", StopConditions: []string{"unclear selected work"}},
+		GoalStatus:      gira.GoalStatusReport{Counts: map[string]int{"ready": 1, "total": 1}, RemainingAutonomousWork: 1},
+		SelectedTicket:  &selected,
+		WorkerHandoff:   &worker,
+		NextAction:      "handoff_child",
+		NextSafeCommand: worker.NextSafeCommand,
+	}
+	return gira.DispatchPacket{
+		Command:         "dispatch goal",
+		SchemaVersion:   gira.DispatchPacketSchemaVersion,
+		Source:          gira.DispatchSource{Kind: "goal", Repo: input.Repo.FullName(), Number: 521},
+		Role:            input.Role,
+		Profile:         input.Profile,
+		Authority:       []gira.DispatchReference{{Kind: "goal", Repo: input.Repo.FullName(), Number: 521}},
+		References:      []gira.DispatchReference{{Kind: "selected_ticket_issue", Repo: "StatPan/gira", Number: 573}},
+		Instruction:     gira.DispatchInstruction{Objective: "Reduce token waste", SelectedWork: "StatPan/gira#573 Compact dispatch", AllowedActions: []string{"Execute only selected child ticket."}, StopConditions: []string{"unclear selected work"}, EvidenceRequired: []string{"go test ./..."}},
+		GoalHandoff:     &handoff,
+		WorkerHandoff:   &worker,
+		NextAction:      "handoff_child",
+		NextSafeCommand: worker.NextSafeCommand,
+		PrivateStorage:  true,
 	}
 }
 
@@ -6972,6 +7266,71 @@ func TestExportDashboardCommandRequiresRepoOrConfig(t *testing.T) {
 	}
 }
 
+func TestReportWBSCommandRendersCSV(t *testing.T) {
+	restoreClient, restoreNow := newWBSReportClient, reportNow
+	t.Cleanup(func() {
+		newWBSReportClient = restoreClient
+		reportNow = restoreNow
+	})
+	newWBSReportClient = func(repo gira.RepoRef) gira.WBSReportClient {
+		return &cliFakeWBSReportClient{
+			issues: []gira.WBSRawIssue{
+				{IssueNumber: 10, Title: "Planning epic", State: "open", Body: "Tracks #11", Labels: []string{"type:epic", "status:ready"}, Milestone: "M1"},
+				{IssueNumber: 11, Title: "Schedule table", State: "open", Labels: []string{"type:task", "status:ready"}, Milestone: "M1"},
+			},
+			milestones: []gira.DashboardRawMilestone{{MilestoneNumber: 1, Title: "M1", State: "open", DueOn: strPtr("2026-07-01T00:00:00Z")}},
+		}
+	}
+	reportNow = func() time.Time {
+		return time.Date(2026, 6, 18, 9, 0, 0, 0, time.UTC)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"report", "wbs", "--repo", "StatPan/gira", "--csv"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.HasPrefix(stdout.String(), "wbs_id,parent_id,level,kind,repo,issue,title,state,status,priority,owner,milestone,start_date,target_date,progress,children,source,url\n") {
+		t.Fatalf("stdout missing CSV header:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "1.1,1,2,task,StatPan/gira,11,Schedule table") {
+		t.Fatalf("stdout missing child row:\n%s", stdout.String())
+	}
+}
+
+func TestReportWBSCommandWritesBundle(t *testing.T) {
+	restoreClient, restoreNow := newWBSReportClient, reportNow
+	t.Cleanup(func() {
+		newWBSReportClient = restoreClient
+		reportNow = restoreNow
+	})
+	newWBSReportClient = func(repo gira.RepoRef) gira.WBSReportClient {
+		return &cliFakeWBSReportClient{
+			issues: []gira.WBSRawIssue{
+				{IssueNumber: 10, Title: "Planning epic", State: "open", Labels: []string{"type:epic", "status:ready"}},
+			},
+		}
+	}
+	reportNow = func() time.Time {
+		return time.Date(2026, 6, 18, 9, 0, 0, 0, time.UTC)
+	}
+
+	outputRoot := filepath.Join(t.TempDir(), "wbs")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"report", "wbs", "--repo", "StatPan/gira", "--format", "bundle", "--output", outputRoot}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "wbs report bundle written") {
+		t.Fatalf("stdout missing bundle confirmation:\n%s", stdout.String())
+	}
+	for _, rel := range []string{"index.html", "csv/wbs_items.csv", "derived/wbs_tree.json"} {
+		if _, err := os.Stat(filepath.Join(outputRoot, rel)); err != nil {
+			t.Fatalf("expected artifact %s: %v", rel, err)
+		}
+	}
+}
+
 func TestExportDashboardCommandRejectsInvalidRepoFormat(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"export", "dashboard", "--repo", "bad-format", "--dry-run"}, &stdout, &stderr)
@@ -7154,6 +7513,87 @@ func TestExportDashboardApplyWritesArtifactsAndJsonOnlyStdout(t *testing.T) {
 	for _, relativePath := range expected {
 		if _, err := os.Stat(filepath.Join(outputRoot, relativePath)); err != nil {
 			t.Fatalf("expected exported file %q: %v", relativePath, err)
+		}
+	}
+}
+
+func TestReportReleaseNotesCommandRendersMarkdown(t *testing.T) {
+	restoreClient, restoreNow := newReleaseNotesClient, reportNow
+	t.Cleanup(func() {
+		newReleaseNotesClient = restoreClient
+		reportNow = restoreNow
+	})
+	newReleaseNotesClient = func(repo gira.RepoRef) gira.ReleaseNotesClient {
+		return &cliFakeReleaseNotesClient{
+			issues: []gira.ReleaseNotesIssue{
+				{Number: 10, Title: "Add export button", State: "closed", Labels: []string{"type:story"}, Milestone: "v2.1.0", URL: "u10"},
+			},
+			prs:        []gira.ReleaseNotesPullRequest{{Number: 100, Title: "Export button", Body: "Closes #10", URL: "p100"}},
+			milestones: []gira.DashboardRawMilestone{{MilestoneNumber: 1, Title: "v2.1.0", State: "closed"}},
+		}
+	}
+	reportNow = func() time.Time {
+		return time.Date(2026, 6, 18, 9, 0, 0, 0, time.UTC)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"report", "release-notes", "--repo", "StatPan/gira", "--milestone", "v2.1.0", "--md"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "# Release Notes: v2.1.0") || !strings.Contains(stdout.String(), "Add export button (#10 via PR #100)") {
+		t.Fatalf("stdout missing markdown release notes:\n%s", stdout.String())
+	}
+}
+
+func TestReportReleaseNotesCommandRequiresMilestone(t *testing.T) {
+	restoreClient := newReleaseNotesClient
+	t.Cleanup(func() {
+		newReleaseNotesClient = restoreClient
+	})
+	newReleaseNotesClient = func(repo gira.RepoRef) gira.ReleaseNotesClient {
+		return &cliFakeReleaseNotesClient{}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"report", "release-notes", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "--milestone is required") {
+		t.Fatalf("stderr missing milestone requirement:\n%s", stderr.String())
+	}
+}
+
+func TestReportReleaseNotesCommandWritesBundle(t *testing.T) {
+	restoreClient, restoreNow := newReleaseNotesClient, reportNow
+	t.Cleanup(func() {
+		newReleaseNotesClient = restoreClient
+		reportNow = restoreNow
+	})
+	newReleaseNotesClient = func(repo gira.RepoRef) gira.ReleaseNotesClient {
+		return &cliFakeReleaseNotesClient{
+			issues:     []gira.ReleaseNotesIssue{{Number: 10, Title: "Add export button", State: "closed", Labels: []string{"type:story"}, Milestone: "v2.1.0"}},
+			prs:        []gira.ReleaseNotesPullRequest{{Number: 100, Body: "Closes #10"}},
+			milestones: []gira.DashboardRawMilestone{{MilestoneNumber: 1, Title: "v2.1.0", State: "closed"}},
+		}
+	}
+	reportNow = func() time.Time {
+		return time.Date(2026, 6, 18, 9, 0, 0, 0, time.UTC)
+	}
+
+	outputRoot := filepath.Join(t.TempDir(), "release-notes")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"report", "release-notes", "--repo", "StatPan/gira", "--milestone", "v2.1.0", "--format", "bundle", "--output", outputRoot}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "release notes bundle written") {
+		t.Fatalf("stdout missing bundle confirmation:\n%s", stdout.String())
+	}
+	for _, rel := range []string{"index.html", "release-notes.md", "derived/release_notes.json", "csv/release_items.csv"} {
+		if _, err := os.Stat(filepath.Join(outputRoot, rel)); err != nil {
+			t.Fatalf("expected artifact %s: %v", rel, err)
 		}
 	}
 }
@@ -8907,6 +9347,80 @@ func TestReportWeeklyJSON(t *testing.T) {
 	}
 }
 
+func TestReportWeeklyBundle(t *testing.T) {
+	restoreDash := newDashboardExportClient
+	restoreReview := newReviewGateClient
+	restoreNow := reportNow
+	t.Cleanup(func() {
+		newDashboardExportClient = restoreDash
+		newReviewGateClient = restoreReview
+		reportNow = restoreNow
+	})
+	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	reportNow = func() time.Time { return now }
+	newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
+		return weeklyDashClient{repo: repo}
+	}
+	newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
+		return weeklyReviewClient{repo: repo}
+	}
+
+	outputRoot := filepath.Join(t.TempDir(), "weekly")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"report", "weekly", "--repo", "StatPan/gira", "--format", "bundle", "--output", outputRoot}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	for _, rel := range []string{"index.html", "weekly.md", "derived/weekly_report.json", "csv/weekly_exceptions.csv"} {
+		if _, err := os.Stat(filepath.Join(outputRoot, rel)); err != nil {
+			t.Fatalf("missing weekly bundle artifact %s", rel)
+		}
+	}
+}
+
+func TestReportProjectDocuments(t *testing.T) {
+	restoreDash := newDashboardExportClient
+	restoreReview := newReviewGateClient
+	restoreNow := reportNow
+	t.Cleanup(func() {
+		newDashboardExportClient = restoreDash
+		newReviewGateClient = restoreReview
+		reportNow = restoreNow
+	})
+	now := time.Date(2026, 6, 18, 0, 0, 0, 0, time.UTC)
+	reportNow = func() time.Time { return now }
+	newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
+		return weeklyDashClient{
+			repo: repo,
+			issues: []gira.DashboardRawIssue{
+				{IssueNumber: 10, Title: "Closed feature", State: "closed", Labels: []string{"type:feature", "qa"}, UpdatedAt: now.Add(-24 * time.Hour).Format(time.RFC3339), Milestone: "v2.5.0", URL: "https://example/issues/10"},
+				{IssueNumber: 11, Title: "Blocked task", State: "open", Labels: []string{"blocked"}, UpdatedAt: now.Add(-20 * 24 * time.Hour).Format(time.RFC3339), Milestone: "v2.5.0", URL: "https://example/issues/11"},
+			},
+			milestones: []gira.DashboardRawMilestone{{Title: "v2.5.0", State: "open", OpenIssues: 1, ClosedIssues: 1}},
+		}
+	}
+	newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
+		return weeklyReviewClient{repo: repo, prs: []gira.ReviewPR{{Number: 20, Title: "Open PR", Body: "Fixes #11", URL: "https://example/pr/20", CheckStatus: "pending", UpdatedAt: now.Add(-48 * time.Hour).Format(time.RFC3339)}}}
+	}
+
+	cases := [][]string{
+		{"report", "milestone", "--repo", "StatPan/gira", "--milestone", "v2.5.0", "--json"},
+		{"report", "backlog-health", "--repo", "StatPan/gira", "--csv"},
+		{"report", "delivery-status", "--repo", "StatPan/gira", "--format", "md"},
+		{"report", "qa-checklist", "--repo", "StatPan/gira", "--milestone", "v2.5.0", "--format", "html"},
+	}
+	for _, args := range cases {
+		var stdout, stderr bytes.Buffer
+		code := Run(args, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("Run(%v) exit code=%d stderr=%s", args, code, stderr.String())
+		}
+		if stdout.Len() == 0 {
+			t.Fatalf("Run(%v) produced no output", args)
+		}
+	}
+}
+
 func TestReviewGateFailsWhenChecksFail(t *testing.T) {
 	original := reviewGateRunner
 	t.Cleanup(func() { reviewGateRunner = original })
@@ -9064,8 +9578,9 @@ func TestReleaseReadinessJSON(t *testing.T) {
 }
 
 type weeklyDashClient struct {
-	repo   gira.RepoRef
-	issues []gira.DashboardRawIssue
+	repo       gira.RepoRef
+	issues     []gira.DashboardRawIssue
+	milestones []gira.DashboardRawMilestone
 }
 
 func (c weeklyDashClient) Repo() gira.RepoRef                             { return c.repo }
@@ -9073,7 +9588,9 @@ func (c weeklyDashClient) FetchIssues() ([]gira.DashboardRawIssue, error) { retu
 func (c weeklyDashClient) FetchPullRequests() ([]gira.DashboardRawPullRequest, error) {
 	return nil, nil
 }
-func (c weeklyDashClient) FetchMilestones() ([]gira.DashboardRawMilestone, error) { return nil, nil }
+func (c weeklyDashClient) FetchMilestones() ([]gira.DashboardRawMilestone, error) {
+	return c.milestones, nil
+}
 func (c weeklyDashClient) FetchProjectSnapshot() (gira.ProjectSyncSnapshot, error) {
 	return gira.ProjectSyncSnapshot{}, nil
 }
@@ -9082,6 +9599,42 @@ func (c weeklyDashClient) FetchTransitionSnapshot() (gira.ProjectTransitionSnaps
 }
 func (c weeklyDashClient) FetchCapabilities() (gira.ProjectCapabilityReport, error) {
 	return gira.ProjectCapabilityReport{}, nil
+}
+
+type cliFakeWBSReportClient struct {
+	issues          []gira.WBSRawIssue
+	milestones      []gira.DashboardRawMilestone
+	projectSnapshot gira.ProjectSyncSnapshot
+}
+
+func (c *cliFakeWBSReportClient) FetchIssues() ([]gira.WBSRawIssue, error) {
+	return c.issues, nil
+}
+
+func (c *cliFakeWBSReportClient) FetchMilestones() ([]gira.DashboardRawMilestone, error) {
+	return c.milestones, nil
+}
+
+func (c *cliFakeWBSReportClient) FetchProjectSnapshot() (gira.ProjectSyncSnapshot, error) {
+	return c.projectSnapshot, nil
+}
+
+type cliFakeReleaseNotesClient struct {
+	issues     []gira.ReleaseNotesIssue
+	prs        []gira.ReleaseNotesPullRequest
+	milestones []gira.DashboardRawMilestone
+}
+
+func (c *cliFakeReleaseNotesClient) FetchIssues() ([]gira.ReleaseNotesIssue, error) {
+	return c.issues, nil
+}
+
+func (c *cliFakeReleaseNotesClient) FetchMergedPRs() ([]gira.ReleaseNotesPullRequest, error) {
+	return c.prs, nil
+}
+
+func (c *cliFakeReleaseNotesClient) FetchMilestones() ([]gira.DashboardRawMilestone, error) {
+	return c.milestones, nil
 }
 
 type weeklyReviewClient struct {

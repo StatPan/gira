@@ -63,15 +63,16 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
-	if input.Goal <= 0 {
-		return GoalStatusReport{}, fmt.Errorf("goal must be > 0")
+	goalNumber, _, err := ResolveGoalNumber(input.Repo, input.Goal, runner)
+	if err != nil {
+		return GoalStatusReport{}, err
 	}
-	goal, err := fetchDevIssue(input.Repo, input.Goal, runner)
+	goal, err := fetchDevIssue(input.Repo, goalNumber, runner)
 	if err != nil {
 		return GoalStatusReport{}, err
 	}
 	if goal.IsPR {
-		return GoalStatusReport{}, fmt.Errorf("goal #%d resolves to a pull request", input.Goal)
+		return GoalStatusReport{}, fmt.Errorf("goal #%d resolves to a pull request", goalNumber)
 	}
 	status := displayStatus(managedStatusFromLabels(goal.Labels))
 	report := GoalStatusReport{

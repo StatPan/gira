@@ -226,6 +226,70 @@ func CoreCommandSpecs() []CommandSpec {
 			Adapter: AdapterCommandCapability{Class: AdapterCapabilityApplyMutation, MutationBoundary: "delegates to ticket start for a handoff-safe queue item; --dry-run previews selection, handoff readiness, and ticket start", JSONSupport: JSONSupportStable},
 		},
 		{
+			Path:    []string{"dispatch", "goal"},
+			Summary: "Build an official dispatch packet from a goal issue, goal handoff, and next safe child ticket worker handoff.",
+			Usage:   "gira dispatch goal [GOAL] [--repo OWNER/REPO] [--role implementer] [--profile default] [--json|--compact-json|--prompt]",
+			Since:   "v2.4.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional; inferred when omitted."},
+				{Name: "--role", Summary: "Handoff role: planner, implementer, or reviewer. Default: implementer."},
+				{Name: "--profile", Summary: "Handoff profile: default or python. Default: default."},
+				{Name: "--json", Summary: "Emit stable dispatch-packet/v1 JSON."},
+				{Name: "--compact-json", Summary: "Emit compact dispatch-compact/v1 JSON without full issue bodies or role packets."},
+				{Name: "--prompt", Summary: "Emit a compact prompt for direct LLM handoff."},
+				{Name: "--context-budget", Summary: "Maximum compact context size in characters. Default: 12000."},
+			},
+			Docs:        []string{"docs/dispatch-operating-model.md", "docs/dispatch-reflection.md", "docs/goal-operating-model.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "quickstart"},
+			Examples: []CommandExample{
+				{Summary: "Build a goal dispatch packet for an implementer", Command: "gira dispatch goal --repo OWNER/backlog --role implementer --json"},
+				{Summary: "Build a compact LLM handoff prompt", Command: "gira dispatch goal --repo OWNER/backlog --prompt --context-budget 8000"},
+			},
+		},
+		{
+			Path:    []string{"pm", "spec"},
+			Summary: "Render a durable PM state and worker-ready task packet from raw intent.",
+			Usage:   "gira pm spec [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode plan] [--json]",
+			Since:   "v2.5.0",
+			Flags: []FlagSpec{
+				{Name: "--title", Summary: "Task title; defaults to the first non-empty intent line."},
+				{Name: "--repo", Summary: "Optional target GitHub repo in OWNER/REPO format."},
+				{Name: "--intent", Summary: "Raw product/development intent."},
+				{Name: "--from-file", Summary: "Read raw intent from file, or '-' for stdin."},
+				{Name: "--worker-mode", Summary: "Suggested worker mode: research, plan, implement, review, fix_review, or pm_qa."},
+				{Name: "--json", Summary: "Emit stable gira-pm-task-packet/v1 JSON with Markdown embedded."},
+			},
+			Docs:        []string{"docs/pm-skill.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "quickstart"},
+			Examples: []CommandExample{
+				{Summary: "Render a PM task packet from stdin", Command: "gira pm spec --repo OWNER/app --from-file - > pm-task.md"},
+				{Summary: "Create a ticket from a rendered packet", Command: "gira ticket new --repo OWNER/app --title \"TITLE\" --body-file pm-task.md --type task --dry-run"},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Local rendering only; does not call GitHub or mutate files."},
+		},
+		{
+			Path:    []string{"pm", "qa"},
+			Summary: "Render a PM acceptance QA prompt from task-local PM state and PR evidence.",
+			Usage:   "gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]",
+			Since:   "v2.5.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--ticket", Summary: "Ticket number."},
+				{Name: "--issue", Summary: "Compatibility alias for --ticket."},
+				{Name: "--pr", Summary: "Explicit PR number."},
+				{Name: "--diff-summary", Summary: "Include changed files and diff stat."},
+				{Name: "--include-diff", Summary: "Include full diff when used with --diff-summary."},
+				{Name: "--json", Summary: "Emit stable gira-pm-qa/v1 JSON with prompt embedded."},
+			},
+			Docs:        []string{"docs/pm-skill.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "quickstart"},
+			Examples: []CommandExample{
+				{Summary: "Render PM acceptance QA for a ticket PR", Command: "gira pm qa --repo OWNER/app --ticket 123 --diff-summary"},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Reads GitHub issue and PR context; does not mutate GitHub."},
+		},
+		{
 			Path:    []string{"completion"},
 			Summary: "Generate static shell completion scripts for common commands, subcommands, and flags.",
 			Usage:   "gira completion bash|zsh|fish",
@@ -292,13 +356,45 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"goal", "new"},
+			Summary: "Create a Goal Mode issue with objective, scope, autonomy, quality, stop, and child-ticket planning sections.",
+			Usage:   "gira goal new \"Title\" --dry-run|--apply [--repo OWNER/REPO] [--objective TEXT] [--scope TEXT] [--json]",
+			Since:   "v2.4.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--title", Summary: "Goal title. Can also be positional."},
+				{Name: "--objective", Summary: "Durable goal outcome. Defaults to the title."},
+				{Name: "--direction", Summary: "Strategic guidance, priorities, and tradeoffs."},
+				{Name: "--scope", Summary: "Included work, target repos, milestones, and explicit non-goals."},
+				{Name: "--autonomy", Summary: "Agent lane and permission policy."},
+				{Name: "--decomposition", Summary: "Semicolon-separated child planning notes."},
+				{Name: "--quality-bar", Summary: "Semicolon-separated verification, review, docs, or release evidence requirements."},
+				{Name: "--stop-condition", Summary: "Semicolon-separated conditions that require human input."},
+				{Name: "--type", Summary: "Goal issue type label: epic or goal. Default: epic."},
+				{Name: "--priority", Summary: "Priority label: p0, p1, p2, or p3."},
+				{Name: "--label", Summary: "Additional existing repo label. Repeatable or comma-separated."},
+				{Name: "--body", Summary: "Full goal issue body. Overrides structured fields."},
+				{Name: "--body-file", Summary: "Read full goal issue body from a file or - for stdin."},
+				{Name: "--milestone", Summary: "Milestone title."},
+				{Name: "--dry-run", Summary: "Preview issue payload and labels without mutation."},
+				{Name: "--apply", Summary: "Create the goal issue."},
+				{Name: "--json", Summary: "Emit stable goal-new-report/v1 JSON."},
+			},
+			Docs:        []string{"docs/goal-operating-model.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "ticket"},
+			Examples: []CommandExample{
+				{Summary: "Preview a new goal", Command: "gira goal new \"Ship Goal Mode\" --repo OWNER/app --objective \"Make goal tracking executable\" --scope \"CLI goal commands\" --decomposition \"Add goal new;Update docs\" --dry-run --json"},
+				{Summary: "Create a reviewed goal issue", Command: "gira goal new \"Ship Goal Mode\" --repo OWNER/app --body-file goal.md --apply"},
+			},
+		},
+		{
 			Path:    []string{"goal", "status"},
 			Summary: "Summarize a goal issue, child ticket graph, blockers, and next safe action.",
 			Usage:   "gira goal status [GOAL] [--repo OWNER/REPO] [--json]",
 			Since:   "v1.17.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
-				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional."},
+				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional; inferred when omitted."},
 				{Name: "--json", Summary: "Emit stable goal-status/v1 JSON."},
 			},
 			Docs:        []string{"docs/goal-operating-model.md", "docs-site/command-reference.md"},
@@ -314,7 +410,7 @@ func CoreCommandSpecs() []CommandSpec {
 			Since:   "v2.1.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
-				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional."},
+				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional; inferred when omitted."},
 				{Name: "--json", Summary: "Emit stable goal-dossier/v1 JSON."},
 				{Name: "--html", Summary: "Write a static local HTML report."},
 				{Name: "--output", Summary: "Output path for --html."},
@@ -333,7 +429,7 @@ func CoreCommandSpecs() []CommandSpec {
 			Since:   "v1.17.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
-				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional."},
+				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional; inferred when omitted."},
 				{Name: "--dry-run", Summary: "Preview proposed child tickets, including target_repo, without mutation."},
 				{Name: "--apply", Summary: "Create reviewed child tickets in their target repos from the proposed plan."},
 				{Name: "--json", Summary: "Emit stable goal-plan/v1 JSON."},
@@ -352,7 +448,7 @@ func CoreCommandSpecs() []CommandSpec {
 			Since:   "v1.17.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
-				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional."},
+				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional; inferred when omitted."},
 				{Name: "--json", Summary: "Emit stable goal-next/v1 JSON."},
 			},
 			Docs:        []string{"docs/goal-operating-model.md", "docs-site/command-reference.md"},
@@ -362,13 +458,31 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"goal", "handoff"},
+			Summary: "Build a goal-level LLM handoff that includes goal context and the next safe child ticket worker packet.",
+			Usage:   "gira goal handoff [GOAL] [--repo OWNER/REPO] [--role implementer] [--profile default] [--json]",
+			Since:   "v2.4.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional; inferred when omitted."},
+				{Name: "--role", Summary: "Handoff role: planner, implementer, or reviewer. Default: implementer."},
+				{Name: "--profile", Summary: "Handoff profile: default or python. Default: default."},
+				{Name: "--json", Summary: "Emit stable goal-handoff/v1 JSON with worker-handoff/v1 embedded when a child is selected."},
+			},
+			Docs:        []string{"docs/goal-operating-model.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"agent", "ticket"},
+			Examples: []CommandExample{
+				{Summary: "Build an implementer handoff for the next goal child", Command: "gira goal handoff 521 --repo OWNER/app --role implementer --json"},
+			},
+		},
+		{
 			Path:    []string{"goal", "finish"},
 			Summary: "Preview goal finish readiness, then post receipts and close ready goals or preserve human-review handoffs.",
 			Usage:   "gira goal finish [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]",
 			Since:   "v1.17.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
-				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional."},
+				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional; inferred when omitted."},
 				{Name: "--dry-run", Summary: "Preview readiness and receipt without mutation."},
 				{Name: "--apply", Summary: "Apply an explicit done close or human_review handoff mutation."},
 				{Name: "--terminal", Summary: "Explicit terminal recommendation override for apply: done, human_review, blocked, superseded, or abandoned."},
@@ -378,6 +492,173 @@ func CoreCommandSpecs() []CommandSpec {
 			GuideTopics: []string{"agent", "ticket"},
 			Examples: []CommandExample{
 				{Summary: "Preview goal finish evidence", Command: "gira goal finish 521 --repo OWNER/app --dry-run --json"},
+			},
+		},
+		{
+			Path:    []string{"report", "weekly"},
+			Summary: "Build a weekly PM cockpit report with deterministic KPIs and top exceptions.",
+			Usage:   "gira report weekly [--repo OWNER/REPO] [--format text|md|json|csv|html|bundle] [--output PATH]",
+			Since:   "v2.5.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--format", Summary: "Output format: text, md, json, csv, html, or bundle."},
+				{Name: "--output", Summary: "Output path for md/csv/html, or output root for bundle."},
+				{Name: "--json", Summary: "Emit stable weekly-report/v1alpha1 JSON."},
+				{Name: "--md", Summary: "Emit Markdown report."},
+				{Name: "--csv", Summary: "Emit CSV rows."},
+				{Name: "--html", Summary: "Emit a static local HTML report."},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and PR inspection; optional output writes local report artifacts only."},
+			Docs:    []string{"README.md", "docs-site/command-reference.md"},
+			Examples: []CommandExample{
+				{Summary: "Render weekly PM cockpit markdown", Command: "gira report weekly --repo OWNER/app --format md"},
+				{Summary: "Write a weekly report bundle", Command: "gira report weekly --repo OWNER/app --format bundle --output out/weekly"},
+			},
+		},
+		{
+			Path:    []string{"report", "wbs"},
+			Summary: "Build a human-readable work breakdown report from GitHub epics, issues, milestones, and roadmap dates.",
+			Usage:   "gira report wbs [--repo OWNER/REPO] [--state open|closed|all] [--format text|json|csv|html|bundle] [--output PATH]",
+			Since:   "v2.5.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--state", Summary: "Issue state filter: open, closed, or all. Default: open."},
+				{Name: "--format", Summary: "Output format: text, json, csv, html, or bundle."},
+				{Name: "--output", Summary: "Output path for csv/html, or output root for bundle."},
+				{Name: "--json", Summary: "Emit stable wbs-report/v1alpha1 JSON."},
+				{Name: "--csv", Summary: "Emit WBS CSV rows."},
+				{Name: "--html", Summary: "Emit a static local HTML report."},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and roadmap inspection; optional output writes local report artifacts only."},
+			Docs:    []string{"README.md", "docs-site/command-reference.md"},
+			Examples: []CommandExample{
+				{Summary: "Render a terminal WBS summary", Command: "gira report wbs --repo OWNER/app"},
+				{Summary: "Write a shareable WBS report bundle", Command: "gira report wbs --repo OWNER/app --format bundle --output out/wbs"},
+			},
+		},
+		{
+			Path:    []string{"report", "release-notes"},
+			Summary: "Build human-readable release notes from milestone issues and merged PR closing evidence.",
+			Usage:   "gira report release-notes --repo OWNER/REPO --milestone TITLE [--format text|md|json|csv|html|bundle] [--output PATH]",
+			Since:   "v2.5.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--milestone", Summary: "Release milestone title to include."},
+				{Name: "--format", Summary: "Output format: text, md, json, csv, html, or bundle."},
+				{Name: "--output", Summary: "Output path for md/csv/html, or output root for bundle."},
+				{Name: "--json", Summary: "Emit stable release-notes-report/v1alpha1 JSON."},
+				{Name: "--md", Summary: "Emit Markdown release notes."},
+				{Name: "--csv", Summary: "Emit release item CSV rows."},
+				{Name: "--html", Summary: "Emit a static local HTML report."},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, merged PR, milestone, and closing-reference inspection; optional output writes local report artifacts only."},
+			Docs:    []string{"README.md", "docs-site/command-reference.md"},
+			Examples: []CommandExample{
+				{Summary: "Render release notes markdown", Command: "gira report release-notes --repo OWNER/app --milestone v2.1.0 --format md"},
+				{Summary: "Write a release notes bundle", Command: "gira report release-notes --repo OWNER/app --milestone v2.1.0 --format bundle --output out/release-notes"},
+			},
+		},
+		{
+			Path:    []string{"report", "changelog"},
+			Summary: "Build a changelog document from the same milestone and merged PR evidence as release notes.",
+			Usage:   "gira report changelog --repo OWNER/REPO --milestone TITLE [--format text|md|json|csv|html|bundle] [--output PATH]",
+			Since:   "v2.5.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--milestone", Summary: "Release milestone title to include."},
+				{Name: "--format", Summary: "Output format: text, md, json, csv, html, or bundle."},
+				{Name: "--output", Summary: "Output path for md/csv/html, or output root for bundle."},
+				{Name: "--json", Summary: "Emit stable release-notes-report/v1alpha1 JSON."},
+				{Name: "--md", Summary: "Emit Markdown changelog."},
+				{Name: "--csv", Summary: "Emit changelog CSV rows."},
+				{Name: "--html", Summary: "Emit a static local HTML report."},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, merged PR, milestone, and closing-reference inspection; optional output writes local report artifacts only."},
+			Docs:    []string{"README.md", "docs-site/command-reference.md"},
+			Examples: []CommandExample{
+				{Summary: "Render changelog markdown", Command: "gira report changelog --repo OWNER/app --milestone v2.1.0 --format md"},
+			},
+		},
+		{
+			Path:    []string{"report", "milestone"},
+			Summary: "Build a milestone progress report from GitHub milestone and issue evidence.",
+			Usage:   "gira report milestone --repo OWNER/REPO --milestone TITLE [--format text|md|json|csv|html|bundle] [--output PATH]",
+			Since:   "v2.5.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--milestone", Summary: "Milestone title to inspect."},
+				{Name: "--format", Summary: "Output format: text, md, json, csv, html, or bundle."},
+				{Name: "--output", Summary: "Output path for md/csv/html, or output root for bundle."},
+				{Name: "--json", Summary: "Emit stable project-report/v1alpha1 JSON."},
+				{Name: "--md", Summary: "Emit Markdown report."},
+				{Name: "--csv", Summary: "Emit CSV rows."},
+				{Name: "--html", Summary: "Emit a static local HTML report."},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and PR inspection; optional output writes local report artifacts only."},
+			Docs:    []string{"README.md", "docs-site/command-reference.md"},
+			Examples: []CommandExample{
+				{Summary: "Render milestone progress", Command: "gira report milestone --repo OWNER/app --milestone v2.1.0 --format md"},
+			},
+		},
+		{
+			Path:    []string{"report", "backlog-health"},
+			Summary: "Build a backlog health report from open issue status, age, labels, and planning evidence.",
+			Usage:   "gira report backlog-health [--repo OWNER/REPO] [--format text|md|json|csv|html|bundle] [--output PATH]",
+			Since:   "v2.5.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--format", Summary: "Output format: text, md, json, csv, html, or bundle."},
+				{Name: "--output", Summary: "Output path for md/csv/html, or output root for bundle."},
+				{Name: "--json", Summary: "Emit stable project-report/v1alpha1 JSON."},
+				{Name: "--md", Summary: "Emit Markdown report."},
+				{Name: "--csv", Summary: "Emit CSV rows."},
+				{Name: "--html", Summary: "Emit a static local HTML report."},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and PR inspection; optional output writes local report artifacts only."},
+			Docs:    []string{"README.md", "docs-site/command-reference.md"},
+			Examples: []CommandExample{
+				{Summary: "Render backlog health", Command: "gira report backlog-health --repo OWNER/app"},
+			},
+		},
+		{
+			Path:    []string{"report", "delivery-status"},
+			Summary: "Build a delivery status report from milestone progress, blockers, and PR readiness evidence.",
+			Usage:   "gira report delivery-status [--repo OWNER/REPO] [--format text|md|json|csv|html|bundle] [--output PATH]",
+			Since:   "v2.5.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--format", Summary: "Output format: text, md, json, csv, html, or bundle."},
+				{Name: "--output", Summary: "Output path for md/csv/html, or output root for bundle."},
+				{Name: "--json", Summary: "Emit stable project-report/v1alpha1 JSON."},
+				{Name: "--md", Summary: "Emit Markdown report."},
+				{Name: "--csv", Summary: "Emit CSV rows."},
+				{Name: "--html", Summary: "Emit a static local HTML report."},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and PR inspection; optional output writes local report artifacts only."},
+			Docs:    []string{"README.md", "docs-site/command-reference.md"},
+			Examples: []CommandExample{
+				{Summary: "Render delivery status", Command: "gira report delivery-status --repo OWNER/app --format md"},
+			},
+		},
+		{
+			Path:    []string{"report", "qa-checklist"},
+			Summary: "Build a QA checklist report from issue labels, open PR checks, review state, and closure-link evidence.",
+			Usage:   "gira report qa-checklist [--repo OWNER/REPO] [--milestone TITLE] [--format text|md|json|csv|html|bundle] [--output PATH]",
+			Since:   "v2.5.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--milestone", Summary: "Optional milestone title to scope issue checks."},
+				{Name: "--format", Summary: "Output format: text, md, json, csv, html, or bundle."},
+				{Name: "--output", Summary: "Output path for md/csv/html, or output root for bundle."},
+				{Name: "--json", Summary: "Emit stable project-report/v1alpha1 JSON."},
+				{Name: "--md", Summary: "Emit Markdown report."},
+				{Name: "--csv", Summary: "Emit CSV rows."},
+				{Name: "--html", Summary: "Emit a static local HTML report."},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and PR inspection; optional output writes local report artifacts only."},
+			Docs:    []string{"README.md", "docs-site/command-reference.md"},
+			Examples: []CommandExample{
+				{Summary: "Render milestone QA checklist", Command: "gira report qa-checklist --repo OWNER/app --milestone v2.1.0 --format md"},
 			},
 		},
 		{
@@ -905,6 +1186,12 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "queue take":
 			specs[i].Adapter = adapterApply("delegates to ticket start for a handoff-safe queue item; --dry-run previews selection, handoff readiness, and ticket start", JSONSupportStable)
+		case "dispatch goal":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "pm spec":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Local rendering only; does not call GitHub or mutate files."}
+		case "pm qa":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Reads GitHub issue and PR context; does not mutate GitHub."}
 		case "completion":
 			specs[i].Adapter = adapterRead(JSONSupportNone)
 		case "feature list":
@@ -913,6 +1200,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterRead(JSONSupportStable, "gira feat check")
 		case "feature for":
 			specs[i].Adapter = adapterRead(JSONSupportStable, "gira feat for")
+		case "goal new":
+			specs[i].Adapter = adapterApply("creates a GitHub issue with Goal Mode operating sections; --dry-run previews payload, labels, and approval evidence", JSONSupportStable)
 		case "goal status":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "goal report":
@@ -921,8 +1210,20 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterApply("creates linked child tickets from reviewed goal-plan proposals when run with --apply; --dry-run previews the same plan", JSONSupportStable)
 		case "goal next":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "goal handoff":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "goal finish":
 			specs[i].Adapter = adapterApply("posts an idempotent goal finish receipt; explicit --terminal done may normalize labels and close the goal, while explicit --terminal human_review preserves blocker handoff", JSONSupportStable)
+		case "report weekly":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and PR inspection; optional output writes local report artifacts only."}
+		case "report wbs":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and roadmap inspection; optional output writes local report artifacts only."}
+		case "report release-notes":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, merged PR, milestone, and closing-reference inspection; optional output writes local report artifacts only."}
+		case "report changelog":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, merged PR, milestone, and closing-reference inspection; optional output writes local report artifacts only."}
+		case "report milestone", "report backlog-health", "report delivery-status", "report qa-checklist":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and PR inspection; optional output writes local report artifacts only."}
 		case "stats repo":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "stats pulse":

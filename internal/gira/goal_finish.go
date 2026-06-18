@@ -100,9 +100,11 @@ func BuildGoalFinishReport(input GoalFinishInput, runner CommandRunner) (GoalFin
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
-	if input.Goal <= 0 {
-		return GoalFinishReport{}, fmt.Errorf("goal must be > 0")
+	goalNumber, _, err := ResolveGoalNumber(input.Repo, input.Goal, runner)
+	if err != nil {
+		return GoalFinishReport{}, err
 	}
+	input.Goal = goalNumber
 	if input.DryRun == input.Apply {
 		return GoalFinishReport{}, fmt.Errorf("exactly one of --dry-run or --apply is required")
 	}

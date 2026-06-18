@@ -28,6 +28,7 @@ type GoalNextReport struct {
 }
 
 type GoalNextCandidate struct {
+	Repo       string   `json:"repo,omitempty"`
 	Number     int      `json:"number"`
 	Title      string   `json:"title"`
 	State      string   `json:"state"`
@@ -180,29 +181,38 @@ func goalNextActionForChild(child GoalStatusChild) string {
 }
 
 func goalNextSafeCommand(repo RepoRef, child GoalStatusChild) string {
+	childRepo := goalNextChildRepo(repo, child)
 	switch child.Category {
 	case "ready":
-		return fmt.Sprintf("gira ticket start --repo %s --ticket %d --apply", repo.FullName(), child.Number)
+		return fmt.Sprintf("gira ticket start --repo %s --ticket %d --apply", childRepo.FullName(), child.Number)
 	case "in_progress":
 		if strings.TrimSpace(child.NextStep) != "" {
 			return normalizeGoalNextCommand(child.NextStep)
 		}
-		return fmt.Sprintf("gira ticket pr --repo %s --ticket %d --dry-run", repo.FullName(), child.Number)
+		return fmt.Sprintf("gira ticket pr --repo %s --ticket %d --dry-run", childRepo.FullName(), child.Number)
 	case "in_review":
 		if strings.TrimSpace(child.NextStep) != "" {
 			return normalizeGoalNextCommand(child.NextStep)
 		}
-		return fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), child.Number)
+		return fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", childRepo.FullName(), child.Number)
 	default:
 		if strings.TrimSpace(child.NextStep) != "" {
 			return normalizeGoalNextCommand(child.NextStep)
 		}
-		return fmt.Sprintf("gira ticket status --repo %s --ticket %d --json", repo.FullName(), child.Number)
+		return fmt.Sprintf("gira ticket status --repo %s --ticket %d --json", childRepo.FullName(), child.Number)
 	}
+}
+
+func goalNextChildRepo(defaultRepo RepoRef, child GoalStatusChild) RepoRef {
+	if repo, err := ParseRepoRef(child.Repo); err == nil {
+		return repo
+	}
+	return defaultRepo
 }
 
 func goalNextCandidateFromChild(child GoalStatusChild, reason string, nextStep string) GoalNextCandidate {
 	return GoalNextCandidate{
+		Repo:       child.Repo,
 		Number:     child.Number,
 		Title:      child.Title,
 		State:      child.State,

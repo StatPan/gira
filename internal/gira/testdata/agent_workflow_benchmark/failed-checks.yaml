@@ -24,6 +24,9 @@ status:
   pr_number: 204
   pr_state: open
   checks_status: failed
+  checks:
+    - name: ci
+      state: failing
   review_status: review_required
   next_action: revise_pr
   blockers: [checks_failed]

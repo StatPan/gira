@@ -159,3 +159,9 @@ Each fixture declares normalized GitHub-like evidence plus expected workflow dec
 - blockers.
 
 The suite is intentionally local and deterministic. It does not call GitHub, execute model providers, or score individual humans or agents.
+
+## Operational Contract Gate
+
+The benchmark fixtures also pass through the `ticket-status/v1` operational contract gate described in [Operational Contract Gates](operational-contract-gates.md).
+
+This keeps the benchmark from asserting queue decisions from impossible input states. For example, a fixture that says checks passed for an available PR must include check evidence, and finish-ready fixtures must include closing-reference evidence.

@@ -24,6 +24,9 @@ status:
   pr_number: 203
   pr_state: open
   checks_status: passed
+  checks:
+    - name: ci
+      state: passing
   review_status: review_required
   next_action: request_review
 expected:

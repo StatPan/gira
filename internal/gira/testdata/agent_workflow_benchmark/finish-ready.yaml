@@ -24,6 +24,9 @@ status:
   pr_number: 205
   pr_state: open
   checks_status: passed
+  checks:
+    - name: ci
+      state: passing
   review_status: approved
   next_action: finish_ticket
   finish_ready: true

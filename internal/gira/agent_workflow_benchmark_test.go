@@ -21,10 +21,14 @@ type agentWorkflowBenchmarkFixture struct {
 		Body   string   `yaml:"body"`
 	} `yaml:"issue"`
 	Status struct {
-		Status       string   `yaml:"status"`
-		PRNumber     int      `yaml:"pr_number"`
-		PRState      string   `yaml:"pr_state"`
-		ChecksStatus string   `yaml:"checks_status"`
+		Status       string `yaml:"status"`
+		PRNumber     int    `yaml:"pr_number"`
+		PRState      string `yaml:"pr_state"`
+		ChecksStatus string `yaml:"checks_status"`
+		Checks       []struct {
+			Name  string `yaml:"name"`
+			State string `yaml:"state"`
+		} `yaml:"checks"`
 		ReviewStatus string   `yaml:"review_status"`
 		NextAction   string   `yaml:"next_action"`
 		FinishReady  bool     `yaml:"finish_ready"`
@@ -57,6 +61,9 @@ func TestAgentWorkflowCompletionBenchmarkFixtures(t *testing.T) {
 				t.Fatalf("ticket readiness = %s, want %s; findings=%+v", readiness.Readiness, fixture.Expected.TicketReadiness, readiness.Findings)
 			}
 			status := benchmarkStatusFromFixture(fixture, readiness)
+			if findings := ValidateWorkStatusContract(status); len(findings) > 0 {
+				t.Fatalf("operational contract findings = %+v", findings)
+			}
 			queues := BuildWorkspaceQueues(WorkspaceSummary{Name: "benchmark", Owner: "StatPan"}, []WorkStatusResult{status})
 			item, ok := benchmarkQueueItem(queues, fixture.Expected.Queue)
 			if !ok {
@@ -107,6 +114,9 @@ func benchmarkStatusFromFixture(fixture agentWorkflowBenchmarkFixture, readiness
 		ChecksStatus:    fixture.Status.ChecksStatus,
 		ReviewStatus:    fixture.Status.ReviewStatus,
 		TicketReadiness: &readiness,
+	}
+	for _, check := range fixture.Status.Checks {
+		status.Checks = append(status.Checks, DevPRCheck{Name: check.Name, State: check.State})
 	}
 	if fixture.Status.NextAction != "" {
 		status.NextAction = fixture.Status.NextAction

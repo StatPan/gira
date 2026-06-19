@@ -8,14 +8,28 @@ import (
 
 type devPRRunner struct {
 	outputs map[string][]byte
+	queues  map[string][]devPRRunResult
 	errs    map[string]error
 	calls   *[]string
+}
+
+type devPRRunResult struct {
+	out []byte
+	err error
 }
 
 func (r devPRRunner) Run(name string, args ...string) ([]byte, error) {
 	key := name + " " + strings.Join(args, " ")
 	if r.calls != nil {
 		*r.calls = append(*r.calls, key)
+	}
+	if queue := r.queues[key]; len(queue) > 0 {
+		next := queue[0]
+		r.queues[key] = queue[1:]
+		if next.err != nil {
+			return nil, next.err
+		}
+		return next.out, nil
 	}
 	if err, ok := r.errs[key]; ok {
 		return nil, err
@@ -145,4 +159,92 @@ func TestDevPRStatusRESTFirstMissingPRDoesNotFallBackToGraphQL(t *testing.T) {
 			t.Fatalf("empty REST timeline should not call GraphQL-heavy gh pr list: %v", calls)
 		}
 	}
+}
+
+func TestDevPRStatusUsesRESTSearchFallbackWhenTimelineUnavailable(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	calls := []string{}
+	runner := devPRRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/pulls -X GET -f state=all -f sort=updated -f direction=desc -f per_page=100": []byte(`[{"number":99},{"number":98}]`),
+		"gh api repos/StatPan/gira/pulls/99": []byte(`{
+			"number":99,
+			"title":"x",
+			"body":"Closes #60",
+			"state":"open",
+			"html_url":"https://github.com/StatPan/gira/pull/99",
+			"mergeable_state":"clean",
+			"head":{"ref":"issue-60-rest-fallback","sha":"abc123"},
+			"base":{"ref":"main"}
+		}`),
+		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                      []byte(`[{"state":"APPROVED","submitted_at":"2026-06-18T09:00:00Z"}]`),
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100": []byte(`{"check_runs":[{"name":"test","status":"completed","conclusion":"success"}]}`),
+		"gh api repos/StatPan/gira/commits/abc123/status":                            []byte(`{"statuses":[]}`),
+	}, errs: map[string]error{
+		"gh api repos/StatPan/gira/issues/60/timeline --paginate": fmt.Errorf("timeline unavailable"),
+	}, calls: &calls}
+	result, err := DevPRStatus(repo, 60, runner)
+	if err != nil {
+		t.Fatalf("DevPRStatus err: %v", err)
+	}
+	if !result.Ready || result.PRNumber != 99 || result.Binding.HeadRef != "issue-60-rest-fallback" {
+		t.Fatalf("unexpected REST search fallback status: %+v", result)
+	}
+	for _, call := range calls {
+		if strings.HasPrefix(call, "gh pr list ") {
+			t.Fatalf("REST search fallback should avoid GraphQL-heavy gh pr list: %v", calls)
+		}
+	}
+}
+
+func TestDevPRStatusRetriesRESTSearchAfterGraphQLRateLimit(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	calls := []string{}
+	restSearch := "gh api repos/StatPan/gira/pulls -X GET -f state=all -f sort=updated -f direction=desc -f per_page=100"
+	graphQLSearch := "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 60 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20"
+	runner := devPRRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/pulls/99": []byte(`{
+			"number":99,
+			"title":"x",
+			"body":"Closes #60",
+			"state":"open",
+			"html_url":"https://github.com/StatPan/gira/pull/99",
+			"mergeable_state":"clean",
+			"head":{"ref":"issue-60-rest-fallback","sha":"abc123"},
+			"base":{"ref":"main"}
+		}`),
+		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                      []byte(`[]`),
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100": []byte(`{"check_runs":[{"name":"test","status":"completed","conclusion":"success"}]}`),
+		"gh api repos/StatPan/gira/commits/abc123/status":                            []byte(`{"statuses":[]}`),
+	}, queues: map[string][]devPRRunResult{
+		restSearch: {
+			{err: fmt.Errorf("temporary REST list failure")},
+			{out: []byte(`[{"number":99}]`)},
+		},
+	}, errs: map[string]error{
+		"gh api repos/StatPan/gira/issues/60/timeline --paginate": fmt.Errorf("timeline unavailable"),
+		graphQLSearch: fmt.Errorf("GraphQL: API rate limit exceeded; quota insufficient"),
+	}, calls: &calls}
+	result, err := DevPRStatus(repo, 60, runner)
+	if err != nil {
+		t.Fatalf("DevPRStatus err: %v", err)
+	}
+	if !result.Ready || result.PRNumber != 99 {
+		t.Fatalf("unexpected GraphQL rate-limit fallback status: %+v", result)
+	}
+	if countString(calls, restSearch) != 2 {
+		t.Fatalf("REST search calls = %v, want retry after GraphQL rate limit; all calls=%v", countString(calls, restSearch), calls)
+	}
+	if countString(calls, graphQLSearch) != 1 {
+		t.Fatalf("GraphQL search calls = %v, want one; all calls=%v", countString(calls, graphQLSearch), calls)
+	}
+}
+
+func countString(values []string, want string) int {
+	count := 0
+	for _, value := range values {
+		if value == want {
+			count++
+		}
+	}
+	return count
 }

@@ -114,6 +114,10 @@ type restPull struct {
 	} `json:"base"`
 }
 
+type restPullListItem struct {
+	Number int `json:"number"`
+}
+
 type restReview struct {
 	State       string `json:"state"`
 	SubmittedAt string `json:"submitted_at"`
@@ -182,7 +186,16 @@ func DevPRStatus(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStat
 	if status, ok := devPRStatusRESTFirst(repo, issueNumber, runner); ok {
 		return status, nil
 	}
-	return devPRStatusGraphQLFallback(repo, issueNumber, runner)
+	if status, ok := devPRStatusRESTSearchFallback(repo, issueNumber, runner); ok {
+		return status, nil
+	}
+	status, err := devPRStatusGraphQLFallback(repo, issueNumber, runner)
+	if err != nil && isGraphQLRateLimitError(err) {
+		if restStatus, ok := devPRStatusRESTSearchFallback(repo, issueNumber, runner); ok {
+			return restStatus, nil
+		}
+	}
+	return status, err
 }
 
 func devPRStatusGraphQLFallback(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStatusResult, error) {
@@ -249,38 +262,73 @@ func devPRStatusRESTFirst(repo RepoRef, issueNumber int, runner CommandRunner) (
 		if !ok || !hasClosingKeyword(pr.Body, issueNumber) {
 			continue
 		}
-		result.PRNumber = pr.Number
-		result.PRURL = pr.HTMLURL
-		result.State = restPRState(pr)
-		result.Mergeable = strings.ToUpper(strings.TrimSpace(pr.MergeableState))
-		result.ReviewDecision = restPRReviewDecision(repo, pr.Number, pr.Base.Ref, runner)
-		result.IsDraft = pr.Draft
-		summary := prSummary{
-			Number:         pr.Number,
-			Title:          pr.Title,
-			Body:           pr.Body,
-			State:          result.State,
-			URL:            pr.HTMLURL,
-			ReviewDecision: result.ReviewDecision,
-			IsDraft:        pr.Draft,
-			MergeState:     result.Mergeable,
-			HeadRefName:    pr.Head.Ref,
-			BaseRefName:    pr.Base.Ref,
-		}
-		result.Binding = validateDevPRBinding(issueNumber, summary)
-		result.Blockers = append(result.Blockers, result.Binding.Blockers...)
-		if pr.Draft {
-			result.Blockers = append(result.Blockers, "draft")
-		}
-		if result.ReviewDecision == "CHANGES_REQUESTED" || result.ReviewDecision == "REVIEW_REQUIRED" {
-			result.Blockers = append(result.Blockers, "review")
-		}
-		result.Checks = restPRChecks(repo, pr.Head.SHA, runner)
-		result.Blockers = append(result.Blockers, devPRCheckBlockers(result.Checks)...)
-		result.Ready = len(result.Blockers) == 0
-		return result, true
+		return devPRStatusFromRESTPull(repo, issueNumber, pr, runner), true
 	}
 	return DevPRStatusResult{}, false
+}
+
+func devPRStatusRESTSearchFallback(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStatusResult, bool) {
+	out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/pulls", repo.FullName()), "-X", "GET", "-f", "state=all", "-f", "sort=updated", "-f", "direction=desc", "-f", "per_page=100")
+	if err != nil {
+		return DevPRStatusResult{}, false
+	}
+	var pulls []restPullListItem
+	if err := json.Unmarshal(out, &pulls); err != nil {
+		return DevPRStatusResult{}, false
+	}
+	for _, item := range pulls {
+		if item.Number <= 0 {
+			continue
+		}
+		pr, ok := fetchRESTPull(repo, item.Number, runner)
+		if !ok || !hasClosingKeyword(pr.Body, issueNumber) {
+			continue
+		}
+		return devPRStatusFromRESTPull(repo, issueNumber, pr, runner), true
+	}
+	return DevPRStatusResult{}, false
+}
+
+func devPRStatusFromRESTPull(repo RepoRef, issueNumber int, pr restPull, runner CommandRunner) DevPRStatusResult {
+	result := DevPRStatusResult{Repo: repo.FullName(), Issue: issueNumber, Blockers: []string{}}
+	result.PRNumber = pr.Number
+	result.PRURL = pr.HTMLURL
+	result.State = restPRState(pr)
+	result.Mergeable = strings.ToUpper(strings.TrimSpace(pr.MergeableState))
+	result.ReviewDecision = restPRReviewDecision(repo, pr.Number, pr.Base.Ref, runner)
+	result.IsDraft = pr.Draft
+	summary := prSummary{
+		Number:         pr.Number,
+		Title:          pr.Title,
+		Body:           pr.Body,
+		State:          result.State,
+		URL:            pr.HTMLURL,
+		ReviewDecision: result.ReviewDecision,
+		IsDraft:        pr.Draft,
+		MergeState:     result.Mergeable,
+		HeadRefName:    pr.Head.Ref,
+		BaseRefName:    pr.Base.Ref,
+	}
+	result.Binding = validateDevPRBinding(issueNumber, summary)
+	result.Blockers = append(result.Blockers, result.Binding.Blockers...)
+	if pr.Draft {
+		result.Blockers = append(result.Blockers, "draft")
+	}
+	if result.ReviewDecision == "CHANGES_REQUESTED" || result.ReviewDecision == "REVIEW_REQUIRED" {
+		result.Blockers = append(result.Blockers, "review")
+	}
+	result.Checks = restPRChecks(repo, pr.Head.SHA, runner)
+	result.Blockers = append(result.Blockers, devPRCheckBlockers(result.Checks)...)
+	result.Ready = len(result.Blockers) == 0
+	return result
+}
+
+func isGraphQLRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	value := strings.ToLower(err.Error())
+	return strings.Contains(value, "graphql") && (strings.Contains(value, "rate limit") || strings.Contains(value, "quota") || strings.Contains(value, "insufficient"))
 }
 
 func linkedPRNumbersFromIssueTimeline(repo RepoRef, issueNumber int, runner CommandRunner) ([]int, bool) {

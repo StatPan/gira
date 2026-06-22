@@ -14,11 +14,28 @@ import (
 const latestReleaseURL = "https://api.github.com/repos/StatPan/gira/releases/latest"
 
 type UpgradeReport struct {
-	Current  string `json:"current"`
-	Latest   string `json:"latest"`
-	Status   string `json:"status"`
-	Channel  string `json:"channel"`
-	NextStep string `json:"next_step"`
+	Current  string         `json:"current"`
+	Latest   string         `json:"latest"`
+	Status   string         `json:"status"`
+	Channel  string         `json:"channel"`
+	NextStep string         `json:"next_step"`
+	Notice   *UpgradeNotice `json:"notice,omitempty"`
+}
+
+type UpgradeNotice struct {
+	Kind      string `json:"kind"`
+	Version   string `json:"version"`
+	Status    string `json:"status"`
+	Message   string `json:"message,omitempty"`
+	StatePath string `json:"state_path,omitempty"`
+}
+
+type UpgradeOptions struct {
+	ChannelOverride string
+	ExecutablePath  string
+	Fetcher         LatestReleaseFetcher
+	NotifyOnce      bool
+	NoticeRoot      string
 }
 
 type LatestReleaseFetcher interface {
@@ -62,6 +79,11 @@ func (f GitHubLatestReleaseFetcher) LatestReleaseTag() (string, error) {
 }
 
 func BuildUpgradeReport(channelOverride string, executablePath string, fetcher LatestReleaseFetcher) (UpgradeReport, error) {
+	return BuildUpgradeReportWithOptions(UpgradeOptions{ChannelOverride: channelOverride, ExecutablePath: executablePath, Fetcher: fetcher})
+}
+
+func BuildUpgradeReportWithOptions(options UpgradeOptions) (UpgradeReport, error) {
+	fetcher := options.Fetcher
 	if fetcher == nil {
 		fetcher = GitHubLatestReleaseFetcher{}
 	}
@@ -70,17 +92,25 @@ func BuildUpgradeReport(channelOverride string, executablePath string, fetcher L
 	if err != nil {
 		return UpgradeReport{}, err
 	}
-	channel, err := ResolveUpgradeChannel(channelOverride, executablePath)
+	channel, err := ResolveUpgradeChannel(options.ChannelOverride, options.ExecutablePath)
 	if err != nil {
 		return UpgradeReport{}, err
 	}
-	return UpgradeReport{
+	report := UpgradeReport{
 		Current:  current,
 		Latest:   latest,
 		Status:   upgradeStatus(current, latest),
 		Channel:  channel,
 		NextStep: UpgradeNextStep(channel),
-	}, nil
+	}
+	if options.NotifyOnce {
+		notice, err := BuildUpgradeNotice(report, options.NoticeRoot)
+		if err != nil {
+			return UpgradeReport{}, err
+		}
+		report.Notice = notice
+	}
+	return report, nil
 }
 
 func ResolveUpgradeChannel(override string, executablePath string) (string, error) {
@@ -168,7 +198,13 @@ func UpgradeNextStep(channel string) string {
 }
 
 func FormatUpgradeReport(report UpgradeReport) string {
-	return fmt.Sprintf("upgrade: gira\ncurrent: %s\nlatest:  %s\nstatus:  %s\nchannel: %s\n\nnext step:\n  %s\n", report.Current, report.Latest, report.Status, report.Channel, report.NextStep)
+	var b strings.Builder
+	fmt.Fprintf(&b, "upgrade: gira\ncurrent: %s\nlatest:  %s\nstatus:  %s\nchannel: %s\n", report.Current, report.Latest, report.Status, report.Channel)
+	if report.Notice != nil && report.Notice.Status == "emitted" {
+		fmt.Fprintf(&b, "notice: %s\n", report.Notice.Message)
+	}
+	fmt.Fprintf(&b, "\nnext step:\n  %s\n", report.NextStep)
+	return b.String()
 }
 
 func validUpgradeChannel(channel string) bool {
@@ -230,4 +266,80 @@ func semverParts(value string) ([3]int, bool) {
 		parts[i] = n
 	}
 	return parts, true
+}
+
+type upgradeNoticeState struct {
+	Latest     string `json:"latest"`
+	NotifiedAt string `json:"notified_at"`
+}
+
+func BuildUpgradeNotice(report UpgradeReport, noticeRoot string) (*UpgradeNotice, error) {
+	if report.Status != "update_available" {
+		return nil, nil
+	}
+	statePath, err := UpgradeNoticeStatePath(noticeRoot)
+	if err != nil {
+		return nil, err
+	}
+	state, err := readUpgradeNoticeState(statePath)
+	if err != nil {
+		return nil, err
+	}
+	notice := &UpgradeNotice{
+		Kind:      "new_version",
+		Version:   report.Latest,
+		StatePath: statePath,
+	}
+	if state.Latest == report.Latest {
+		notice.Status = "suppressed"
+		return notice, nil
+	}
+	if err := writeUpgradeNoticeState(statePath, upgradeNoticeState{Latest: report.Latest, NotifiedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
+		return nil, err
+	}
+	notice.Status = "emitted"
+	notice.Message = fmt.Sprintf("new Gira release %s is available; inspect next_step before upgrading", report.Latest)
+	return notice, nil
+}
+
+func UpgradeNoticeStatePath(noticeRoot string) (string, error) {
+	root := strings.TrimSpace(noticeRoot)
+	if root == "" {
+		var err error
+		root, err = DefaultGlobalConfigRoot()
+		if err != nil {
+			return "", err
+		}
+	}
+	return filepath.Join(root, "notices", "upgrade.json"), nil
+}
+
+func readUpgradeNoticeState(path string) (upgradeNoticeState, error) {
+	var state upgradeNoticeState
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return state, nil
+		}
+		return state, fmt.Errorf("read upgrade notice state: %w", err)
+	}
+	if err := json.Unmarshal(content, &state); err != nil {
+		return state, fmt.Errorf("parse upgrade notice state: %w", err)
+	}
+	return state, nil
+}
+
+func writeUpgradeNoticeState(path string, state upgradeNoticeState) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create upgrade notice state directory: %w", err)
+	}
+	content, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode upgrade notice state: %w", err)
+	}
+	content = append(content, '\n')
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		return fmt.Errorf("write upgrade notice state: %w", err)
+	}
+	return nil
 }

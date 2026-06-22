@@ -6,6 +6,15 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v2.6.0 - 2026-06-22
+
+- Added `gira update --notify-once` / `gira upgrade --notify-once` so agents
+  and shell startup flows can receive one local notice per newly available Gira
+  release while still relying on advisory, channel-specific upgrade commands.
+- Reduced GraphQL budget pressure in frequent read paths by moving status,
+  label preflight, adoption label checks, and workflow audit issue/PR scans to
+  REST-first fetching with GraphQL-heavy fallbacks kept for compatibility.
+
 ## v2.4.1 - 2026-06-12
 
 - Fixed MCP help and server metadata wording so the released MCP surface is

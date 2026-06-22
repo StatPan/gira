@@ -18,11 +18,17 @@ Gira ships tagged Go release archives. Package managers download or wrap that of
 
 ```bash
 gira update
+gira update --notify-once --json
 gira upgrade --channel uv
 gira upgrade --channel npm
 ```
 
 Then upgrade with the same channel that installed Gira, for example `uv tool upgrade gira-cli`, `npm update -g @statpan/gira`, or `brew update && brew upgrade gira`.
+
+Use `--notify-once` when an agent or shell startup wants one local notice per
+new latest release. The command writes only a small marker under the Gira global
+config root and keeps printing the same `next_step` command; it never runs the
+package manager for you.
 
 ## Wrapper Cache Cleanup
 

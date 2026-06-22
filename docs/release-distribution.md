@@ -52,6 +52,12 @@ gira cache prune --apply
 
 The prune command only removes direct child stable semver release directories older than the active Gira version. It skips the active version, newer versions, malformed entries, files, symlinks, and any directory containing the current executable. Use `--root PATH` for a custom cache root and `--json` in automation.
 
+Agents that need release awareness should call `gira update --notify-once --json`.
+When a newer stable release exists, the JSON report includes a `notice` object
+with `kind: new_version`, the latest version, and a channel-specific `next_step`.
+The once marker is local state only; Gira still does not run package managers or
+mutate repositories from the upgrade path.
+
 Publishing requires `PYPI_API_TOKEN`. If the secret is missing, the release workflow skips PyPI publishing without blocking the GitHub Release.
 
 ### Homebrew

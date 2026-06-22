@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,6 +66,70 @@ func TestBuildUpgradeReportLatestFailure(t *testing.T) {
 	_, err := BuildUpgradeReport("unknown", "/tmp/gira", fakeLatestReleaseFetcher{err: errors.New("network down")})
 	if err == nil {
 		t.Fatal("BuildUpgradeReport error = nil, want error")
+	}
+}
+
+func TestBuildUpgradeReportWithNoticeEmitsOncePerLatestVersion(t *testing.T) {
+	originalVersion := Version
+	t.Cleanup(func() { Version = originalVersion })
+	Version = "v1.1.1"
+	root := t.TempDir()
+
+	report, err := BuildUpgradeReportWithOptions(UpgradeOptions{
+		ChannelOverride: "pipx",
+		ExecutablePath:  "/tmp/gira",
+		Fetcher:         fakeLatestReleaseFetcher{tag: "v1.2.0"},
+		NotifyOnce:      true,
+		NoticeRoot:      root,
+	})
+	if err != nil {
+		t.Fatalf("BuildUpgradeReportWithOptions first error = %v", err)
+	}
+	if report.Notice == nil || report.Notice.Kind != "new_version" || report.Notice.Version != "v1.2.0" || report.Notice.Status != "emitted" {
+		t.Fatalf("unexpected first notice: %#v", report.Notice)
+	}
+	if report.Notice.StatePath != filepath.Join(root, "notices", "upgrade.json") {
+		t.Fatalf("state path = %q", report.Notice.StatePath)
+	}
+	if _, err := os.Stat(report.Notice.StatePath); err != nil {
+		t.Fatalf("notice state was not written: %v", err)
+	}
+
+	report, err = BuildUpgradeReportWithOptions(UpgradeOptions{
+		ChannelOverride: "pipx",
+		ExecutablePath:  "/tmp/gira",
+		Fetcher:         fakeLatestReleaseFetcher{tag: "v1.2.0"},
+		NotifyOnce:      true,
+		NoticeRoot:      root,
+	})
+	if err != nil {
+		t.Fatalf("BuildUpgradeReportWithOptions second error = %v", err)
+	}
+	if report.Notice == nil || report.Notice.Status != "suppressed" {
+		t.Fatalf("unexpected repeated notice: %#v", report.Notice)
+	}
+	if strings.Contains(FormatUpgradeReport(report), "notice:") {
+		t.Fatalf("suppressed notice should not be rendered in human output:\n%s", FormatUpgradeReport(report))
+	}
+}
+
+func TestBuildUpgradeReportWithNoticeSkipsWhenNoUpdate(t *testing.T) {
+	originalVersion := Version
+	t.Cleanup(func() { Version = originalVersion })
+	Version = "v1.2.0"
+
+	report, err := BuildUpgradeReportWithOptions(UpgradeOptions{
+		ChannelOverride: "pipx",
+		ExecutablePath:  "/tmp/gira",
+		Fetcher:         fakeLatestReleaseFetcher{tag: "v1.2.0"},
+		NotifyOnce:      true,
+		NoticeRoot:      t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("BuildUpgradeReportWithOptions error = %v", err)
+	}
+	if report.Notice != nil {
+		t.Fatalf("notice = %#v, want nil", report.Notice)
 	}
 }
 

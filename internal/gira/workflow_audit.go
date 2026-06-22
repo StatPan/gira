@@ -68,7 +68,7 @@ func BuildWorkflowAuditReport(repo RepoRef, runner CommandRunner, checkedAt time
 	if err != nil {
 		return WorkflowAuditReport{}, err
 	}
-	prs, err := fetchWorkflowAuditPRs(repo, runner)
+	prs, err := fetchWorkflowAuditPRs(repo, runner, workflowAuditFinishedIssueNumbers(issues))
 	if err != nil {
 		return WorkflowAuditReport{}, err
 	}
@@ -94,36 +94,119 @@ func BuildWorkflowAuditReport(repo RepoRef, runner CommandRunner, checkedAt time
 }
 
 func fetchWorkflowAuditIssues(repo RepoRef, runner CommandRunner) ([]workflowAuditIssue, error) {
+	issues, err := fetchWorkflowAuditIssuesREST(repo, runner)
+	if err == nil {
+		return issues, nil
+	}
+	return fetchWorkflowAuditIssuesGHList(repo, runner)
+}
+
+func fetchWorkflowAuditIssuesREST(repo RepoRef, runner CommandRunner) ([]workflowAuditIssue, error) {
+	output, err := runner.Run("gh", "api", "repos/"+repo.FullName()+"/issues", "--paginate", "--slurp", "-X", "GET", "-f", "state=all", "-f", "per_page=100")
+	if err != nil {
+		return nil, err
+	}
+	var pages json.RawMessage
+	if err := json.Unmarshal(output, &pages); err != nil {
+		return nil, fmt.Errorf("parse workflow issue pages: %w", err)
+	}
+	rows, err := flattenPages(pages)
+	if err != nil {
+		return nil, err
+	}
+	return parseWorkflowAuditIssueRows(rows)
+}
+
+func fetchWorkflowAuditIssuesGHList(repo RepoRef, runner CommandRunner) ([]workflowAuditIssue, error) {
 	output, err := runner.Run("gh", "issue", "list", "--repo", repo.FullName(), "--state", "all", "--limit", "1000", "--json", "number,title,state,labels,body")
 	if err != nil {
 		return nil, fmt.Errorf("fetch workflow issues: %w", err)
 	}
-	var rows []struct {
-		Number int    `json:"number"`
-		Title  string `json:"title"`
-		State  string `json:"state"`
-		Body   string `json:"body"`
-		Labels []struct {
-			Name string `json:"name"`
-		} `json:"labels"`
-	}
+	var rows []json.RawMessage
 	if err := json.Unmarshal(output, &rows); err != nil {
 		return nil, fmt.Errorf("parse workflow issues: %w", err)
 	}
+	return parseWorkflowAuditIssueRows(rows)
+}
+
+func parseWorkflowAuditIssueRows(rows []json.RawMessage) ([]workflowAuditIssue, error) {
 	issues := make([]workflowAuditIssue, 0, len(rows))
 	for _, row := range rows {
-		labels := make([]string, 0, len(row.Labels))
-		for _, label := range row.Labels {
-			labels = append(labels, strings.TrimSpace(label.Name))
+		issue, ok, err := parseWorkflowAuditIssueRow(row)
+		if err != nil {
+			return nil, err
 		}
-		sort.Strings(labels)
-		issues = append(issues, workflowAuditIssue{Number: row.Number, Title: row.Title, State: strings.ToLower(row.State), Labels: labels, Body: row.Body})
+		if ok {
+			issues = append(issues, issue)
+		}
 	}
 	sort.Slice(issues, func(i, j int) bool { return issues[i].Number < issues[j].Number })
 	return issues, nil
 }
 
-func fetchWorkflowAuditPRs(repo RepoRef, runner CommandRunner) ([]workflowAuditPR, error) {
+func parseWorkflowAuditIssueRow(row json.RawMessage) (workflowAuditIssue, bool, error) {
+	var raw struct {
+		Number          int              `json:"number"`
+		Title           string           `json:"title"`
+		State           string           `json:"state"`
+		Body            string           `json:"body"`
+		PullRequestREST *json.RawMessage `json:"pull_request"`
+		Labels          []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
+	}
+	if err := json.Unmarshal(row, &raw); err != nil {
+		return workflowAuditIssue{}, false, fmt.Errorf("parse workflow issue: %w", err)
+	}
+	if raw.PullRequestREST != nil {
+		return workflowAuditIssue{}, false, nil
+	}
+	labels := make([]string, 0, len(raw.Labels))
+	for _, label := range raw.Labels {
+		labels = append(labels, strings.TrimSpace(label.Name))
+	}
+	sort.Strings(labels)
+	return workflowAuditIssue{Number: raw.Number, Title: raw.Title, State: strings.ToLower(raw.State), Labels: labels, Body: raw.Body}, true, nil
+}
+
+func fetchWorkflowAuditPRs(repo RepoRef, runner CommandRunner, finishedIssues map[int]struct{}) ([]workflowAuditPR, error) {
+	prs, err := fetchWorkflowAuditPRsREST(repo, runner, finishedIssues)
+	if err == nil {
+		return prs, nil
+	}
+	return fetchWorkflowAuditPRsGHList(repo, runner)
+}
+
+func fetchWorkflowAuditPRsREST(repo RepoRef, runner CommandRunner, finishedIssues map[int]struct{}) ([]workflowAuditPR, error) {
+	output, err := runner.Run("gh", "api", "repos/"+repo.FullName()+"/pulls", "--paginate", "--slurp", "-X", "GET", "-f", "state=all", "-f", "per_page=100")
+	if err != nil {
+		return nil, err
+	}
+	var pages json.RawMessage
+	if err := json.Unmarshal(output, &pages); err != nil {
+		return nil, fmt.Errorf("parse workflow PR pages: %w", err)
+	}
+	rows, err := flattenPages(pages)
+	if err != nil {
+		return nil, err
+	}
+	prs := make([]workflowAuditPR, 0, len(rows))
+	for _, row := range rows {
+		var raw restPull
+		if err := json.Unmarshal(row, &raw); err != nil {
+			return nil, fmt.Errorf("parse workflow PR: %w", err)
+		}
+		checks := []DevPRCheck(nil)
+		if workflowAuditPRNeedsChecks(raw.Body, finishedIssues) {
+			checks = restPRChecks(repo, raw.Head.SHA, runner)
+		}
+		prs = append(prs, workflowAuditPR{Number: raw.Number, Title: raw.Title, Body: raw.Body, State: strings.ToLower(restPRState(raw)), MergedAt: derefString(raw.MergedAt), Checks: checks})
+	}
+	sort.Slice(prs, func(i, j int) bool { return prs[i].Number < prs[j].Number })
+	return prs, nil
+}
+
+func fetchWorkflowAuditPRsGHList(repo RepoRef, runner CommandRunner) ([]workflowAuditPR, error) {
 	output, err := runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--state", "all", "--limit", "1000", "--json", "number,title,body,state,mergedAt,reviewDecision,statusCheckRollup")
 	if err != nil {
 		output, err = runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--state", "all", "--limit", "1000", "--json", "number,title,body,state,mergedAt")
@@ -159,6 +242,32 @@ func fetchWorkflowAuditPRs(repo RepoRef, runner CommandRunner) ([]workflowAuditP
 	}
 	sort.Slice(prs, func(i, j int) bool { return prs[i].Number < prs[j].Number })
 	return prs, nil
+}
+
+func workflowAuditFinishedIssueNumbers(issues []workflowAuditIssue) map[int]struct{} {
+	out := map[int]struct{}{}
+	for _, issue := range issues {
+		if workflowIssueFinished(issue) {
+			out[issue.Number] = struct{}{}
+		}
+	}
+	return out
+}
+
+func workflowAuditPRNeedsChecks(body string, finishedIssues map[int]struct{}) bool {
+	for _, issueNumber := range ExtractClosureIssueNumbers(body) {
+		if _, ok := finishedIssues[issueNumber]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func workflowAuditFindings(repo RepoRef, issues []workflowAuditIssue, prs []workflowAuditPR, statusDoneExists bool) []WorkflowAuditFinding {
@@ -335,7 +444,7 @@ func workflowPRCheckFinding(pr workflowAuditPR, issue workflowAuditIssue, id str
 		Labels:            append([]string(nil), issue.Labels...),
 		CurrentState:      "checks=" + status,
 		ExpectedState:     "checks=passed",
-		Evidence:          []string{fmt.Sprintf("pr#%d", pr.Number), "statusCheckRollup"},
+		Evidence:          []string{fmt.Sprintf("pr#%d", pr.Number), "rest_checks"},
 		Detail:            detail,
 		Remediation:       fmt.Sprintf("inspect PR #%d checks before treating issue #%d as complete", pr.Number, issue.Number),
 		RecommendedAction: "repair checks or reopen the ticket",

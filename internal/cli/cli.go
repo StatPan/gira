@@ -1715,6 +1715,16 @@ var newUpgradeReport = func(options gira.UpgradeOptions) (gira.UpgradeReport, er
 	return gira.BuildUpgradeReportWithOptions(options)
 }
 
+var passiveUpgradeNotice = func(args []string, exitCode int, stderr io.Writer) {
+	emitPassiveUpgradeNotice(args, exitCode, stderr, passiveUpgradeNoticeOptions{
+		Env:           os.Environ(),
+		IsTestBinary:  strings.HasSuffix(os.Args[0], ".test"),
+		Now:           time.Now,
+		CheckInterval: 24 * time.Hour,
+		NewReport:     newUpgradeReport,
+	})
+}
+
 var newCachePruneReport = func(options gira.CachePruneOptions) (gira.CachePruneReport, error) {
 	executable, _ := os.Executable()
 	options.ExecutablePath = executable
@@ -1769,6 +1779,12 @@ var newStatsPulseReport = func(input gira.StatsPulseOptions) (gira.PulseReport, 
 }
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
+	code := run(args, stdout, stderr)
+	passiveUpgradeNotice(args, code, stderr)
+	return code
+}
+
+func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(stdout, rootHelp)
 		return 0
@@ -1881,6 +1897,92 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, rootHelp)
 		return 2
 	}
+}
+
+type passiveUpgradeNoticeOptions struct {
+	Env           []string
+	IsTestBinary  bool
+	Now           func() time.Time
+	CheckInterval time.Duration
+	NoticeRoot    string
+	NewReport     func(gira.UpgradeOptions) (gira.UpgradeReport, error)
+}
+
+func emitPassiveUpgradeNotice(args []string, exitCode int, stderr io.Writer, options passiveUpgradeNoticeOptions) {
+	if !shouldRunPassiveUpgradeNotice(args, exitCode, options.Env, options.IsTestBinary) {
+		return
+	}
+	now := time.Now
+	if options.Now != nil {
+		now = options.Now
+	}
+	reportFunc := options.NewReport
+	if reportFunc == nil {
+		reportFunc = newUpgradeReport
+	}
+	checkAt := now()
+	shouldCheck, err := gira.ShouldCheckUpgradeNotice(options.NoticeRoot, checkAt, options.CheckInterval)
+	if err != nil || !shouldCheck {
+		return
+	}
+	report, err := reportFunc(gira.UpgradeOptions{ChannelOverride: "auto", NotifyOnce: true, NoticeRoot: options.NoticeRoot})
+	if err != nil {
+		_ = gira.MarkUpgradeNoticeChecked(options.NoticeRoot, checkAt)
+		return
+	}
+	if report.Notice == nil {
+		_ = gira.MarkUpgradeNoticeChecked(options.NoticeRoot, checkAt)
+		return
+	}
+	if report.Notice.Status != "emitted" {
+		return
+	}
+	fmt.Fprintf(stderr, "gira: new release %s available; next step: %s\n", report.Notice.Version, report.NextStep)
+}
+
+func shouldRunPassiveUpgradeNotice(args []string, exitCode int, env []string, isTestBinary bool) bool {
+	if exitCode != 0 || isTestBinary || passiveUpgradeNoticeDisabled(env) {
+		return false
+	}
+	if len(args) == 0 {
+		return false
+	}
+	command := strings.TrimSpace(args[0])
+	if command == "" || strings.HasPrefix(command, "-") {
+		return false
+	}
+	switch command {
+	case "upgrade", "update", "version", "completion", "mcp":
+		return false
+	}
+	for _, arg := range args[1:] {
+		switch arg {
+		case "--help", "-h", "help":
+			return false
+		}
+	}
+	return true
+}
+
+func passiveUpgradeNoticeDisabled(env []string) bool {
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		switch key {
+		case "GIRA_DISABLE_UPDATE_NOTICE":
+			if normalized == "1" || normalized == "true" || normalized == "on" || normalized == "enabled" || normalized == "enable" || normalized == "yes" {
+				return true
+			}
+		case "GIRA_UPDATE_NOTICE":
+			if normalized == "0" || normalized == "false" || normalized == "off" || normalized == "disabled" || normalized == "disable" || normalized == "no" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 const mcpHelp = `MCP server for Gira CLI parity and focused context tools.

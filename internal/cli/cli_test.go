@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -617,6 +618,137 @@ func TestUpgradeNotifyOnceJSON(t *testing.T) {
 	}
 	if report.Notice == nil || report.Notice.Kind != "new_version" || report.Notice.Status != "emitted" {
 		t.Fatalf("unexpected notice: %#v", report.Notice)
+	}
+}
+
+type cliFakeLatestReleaseFetcher struct {
+	tag string
+	err error
+}
+
+func (f cliFakeLatestReleaseFetcher) LatestReleaseTag() (string, error) {
+	return f.tag, f.err
+}
+
+func TestPassiveUpgradeNoticeEmitsOnceToStderr(t *testing.T) {
+	originalVersion := gira.Version
+	t.Cleanup(func() { gira.Version = originalVersion })
+	gira.Version = "v1.1.1"
+	root := t.TempDir()
+	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	options := passiveUpgradeNoticeOptions{
+		Env:           []string{"GIRA_INSTALL_CHANNEL=npm"},
+		Now:           func() time.Time { return now },
+		CheckInterval: 24 * time.Hour,
+		NoticeRoot:    root,
+		NewReport: func(input gira.UpgradeOptions) (gira.UpgradeReport, error) {
+			input.ChannelOverride = "npm"
+			input.ExecutablePath = "/tmp/gira"
+			input.Fetcher = cliFakeLatestReleaseFetcher{tag: "v1.2.0"}
+			return gira.BuildUpgradeReportWithOptions(input)
+		},
+	}
+
+	var stderr bytes.Buffer
+	emitPassiveUpgradeNotice([]string{"status"}, 0, &stderr, options)
+	if got := stderr.String(); !strings.Contains(got, "gira: new release v1.2.0 available") || !strings.Contains(got, "npm update -g @statpan/gira") {
+		t.Fatalf("passive notice stderr unexpected:\n%s", got)
+	}
+
+	stderr.Reset()
+	emitPassiveUpgradeNotice([]string{"status"}, 0, &stderr, options)
+	if stderr.String() != "" {
+		t.Fatalf("repeated passive notice should be suppressed, got:\n%s", stderr.String())
+	}
+}
+
+func TestPassiveUpgradeNoticeKeepsJSONStdoutClean(t *testing.T) {
+	originalVersion := gira.Version
+	t.Cleanup(func() { gira.Version = originalVersion })
+	gira.Version = "v1.1.1"
+	root := t.TempDir()
+	original := passiveUpgradeNotice
+	t.Cleanup(func() { passiveUpgradeNotice = original })
+	passiveUpgradeNotice = func(args []string, exitCode int, stderr io.Writer) {
+		emitPassiveUpgradeNotice(args, exitCode, stderr, passiveUpgradeNoticeOptions{
+			Env:           []string{"GIRA_INSTALL_CHANNEL=npm"},
+			Now:           func() time.Time { return time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC) },
+			CheckInterval: 24 * time.Hour,
+			NoticeRoot:    root,
+			NewReport: func(input gira.UpgradeOptions) (gira.UpgradeReport, error) {
+				input.ChannelOverride = "npm"
+				input.ExecutablePath = "/tmp/gira"
+				input.Fetcher = cliFakeLatestReleaseFetcher{tag: "v1.2.0"}
+				return gira.BuildUpgradeReportWithOptions(input)
+			},
+		})
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"version", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var info gira.VersionInfo
+	if err := json.Unmarshal(stdout.Bytes(), &info); err != nil {
+		t.Fatalf("version JSON was contaminated: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	if stderr.String() != "" {
+		t.Fatalf("version command should skip passive notice, got stderr:\n%s", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"guide", "quickstart"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "gira: new release v1.2.0 available") {
+		t.Fatalf("passive notice missing from stderr:\n%s", stderr.String())
+	}
+	if strings.Contains(stdout.String(), "new release") {
+		t.Fatalf("passive notice contaminated stdout:\n%s", stdout.String())
+	}
+}
+
+func TestPassiveUpgradeNoticeOptOutAndRecentCheck(t *testing.T) {
+	if shouldRunPassiveUpgradeNotice([]string{"status"}, 0, []string{"GIRA_UPDATE_NOTICE=off"}, false) {
+		t.Fatal("GIRA_UPDATE_NOTICE=off should disable passive notices")
+	}
+	if shouldRunPassiveUpgradeNotice([]string{"status"}, 0, []string{"GIRA_DISABLE_UPDATE_NOTICE=1"}, false) {
+		t.Fatal("GIRA_DISABLE_UPDATE_NOTICE=1 should disable passive notices")
+	}
+	if shouldRunPassiveUpgradeNotice([]string{"status"}, 0, []string{"GIRA_UPDATE_NOTICE=on", "GIRA_DISABLE_UPDATE_NOTICE=1"}, false) {
+		t.Fatal("GIRA_DISABLE_UPDATE_NOTICE=1 should win over GIRA_UPDATE_NOTICE=on")
+	}
+	if shouldRunPassiveUpgradeNotice([]string{"status"}, 1, nil, false) {
+		t.Fatal("non-zero exit should skip passive notices")
+	}
+
+	originalVersion := gira.Version
+	t.Cleanup(func() { gira.Version = originalVersion })
+	gira.Version = "v1.2.0"
+	root := t.TempDir()
+	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	if err := gira.MarkUpgradeNoticeChecked(root, now); err != nil {
+		t.Fatalf("MarkUpgradeNoticeChecked error: %v", err)
+	}
+	var called bool
+	var stderr bytes.Buffer
+	emitPassiveUpgradeNotice([]string{"status"}, 0, &stderr, passiveUpgradeNoticeOptions{
+		Now:           func() time.Time { return now.Add(time.Hour) },
+		CheckInterval: 24 * time.Hour,
+		NoticeRoot:    root,
+		NewReport: func(input gira.UpgradeOptions) (gira.UpgradeReport, error) {
+			called = true
+			return gira.UpgradeReport{}, nil
+		},
+	})
+	if called {
+		t.Fatal("recent check should skip latest release fetch")
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
 }
 

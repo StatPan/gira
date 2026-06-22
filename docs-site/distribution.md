@@ -30,6 +30,12 @@ new latest release. The command writes only a small marker under the Gira global
 config root and keeps printing the same `next_step` command; it never runs the
 package manager for you.
 
+Normal `gira` commands also perform a passive, rate-limited release check and
+print the same once-per-version notice to stderr when a newer release exists.
+This keeps JSON stdout parseable while giving AI agents a signal they can act
+on during ordinary CLI usage. Set `GIRA_UPDATE_NOTICE=off` or
+`GIRA_DISABLE_UPDATE_NOTICE=1` to disable passive notices.
+
 ## Wrapper Cache Cleanup
 
 uv, pipx, and pip installs use the `gira-cli` PyPI wrapper. The wrapper downloads the matching Go-built release binary on first run and caches it under `GIRA_PYPI_CACHE_DIR` when set, otherwise under `~/.cache/gira-cli/<version>`.

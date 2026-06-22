@@ -271,6 +271,7 @@ func semverParts(value string) ([3]int, bool) {
 type upgradeNoticeState struct {
 	Latest     string `json:"latest"`
 	NotifiedAt string `json:"notified_at"`
+	CheckedAt  string `json:"checked_at,omitempty"`
 }
 
 func BuildUpgradeNotice(report UpgradeReport, noticeRoot string) (*UpgradeNotice, error) {
@@ -291,15 +292,56 @@ func BuildUpgradeNotice(report UpgradeReport, noticeRoot string) (*UpgradeNotice
 		StatePath: statePath,
 	}
 	if state.Latest == report.Latest {
+		state.CheckedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := writeUpgradeNoticeState(statePath, state); err != nil {
+			return nil, err
+		}
 		notice.Status = "suppressed"
 		return notice, nil
 	}
-	if err := writeUpgradeNoticeState(statePath, upgradeNoticeState{Latest: report.Latest, NotifiedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := writeUpgradeNoticeState(statePath, upgradeNoticeState{Latest: report.Latest, NotifiedAt: now, CheckedAt: now}); err != nil {
 		return nil, err
 	}
 	notice.Status = "emitted"
 	notice.Message = fmt.Sprintf("new Gira release %s is available; inspect next_step before upgrading", report.Latest)
 	return notice, nil
+}
+
+func ShouldCheckUpgradeNotice(noticeRoot string, now time.Time, interval time.Duration) (bool, error) {
+	if interval <= 0 {
+		return true, nil
+	}
+	statePath, err := UpgradeNoticeStatePath(noticeRoot)
+	if err != nil {
+		return false, err
+	}
+	state, err := readUpgradeNoticeState(statePath)
+	if err != nil {
+		return false, err
+	}
+	checkedAt := strings.TrimSpace(state.CheckedAt)
+	if checkedAt == "" {
+		return true, nil
+	}
+	checked, err := time.Parse(time.RFC3339, checkedAt)
+	if err != nil {
+		return true, nil
+	}
+	return now.Sub(checked) >= interval, nil
+}
+
+func MarkUpgradeNoticeChecked(noticeRoot string, now time.Time) error {
+	statePath, err := UpgradeNoticeStatePath(noticeRoot)
+	if err != nil {
+		return err
+	}
+	state, err := readUpgradeNoticeState(statePath)
+	if err != nil {
+		return err
+	}
+	state.CheckedAt = now.UTC().Format(time.RFC3339)
+	return writeUpgradeNoticeState(statePath, state)
 }
 
 func UpgradeNoticeStatePath(noticeRoot string) (string, error) {

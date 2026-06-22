@@ -6,6 +6,14 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v2.7.0 - 2026-06-22
+
+- Added passive once-per-version update notices during normal `gira` command
+  usage so users and AI agents can learn about a newer release without
+  explicitly running `gira update`.
+- Rate-limited passive release checks with local state and kept notices on
+  stderr only so JSON stdout contracts remain parseable.
+
 ## v2.6.0 - 2026-06-22
 
 - Added `gira update --notify-once` / `gira upgrade --notify-once` so agents

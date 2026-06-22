@@ -58,6 +58,11 @@ with `kind: new_version`, the latest version, and a channel-specific `next_step`
 The once marker is local state only; Gira still does not run package managers or
 mutate repositories from the upgrade path.
 
+Normal `gira` commands also run a passive, rate-limited release check and emit a
+one-time stderr notice for a new latest release. This gives AI agents an update
+signal during ordinary CLI usage without corrupting JSON stdout. Set
+`GIRA_UPDATE_NOTICE=off` or `GIRA_DISABLE_UPDATE_NOTICE=1` to opt out.
+
 Publishing requires `PYPI_API_TOKEN`. If the secret is missing, the release workflow skips PyPI publishing without blocking the GitHub Release.
 
 ### Homebrew

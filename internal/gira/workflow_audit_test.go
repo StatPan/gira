@@ -10,17 +10,17 @@ func TestBuildWorkflowAuditReportDetectsDrift(t *testing.T) {
 	repo := mustRepo(t, "StatPan/gira")
 	runner := onboardFakeRunner{
 		responses: map[string]string{
-			"gh issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,body": `[
+			"gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100": `[[
 				{"number":1,"title":"Closed active","state":"CLOSED","body":"","labels":[{"name":"status:in-review"},{"name":"agent:worker"}]},
 				{"number":2,"title":"Open done","state":"OPEN","body":"<!-- gira:provenance:start -->\nplanning: human\nimplementation:\nreview:\n<!-- gira:provenance:end -->","labels":[{"name":"status:done"}]},
 				{"number":3,"title":"Multiple","state":"OPEN","body":"","labels":[{"name":"status:ready"},{"name":"status:blocked"}]},
 				{"number":4,"title":"Review no PR","state":"OPEN","body":"","labels":[{"name":"status:in-review"}]},
 				{"number":5,"title":"Merged drift","state":"OPEN","body":"","labels":[{"name":"status:in-progress"}]}
-			]`,
-			"gh pr list --repo StatPan/gira --state all --limit 1000 --json number,title,body,state,mergedAt,reviewDecision,statusCheckRollup": `[
-				{"number":10,"title":"Merge work","body":"Closes #5","state":"MERGED","mergedAt":"2026-05-18T00:00:00Z","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}
-			]`,
-			"gh label list --repo StatPan/gira --json name --limit 1000": `[{"name":"status:done"}]`,
+			]]`,
+			"gh api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=all -f per_page=100": `[[
+				{"number":10,"title":"Merge work","body":"Closes #5","state":"closed","merged_at":"2026-05-18T00:00:00Z","head":{"sha":"sha10"}}
+			]]`,
+			"gh api repos/StatPan/gira/labels --paginate --slurp -X GET -f per_page=100": `[[{"name":"status:done"}]]`,
 		},
 		errors: map[string]error{},
 	}
@@ -81,17 +81,19 @@ func TestBuildWorkflowAuditReportDetectsChecksTelemetryAndEvidenceDrift(t *testi
 	repo := mustRepo(t, "StatPan/gira")
 	runner := onboardFakeRunner{
 		responses: map[string]string{
-			"gh issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,body": `[
+			"gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100": `[[
 				{"number":6,"title":"Done failing","state":"CLOSED","body":"AI Delivery Telemetry: present","labels":[{"name":"status:done"}]},
 				{"number":7,"title":"Done pending","state":"OPEN","body":"AI Delivery Telemetry: present","labels":[{"name":"status:done"}]},
 				{"number":8,"title":"Done no evidence","state":"CLOSED","body":"","labels":[{"name":"status:done"}]},
 				{"number":9,"title":"Agent no telemetry","state":"OPEN","body":"","labels":[{"name":"agent:worker"},{"name":"status:ready"}]}
-			]`,
-			"gh pr list --repo StatPan/gira --state all --limit 1000 --json number,title,body,state,mergedAt,reviewDecision,statusCheckRollup": `[
-				{"number":11,"title":"Fail","body":"Closes #6","state":"MERGED","mergedAt":"2026-05-18T00:00:00Z","statusCheckRollup":[{"conclusion":"FAILURE","status":"COMPLETED"}]},
-				{"number":12,"title":"Pending","body":"Closes #7","state":"OPEN","mergedAt":"","statusCheckRollup":[{"conclusion":"","status":"IN_PROGRESS"}]}
-			]`,
-			"gh label list --repo StatPan/gira --json name --limit 1000": `[{"name":"status:done"}]`,
+			]]`,
+			"gh api repos/StatPan/gira/pulls --paginate --slurp -X GET -f state=all -f per_page=100": `[[
+				{"number":11,"title":"Fail","body":"Closes #6","state":"closed","merged_at":"2026-05-18T00:00:00Z","head":{"sha":"sha11"}},
+				{"number":12,"title":"Pending","body":"Closes #7","state":"open","merged_at":null,"head":{"sha":"sha12"}}
+			]]`,
+			"gh api repos/StatPan/gira/commits/sha11/check-runs -X GET -f per_page=100":  `{"check_runs":[{"name":"test","status":"completed","conclusion":"failure","html_url":"https://ci.example","app":{"name":"GitHub Actions"}}]}`,
+			"gh api repos/StatPan/gira/commits/sha12/check-runs -X GET -f per_page=100":  `{"check_runs":[{"name":"test","status":"in_progress","conclusion":"","html_url":"https://ci.example","app":{"name":"GitHub Actions"}}]}`,
+			"gh api repos/StatPan/gira/labels --paginate --slurp -X GET -f per_page=100": `[[{"name":"status:done"}]]`,
 		},
 		errors: map[string]error{},
 	}

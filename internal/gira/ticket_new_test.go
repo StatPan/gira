@@ -37,6 +37,16 @@ func ticketNewLabelOutputs(labels ...string) map[string][]byte {
 	}
 }
 
+func ticketNewRESTLabelOutputs(labels ...string) map[string][]byte {
+	rows := make([]string, 0, len(labels))
+	for _, label := range labels {
+		rows = append(rows, fmt.Sprintf(`{"name":%q}`, label))
+	}
+	return map[string][]byte{
+		"gh api repos/StatPan/gira/labels --paginate --slurp -X GET -f per_page=100": []byte("[[" + strings.Join(rows, ",") + "]]"),
+	}
+}
+
 func TestTicketNewDryRunRendersStructuredBody(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &ticketNewRunner{outputs: ticketNewLabelOutputs("type:bug", "status:ready", "priority:p1", "area:backend")}
@@ -85,6 +95,37 @@ func TestTicketNewDryRunRendersStructuredBody(t *testing.T) {
 	}
 	if report.Approval.Blockers == nil || report.Approval.Warnings == nil || !approvalHasAction(report.Approval.PlannedActions, "issue:create") {
 		t.Fatalf("unexpected ticket new approval plan: %+v", report.Approval)
+	}
+}
+
+func TestTicketNewLabelPreflightUsesRESTBeforeGraphQLHeavyLabelList(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &ticketNewRunner{
+		outputs: ticketNewRESTLabelOutputs("type:task", "status:ready"),
+		errs: map[string]error{
+			"gh label list --repo StatPan/gira --json name --limit 1000": fmt.Errorf("GraphQL-heavy label list should not be called when REST succeeds"),
+		},
+	}
+
+	report, err := BuildTicketNewReport(TicketNewInput{
+		Repo:       repo,
+		Title:      "Add CLI",
+		Goal:       "Add CLI",
+		Scope:      "Ticket creation label preflight",
+		Acceptance: []string{"uses REST labels"},
+		Type:       "task",
+		DryRun:     true,
+	}, runner)
+	if err != nil {
+		t.Fatalf("BuildTicketNewReport error: %v", err)
+	}
+	if report.TicketReadiness.Readiness != "ready" {
+		t.Fatalf("unexpected readiness: %+v", report.TicketReadiness)
+	}
+	for _, call := range runner.calls {
+		if strings.HasPrefix(call, "gh label list ") {
+			t.Fatalf("called GraphQL-heavy label list despite REST success: %v", runner.calls)
+		}
 	}
 }
 

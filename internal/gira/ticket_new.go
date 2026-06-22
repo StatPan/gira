@@ -1,7 +1,6 @@
 package gira
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -185,19 +184,13 @@ func preflightTicketNewLabels(repo RepoRef, labels []string, runner CommandRunne
 	if len(labels) == 0 {
 		return nil
 	}
-	output, err := runner.Run("gh", "label", "list", "--repo", repo.FullName(), "--json", "name", "--limit", "1000")
+	rows, err := fetchRepoLabelNames(repo, runner)
 	if err != nil {
 		return fmt.Errorf("preflight labels: %w", err)
 	}
-	var rows []struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(output, &rows); err != nil {
-		return fmt.Errorf("parse label list: %w", err)
-	}
 	existing := make(map[string]struct{}, len(rows))
 	for _, row := range rows {
-		name := strings.ToLower(strings.TrimSpace(row.Name))
+		name := strings.ToLower(strings.TrimSpace(row))
 		if name != "" {
 			existing[name] = struct{}{}
 		}

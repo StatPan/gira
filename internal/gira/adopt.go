@@ -371,18 +371,12 @@ func applyAdoptIssue(repo RepoRef, action AdoptIssuesAction, runner CommandRunne
 }
 
 func repoHasLabel(repo RepoRef, label string, runner CommandRunner) (bool, error) {
-	output, err := runner.Run("gh", "label", "list", "--repo", repo.FullName(), "--json", "name", "--limit", "1000")
+	labels, err := fetchRepoLabelNames(repo, runner)
 	if err != nil {
 		return false, err
 	}
-	var rows []struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(output, &rows); err != nil {
-		return false, fmt.Errorf("parse label list: %w", err)
-	}
-	for _, row := range rows {
-		if strings.EqualFold(strings.TrimSpace(row.Name), label) {
+	for _, row := range labels {
+		if strings.EqualFold(strings.TrimSpace(row), label) {
 			return true, nil
 		}
 	}

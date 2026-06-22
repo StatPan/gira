@@ -529,9 +529,12 @@ func TestRepoMigrateRejectsUnexpectedArgument(t *testing.T) {
 func TestUpgradeCommandHumanOutput(t *testing.T) {
 	original := newUpgradeReport
 	t.Cleanup(func() { newUpgradeReport = original })
-	newUpgradeReport = func(channel string) (gira.UpgradeReport, error) {
-		if channel != "pipx" {
-			t.Fatalf("channel = %q, want pipx", channel)
+	newUpgradeReport = func(options gira.UpgradeOptions) (gira.UpgradeReport, error) {
+		if options.ChannelOverride != "pipx" {
+			t.Fatalf("channel = %q, want pipx", options.ChannelOverride)
+		}
+		if options.NotifyOnce {
+			t.Fatal("NotifyOnce = true, want false")
 		}
 		return gira.UpgradeReport{
 			Current:  "v1.1.1",
@@ -557,7 +560,7 @@ func TestUpgradeCommandHumanOutput(t *testing.T) {
 func TestUpdateAliasJSON(t *testing.T) {
 	original := newUpgradeReport
 	t.Cleanup(func() { newUpgradeReport = original })
-	newUpgradeReport = func(channel string) (gira.UpgradeReport, error) {
+	newUpgradeReport = func(options gira.UpgradeOptions) (gira.UpgradeReport, error) {
 		return gira.UpgradeReport{
 			Current:  "v1.2.0",
 			Latest:   "v1.2.0",
@@ -578,6 +581,42 @@ func TestUpdateAliasJSON(t *testing.T) {
 	}
 	if report.Status != "up_to_date" || report.Channel != "homebrew" {
 		t.Fatalf("unexpected report: %#v", report)
+	}
+}
+
+func TestUpgradeNotifyOnceJSON(t *testing.T) {
+	original := newUpgradeReport
+	t.Cleanup(func() { newUpgradeReport = original })
+	newUpgradeReport = func(options gira.UpgradeOptions) (gira.UpgradeReport, error) {
+		if !options.NotifyOnce {
+			t.Fatal("NotifyOnce = false, want true")
+		}
+		return gira.UpgradeReport{
+			Current:  "v1.1.1",
+			Latest:   "v1.2.0",
+			Status:   "update_available",
+			Channel:  "npm",
+			NextStep: "npm update -g @statpan/gira",
+			Notice: &gira.UpgradeNotice{
+				Kind:    "new_version",
+				Version: "v1.2.0",
+				Status:  "emitted",
+				Message: "new Gira release v1.2.0 is available; inspect next_step before upgrading",
+			},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"update", "--notify-once", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.UpgradeReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode upgrade JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Notice == nil || report.Notice.Kind != "new_version" || report.Notice.Status != "emitted" {
+		t.Fatalf("unexpected notice: %#v", report.Notice)
 	}
 }
 

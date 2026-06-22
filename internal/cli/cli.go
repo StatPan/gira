@@ -532,13 +532,14 @@ Flags:
 const upgradeHelp = `Check latest release and print safe upgrade instructions.
 
 Usage:
-  gira upgrade [--channel auto|install.sh|uv|pipx|pip|homebrew|npm|bun|go|unknown] [--json]
-  gira update [--channel auto|install.sh|uv|pipx|pip|homebrew|npm|bun|go|unknown] [--json]
+  gira upgrade [--channel auto|install.sh|uv|pipx|pip|homebrew|npm|bun|go|unknown] [--notify-once] [--json]
+  gira update [--channel auto|install.sh|uv|pipx|pip|homebrew|npm|bun|go|unknown] [--notify-once] [--json]
 
 Flags:
-  --channel string  Installed channel to use for the next-step command (default "auto")
-  --json            Emit stable JSON upgrade info
-  -h, --help        Show help
+  --channel string   Installed channel to use for the next-step command (default "auto")
+  --notify-once      Emit a local once-per-version update notice when a new release is available
+  --json             Emit stable JSON upgrade info
+  -h, --help         Show help
 `
 
 const cacheHelp = `Manage local Gira caches.
@@ -1708,9 +1709,10 @@ var newEpicFinishReport = func(input gira.EpicInput) (gira.EpicReport, error) {
 	return gira.FinishEpic(input, devCommandRunner)
 }
 
-var newUpgradeReport = func(channel string) (gira.UpgradeReport, error) {
+var newUpgradeReport = func(options gira.UpgradeOptions) (gira.UpgradeReport, error) {
 	executable, _ := os.Executable()
-	return gira.BuildUpgradeReport(channel, executable, nil)
+	options.ExecutablePath = executable
+	return gira.BuildUpgradeReportWithOptions(options)
 }
 
 var newCachePruneReport = func(options gira.CachePruneOptions) (gira.CachePruneReport, error) {
@@ -2243,6 +2245,7 @@ func runUpgrade(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	channel := fs.String("channel", "auto", "Installed channel to use for the next-step command")
+	notifyOnce := fs.Bool("notify-once", false, "Emit a local once-per-version update notice when a new release is available")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON upgrade info")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
@@ -2261,7 +2264,7 @@ func runUpgrade(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 
-	report, err := newUpgradeReport(*channel)
+	report, err := newUpgradeReport(gira.UpgradeOptions{ChannelOverride: *channel, NotifyOnce: *notifyOnce})
 	if err != nil {
 		fmt.Fprintf(stderr, "upgrade check failed: %v\n", err)
 		return 1

@@ -345,6 +345,14 @@ func FetchMilestones(client StatusClient) ([]normalizedMilestone, error) {
 }
 
 func FetchIssues(client StatusClient) ([]normalizedIssue, error) {
+	issues, err := fetchIssuesREST(client)
+	if err == nil {
+		return issues, nil
+	}
+	return fetchIssuesGHList(client)
+}
+
+func fetchIssuesGHList(client StatusClient) ([]normalizedIssue, error) {
 	var rows []json.RawMessage
 	err := client.JSON([]string{
 		"issue",
@@ -359,7 +367,7 @@ func FetchIssues(client StatusClient) ([]normalizedIssue, error) {
 		"number,title,state,labels,milestone,updatedAt,url,body",
 	}, &rows)
 	if err != nil {
-		return fetchIssuesREST(client)
+		return nil, err
 	}
 	return normalizeIssueRows(rows)
 }

@@ -106,6 +106,9 @@ type WorkspaceRateLimit struct {
 	Limit             int    `json:"limit"`
 	Remaining         int    `json:"remaining"`
 	ResetAt           string `json:"reset_at,omitempty"`
+	GraphQLLimit      int    `json:"graphql_limit,omitempty"`
+	GraphQLRemaining  int    `json:"graphql_remaining,omitempty"`
+	GraphQLResetAt    string `json:"graphql_reset_at,omitempty"`
 	EstimatedRequests int    `json:"estimated_requests"`
 	BudgetOK          bool   `json:"budget_ok"`
 }
@@ -536,6 +539,11 @@ func (c GHWorkspaceClient) FetchRateLimit() (WorkspaceRateLimit, error) {
 				Remaining int   `json:"remaining"`
 				Reset     int64 `json:"reset"`
 			} `json:"core"`
+			GraphQL struct {
+				Limit     int   `json:"limit"`
+				Remaining int   `json:"remaining"`
+				Reset     int64 `json:"reset"`
+			} `json:"graphql"`
 		} `json:"resources"`
 		Rate struct {
 			Limit     int   `json:"limit"`
@@ -562,7 +570,18 @@ func (c GHWorkspaceClient) FetchRateLimit() (WorkspaceRateLimit, error) {
 	if reset > 0 {
 		resetAt = time.Unix(reset, 0).UTC().Format(time.RFC3339)
 	}
-	return WorkspaceRateLimit{Limit: limit, Remaining: remaining, ResetAt: resetAt}, nil
+	graphQLResetAt := ""
+	if raw.Resources.GraphQL.Reset > 0 {
+		graphQLResetAt = time.Unix(raw.Resources.GraphQL.Reset, 0).UTC().Format(time.RFC3339)
+	}
+	return WorkspaceRateLimit{
+		Limit:            limit,
+		Remaining:        remaining,
+		ResetAt:          resetAt,
+		GraphQLLimit:     raw.Resources.GraphQL.Limit,
+		GraphQLRemaining: raw.Resources.GraphQL.Remaining,
+		GraphQLResetAt:   graphQLResetAt,
+	}, nil
 }
 
 func (c GHWorkspaceClient) CreateInboxTicket(repo RepoRef, title string, body string) (WorkspaceTicketRef, error) {
@@ -613,6 +632,9 @@ func BuildWorkspaceStatusReportWithOptions(config WorkspaceConfigResolved, clien
 			report.RateLimit = &rateLimit
 			if !rateLimit.BudgetOK {
 				report.Warnings = append(report.Warnings, fmt.Sprintf("GitHub API budget low: remaining=%d estimated=%d reset=%s", rateLimit.Remaining, rateLimit.EstimatedRequests, rateLimit.ResetAt))
+			}
+			if rateLimit.GraphQLLimit > 0 && rateLimit.GraphQLRemaining == 0 {
+				report.Warnings = append(report.Warnings, fmt.Sprintf("GitHub GraphQL budget exhausted: remaining=0 reset=%s", rateLimit.GraphQLResetAt))
 			}
 		}
 	}
@@ -851,7 +873,11 @@ func FormatWorkspaceReport(report WorkspaceReport) string {
 		fmt.Fprintf(&b, "source: %s %s\n", report.Source, report.ConfigPath)
 	}
 	if report.RateLimit != nil {
-		fmt.Fprintf(&b, "github budget: remaining=%d/%d estimated=%d reset=%s\n", report.RateLimit.Remaining, report.RateLimit.Limit, report.RateLimit.EstimatedRequests, report.RateLimit.ResetAt)
+		fmt.Fprintf(&b, "github budget: core remaining=%d/%d estimated=%d reset=%s", report.RateLimit.Remaining, report.RateLimit.Limit, report.RateLimit.EstimatedRequests, report.RateLimit.ResetAt)
+		if report.RateLimit.GraphQLLimit > 0 {
+			fmt.Fprintf(&b, " graphql remaining=%d/%d reset=%s", report.RateLimit.GraphQLRemaining, report.RateLimit.GraphQLLimit, report.RateLimit.GraphQLResetAt)
+		}
+		b.WriteString("\n")
 	}
 	if report.Cache.Enabled {
 		fmt.Fprintf(&b, "cache: ttl=%ds hits=%d misses=%d writes=%d stale=%d root=%s\n", report.Cache.TTLSeconds, report.Cache.Hits, report.Cache.Misses, report.Cache.Writes, report.Cache.Stale, report.Cache.Root)

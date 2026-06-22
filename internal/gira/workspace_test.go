@@ -568,6 +568,46 @@ func TestBuildWorkspaceStatusReportWithOptionsNarrowsReposAndReportsRateBudget(t
 	}
 }
 
+func TestBuildWorkspaceStatusReportShowsGraphQLBudgetSeparately(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	client := &rateLimitWorkspaceClient{
+		fakeWorkspaceClient: fakeWorkspaceClient{
+			status: map[string]StatusSummary{
+				"StatPan/gira": {Repo: "StatPan/gira"},
+			},
+		},
+		rateLimit: WorkspaceRateLimit{
+			Limit:             5000,
+			Remaining:         4990,
+			ResetAt:           "2026-05-06T02:00:00Z",
+			GraphQLLimit:      5000,
+			GraphQLRemaining:  0,
+			GraphQLResetAt:    "2026-05-06T01:30:00Z",
+			EstimatedRequests: 1,
+		},
+	}
+
+	report, err := BuildWorkspaceStatusReportWithOptions(config, client, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC), 14, WorkspaceStatusOptions{})
+	if err != nil {
+		t.Fatalf("BuildWorkspaceStatusReportWithOptions error: %v", err)
+	}
+	if report.RateLimit == nil || report.RateLimit.GraphQLRemaining != 0 || report.RateLimit.GraphQLLimit != 5000 {
+		t.Fatalf("missing GraphQL budget: %+v", report.RateLimit)
+	}
+	if !containsSubstring(report.Warnings, "GitHub GraphQL budget exhausted") {
+		t.Fatalf("missing GraphQL budget warning: %+v", report.Warnings)
+	}
+	text := FormatWorkspaceReport(report)
+	if !strings.Contains(text, "core remaining=4990/5000") || !strings.Contains(text, "graphql remaining=0/5000") {
+		t.Fatalf("workspace text missing split budget:\n%s", text)
+	}
+}
+
 type fakeWorkspaceClient struct {
 	inbox  []PortfolioRawTicket
 	status map[string]StatusSummary
@@ -655,6 +695,15 @@ func (c *countingWorkspaceClient) UpdateInboxTicketChildIssue(inboxRepo RepoRef,
 
 func (c *rateLimitWorkspaceClient) FetchRateLimit() (WorkspaceRateLimit, error) {
 	return c.rateLimit, nil
+}
+
+func containsSubstring(values []string, want string) bool {
+	for _, value := range values {
+		if strings.Contains(value, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c fakeWorkspaceClient) CreateInboxTicket(repo RepoRef, title string, body string) (WorkspaceTicketRef, error) {

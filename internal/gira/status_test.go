@@ -95,6 +95,33 @@ func TestBuildStatusSummaryFetchesWithGhShape(t *testing.T) {
 	}
 }
 
+func TestFetchIssuesUsesRESTBeforeGraphQLHeavyIssueList(t *testing.T) {
+	calls := []string{}
+	client := fakeStatusClient{
+		repo:  mustRepo(t, "StatPan/gira"),
+		calls: &calls,
+		responses: map[string]string{
+			"api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100": `[[{"number":1,"title":"REST issue","state":"open","labels":[],"updated_at":"2026-04-25T12:00:00Z","html_url":"https://github.com/StatPan/gira/issues/1"}]]`,
+		},
+		errs: map[string]error{
+			"issue list --repo StatPan/gira --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url,body": fmt.Errorf("GraphQL-heavy issue list should not be called when REST succeeds"),
+		},
+	}
+
+	issues, err := FetchIssues(client)
+	if err != nil {
+		t.Fatalf("FetchIssues returned error: %v", err)
+	}
+	if len(issues) != 1 || issues[0].Title != "REST issue" {
+		t.Fatalf("unexpected issues: %+v", issues)
+	}
+	for _, call := range calls {
+		if strings.HasPrefix(call, "issue list ") {
+			t.Fatalf("FetchIssues called GraphQL-heavy issue list despite REST success: %v", calls)
+		}
+	}
+}
+
 func TestStatusJSONShapeMatchesAutomationContract(t *testing.T) {
 	summary, err := SummarizeStatus(
 		"StatPan/gira",
@@ -159,6 +186,7 @@ type fakeStatusClient struct {
 	responses map[string]string
 	errs      map[string]error
 	delays    map[string]time.Duration
+	calls     *[]string
 }
 
 func (c fakeStatusClient) Repo() RepoRef {
@@ -167,6 +195,9 @@ func (c fakeStatusClient) Repo() RepoRef {
 
 func (c fakeStatusClient) JSON(args []string, target any) error {
 	key := strings.Join(args, " ")
+	if c.calls != nil {
+		*c.calls = append(*c.calls, key)
+	}
 	if delay := c.delays[key]; delay > 0 {
 		time.Sleep(delay)
 	}

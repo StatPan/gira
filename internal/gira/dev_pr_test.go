@@ -58,9 +58,24 @@ func TestOpenDevPR(t *testing.T) {
 func TestDevPRStatusBlocked(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := devPRRunner{outputs: map[string][]byte{
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 60 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": []byte(`[
-			{"number":99,"title":"x","body":"Closes #60","state":"OPEN","url":"u","reviewDecision":"REVIEW_REQUIRED","isDraft":false,"mergeStateStatus":"BLOCKED","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}
+		"gh api repos/StatPan/gira/issues/60/timeline --paginate": []byte(`[
+			{"event":"cross-referenced","source":{"issue":{"number":99,"body":"Closes #60","pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/99"}}}}
 		]`),
+		"gh api repos/StatPan/gira/pulls/99": []byte(`{
+			"number":99,
+			"title":"x",
+			"body":"Closes #60",
+			"state":"open",
+			"html_url":"u",
+			"draft":false,
+			"mergeable_state":"blocked",
+			"head":{"ref":"issue-60-blocked","sha":"abc123"},
+			"base":{"ref":"main"}
+		}`),
+		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                            []byte(`[]`),
+		"gh api repos/StatPan/gira/branches/main/protection/required_pull_request_reviews": []byte(`{"required_approving_review_count":1}`),
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100":       []byte(`{"check_runs":[{"conclusion":"success","status":"completed"}]}`),
+		"gh api repos/StatPan/gira/commits/abc123/status":                                  []byte(`{"statuses":[]}`),
 	}}
 	result, err := DevPRStatus(repo, 60, runner)
 	if err != nil {
@@ -196,46 +211,30 @@ func TestDevPRStatusUsesRESTSearchFallbackWhenTimelineUnavailable(t *testing.T) 
 	}
 }
 
-func TestDevPRStatusRetriesRESTSearchAfterGraphQLRateLimit(t *testing.T) {
+func TestDevPRStatusDoesNotUseGraphQLFallbackWhenRESTUnavailable(t *testing.T) {
+	t.Setenv("GIRA_DEV_PR_GRAPHQL_FALLBACK", "")
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	calls := []string{}
 	restSearch := "gh api repos/StatPan/gira/pulls -X GET -f state=all -f sort=updated -f direction=desc -f per_page=100"
 	graphQLSearch := "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 60 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20"
 	runner := devPRRunner{outputs: map[string][]byte{
-		"gh api repos/StatPan/gira/pulls/99": []byte(`{
-			"number":99,
-			"title":"x",
-			"body":"Closes #60",
-			"state":"open",
-			"html_url":"https://github.com/StatPan/gira/pull/99",
-			"mergeable_state":"clean",
-			"head":{"ref":"issue-60-rest-fallback","sha":"abc123"},
-			"base":{"ref":"main"}
-		}`),
-		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                      []byte(`[]`),
-		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100": []byte(`{"check_runs":[{"name":"test","status":"completed","conclusion":"success"}]}`),
-		"gh api repos/StatPan/gira/commits/abc123/status":                            []byte(`{"statuses":[]}`),
-	}, queues: map[string][]devPRRunResult{
-		restSearch: {
-			{err: fmt.Errorf("temporary REST list failure")},
-			{out: []byte(`[{"number":99}]`)},
-		},
+		graphQLSearch: []byte(`[{"number":99,"body":"Closes #60"}]`),
 	}, errs: map[string]error{
 		"gh api repos/StatPan/gira/issues/60/timeline --paginate": fmt.Errorf("timeline unavailable"),
-		graphQLSearch: fmt.Errorf("GraphQL: API rate limit exceeded; quota insufficient"),
+		restSearch: fmt.Errorf("temporary REST list failure"),
 	}, calls: &calls}
 	result, err := DevPRStatus(repo, 60, runner)
 	if err != nil {
 		t.Fatalf("DevPRStatus err: %v", err)
 	}
-	if !result.Ready || result.PRNumber != 99 {
-		t.Fatalf("unexpected GraphQL rate-limit fallback status: %+v", result)
+	if result.Ready || result.PRNumber != 0 || !containsString(result.Blockers, "missing_linked_pr") {
+		t.Fatalf("expected fail-closed missing PR status: %+v", result)
 	}
-	if countString(calls, restSearch) != 2 {
-		t.Fatalf("REST search calls = %v, want retry after GraphQL rate limit; all calls=%v", countString(calls, restSearch), calls)
+	if countString(calls, restSearch) != 1 {
+		t.Fatalf("REST search calls = %v, want one; all calls=%v", countString(calls, restSearch), calls)
 	}
-	if countString(calls, graphQLSearch) != 1 {
-		t.Fatalf("GraphQL search calls = %v, want one; all calls=%v", countString(calls, graphQLSearch), calls)
+	if countString(calls, graphQLSearch) != 0 {
+		t.Fatalf("GraphQL search calls = %v, want zero; all calls=%v", countString(calls, graphQLSearch), calls)
 	}
 }
 

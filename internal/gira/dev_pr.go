@@ -3,6 +3,7 @@ package gira
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -189,13 +190,18 @@ func DevPRStatus(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStat
 	if status, ok := devPRStatusRESTSearchFallback(repo, issueNumber, runner); ok {
 		return status, nil
 	}
-	status, err := devPRStatusGraphQLFallback(repo, issueNumber, runner)
-	if err != nil && isGraphQLRateLimitError(err) {
-		if restStatus, ok := devPRStatusRESTSearchFallback(repo, issueNumber, runner); ok {
-			return restStatus, nil
-		}
+	if devPRGraphQLFallbackEnabled() {
+		return devPRStatusGraphQLFallback(repo, issueNumber, runner)
 	}
-	return status, err
+	result := DevPRStatusResult{Repo: repo.FullName(), Issue: issueNumber, Blockers: []string{}}
+	result.Blockers = append(result.Blockers, "missing_linked_pr")
+	result.Ready = false
+	return result, nil
+}
+
+func devPRGraphQLFallbackEnabled() bool {
+	value := strings.TrimSpace(os.Getenv("GIRA_DEV_PR_GRAPHQL_FALLBACK"))
+	return value == "1" || strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
 }
 
 func devPRStatusGraphQLFallback(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStatusResult, error) {
@@ -321,14 +327,6 @@ func devPRStatusFromRESTPull(repo RepoRef, issueNumber int, pr restPull, runner 
 	result.Blockers = append(result.Blockers, devPRCheckBlockers(result.Checks)...)
 	result.Ready = len(result.Blockers) == 0
 	return result
-}
-
-func isGraphQLRateLimitError(err error) bool {
-	if err == nil {
-		return false
-	}
-	value := strings.ToLower(err.Error())
-	return strings.Contains(value, "graphql") && (strings.Contains(value, "rate limit") || strings.Contains(value, "quota") || strings.Contains(value, "insufficient"))
 }
 
 func linkedPRNumbersFromIssueTimeline(repo RepoRef, issueNumber int, runner CommandRunner) ([]int, bool) {

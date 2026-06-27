@@ -64,6 +64,15 @@ and avoid blind retry loops. For mutating commands, continuing after a
 secondary-limit response risks duplicate comments, partial lifecycle state, or
 provider-side integration penalties.
 
+Default PR readiness inspection must avoid GraphQL-heavy fallback queries.
+`DevPRStatus` uses REST issue timelines, REST PR lookup/listing, REST reviews,
+REST check-runs, and REST commit statuses by default. If those REST paths cannot
+resolve a linked PR, Gira fails closed with a missing/unknown linked PR state
+instead of spending GraphQL budget on `statusCheckRollup`-style `gh pr list`
+queries. The hidden `GIRA_DEV_PR_GRAPHQL_FALLBACK=1` compatibility switch is
+outside the default operating model and should not be used for normal agent
+polling.
+
 `gira ops limit --workflow NAME` estimates remaining safe workflow runs by
 dividing current primary bucket budget by the static conservative workflow
 profile, then applying an 80% safety factor. The estimate identifies the

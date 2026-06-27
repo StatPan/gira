@@ -5425,6 +5425,42 @@ func TestOpsLimitCommandText(t *testing.T) {
 	}
 }
 
+func TestOpsLimitCommandWorkflow(t *testing.T) {
+	restore := newOpsLimitReport
+	t.Cleanup(func() { newOpsLimitReport = restore })
+	newOpsLimitReport = func(repo gira.RepoRef) (gira.APILimitReport, error) {
+		return gira.APILimitReport{
+			SchemaVersion: gira.APILimitReportSchemaVersion,
+			Command:       "ops limit",
+			Repo:          repo.FullName(),
+			FetchedAt:     "2026-06-27T03:30:00Z",
+			Core:          gira.APILimitBucket{Limit: 5000, Remaining: 1000},
+			GraphQL:       gira.APILimitBucket{Limit: 5000, Remaining: 500},
+			Search:        gira.APILimitBucket{Limit: 30, Remaining: 25},
+			Secondary:     gira.SecondaryLimitInfo{Status: "unobservable", Signals: []string{"http_403"}, Guidance: "Back off."},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ops", "limit", "--repo", "StatPan/gira", "--workflow", "ticket-lifecycle", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.APILimitReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ops limit JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Workflow == nil || report.Workflow.Name != gira.WorkflowCostProfileTicketLifecycle {
+		t.Fatalf("workflow estimate missing: %+v", report.Workflow)
+	}
+	if report.Workflow.SafeRuns != 7 || report.Workflow.LimitingBucket != "rest_core" {
+		t.Fatalf("workflow = %+v, want safe_runs=7 limiting_bucket=rest_core", report.Workflow)
+	}
+	if report.Workflow.Cost.WriteContent != 12 || report.Workflow.WriteContentMeasurable {
+		t.Fatalf("unexpected write/content estimate: %+v", report.Workflow)
+	}
+}
+
 func TestOpsParityDelegatesToExistingCommand(t *testing.T) {
 	restore := newJiraParityReport
 	t.Cleanup(func() { newJiraParityReport = restore })

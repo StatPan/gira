@@ -105,20 +105,22 @@ func CoreCommandSpecs() []CommandSpec {
 		},
 		{
 			Path:    []string{"ops", "limit"},
-			Summary: "Show GitHub REST, GraphQL, search, and secondary-limit diagnostics.",
-			Usage:   "gira ops limit [--repo OWNER/REPO] [--json]",
+			Summary: "Show GitHub REST, GraphQL, search, secondary-limit, and workflow budget diagnostics.",
+			Usage:   "gira ops limit [--repo OWNER/REPO] [--workflow NAME] [--json]",
 			Since:   "v2.6.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--workflow", Summary: "Estimate safe remaining runs for a static workflow cost profile."},
 				{Name: "--json", Summary: "Emit stable api-limit-report/v1 JSON."},
 			},
-			Docs:        []string{"docs/github-api-limits.md", "docs/command-surface-boundary.md", "docs-site/api-limits.md", "docs-site/command-surface.md", "docs-site/command-reference.md"},
+			Docs:        []string{"docs/github-api-limits.md", "docs/workflow-cost-profiles.md", "docs/command-surface-boundary.md", "docs-site/api-limits.md", "docs-site/cost-profiles.md", "docs-site/command-surface.md", "docs-site/command-reference.md"},
 			GuideTopics: []string{"quickstart", "agent"},
 			Examples: []CommandExample{
 				{Summary: "Inspect current GitHub API budget", Command: "gira ops limit --repo OWNER/app"},
+				{Summary: "Estimate remaining ticket lifecycle runs", Command: "gira ops limit --repo OWNER/app --workflow ticket-lifecycle"},
 				{Summary: "Emit machine-readable budget diagnostics", Command: "gira ops limit --repo OWNER/app --json"},
 			},
-			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Diagnostic only; workflow run-count estimates are intentionally handled by a later cost-model slice."},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Diagnostic only; optional workflow estimates use static cost profiles and do not authorize mutations."},
 		},
 		{
 			Path:    []string{"workspace", "repos", "sync"},
@@ -1221,7 +1223,7 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 		case "config storage":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only config-storage-report/v1 over local paths; does not read private run artifact contents or mutate files."}
 		case "ops limit":
-			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Diagnostic only; workflow run-count estimates are intentionally handled by a later cost-model slice."}
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Diagnostic only; optional workflow estimates use static cost profiles and do not authorize mutations."}
 		case "workspace status":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "queue list":

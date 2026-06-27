@@ -770,12 +770,12 @@ Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
 
 ## `ops limit`
 
-Show GitHub REST, GraphQL, search, and secondary-limit diagnostics.
+Show GitHub REST, GraphQL, search, secondary-limit, and workflow budget diagnostics.
 
 Usage:
 
 ```bash
-gira ops limit [--repo OWNER/REPO] [--json]
+gira ops limit [--repo OWNER/REPO] [--workflow NAME] [--json]
 ```
 
 Since: `v2.6.0`
@@ -783,6 +783,7 @@ Since: `v2.6.0`
 Flags:
 
 - `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--workflow`: Estimate safe remaining runs for a static workflow cost profile.
 - `--json`: Emit stable api-limit-report/v1 JSON.
 
 Examples:
@@ -793,13 +794,19 @@ Examples:
 gira ops limit --repo OWNER/app
 ```
 
+- Estimate remaining ticket lifecycle runs
+
+```bash
+gira ops limit --repo OWNER/app --workflow ticket-lifecycle
+```
+
 - Emit machine-readable budget diagnostics
 
 ```bash
 gira ops limit --repo OWNER/app --json
 ```
 
-Documented in: `docs/github-api-limits.md`, `docs/command-surface-boundary.md`, `docs-site/api-limits.md`, `docs-site/command-surface.md`, `docs-site/command-reference.md`
+Documented in: `docs/github-api-limits.md`, `docs/workflow-cost-profiles.md`, `docs/command-surface-boundary.md`, `docs-site/api-limits.md`, `docs-site/cost-profiles.md`, `docs-site/command-surface.md`, `docs-site/command-reference.md`
 
 ## `pm qa`
 

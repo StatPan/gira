@@ -50,3 +50,51 @@ func TestParseAPILimitReportWarnsOnExhaustedBuckets(t *testing.T) {
 		t.Fatalf("warnings = %+v, want 3 exhausted bucket warnings", report.Warnings)
 	}
 }
+
+func TestWithAPILimitWorkflowTicketLifecycle(t *testing.T) {
+	report := APILimitReport{
+		Repo:    "StatPan/gira",
+		Core:    APILimitBucket{Limit: 5000, Remaining: 1000},
+		GraphQL: APILimitBucket{Limit: 5000, Remaining: 500},
+		Search:  APILimitBucket{Limit: 30, Remaining: 25},
+	}
+
+	report, err := WithAPILimitWorkflow(report, WorkflowCostProfileTicketLifecycle)
+	if err != nil {
+		t.Fatalf("WithAPILimitWorkflow error: %v", err)
+	}
+	if report.Workflow == nil {
+		t.Fatal("workflow estimate missing")
+	}
+	if report.Workflow.SafeRuns != 7 || report.Workflow.LimitingBucket != "rest_core" {
+		t.Fatalf("workflow = %+v, want safe_runs=7 limiting_bucket=rest_core", report.Workflow)
+	}
+	if report.Workflow.Cost != (WorkflowCostBucketEstimate{RESTCore: 110, GraphQL: 24, Search: 1, WriteContent: 12}) {
+		t.Fatalf("cost = %+v", report.Workflow.Cost)
+	}
+	if report.Workflow.BucketRuns.WriteContent != -1 || report.Workflow.WriteContentMeasurable {
+		t.Fatalf("write/content should be unobservable: %+v", report.Workflow)
+	}
+	text := FormatAPILimitReport(report)
+	for _, want := range []string{"workflow: ticket-lifecycle", "safe runs: 7 limiting_bucket=rest_core", "write_content=unobservable", "secondary note:"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("formatted report missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestAPILimitWorkflowSelectsGraphQLLimitingBucket(t *testing.T) {
+	estimate := BuildAPILimitWorkflowEstimate(
+		APILimitReport{
+			Core:    APILimitBucket{Remaining: 5000},
+			GraphQL: APILimitBucket{Remaining: 24},
+			Search:  APILimitBucket{Remaining: 30},
+		},
+		WorkflowCostProfileTicketLifecycle,
+		WorkflowCostModeConservative,
+		WorkflowCostBucketEstimate{RESTCore: 100, GraphQL: 24, Search: 1, WriteContent: 1},
+	)
+	if estimate.SafeRuns != 0 || estimate.LimitingBucket != "graphql" {
+		t.Fatalf("estimate = %+v, want graphql limit at 0 safe runs", estimate)
+	}
+}

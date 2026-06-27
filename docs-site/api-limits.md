@@ -43,6 +43,11 @@ Gira cannot directly query remaining secondary limit budget. It can only
 observe symptoms such as HTTP `403` or `429`, `retry-after` headers,
 `x-ratelimit-remaining: 0`, and GraphQL errors.
 
+`gira ops limit --workflow NAME` estimates remaining safe workflow runs from
+current REST, GraphQL, and search budget using the static conservative profile
+and an 80% safety factor. Write/content pressure is shown, but secondary budget
+is not directly measurable.
+
 ## Modeling Rules
 
 1. Count REST core, GraphQL, search, and write/content pressure separately.

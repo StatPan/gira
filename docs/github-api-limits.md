@@ -64,6 +64,13 @@ and avoid blind retry loops. For mutating commands, continuing after a
 secondary-limit response risks duplicate comments, partial lifecycle state, or
 provider-side integration penalties.
 
+`gira ops limit --workflow NAME` estimates remaining safe workflow runs by
+dividing current primary bucket budget by the static conservative workflow
+profile, then applying an 80% safety factor. The estimate identifies the
+limiting measurable bucket among REST core, GraphQL, and search. Write/content
+pressure is shown in the selected profile, but it is not directly measurable
+and therefore cannot be used as a numeric remaining-run limit.
+
 ## Modeling Rules
 
 Use these rules for follow-up implementation slices:

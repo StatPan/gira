@@ -7,6 +7,17 @@ The model exists so Gira can later answer "how many more times can I run this
 flow?" without pretending that GitHub is an unlimited database. The estimates
 are intentionally fixed for the first implementation slice.
 
+`gira ops limit --workflow NAME` uses the conservative profile by default. It
+computes safe remaining runs as:
+
+```text
+floor((remaining primary bucket * 80%) / conservative profile cost)
+```
+
+The lowest measurable bucket result becomes `safe_runs` and
+`limiting_bucket`. Write/content cost remains visible, but secondary
+write/content budget is not directly measurable by GitHub.
+
 ## Buckets
 
 | Bucket | Meaning |

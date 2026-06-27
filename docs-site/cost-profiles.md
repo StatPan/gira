@@ -4,6 +4,12 @@ Gira uses fixed workflow cost profiles to reason about expected GitHub API
 budget usage. These profiles are conservative planning data, not dynamic
 measurements.
 
+`gira ops limit --workflow NAME` uses the conservative profile by default and
+computes safe remaining runs as `floor((remaining primary bucket * 80%) /
+conservative profile cost)`. The lowest measurable bucket becomes the limiting
+bucket. Write/content cost is reported, but secondary budget is not directly
+measurable.
+
 ## Buckets
 
 | Bucket | Meaning |

@@ -2938,12 +2938,13 @@ func runOps(args []string, stdout io.Writer, stderr io.Writer) int {
 const opsLimitHelp = `Show GitHub API limit diagnostics.
 
 Usage:
-  gira ops limit [--repo OWNER/REPO] [--json]
+  gira ops limit [--repo OWNER/REPO] [--workflow NAME] [--json]
 
 Flags:
-  --repo string  Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
-  --json         Emit stable api-limit-report/v1 JSON
-  -h, --help     Show help
+  --repo string      Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
+  --workflow string  Estimate safe remaining runs for a static workflow cost profile
+  --json             Emit stable api-limit-report/v1 JSON
+  -h, --help         Show help
 `
 
 func runOpsLimit(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -2954,6 +2955,7 @@ func runOpsLimit(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs := flag.NewFlagSet("ops limit", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	workflowValue := fs.String("workflow", "", "Static workflow cost profile to estimate")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprint(stderr, opsLimitHelp)
@@ -2971,6 +2973,13 @@ func runOpsLimit(args []string, stdout io.Writer, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "ops limit: %v\n", err)
 		return 1
+	}
+	if strings.TrimSpace(*workflowValue) != "" {
+		report, err = gira.WithAPILimitWorkflow(report, *workflowValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "ops limit: %v\n", err)
+			return 1
+		}
 	}
 	if *jsonOutput {
 		out, err := json.MarshalIndent(report, "", "  ")

@@ -8,6 +8,7 @@ import (
 )
 
 const APILimitReportSchemaVersion = "api-limit-report/v1"
+const APILimitWorkflowSafetyFactorPercent = 80
 
 type APILimitReport struct {
 	SchemaVersion string             `json:"schema_version"`
@@ -18,6 +19,7 @@ type APILimitReport struct {
 	GraphQL       APILimitBucket     `json:"graphql"`
 	Search        APILimitBucket     `json:"search"`
 	Secondary     SecondaryLimitInfo `json:"secondary"`
+	Workflow      *APILimitWorkflow  `json:"workflow,omitempty"`
 	Warnings      []string           `json:"warnings,omitempty"`
 	NextStep      string             `json:"next_step"`
 }
@@ -33,6 +35,25 @@ type SecondaryLimitInfo struct {
 	Status   string   `json:"status"`
 	Signals  []string `json:"signals"`
 	Guidance string   `json:"guidance"`
+}
+
+type APILimitWorkflow struct {
+	Name                   string                     `json:"name"`
+	Mode                   string                     `json:"mode"`
+	SafetyFactorPercent    int                        `json:"safety_factor_percent"`
+	Cost                   WorkflowCostBucketEstimate `json:"cost"`
+	BucketRuns             APILimitWorkflowBucketRuns `json:"bucket_runs"`
+	LimitingBucket         string                     `json:"limiting_bucket"`
+	SafeRuns               int                        `json:"safe_runs"`
+	WriteContentMeasurable bool                       `json:"write_content_measurable"`
+	SecondaryNote          string                     `json:"secondary_note,omitempty"`
+}
+
+type APILimitWorkflowBucketRuns struct {
+	RESTCore     int `json:"rest_core"`
+	GraphQL      int `json:"graphql"`
+	Search       int `json:"search"`
+	WriteContent int `json:"write_content"`
 }
 
 func BuildAPILimitReport(repo RepoRef, runner CommandRunner, now time.Time) (APILimitReport, error) {
@@ -98,6 +119,83 @@ func ParseAPILimitReport(repo RepoRef, data []byte, now time.Time) (APILimitRepo
 	return report, nil
 }
 
+func WithAPILimitWorkflow(report APILimitReport, workflowName string) (APILimitReport, error) {
+	profile, ok := LookupWorkflowCostProfile(workflowName)
+	if !ok {
+		return APILimitReport{}, fmt.Errorf("unknown workflow cost profile %q", workflowName)
+	}
+	cost, err := DefaultWorkflowCostEstimate(profile)
+	if err != nil {
+		return APILimitReport{}, err
+	}
+	workflow := BuildAPILimitWorkflowEstimate(report, profile.Name, WorkflowCostModeConservative, cost)
+	report.Workflow = &workflow
+	report.NextStep = fmt.Sprintf("gira ops limit --repo %s --workflow %s --json", QuoteShellArg(report.Repo), QuoteShellArg(profile.Name))
+	return report, nil
+}
+
+func BuildAPILimitWorkflowEstimate(report APILimitReport, workflowName string, mode string, cost WorkflowCostBucketEstimate) APILimitWorkflow {
+	bucketRuns := APILimitWorkflowBucketRuns{
+		RESTCore:     safeRunsForAPIBucket(report.Core.Remaining, cost.RESTCore),
+		GraphQL:      safeRunsForAPIBucket(report.GraphQL.Remaining, cost.GraphQL),
+		Search:       safeRunsForAPIBucket(report.Search.Remaining, cost.Search),
+		WriteContent: -1,
+	}
+	limitingBucket, safeRuns := limitingAPIBucketRuns(cost, bucketRuns)
+	workflow := APILimitWorkflow{
+		Name:                   workflowName,
+		Mode:                   mode,
+		SafetyFactorPercent:    APILimitWorkflowSafetyFactorPercent,
+		Cost:                   cost,
+		BucketRuns:             bucketRuns,
+		LimitingBucket:         limitingBucket,
+		SafeRuns:               safeRuns,
+		WriteContentMeasurable: false,
+	}
+	if cost.WriteContent > 0 {
+		workflow.SecondaryNote = "write/content pressure is not directly measurable; safe_runs uses primary REST, GraphQL, and search budgets only."
+	}
+	return workflow
+}
+
+func safeRunsForAPIBucket(remaining int, cost int) int {
+	if cost <= 0 {
+		return -1
+	}
+	if remaining <= 0 {
+		return 0
+	}
+	return (remaining * APILimitWorkflowSafetyFactorPercent / 100) / cost
+}
+
+func limitingAPIBucketRuns(cost WorkflowCostBucketEstimate, bucketRuns APILimitWorkflowBucketRuns) (string, int) {
+	type candidate struct {
+		name string
+		cost int
+		runs int
+	}
+	candidates := []candidate{
+		{name: "rest_core", cost: cost.RESTCore, runs: bucketRuns.RESTCore},
+		{name: "graphql", cost: cost.GraphQL, runs: bucketRuns.GraphQL},
+		{name: "search", cost: cost.Search, runs: bucketRuns.Search},
+	}
+	limitingBucket := "none"
+	safeRuns := -1
+	for _, candidate := range candidates {
+		if candidate.cost <= 0 {
+			continue
+		}
+		if safeRuns < 0 || candidate.runs < safeRuns {
+			limitingBucket = candidate.name
+			safeRuns = candidate.runs
+		}
+	}
+	if safeRuns < 0 {
+		return limitingBucket, 0
+	}
+	return limitingBucket, safeRuns
+}
+
 type rawAPILimitBucket struct {
 	Limit     int   `json:"limit"`
 	Remaining int   `json:"remaining"`
@@ -127,6 +225,9 @@ func FormatAPILimitReport(report APILimitReport) string {
 	if len(report.Secondary.Signals) > 0 {
 		fmt.Fprintf(&b, "secondary signals: %s\n", strings.Join(report.Secondary.Signals, ", "))
 	}
+	if report.Workflow != nil {
+		formatAPILimitWorkflow(&b, *report.Workflow)
+	}
 	for _, warning := range report.Warnings {
 		fmt.Fprintf(&b, "warning: %s\n", warning)
 	}
@@ -145,4 +246,21 @@ func formatAPILimitBucket(b *strings.Builder, name string, bucket APILimitBucket
 		fmt.Fprintf(b, " reset=%s", bucket.ResetAt)
 	}
 	b.WriteString("\n")
+}
+
+func formatAPILimitWorkflow(b *strings.Builder, workflow APILimitWorkflow) {
+	fmt.Fprintf(b, "workflow: %s mode=%s safety_factor=%d%%\n", workflow.Name, workflow.Mode, workflow.SafetyFactorPercent)
+	fmt.Fprintf(b, "workflow cost: rest_core=%d graphql=%d search=%d write_content=%d\n", workflow.Cost.RESTCore, workflow.Cost.GraphQL, workflow.Cost.Search, workflow.Cost.WriteContent)
+	fmt.Fprintf(b, "safe runs: %d limiting_bucket=%s\n", workflow.SafeRuns, workflow.LimitingBucket)
+	fmt.Fprintf(b, "bucket runs: rest_core=%s graphql=%s search=%s write_content=unobservable\n", formatAPILimitRunCount(workflow.BucketRuns.RESTCore), formatAPILimitRunCount(workflow.BucketRuns.GraphQL), formatAPILimitRunCount(workflow.BucketRuns.Search))
+	if workflow.SecondaryNote != "" {
+		fmt.Fprintf(b, "secondary note: %s\n", workflow.SecondaryNote)
+	}
+}
+
+func formatAPILimitRunCount(runs int) string {
+	if runs < 0 {
+		return "not_applicable"
+	}
+	return fmt.Sprintf("%d", runs)
 }

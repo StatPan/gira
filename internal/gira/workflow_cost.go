@@ -120,16 +120,16 @@ var staticWorkflowCostProfiles = []WorkflowCostProfile{
 		DefaultMode: WorkflowCostModeConservative,
 		Optimistic: WorkflowCostBucketEstimate{
 			RESTCore:     60,
-			GraphQL:      12,
+			GraphQL:      4,
 			WriteContent: 7,
 		},
 		Conservative: WorkflowCostBucketEstimate{
 			RESTCore:     110,
-			GraphQL:      24,
+			GraphQL:      8,
 			Search:       1,
 			WriteContent: 12,
 		},
-		Notes: []string{"Includes lifecycle writes, PR creation, self-review note, merge/finish receipt, and repeated check polling pressure."},
+		Notes: []string{"Includes lifecycle writes, PR creation, self-review note, merge/finish receipt, and repeated REST check polling pressure. Default PR readiness avoids GraphQL-heavy statusCheckRollup fallback."},
 	},
 	{
 		Name:        WorkflowCostProfileGoalStatusNext,

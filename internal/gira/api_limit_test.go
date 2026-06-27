@@ -69,7 +69,7 @@ func TestWithAPILimitWorkflowTicketLifecycle(t *testing.T) {
 	if report.Workflow.SafeRuns != 7 || report.Workflow.LimitingBucket != "rest_core" {
 		t.Fatalf("workflow = %+v, want safe_runs=7 limiting_bucket=rest_core", report.Workflow)
 	}
-	if report.Workflow.Cost != (WorkflowCostBucketEstimate{RESTCore: 110, GraphQL: 24, Search: 1, WriteContent: 12}) {
+	if report.Workflow.Cost != (WorkflowCostBucketEstimate{RESTCore: 110, GraphQL: 8, Search: 1, WriteContent: 12}) {
 		t.Fatalf("cost = %+v", report.Workflow.Cost)
 	}
 	if report.Workflow.BucketRuns.WriteContent != -1 || report.Workflow.WriteContentMeasurable {

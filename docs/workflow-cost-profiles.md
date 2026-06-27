@@ -50,7 +50,13 @@ installation-token budgets.
 | `queue-next` | `gira queue next`, `gira queue handoff` | 24 | 4 | 1 | 0 | 10 | 2 | 1 | 0 |
 | `queue-take` | `gira queue take` | 35 | 6 | 1 | 3 | 18 | 3 | 1 | 2 |
 | `ticket-status-view` | `gira ticket status`, `gira ticket view` | 18 | 4 | 0 | 0 | 8 | 2 | 0 | 0 |
-| `ticket-lifecycle` | `gira ticket start`, `gira ticket pr`, `gira ticket self-review`, `gira ticket checks`, `gira ticket wait`, `gira ticket finish` | 110 | 24 | 1 | 12 | 60 | 12 | 0 | 7 |
+| `ticket-lifecycle` | `gira ticket start`, `gira ticket pr`, `gira ticket self-review`, `gira ticket checks`, `gira ticket wait`, `gira ticket finish` | 110 | 8 | 1 | 12 | 60 | 4 | 0 | 7 |
+
+The `ticket-lifecycle` GraphQL estimate excludes the legacy rich PR readiness
+fallback. By default, linked PR readiness uses REST timeline/list, review,
+check-run, and commit-status endpoints and fails closed when REST lookup cannot
+resolve the PR. The hidden `GIRA_DEV_PR_GRAPHQL_FALLBACK=1` compatibility switch
+is not part of the normal cost model.
 | `goal-status-next` | `gira goal status`, `gira goal next` | 45 | 8 | 1 | 0 | 18 | 4 | 0 | 0 |
 
 ## Boundaries

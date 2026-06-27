@@ -14,7 +14,7 @@ func TestWorkflowCostProfileTicketLifecycleDefaultsToConservative(t *testing.T) 
 	if err != nil {
 		t.Fatalf("DefaultWorkflowCostEstimate error: %v", err)
 	}
-	want := WorkflowCostBucketEstimate{RESTCore: 110, GraphQL: 24, Search: 1, WriteContent: 12}
+	want := WorkflowCostBucketEstimate{RESTCore: 110, GraphQL: 8, Search: 1, WriteContent: 12}
 	if estimate != want {
 		t.Fatalf("estimate = %+v, want %+v", estimate, want)
 	}

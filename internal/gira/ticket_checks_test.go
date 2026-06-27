@@ -8,9 +8,13 @@ import (
 func TestBuildTicketChecksReportShowsPendingChecks(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 227 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
-			[]byte(`[{"number":228,"title":"x","body":"Closes #227","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNSTABLE","statusCheckRollup":[{"name":"Build linux","workflowName":"Go release","conclusion":"","status":"IN_PROGRESS","detailsUrl":"https://example.test/check"}]}]`),
+		"gh api repos/StatPan/gira/issues/227/timeline --paginate": {[]byte(`[{"event":"cross-referenced","source":{"issue":{"number":228,"body":"Closes #227","pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/228"}}}}]`)},
+		"gh api repos/StatPan/gira/pulls/228":                      {[]byte(`{"number":228,"title":"x","body":"Closes #227","state":"open","html_url":"u","draft":false,"mergeable_state":"unstable","head":{"ref":"issue-227-checks","sha":"abc123"},"base":{"ref":"main"}}`)},
+		"gh api repos/StatPan/gira/pulls/228/reviews --paginate":   {[]byte(`[{"state":"APPROVED","submitted_at":"2026-06-18T09:00:00Z"}]`)},
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100": {
+			[]byte(`{"check_runs":[{"name":"Build linux","status":"in_progress","conclusion":"","html_url":"https://example.test/check","app":{"name":"Go release"}}]}`),
 		},
+		"gh api repos/StatPan/gira/commits/abc123/status": {[]byte(`{"statuses":[]}`)},
 	}}
 
 	report, err := BuildTicketChecksReport(repo, 227, 0, 0, runner)
@@ -28,9 +32,25 @@ func TestBuildTicketChecksReportShowsPendingChecks(t *testing.T) {
 func TestBuildTicketChecksReportWaitsUntilChecksPass(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 227 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
-			[]byte(`[{"number":228,"title":"x","body":"Closes #227","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNSTABLE","statusCheckRollup":[{"name":"Build linux","workflowName":"Go release","conclusion":"","status":"IN_PROGRESS"}]}]`),
-			[]byte(`[{"number":228,"title":"x","body":"Closes #227","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"name":"Build linux","workflowName":"Go release","conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		"gh api repos/StatPan/gira/issues/227/timeline --paginate": {
+			[]byte(`[{"event":"cross-referenced","source":{"issue":{"number":228,"body":"Closes #227","pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/228"}}}}]`),
+			[]byte(`[{"event":"cross-referenced","source":{"issue":{"number":228,"body":"Closes #227","pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/228"}}}}]`),
+		},
+		"gh api repos/StatPan/gira/pulls/228": {
+			[]byte(`{"number":228,"title":"x","body":"Closes #227","state":"open","html_url":"u","draft":false,"mergeable_state":"unstable","head":{"ref":"issue-227-checks","sha":"abc123"},"base":{"ref":"main"}}`),
+			[]byte(`{"number":228,"title":"x","body":"Closes #227","state":"open","html_url":"u","draft":false,"mergeable_state":"clean","head":{"ref":"issue-227-checks","sha":"abc123"},"base":{"ref":"main"}}`),
+		},
+		"gh api repos/StatPan/gira/pulls/228/reviews --paginate": {
+			[]byte(`[{"state":"APPROVED","submitted_at":"2026-06-18T09:00:00Z"}]`),
+			[]byte(`[{"state":"APPROVED","submitted_at":"2026-06-18T09:00:00Z"}]`),
+		},
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100": {
+			[]byte(`{"check_runs":[{"name":"Build linux","status":"in_progress","conclusion":"","app":{"name":"Go release"}}]}`),
+			[]byte(`{"check_runs":[{"name":"Build linux","status":"completed","conclusion":"success","app":{"name":"Go release"}}]}`),
+		},
+		"gh api repos/StatPan/gira/commits/abc123/status": {
+			[]byte(`{"statuses":[]}`),
+			[]byte(`{"statuses":[]}`),
 		},
 	}}
 

@@ -94,3 +94,5 @@ GitHub rate limits are not a reason to move completion truth into local state.
 They are a reason to make Gira commands budget-aware, cache-aware, and explicit
 about freshness before future local runtime projection work.
 
+See [Command Surface Boundary](command-surface-boundary.md) for why API budget
+diagnostics use the `gira ops limit` surface instead of a new root command.

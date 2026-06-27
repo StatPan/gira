@@ -5357,8 +5357,71 @@ func TestOpsHelp(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "Advanced Gira controls") || !strings.Contains(stdout.String(), "sync") {
+	if !strings.Contains(stdout.String(), "Advanced Gira controls") || !strings.Contains(stdout.String(), "sync") || !strings.Contains(stdout.String(), "limit") {
 		t.Fatalf("stdout missing ops help:\n%s", stdout.String())
+	}
+}
+
+func TestOpsLimitCommandJSON(t *testing.T) {
+	restore := newOpsLimitReport
+	t.Cleanup(func() { newOpsLimitReport = restore })
+	newOpsLimitReport = func(repo gira.RepoRef) (gira.APILimitReport, error) {
+		if repo.FullName() != "StatPan/gira" {
+			t.Fatalf("unexpected repo=%s", repo.FullName())
+		}
+		return gira.APILimitReport{
+			SchemaVersion: gira.APILimitReportSchemaVersion,
+			Command:       "ops limit",
+			Repo:          repo.FullName(),
+			FetchedAt:     "2026-06-27T03:30:00Z",
+			Core:          gira.APILimitBucket{Limit: 5000, Remaining: 4800},
+			GraphQL:       gira.APILimitBucket{Limit: 5000, Remaining: 4990},
+			Search:        gira.APILimitBucket{Limit: 30, Remaining: 30},
+			Secondary:     gira.SecondaryLimitInfo{Status: "unobservable", Signals: []string{"http_403"}, Guidance: "Back off."},
+			NextStep:      "gira ops limit --repo StatPan/gira --json",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ops", "limit", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.APILimitReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ops limit JSON: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != gira.APILimitReportSchemaVersion || report.Core.Remaining != 4800 || report.Secondary.Status != "unobservable" {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+}
+
+func TestOpsLimitCommandText(t *testing.T) {
+	restore := newOpsLimitReport
+	t.Cleanup(func() { newOpsLimitReport = restore })
+	newOpsLimitReport = func(repo gira.RepoRef) (gira.APILimitReport, error) {
+		return gira.APILimitReport{
+			SchemaVersion: gira.APILimitReportSchemaVersion,
+			Command:       "ops limit",
+			Repo:          repo.FullName(),
+			FetchedAt:     "2026-06-27T03:30:00Z",
+			Core:          gira.APILimitBucket{Limit: 5000, Remaining: 4800},
+			GraphQL:       gira.APILimitBucket{Limit: 5000, Remaining: 4990},
+			Search:        gira.APILimitBucket{Limit: 30, Remaining: 30},
+			Secondary:     gira.SecondaryLimitInfo{Status: "unobservable", Signals: []string{"http_403"}, Guidance: "Back off."},
+			NextStep:      "gira ops limit --repo StatPan/gira --json",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ops", "limit", "--repo", "StatPan/gira"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"ops limit: StatPan/gira", "core: remaining=4800/5000", "graphql: remaining=4990/5000", "search: remaining=30/30", "secondary: unobservable"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout.String())
+		}
 	}
 }
 

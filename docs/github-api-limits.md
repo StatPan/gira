@@ -71,7 +71,8 @@ Use these rules for follow-up implementation slices:
 1. Count REST core, GraphQL, search, and write/content pressure separately.
 2. Treat secondary limits as guarded but not precomputable.
 3. Start with static workflow profiles for common Gira flows. Do not rely on
-   dynamic averages for the first cost model.
+   dynamic averages for the first cost model. See
+   [Workflow Cost Profiles](workflow-cost-profiles.md).
 4. Prefer conservative estimates when showing remaining safe workflow runs.
 5. Keep daily command output compact. Detailed diagnostics belong under
    `gira ops limit`.
@@ -96,3 +97,5 @@ about freshness before future local runtime projection work.
 
 See [Command Surface Boundary](command-surface-boundary.md) for why API budget
 diagnostics use the `gira ops limit` surface instead of a new root command.
+See [Workflow Cost Profiles](workflow-cost-profiles.md) for the fixed profile
+data used by follow-up run-count estimates.

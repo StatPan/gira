@@ -1187,6 +1187,7 @@ Usage:
 
 Commands:
   sync        Sync labels, milestones, and bootstrap issues
+  limit       Show GitHub REST, GraphQL, search, and secondary-limit diagnostics
   detach      Plan/apply safe removal of Gira-managed repository artifacts
   doctor      Diagnose install, auth, repo, drift, and local git readiness
   onboard     Verify onboarding readiness from init to steady-state
@@ -1213,6 +1214,10 @@ Flags:
 
 var newStatusClient = func(repo gira.RepoRef) gira.StatusClient {
 	return gira.NewGHStatusClient(repo, gira.ExecCommandRunner{})
+}
+
+var newOpsLimitReport = func(repo gira.RepoRef) (gira.APILimitReport, error) {
+	return gira.BuildAPILimitReport(repo, gira.ExecCommandRunner{}, time.Now().UTC())
 }
 
 var listStatusReposForOwner = func(owner string, limit int, includeArchived bool) ([]gira.RepoRef, error) {
@@ -2881,6 +2886,8 @@ func runOps(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	switch args[0] {
+	case "limit":
+		return runOpsLimit(args[1:], stdout, stderr)
 	case "bootstrap":
 		return runBootstrap(args[1:], stdout, stderr)
 	case "onboard":
@@ -2926,6 +2933,56 @@ func runOps(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, opsHelp)
 		return 2
 	}
+}
+
+const opsLimitHelp = `Show GitHub API limit diagnostics.
+
+Usage:
+  gira ops limit [--repo OWNER/REPO] [--json]
+
+Flags:
+  --repo string  Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
+  --json         Emit stable api-limit-report/v1 JSON
+  -h, --help     Show help
+`
+
+func runOpsLimit(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprint(stdout, opsLimitHelp)
+		return 0
+	}
+	fs := flag.NewFlagSet("ops limit", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprint(stderr, opsLimitHelp)
+		return 2
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprint(stdout, opsLimitHelp)
+		return 0
+	}
+	repo, ok := resolveRepoContext(*repoValue, stderr, opsLimitHelp)
+	if !ok {
+		return 2
+	}
+	report, err := newOpsLimitReport(repo)
+	if err != nil {
+		fmt.Fprintf(stderr, "ops limit: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode ops limit JSON: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatAPILimitReport(report))
+	return 0
 }
 
 func resolveRepoContext(repoValue string, stderr io.Writer, help string) (gira.RepoRef, bool) {

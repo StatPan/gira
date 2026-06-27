@@ -768,6 +768,39 @@ gira milestone status "2.0 Alpha - State-Aware Ticket Runtime"
 
 Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
 
+## `ops limit`
+
+Show GitHub REST, GraphQL, search, and secondary-limit diagnostics.
+
+Usage:
+
+```bash
+gira ops limit [--repo OWNER/REPO] [--json]
+```
+
+Since: `v2.6.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--json`: Emit stable api-limit-report/v1 JSON.
+
+Examples:
+
+- Inspect current GitHub API budget
+
+```bash
+gira ops limit --repo OWNER/app
+```
+
+- Emit machine-readable budget diagnostics
+
+```bash
+gira ops limit --repo OWNER/app --json
+```
+
+Documented in: `docs/github-api-limits.md`, `docs/command-surface-boundary.md`, `docs-site/api-limits.md`, `docs-site/command-surface.md`, `docs-site/command-reference.md`
+
 ## `pm qa`
 
 Render a PM acceptance QA prompt from task-local PM state and PR evidence.

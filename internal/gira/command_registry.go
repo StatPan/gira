@@ -104,6 +104,23 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"ops", "limit"},
+			Summary: "Show GitHub REST, GraphQL, search, and secondary-limit diagnostics.",
+			Usage:   "gira ops limit [--repo OWNER/REPO] [--json]",
+			Since:   "v2.6.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--json", Summary: "Emit stable api-limit-report/v1 JSON."},
+			},
+			Docs:        []string{"docs/github-api-limits.md", "docs/command-surface-boundary.md", "docs-site/api-limits.md", "docs-site/command-surface.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"quickstart", "agent"},
+			Examples: []CommandExample{
+				{Summary: "Inspect current GitHub API budget", Command: "gira ops limit --repo OWNER/app"},
+				{Summary: "Emit machine-readable budget diagnostics", Command: "gira ops limit --repo OWNER/app --json"},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Diagnostic only; workflow run-count estimates are intentionally handled by a later cost-model slice."},
+		},
+		{
 			Path:    []string{"workspace", "repos", "sync"},
 			Summary: "Discover GitHub owner/org repos and update a global workspace execution repo allowlist.",
 			Usage:   "gira workspace repos sync [--owner OWNER] [--workspace NAME] --dry-run|--apply [--include-archived]",
@@ -1203,6 +1220,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterApply("updates workspace repo allowlist; --dry-run previews selected repositories", JSONSupportStable)
 		case "config storage":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only config-storage-report/v1 over local paths; does not read private run artifact contents or mutate files."}
+		case "ops limit":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Diagnostic only; workflow run-count estimates are intentionally handled by a later cost-model slice."}
 		case "workspace status":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "queue list":

@@ -119,6 +119,13 @@ If local state disappears, Gira should be able to reconstruct the workflow from
 GitHub plus repo/global configuration, possibly with less performance or less
 ergonomic command resolution.
 
+GitHub API budget is part of this local-state boundary. Gira may use local
+cache and future projections to reduce provider reads, but those projections
+must remain rebuildable and must not replace provider evidence for `--apply`
+decisions. See [GitHub API Limit Operating Model](github-api-limits.md) for
+the REST, GraphQL, search, content, and secondary-limit constraints that future
+budget-aware work should model.
+
 Use `gira config storage --repo OWNER/REPO` to inspect the local storage map.
 It reports config, state, cache, run evidence, audit, export, and distribution
 cache surfaces with durability, privacy, rebuild, and source-of-truth

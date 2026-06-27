@@ -56,6 +56,7 @@ export default defineConfig({
           { text: 'Gira 3.0 Local Report Bundle', link: '/gira-3-local-report-bundle' },
           { text: 'Workspace Dashboard Gaps', link: '/workspace-dashboard-contract-gaps' },
           { text: 'State Model', link: '/state-model' },
+          { text: 'API Limits', link: '/api-limits' },
           { text: 'Goal Mode', link: '/goal-mode' },
           { text: 'Sprint And Release', link: '/sprint-release' },
           { text: 'Readiness And Audit', link: '/readiness-audit' },

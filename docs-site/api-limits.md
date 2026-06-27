@@ -47,7 +47,8 @@ observe symptoms such as HTTP `403` or `429`, `retry-after` headers,
 
 1. Count REST core, GraphQL, search, and write/content pressure separately.
 2. Treat secondary limits as guarded but not precomputable.
-3. Start with static workflow profiles for common Gira flows.
+3. Start with static workflow profiles for common Gira flows. See
+   [Cost Profiles](cost-profiles.md).
 4. Prefer conservative estimates when showing remaining safe workflow runs.
 5. Keep daily command output compact. Detailed diagnostics belong under
    `gira ops limit`.
@@ -70,3 +71,6 @@ about freshness before future local runtime projection work.
 
 See [Command Surface](command-surface.md) for why API budget diagnostics use the
 `gira ops limit` surface instead of a new root command.
+
+See [Cost Profiles](cost-profiles.md) for the fixed profile data used by
+follow-up run-count estimates.

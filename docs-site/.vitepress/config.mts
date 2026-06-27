@@ -57,6 +57,7 @@ export default defineConfig({
           { text: 'Workspace Dashboard Gaps', link: '/workspace-dashboard-contract-gaps' },
           { text: 'State Model', link: '/state-model' },
           { text: 'API Limits', link: '/api-limits' },
+          { text: 'Cost Profiles', link: '/cost-profiles' },
           { text: 'Command Surface', link: '/command-surface' },
           { text: 'Goal Mode', link: '/goal-mode' },
           { text: 'Sprint And Release', link: '/sprint-release' },

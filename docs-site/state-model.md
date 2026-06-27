@@ -22,6 +22,13 @@ Local files/cache = configuration, bindings, and acceleration
 | Receipts | `finish-receipt/v1`, `goal-finish-receipt/v1`, supersede notes, handoff notes. | Durable audit comments explaining a decision. |
 | Local config/cache | Workspace registry, repo registry, branch policy records, cache. | Ergonomics and performance, not hidden completion state. |
 
+GitHub API budget is part of the local-state boundary. Gira may use local cache
+and future projections to reduce provider reads, but those projections must
+remain rebuildable and must not replace provider evidence for `--apply`
+decisions. See [API Limits](api-limits.md) for the REST, GraphQL, search,
+content, and secondary-limit constraints that future budget-aware work should
+model.
+
 ## Why Not More Labels?
 
 Labels should stay few and stable. Conditions like `finish_ready`,

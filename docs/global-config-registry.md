@@ -185,6 +185,12 @@ surfaces should avoid aggressive polling; a refresh interval of several minutes
 with `--cache-ttl 5m` is the intended default. Use `--refresh` for explicit
 operator-triggered fresh reads.
 
+The broader GitHub API budget model is documented in
+[GitHub API Limit Operating Model](github-api-limits.md). That model separates
+REST core, GraphQL, search, content-generation pressure, and secondary-limit
+symptoms so future command estimates do not treat a single visible primary
+budget as the whole operating constraint.
+
 Create the personal workspace registry without writing repo files:
 
 ```bash

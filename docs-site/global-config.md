@@ -87,6 +87,11 @@ concurrent repo fetches, and reuses recent per-repo status cache for five
 minutes by default. Future GUI/background surfaces should refresh on a
 multi-minute interval and reserve `--refresh` for explicit operator reads.
 
+The broader GitHub API budget model is documented in [API Limits](api-limits.md).
+That model separates REST core, GraphQL, search, content-generation pressure,
+and secondary-limit symptoms so future command estimates do not treat a single
+visible primary budget as the whole operating constraint.
+
 Use the lower-level primitives only when you need to compose the pieces
 manually:
 

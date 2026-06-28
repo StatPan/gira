@@ -630,12 +630,6 @@ func BuildWorkspaceStatusReportWithOptions(config WorkspaceConfigResolved, clien
 			rateLimit.EstimatedRequests = estimateWorkspaceStatusRequests(config, repos)
 			rateLimit.BudgetOK = rateLimit.Limit == 0 || rateLimit.Remaining >= rateLimit.EstimatedRequests
 			report.RateLimit = &rateLimit
-			if !rateLimit.BudgetOK {
-				report.Warnings = append(report.Warnings, fmt.Sprintf("GitHub API budget low: remaining=%d estimated=%d reset=%s", rateLimit.Remaining, rateLimit.EstimatedRequests, rateLimit.ResetAt))
-			}
-			if rateLimit.GraphQLLimit > 0 && rateLimit.GraphQLRemaining == 0 {
-				report.Warnings = append(report.Warnings, fmt.Sprintf("GitHub GraphQL budget exhausted: remaining=0 reset=%s", rateLimit.GraphQLResetAt))
-			}
 		}
 	}
 	if !workspaceContainsRepo(config.Repos, config.InboxRepo) {
@@ -686,11 +680,27 @@ func BuildWorkspaceStatusReportWithOptions(config WorkspaceConfigResolved, clien
 		report.RateLimit.EstimatedRequests += queueDetailRequests
 		report.RateLimit.BudgetOK = report.RateLimit.Limit == 0 || report.RateLimit.Remaining >= report.RateLimit.EstimatedRequests
 	}
+	if report.RateLimit != nil {
+		report.Warnings = append(report.Warnings, workspaceRateLimitWarnings(*report.RateLimit)...)
+	}
 	sortWorkspaceBacklog(report.Backlog)
 	report.Counts.InboxOpen = report.Inbox.Open
 	report.Counts.Backlog = len(report.Backlog)
 	report.NextSteps = workspaceNextSteps(report, config.ConfigPath)
 	return report, nil
+}
+
+func workspaceRateLimitWarnings(rateLimit WorkspaceRateLimit) []string {
+	warnings := []string{}
+	if rateLimit.Limit > 0 && rateLimit.Remaining < rateLimit.EstimatedRequests {
+		warnings = append(warnings, fmt.Sprintf("GitHub API budget low (rest core remaining=%d estimated=%d); inspect with gira ops limit", rateLimit.Remaining, rateLimit.EstimatedRequests))
+	} else if warning := apiLimitBucketWarning("REST core", APILimitBucket{Limit: rateLimit.Limit, Remaining: rateLimit.Remaining, ResetAt: rateLimit.ResetAt}); warning != "" {
+		warnings = append(warnings, warning)
+	}
+	if warning := apiLimitBucketWarning("GraphQL", APILimitBucket{Limit: rateLimit.GraphQLLimit, Remaining: rateLimit.GraphQLRemaining, ResetAt: rateLimit.GraphQLResetAt}); warning != "" {
+		warnings = append(warnings, warning)
+	}
+	return warnings
 }
 
 func BuildWorkspaceSyncReport(config WorkspaceConfigResolved, syncer func(RepoRef, bool, bool) (SyncPlan, error), dryRun bool, bootstrapIssues bool) (WorkspaceSyncReport, error) {
@@ -871,13 +881,6 @@ func FormatWorkspaceReport(report WorkspaceReport) string {
 	fmt.Fprintf(&b, "workspace: %s (%s)\n", report.Workspace.Name, report.Workspace.Owner)
 	if strings.TrimSpace(report.Source) != "" {
 		fmt.Fprintf(&b, "source: %s %s\n", report.Source, report.ConfigPath)
-	}
-	if report.RateLimit != nil {
-		fmt.Fprintf(&b, "github budget: core remaining=%d/%d estimated=%d reset=%s", report.RateLimit.Remaining, report.RateLimit.Limit, report.RateLimit.EstimatedRequests, report.RateLimit.ResetAt)
-		if report.RateLimit.GraphQLLimit > 0 {
-			fmt.Fprintf(&b, " graphql remaining=%d/%d reset=%s", report.RateLimit.GraphQLRemaining, report.RateLimit.GraphQLLimit, report.RateLimit.GraphQLResetAt)
-		}
-		b.WriteString("\n")
 	}
 	if report.Cache.Enabled {
 		fmt.Fprintf(&b, "cache: ttl=%ds hits=%d misses=%d writes=%d stale=%d root=%s\n", report.Cache.TTLSeconds, report.Cache.Hits, report.Cache.Misses, report.Cache.Writes, report.Cache.Stale, report.Cache.Root)

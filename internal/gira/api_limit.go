@@ -9,6 +9,7 @@ import (
 
 const APILimitReportSchemaVersion = "api-limit-report/v1"
 const APILimitWorkflowSafetyFactorPercent = 80
+const APILimitLowBudgetPercent = 10
 
 type APILimitReport struct {
 	SchemaVersion string             `json:"schema_version"`
@@ -107,16 +108,39 @@ func ParseAPILimitReport(repo RepoRef, data []byte, now time.Time) (APILimitRepo
 		},
 		NextStep: fmt.Sprintf("gira ops limit --repo %s --json", QuoteShellArg(repo.FullName())),
 	}
-	if report.Core.Limit > 0 && report.Core.Remaining == 0 {
-		report.Warnings = append(report.Warnings, "GitHub REST core budget exhausted")
-	}
-	if report.GraphQL.Limit > 0 && report.GraphQL.Remaining == 0 {
-		report.Warnings = append(report.Warnings, "GitHub GraphQL budget exhausted")
-	}
-	if report.Search.Limit > 0 && report.Search.Remaining == 0 {
-		report.Warnings = append(report.Warnings, "GitHub search budget exhausted")
-	}
+	report.Warnings = append(report.Warnings, APILimitBucketWarnings(report.Core, report.GraphQL, report.Search)...)
 	return report, nil
+}
+
+func APILimitBucketWarnings(core APILimitBucket, graphql APILimitBucket, search APILimitBucket) []string {
+	warnings := []string{}
+	if warning := apiLimitBucketWarning("REST core", core); warning != "" {
+		warnings = append(warnings, warning)
+	}
+	if warning := apiLimitBucketWarning("GraphQL", graphql); warning != "" {
+		warnings = append(warnings, warning)
+	}
+	if warning := apiLimitBucketWarning("search", search); warning != "" {
+		warnings = append(warnings, warning)
+	}
+	return warnings
+}
+
+func apiLimitBucketWarning(name string, bucket APILimitBucket) string {
+	if bucket.Limit <= 0 {
+		return ""
+	}
+	reset := ""
+	if bucket.ResetAt != "" {
+		reset = " reset=" + bucket.ResetAt
+	}
+	if bucket.Remaining <= 0 {
+		return fmt.Sprintf("GitHub %s budget exhausted;%s inspect with gira ops limit", name, reset)
+	}
+	if bucket.Remaining*100 <= bucket.Limit*APILimitLowBudgetPercent {
+		return fmt.Sprintf("GitHub API budget low (%s remaining=%d/%d); inspect with gira ops limit", strings.ToLower(name), bucket.Remaining, bucket.Limit)
+	}
+	return ""
 }
 
 func WithAPILimitWorkflow(report APILimitReport, workflowName string) (APILimitReport, error) {

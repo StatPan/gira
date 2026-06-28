@@ -89,12 +89,13 @@ Use these rules for follow-up implementation slices:
 3. Start with static workflow profiles for common Gira flows. Do not rely on
    dynamic averages for the first cost model. See
    [Workflow Cost Profiles](workflow-cost-profiles.md).
-4. Prefer conservative estimates when showing remaining safe workflow runs.
-5. Keep daily command output compact. Detailed diagnostics belong under
+4. Warn when a visible primary bucket is exhausted or at/below 10% remaining.
+5. Prefer conservative estimates when showing remaining safe workflow runs.
+6. Keep daily command output compact. Detailed diagnostics belong under
    `gira ops limit`.
-6. Never let a budget estimate authorize a mutation. `--apply` commands still
+7. Never let a budget estimate authorize a mutation. `--apply` commands still
    need fresh provider verification at the point of mutation.
-7. Do not assume GitHub App installation budgets until a separate auth design
+8. Do not assume GitHub App installation budgets until a separate auth design
    resolves permissions, setup, token storage, and operator migration.
 
 ## Product Boundary

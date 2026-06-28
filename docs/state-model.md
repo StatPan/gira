@@ -126,6 +126,11 @@ decisions. See [GitHub API Limit Operating Model](github-api-limits.md) for
 the REST, GraphQL, search, content, and secondary-limit constraints that future
 budget-aware work should model.
 
+Provider changes made outside Gira are part of the same source-of-truth
+boundary. Gira can import visible provider state, but it must distinguish
+Gira-controlled receipts from reconstructed provider state and external drift.
+See [External Drift And Provenance Policy](external-drift-policy.md).
+
 Use `gira config storage --repo OWNER/REPO` to inspect the local storage map.
 It reports config, state, cache, run evidence, audit, export, and distribution
 cache surfaces with durability, privacy, rebuild, and source-of-truth

@@ -27,6 +27,9 @@ func TestParseAPILimitReport(t *testing.T) {
 	if report.Core.Remaining != 4875 || report.GraphQL.Remaining != 4996 || report.Search.Remaining != 29 {
 		t.Fatalf("unexpected buckets: %+v", report)
 	}
+	if len(report.Warnings) != 0 {
+		t.Fatalf("healthy budget should not warn: %+v", report.Warnings)
+	}
 	if report.Secondary.Status != "unobservable" || len(report.Secondary.Signals) == 0 {
 		t.Fatalf("secondary limit should be unobservable with signals: %+v", report.Secondary)
 	}
@@ -48,6 +51,27 @@ func TestParseAPILimitReportWarnsOnExhaustedBuckets(t *testing.T) {
 	}
 	if len(report.Warnings) != 3 {
 		t.Fatalf("warnings = %+v, want 3 exhausted bucket warnings", report.Warnings)
+	}
+	if !strings.Contains(report.Warnings[1], "GitHub GraphQL budget exhausted") || !strings.Contains(report.Warnings[1], "gira ops limit") {
+		t.Fatalf("warning should be short and actionable: %+v", report.Warnings)
+	}
+}
+
+func TestParseAPILimitReportWarnsOnLowBuckets(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	raw := []byte(`{"resources":{"core":{"limit":5000,"remaining":500},"graphql":{"limit":5000,"remaining":501},"search":{"limit":30,"remaining":3}}}`)
+
+	report, err := ParseAPILimitReport(repo, raw, time.Time{})
+	if err != nil {
+		t.Fatalf("ParseAPILimitReport error: %v", err)
+	}
+	if len(report.Warnings) != 2 {
+		t.Fatalf("warnings = %+v, want low core/search warnings only", report.Warnings)
+	}
+	for _, warning := range report.Warnings {
+		if !strings.Contains(warning, "GitHub API budget low") || !strings.Contains(warning, "gira ops limit") {
+			t.Fatalf("warning should be concise and point to ops limit: %q", warning)
+		}
 	}
 }
 

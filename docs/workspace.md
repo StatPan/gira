@@ -96,11 +96,13 @@ backlog/intake and is skipped from `workspace.repos`; pass `--include-archived`
 only when archived repositories should remain visible in the workspace.
 
 For large global workspaces, `workspace status` is rate-limit aware. It checks
-the GitHub API budget when available, bounds concurrent repo fetches with
-`--max-concurrency` (default `4`), and caches per-repo status under the Gira
-cache directory for `--cache-ttl` (default `5m`). Use `--repo`, `--limit`, and
-`--active-only` for frequent CLI or future GUI refreshes. Use `--refresh` only
-when a fresh full read is more important than preserving API budget.
+the GitHub API budget when available, keeps the structured budget in JSON
+output, and prints only concise low-budget warnings in daily text output. It
+bounds concurrent repo fetches with `--max-concurrency` (default `4`) and caches
+per-repo status under the Gira cache directory for `--cache-ttl` (default `5m`).
+Use `--repo`, `--limit`, and `--active-only` for frequent CLI or future GUI
+refreshes. Use `--refresh` only when a fresh full read is more important than
+preserving API budget.
 
 For a shared repository contract, keep using repo scope:
 

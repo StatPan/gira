@@ -1141,13 +1141,6 @@ func workspaceDashboardReviewFromQueueItem(item WorkspaceQueueItem) AgentPromptR
 
 func buildWorkspaceDashboardWarnings(report WorkspaceReport) []DashboardWorkspaceWarning {
 	warnings := make([]DashboardWorkspaceWarning, 0)
-	if report.RateLimit != nil && !report.RateLimit.BudgetOK {
-		warnings = append(warnings, DashboardWorkspaceWarning{
-			Code:     "workspace_rate_budget_low",
-			Severity: "warning",
-			Message:  fmt.Sprintf("GitHub API budget low: remaining=%d estimated=%d reset=%s", report.RateLimit.Remaining, report.RateLimit.EstimatedRequests, report.RateLimit.ResetAt),
-		})
-	}
 	if report.Cache.Enabled && report.Cache.Stale > 0 {
 		warnings = append(warnings, DashboardWorkspaceWarning{
 			Code:     "workspace_cache_stale",

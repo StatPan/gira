@@ -566,9 +566,48 @@ func TestBuildWorkspaceStatusReportWithOptionsNarrowsReposAndReportsRateBudget(t
 	if len(report.Warnings) == 0 || !strings.Contains(report.Warnings[0], "GitHub API budget low") {
 		t.Fatalf("missing budget warning: %+v", report.Warnings)
 	}
+	if !strings.Contains(report.Warnings[0], "gira ops limit") {
+		t.Fatalf("budget warning should point to ops limit: %+v", report.Warnings)
+	}
 }
 
-func TestBuildWorkspaceStatusReportShowsGraphQLBudgetSeparately(t *testing.T) {
+func TestBuildWorkspaceStatusReportKeepsHealthyBudgetOutOfDailyText(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "personal",
+		Owner:     "StatPan",
+		InboxRepo: ParseRepoRefMust("StatPan/gira"),
+		Repos:     []RepoRef{ParseRepoRefMust("StatPan/gira")},
+	}
+	client := &rateLimitWorkspaceClient{
+		fakeWorkspaceClient: fakeWorkspaceClient{
+			status: map[string]StatusSummary{
+				"StatPan/gira": {Repo: "StatPan/gira"},
+			},
+		},
+		rateLimit: WorkspaceRateLimit{
+			Limit:            5000,
+			Remaining:        4990,
+			ResetAt:          "2026-05-06T02:00:00Z",
+			GraphQLLimit:     5000,
+			GraphQLRemaining: 4990,
+			GraphQLResetAt:   "2026-05-06T01:30:00Z",
+		},
+	}
+
+	report, err := BuildWorkspaceStatusReportWithOptions(config, client, time.Date(2026, 5, 6, 1, 0, 0, 0, time.UTC), 14, WorkspaceStatusOptions{})
+	if err != nil {
+		t.Fatalf("BuildWorkspaceStatusReportWithOptions error: %v", err)
+	}
+	if report.RateLimit == nil || len(report.Warnings) != 0 {
+		t.Fatalf("healthy budget should remain available in JSON without warnings: rate=%+v warnings=%+v", report.RateLimit, report.Warnings)
+	}
+	text := FormatWorkspaceReport(report)
+	if strings.Contains(text, "github budget:") || strings.Contains(text, "core remaining=") || strings.Contains(text, "graphql remaining=") {
+		t.Fatalf("healthy daily text should not include detailed budget noise:\n%s", text)
+	}
+}
+
+func TestBuildWorkspaceStatusReportWarnsWhenGraphQLBudgetExhausted(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",
 		Owner:     "StatPan",
@@ -603,8 +642,8 @@ func TestBuildWorkspaceStatusReportShowsGraphQLBudgetSeparately(t *testing.T) {
 		t.Fatalf("missing GraphQL budget warning: %+v", report.Warnings)
 	}
 	text := FormatWorkspaceReport(report)
-	if !strings.Contains(text, "core remaining=4990/5000") || !strings.Contains(text, "graphql remaining=0/5000") {
-		t.Fatalf("workspace text missing split budget:\n%s", text)
+	if !strings.Contains(text, "warning: GitHub GraphQL budget exhausted") || strings.Contains(text, "github budget:") {
+		t.Fatalf("workspace text should show warning without budget dump:\n%s", text)
 	}
 }
 

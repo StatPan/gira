@@ -119,3 +119,6 @@ data used by follow-up run-count estimates.
 See [Provider Adapter Boundary](provider-adapter-boundary.md) for how this
 GitHub-first model should evolve toward GitLab without replacing provider
 ledgers with local truth.
+See [Local Runtime Projection Storage](local-runtime-projection-storage.md) for
+where future cache, projection, and possible SQLite files may live without
+authorizing mutations from local state alone.

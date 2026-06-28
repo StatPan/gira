@@ -124,7 +124,9 @@ cache and future projections to reduce provider reads, but those projections
 must remain rebuildable and must not replace provider evidence for `--apply`
 decisions. See [GitHub API Limit Operating Model](github-api-limits.md) for
 the REST, GraphQL, search, content, and secondary-limit constraints that future
-budget-aware work should model.
+budget-aware work should model, and
+[Local Runtime Projection Storage](local-runtime-projection-storage.md) for the
+storage placement and freshness boundary.
 
 Provider changes made outside Gira are part of the same source-of-truth
 boundary. Gira can import visible provider state, but it must distinguish

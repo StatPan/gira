@@ -90,6 +90,10 @@ private runtime state, workspace status cache, dashboard export bundles, audit
 ledgers, and wrapper binary cache with their durability, privacy, rebuild, and
 source-of-truth boundaries.
 
+Future local projections and possible SQLite files must use those existing
+roots instead of creating a separate hidden planning database. See
+[Local Runtime Projection Storage](local-runtime-projection-storage.md).
+
 The global repo registry entry may reference a repo-local contract instead of
 copying every shared policy field:
 

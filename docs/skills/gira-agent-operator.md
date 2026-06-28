@@ -159,6 +159,12 @@ or when reading GitHub state that Gira does not expose. Common allowed uses:
 Raw `gh` should not bypass available Gira lifecycle commands for start, PR
 creation, check/wait, or finish.
 
+Provider changes made through raw `gh`, web UI, provider APIs, future provider
+CLIs, or external automation are treated as external drift unless Gira can
+reconstruct enough evidence to classify them. See
+[External Drift And Provenance Policy](../external-drift-policy.md) for the
+provenance levels and receipt expectations.
+
 ## Edge Cases
 
 - Project-only item: do not implement directly. Route it to a repository issue

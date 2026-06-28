@@ -118,6 +118,11 @@ They should work together:
 - Human-only work does not need provenance unless the repository policy asks
   for it.
 
+Provider-visible changes made outside Gira lifecycle commands are imported as
+reconstructed state or external drift, not as Gira-controlled evidence. The
+policy for classifying those cases is defined in
+[External Drift And Provenance Policy](external-drift-policy.md).
+
 ## Labels Versus Metadata
 
 Labels should remain low-cardinality workflow policy. Use labels for lane and

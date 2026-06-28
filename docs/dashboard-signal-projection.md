@@ -131,6 +131,9 @@ It becomes justified only when at least one of these requirements is accepted:
 
 Even then, SQLite should be an index or audit store, not the source of truth for
 issue status, completion, priority, queue membership, or Projects fields.
+The storage placement and freshness boundary for that future evaluation is
+defined in
+[Local Runtime Projection Storage](local-runtime-projection-storage.md).
 
 ## Follow-Up Work
 

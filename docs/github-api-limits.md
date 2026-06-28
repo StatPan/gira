@@ -116,3 +116,6 @@ See [Command Surface Boundary](command-surface-boundary.md) for why API budget
 diagnostics use the `gira ops limit` surface instead of a new root command.
 See [Workflow Cost Profiles](workflow-cost-profiles.md) for the fixed profile
 data used by follow-up run-count estimates.
+See [Provider Adapter Boundary](provider-adapter-boundary.md) for how this
+GitHub-first model should evolve toward GitLab without replacing provider
+ledgers with local truth.

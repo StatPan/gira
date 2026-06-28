@@ -94,7 +94,7 @@ Future enforcement slices should keep this policy as the boundary:
 - status reports may use reconstructed state for next actions, but should not
   hide missing receipts when completion is policy-sensitive;
 - provider adapters should expose the same provenance levels for GitHub and
-  GitLab;
+  GitLab. See [Provider Adapter Boundary](provider-adapter-boundary.md);
 - local projection storage should preserve provenance metadata rather than
   flattening everything into one trusted state.
 

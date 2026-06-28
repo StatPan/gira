@@ -131,6 +131,11 @@ boundary. Gira can import visible provider state, but it must distinguish
 Gira-controlled receipts from reconstructed provider state and external drift.
 See [External Drift And Provenance Policy](external-drift-policy.md).
 
+Future provider adapters must keep the same ownership model. GitHub and GitLab
+provider ledgers remain canonical collaboration evidence, while Gira computes
+portable readiness and queue views over them. See
+[Provider Adapter Boundary](provider-adapter-boundary.md).
+
 Use `gira config storage --repo OWNER/REPO` to inspect the local storage map.
 It reports config, state, cache, run evidence, audit, export, and distribution
 cache surfaces with durability, privacy, rebuild, and source-of-truth

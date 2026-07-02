@@ -207,6 +207,46 @@ number as a benchmark claim, record the exact repo fixture, command transcript,
 labels touched, PR actions, comments, provider call counts, API quota deltas,
 timestamps, and post-apply no-op check.
 
+## Executable Replay Fixture
+
+The first executable GitHub workflow comparison lives at
+`internal/gira/testdata/agent_github_replay/ticket-lifecycle.yaml` and is
+checked by:
+
+```bash
+go test ./internal/gira -run AgentGitHubReplay -v
+```
+
+The fixture records a concrete GitHub-native ticket lifecycle as two command
+transcripts:
+
+- raw `gh`: issue discovery, direct status-label edits, branch creation, PR
+  creation, PR validation, diff review, PR comment, check wait, merge, final
+  issue label edit, and finish receipt;
+- Gira: `ticket view`, `ticket start --dry-run|--apply`,
+  `ticket pr --dry-run|--apply`, `ticket review`, `ticket self-review
+  --dry-run|--apply`, `ticket wait`, and `ticket finish --dry-run|--apply`.
+
+Current replay result:
+
+| Metric | Raw `gh` | Gira | Delta |
+| --- | ---: | ---: | ---: |
+| Command nodes | 12 | 11 | 1 |
+| Argument nodes | 39 | 34 | 5 |
+| Decision nodes | 16 | 6 | 10 |
+| Cognitive nodes | 7 | 0 | 7 |
+| Direct labels touched by the agent | 4 | 0 | 4 |
+| Provider calls | 12 | 16 | -4 |
+| Discovery reads | 5 | 6 | -1 |
+| Fallback escapes | 0 | 0 | 0 |
+| Workflow cost x2 | 196 | 144 | 52 |
+
+This result is replay evidence, not live API instrumentation. It proves that
+the current lifecycle surface can reduce agent workflow burden for the recorded
+GitHub-native flow, while also showing that provider calls and discovery reads
+are not yet improved by the dry-run/apply path. Use those negative deltas as
+input for stateful Gira work, not as a public API-efficiency claim.
+
 ## Measurement Procedure
 
 For each golden workflow:

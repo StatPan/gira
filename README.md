@@ -20,19 +20,11 @@ labels are normalized, and the next command is obvious. Gira makes that finish
 step explicit.
 
 The product promise is measurable. Gira keeps the final state GitHub-native,
-then reduces the workflow labor needed to reach that same state. The current
-node-count model compares Gira against equivalent raw `gh` workflows and
-estimates:
-
-- 51% lower ticket lifecycle burden.
-- 52% lower native sub-issue creation burden.
-- 60% lower supersede workflow burden.
-
-These are modeled workflow-burden estimates, not live replay benchmarks or API
-instrumentation results. They measure commands, required arguments, decisions,
-provider details, fallback, and concepts a human or agent must handle. If a
-Gira workflow does not beat raw `gh`, it becomes a product improvement target.
-The KPI model is documented in
+then reduces the workflow labor needed to reach that same state. Gira does not
+publish reduction percentages until an agent replay or instrumented benchmark
+has recorded the exact fixture, commands, labels, PR actions, provider calls,
+and post-apply verification. Until then, workflow scores are internal product
+diagnostics, not public proof. The KPI model is documented in
 [docs/workflow-efficiency-kpis.md](docs/workflow-efficiency-kpis.md).
 
 Use Gira when you want GitHub to remain the source of truth, while still having

@@ -870,7 +870,8 @@ Usage:
 const ticketHelp = `Jira-style ticket lifecycle commands.
 
 Usage:
-  gira ticket new "Title" --dry-run|--apply [--body TEXT|--body-file PATH|-] [--start] [--json]
+  gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--start] [--json]
+  gira ticket parent TICKET [--set PARENT|--clear] [--dry-run|--apply] [--repo OWNER/REPO] [--json]
   gira ticket list [--repo OWNER/REPO] [--state open|closed|all] [--label LABEL] [--assignee LOGIN] [--milestone TITLE] [--limit N] [--json]
   gira ticket view|show [TICKET|JIRA-KEY] [--repo OWNER/REPO] [--json]
   gira ticket prompt [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]
@@ -888,6 +889,7 @@ Usage:
 
 Commands:
   new     Create a repo-bound executable ticket with a structured Gira body
+  parent  Show, set, or clear a native GitHub sub-issue parent
   list    List repo tickets with compact GitHub issue-backed filters
   view    Show an operating card for the ticket, linked PR, blockers, and next action. Alias: show
   prompt  Render a stateless planner, implementer, or reviewer prompt from ticket context
@@ -911,6 +913,9 @@ Flags:
   --label string   Ticket list filter, or existing repo label for ticket new. Repeatable or comma-separated
   --body string    Full issue body for ticket new. Overrides structured goal/scope fields
   --body-file string Read full issue body from file, or "-" for stdin
+  --parent int     Native GitHub parent issue for ticket new
+  --set int        Set native parent issue for ticket parent
+  --clear          Clear native parent issue for ticket parent
   --kind string    Ticket note kind: progress, blocker, decision, handoff, summary, or check. Default: progress
   --target string  Ticket note target: auto, issue, pr, or both. Default: auto
   --role string    Ticket prompt/handoff role: planner, implementer, or reviewer
@@ -1596,6 +1601,10 @@ var newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait t
 
 var newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
 	return gira.BuildTicketNewReport(input, devCommandRunner)
+}
+
+var newTicketParentReport = func(input gira.TicketParentInput) (gira.TicketParentReport, error) {
+	return gira.BuildTicketParentReport(input, devCommandRunner)
 }
 
 var newTicketListReport = func(options gira.TicketListOptions) (gira.TicketListReport, error) {
@@ -3753,6 +3762,8 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "new":
 		return runTicketNew(args[1:], stdout, stderr)
+	case "parent":
+		return runTicketParent(args[1:], stdout, stderr)
 	case "list":
 		return runTicketList(args[1:], stdout, stderr)
 	case "view", "show":
@@ -5582,6 +5593,7 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 	body := fs.String("body", "", "Full issue body")
 	ticketType := fs.String("type", "task", "Ticket type: epic|story|task|bug|spike|chore")
 	priority := fs.String("priority", "", "Priority: p0|p1|p2|p3")
+	parent := fs.Int("parent", 0, "Native GitHub parent issue")
 	milestone := fs.String("milestone", "", "Milestone title")
 	bodyFile := fs.String("body-file", "", "Read issue body from file")
 	start := fs.Bool("start", false, "Start the created ticket")
@@ -5624,6 +5636,7 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 	report, err := newTicketNewReport(gira.TicketNewInput{
 		Repo:       repo,
 		Title:      resolvedTitle,
+		Parent:     *parent,
 		Goal:       *goal,
 		Scope:      *scope,
 		Acceptance: splitList(*acceptance),
@@ -5655,6 +5668,71 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatTicketNew(report))
+	return 0
+}
+
+func runTicketParent(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalTicket, positionalOK := extractTicketPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("ticket parent", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket issue number")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	setParent := fs.Int("set", 0, "Set native parent issue")
+	clearParent := fs.Bool("clear", false, "Clear native parent issue")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply changes")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	ticketNumber, ok := resolveExplicitTicket(*ticket, *issue, positionalTicket, stderr)
+	if !ok || ticketNumber <= 0 {
+		if ok {
+			fmt.Fprint(stderr, "ticket is required\n\n")
+		}
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newTicketParentReport(gira.TicketParentInput{
+		Repo:   repo,
+		Ticket: ticketNumber,
+		Set:    *setParent,
+		Clear:  *clearParent,
+		DryRun: *dryRun,
+		Apply:  *apply,
+	})
+	if err != nil {
+		if *jsonOutput {
+			out, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+		}
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatTicketParent(report))
 	return 0
 }
 
@@ -6336,7 +6414,7 @@ func parseWorkRequiredFlags(repoValue string, issue int, dryRun bool, apply bool
 func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bool) {
 	cleaned := make([]string, 0, len(args))
 	positional := 0
-	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}, "--timeout": {}, "--interval": {}, "--replacement-title": {}, "--body": {}, "--body-file": {}, "--milestone": {}, "--label": {}, "--output": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}, "--timeout": {}, "--interval": {}, "--replacement-title": {}, "--body": {}, "--body-file": {}, "--milestone": {}, "--label": {}, "--output": {}, "--set": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)
@@ -6592,7 +6670,7 @@ func extractTicketNotePositionals(args []string, stderr io.Writer) ([]string, in
 func extractTitlePositional(args []string, stderr io.Writer) ([]string, string, bool) {
 	cleaned := make([]string, 0, len(args))
 	title := ""
-	valueFlags := map[string]struct{}{"--repo": {}, "--title": {}, "--goal": {}, "--scope": {}, "--acceptance": {}, "--notes": {}, "--body": {}, "--type": {}, "--priority": {}, "--milestone": {}, "--label": {}, "--body-file": {}, "--objective": {}, "--direction": {}, "--autonomy": {}, "--decomposition": {}, "--quality-bar": {}, "--stop-condition": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--title": {}, "--goal": {}, "--scope": {}, "--acceptance": {}, "--notes": {}, "--body": {}, "--type": {}, "--priority": {}, "--parent": {}, "--milestone": {}, "--label": {}, "--body-file": {}, "--objective": {}, "--direction": {}, "--autonomy": {}, "--decomposition": {}, "--quality-bar": {}, "--stop-condition": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)

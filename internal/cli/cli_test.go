@@ -3527,6 +3527,56 @@ func TestTicketNewDryRunJSON(t *testing.T) {
 	}
 }
 
+func TestTicketNewParentFlagJSON(t *testing.T) {
+	restore := newTicketNewReport
+	t.Cleanup(func() { newTicketNewReport = restore })
+	newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
+		if input.Parent != 10 {
+			t.Fatalf("parent = %d, want 10; input=%+v", input.Parent, input)
+		}
+		return gira.TicketNewReport{Repo: input.Repo.FullName(), Title: input.Title, Parent: input.Parent, DryRun: true, Labels: []string{"type:task", "status:ready"}, Body: "## Goal\nChild\n", NextStep: "gira ticket new --apply"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "new", "Child", "--repo", "StatPan/gira", "--parent", "10", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"parent": 10`) {
+		t.Fatalf("ticket new parent JSON missing parent:\n%s", stdout.String())
+	}
+}
+
+func TestTicketParentSetDryRunJSON(t *testing.T) {
+	restore := newTicketParentReport
+	t.Cleanup(func() { newTicketParentReport = restore })
+	newTicketParentReport = func(input gira.TicketParentInput) (gira.TicketParentReport, error) {
+		if input.Repo.FullName() != "StatPan/gira" || input.Ticket != 42 || input.Set != 10 || !input.DryRun || input.Apply {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		return gira.TicketParentReport{
+			SchemaVersion: gira.TicketParentReportSchemaVersion,
+			Repo:          input.Repo.FullName(),
+			Ticket:        input.Ticket,
+			TargetParent:  &gira.TicketParentIssue{Number: input.Set, Title: "Parent"},
+			DryRun:        true,
+			Actions:       []gira.TicketParentAction{{Action: "parent:set", Status: "planned", Detail: "link #42 under #10"}},
+			NextStep:      "gira ticket parent 42 --repo StatPan/gira",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "parent", "42", "--repo", "StatPan/gira", "--set", "10", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"schema_version": "ticket-parent-report/v1"`, `"ticket": 42`, `"number": 10`, `"action": "parent:set"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket parent JSON missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestTicketNewBodyFlagJSON(t *testing.T) {
 	restore := newTicketNewReport
 	t.Cleanup(func() { newTicketNewReport = restore })

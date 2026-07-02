@@ -147,6 +147,47 @@ func TestTicketNewApplyCreatesIssue(t *testing.T) {
 	}
 }
 
+func TestTicketNewParentDryRunPlansNativeSubIssue(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	outputs := ticketNewLabelOutputs("type:task", "status:ready")
+	outputs["gh api repos/StatPan/gira/issues/10 -H Accept: application/vnd.github+json"] = []byte(`{"id":1000,"number":10,"title":"Parent","state":"open"}`)
+	runner := &ticketNewRunner{outputs: outputs}
+
+	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add child", Type: "task", Parent: 10, DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildTicketNewReport error: %v", err)
+	}
+	if report.Parent != 10 {
+		t.Fatalf("parent = %d, want 10", report.Parent)
+	}
+	if report.Approval == nil || !approvalHasAction(report.Approval.PlannedActions, "parent:set") || !strings.Contains(report.Approval.ApplyCommand, "--parent 10") {
+		t.Fatalf("approval missing parent plan: %+v", report.Approval)
+	}
+	for _, call := range runner.calls {
+		if strings.Contains(call, "/sub_issues") {
+			t.Fatalf("dry-run should not mutate sub-issues, calls=%+v", runner.calls)
+		}
+	}
+}
+
+func TestTicketNewParentApplyLinksNativeSubIssue(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	outputs := ticketNewLabelOutputs("type:task", "status:ready")
+	outputs["gh api repos/StatPan/gira/issues/10 -H Accept: application/vnd.github+json"] = []byte(`{"id":1000,"number":10,"title":"Parent","state":"open"}`)
+	outputs["gh issue create --repo StatPan/gira --title Add child --body "+defaultTicketNewBody("Add child")+" --label type:task --label status:ready"] = []byte("https://github.com/StatPan/gira/issues/224\n")
+	outputs["gh api repos/StatPan/gira/issues/224 -H Accept: application/vnd.github+json"] = []byte(`{"id":2240,"number":224,"title":"Add child","state":"open"}`)
+	outputs["gh api repos/StatPan/gira/issues/10/sub_issues -X POST -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -F sub_issue_id=2240"] = []byte(`{"number":224}`)
+	runner := &ticketNewRunner{outputs: outputs}
+
+	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Add child", Type: "task", Parent: 10}, runner)
+	if err != nil {
+		t.Fatalf("BuildTicketNewReport error: %v", err)
+	}
+	if report.Created.Number != 224 {
+		t.Fatalf("created = %+v, want #224", report.Created)
+	}
+}
+
 func TestTicketNewApplyCreatesIssueWithFullBody(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	body := "## Goal\nUse exact packet\n\n## Acceptance Criteria\n- preserved"

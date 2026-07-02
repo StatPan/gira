@@ -968,13 +968,14 @@ func CoreCommandSpecs() []CommandSpec {
 		{
 			Path:    []string{"ticket", "new"},
 			Summary: "Create a repo-bound executable GitHub issue with structured or full Markdown body input.",
-			Usage:   "gira ticket new \"Title\" --dry-run|--apply [--body TEXT|--body-file PATH|-] [--start]",
+			Usage:   "gira ticket new \"Title\" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--start]",
 			Since:   "v1.0.0",
 			Flags: []FlagSpec{
 				{Name: "--goal", Summary: "Structured issue goal."},
 				{Name: "--acceptance", Summary: "Semicolon-separated acceptance criteria."},
 				{Name: "--type", Summary: "Ticket type: epic, story, task, bug, spike, or chore."},
 				{Name: "--priority", Summary: "Priority: p0, p1, p2, or p3."},
+				{Name: "--parent", Summary: "Native GitHub parent issue for the created ticket."},
 				{Name: "--label", Summary: "Additional repo label that must already exist."},
 				{Name: "--body", Summary: "Full issue body."},
 				{Name: "--body-file", Summary: "Read full issue body from file or stdin with -."},
@@ -986,6 +987,25 @@ func CoreCommandSpecs() []CommandSpec {
 			Examples: []CommandExample{
 				{Summary: "Preview structured ticket", Command: "gira ticket new \"TITLE\" --goal \"GOAL\" --acceptance \"a;b;c\" --dry-run"},
 				{Summary: "Preview full Markdown packet", Command: "gira ticket new --title \"TITLE\" --body-file issue.md --dry-run"},
+			},
+		},
+		{
+			Path:    []string{"ticket", "parent"},
+			Summary: "Show, set, or clear a native GitHub sub-issue parent without adding a separate link command family.",
+			Usage:   "gira ticket parent TICKET [--set PARENT|--clear] [--dry-run|--apply] [--repo OWNER/REPO] [--json]",
+			Since:   "v1.17.0",
+			Flags: []FlagSpec{
+				{Name: "--set", Summary: "Set the native GitHub parent issue."},
+				{Name: "--clear", Summary: "Clear the native GitHub parent issue."},
+				{Name: "--dry-run", Summary: "Preview the parent mutation."},
+				{Name: "--apply", Summary: "Apply the parent mutation."},
+			},
+			Docs:        []string{"README.md", "docs/command-surface-boundary.md"},
+			GuideTopics: []string{"ticket", "agent"},
+			GuideOrder:  11,
+			Examples: []CommandExample{
+				{Summary: "Preview parent link", Command: "gira ticket parent 42 --set 10 --dry-run"},
+				{Summary: "Show current parent", Command: "gira ticket parent 42"},
 			},
 		},
 		{
@@ -1303,7 +1323,9 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 		case "jira export":
 			specs[i].Adapter = adapterApply("writes Jira-friendly export artifacts to the requested output path", JSONSupportStable)
 		case "ticket new":
-			specs[i].Adapter = adapterApply("creates a GitHub issue and may optionally start it; --dry-run previews issue body and labels", JSONSupportStable)
+			specs[i].Adapter = adapterApply("creates a GitHub issue, may set a native parent, and may optionally start it; --dry-run previews issue body, labels, and parent plan", JSONSupportStable)
+		case "ticket parent":
+			specs[i].Adapter = adapterApply("sets or clears a native GitHub sub-issue parent; read mode shows the current parent and mutation modes require --dry-run or --apply", JSONSupportStable)
 		case "ticket view":
 			specs[i].Adapter = adapterRead(JSONSupportStable, "gira ticket show")
 		case "ticket prompt":

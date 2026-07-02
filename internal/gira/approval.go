@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -446,6 +447,9 @@ func ticketNewApprovalCommand(report TicketNewReport, mode string) string {
 	if strings.TrimSpace(report.Priority) != "" {
 		args = append(args, "--priority", report.Priority)
 	}
+	if report.Parent > 0 {
+		args = append(args, "--parent", strconv.Itoa(report.Parent))
+	}
 	for _, label := range ticketNewApprovalExtraLabels(report) {
 		args = append(args, "--label", QuoteShellArg(label))
 	}
@@ -462,6 +466,9 @@ func ticketNewApprovalCommand(report TicketNewReport, mode string) string {
 func ticketNewApprovalActions(report TicketNewReport) []ApprovalPlannedAction {
 	actions := []ApprovalPlannedAction{
 		{Action: "issue:create", Target: report.Repo, Detail: report.Title},
+	}
+	if report.Parent > 0 {
+		actions = append(actions, ApprovalPlannedAction{Action: "parent:set", Target: fmt.Sprintf("#%d", report.Parent), Detail: "link created issue as native GitHub sub-issue"})
 	}
 	if report.Start {
 		actions = append(actions, ApprovalPlannedAction{Action: "ticket:start", Target: "<created-ticket>", Detail: "start created ticket after issue creation"})

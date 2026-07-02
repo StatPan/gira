@@ -1528,7 +1528,7 @@ Create a repo-bound executable GitHub issue with structured or full Markdown bod
 Usage:
 
 ```bash
-gira ticket new "Title" --dry-run|--apply [--body TEXT|--body-file PATH|-] [--start]
+gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--start]
 ```
 
 Since: `v1.0.0`
@@ -1539,6 +1539,7 @@ Flags:
 - `--acceptance`: Semicolon-separated acceptance criteria.
 - `--type`: Ticket type: epic, story, task, bug, spike, or chore.
 - `--priority`: Priority: p0, p1, p2, or p3.
+- `--parent`: Native GitHub parent issue for the created ticket.
 - `--label`: Additional repo label that must already exist.
 - `--body`: Full issue body.
 - `--body-file`: Read full issue body from file or stdin with -.
@@ -1596,6 +1597,41 @@ gira ticket note --kind blocker --target both --body-file note.md --apply
 ```
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
+
+## `ticket parent`
+
+Show, set, or clear a native GitHub sub-issue parent without adding a separate link command family.
+
+Usage:
+
+```bash
+gira ticket parent TICKET [--set PARENT|--clear] [--dry-run|--apply] [--repo OWNER/REPO] [--json]
+```
+
+Since: `v1.17.0`
+
+Flags:
+
+- `--set`: Set the native GitHub parent issue.
+- `--clear`: Clear the native GitHub parent issue.
+- `--dry-run`: Preview the parent mutation.
+- `--apply`: Apply the parent mutation.
+
+Examples:
+
+- Preview parent link
+
+```bash
+gira ticket parent 42 --set 10 --dry-run
+```
+
+- Show current parent
+
+```bash
+gira ticket parent 42
+```
+
+Documented in: `README.md`, `docs/command-surface-boundary.md`
 
 ## `ticket pr`
 

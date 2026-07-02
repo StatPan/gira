@@ -290,6 +290,22 @@ func fetchEpicChildren(repo RepoRef, epic epicRawIssue, runner CommandRunner) ([
 	}
 	referenced := extractIssueRefs(epic.Body)
 	childrenByNumber := map[int]EpicChild{}
+	if nativeChildren, err := listGitHubSubIssues(repo, epic.Number, runner); err == nil {
+		for _, issue := range nativeChildren {
+			if issue.Number == epic.Number || issue.PullRequest != nil {
+				continue
+			}
+			childrenByNumber[issue.Number] = EpicChild{
+				Number:    issue.Number,
+				Title:     issue.Title,
+				State:     issue.State,
+				URL:       issue.HTMLURL,
+				Milestone: githubIssueMilestone(issue),
+				Labels:    githubIssueLabels(issue),
+				Source:    "native",
+			}
+		}
+	}
 	for _, issue := range issues {
 		if issue.Number == epic.Number || hasLabel(rawLabels(issue), "type:epic") {
 			continue
@@ -304,6 +320,17 @@ func fetchEpicChildren(repo RepoRef, epic epicRawIssue, runner CommandRunner) ([
 			source = "body,milestone"
 		} else if bodyRef {
 			source = "body"
+		}
+		if existing, ok := childrenByNumber[issue.Number]; ok {
+			existing.Source = appendSource(existing.Source, source)
+			if existing.Milestone == "" {
+				existing.Milestone = rawMilestone(issue)
+			}
+			if len(existing.Labels) == 0 {
+				existing.Labels = rawLabels(issue)
+			}
+			childrenByNumber[issue.Number] = existing
+			continue
 		}
 		childrenByNumber[issue.Number] = EpicChild{
 			Number:    issue.Number,
@@ -321,6 +348,35 @@ func fetchEpicChildren(repo RepoRef, epic epicRawIssue, runner CommandRunner) ([
 	}
 	sort.Slice(children, func(i, j int) bool { return children[i].Number < children[j].Number })
 	return children, nil
+}
+
+func appendSource(existing string, source string) string {
+	parts := strings.Split(existing, ",")
+	for _, part := range parts {
+		if strings.TrimSpace(part) == source {
+			return existing
+		}
+	}
+	if strings.TrimSpace(existing) == "" {
+		return source
+	}
+	return existing + "," + source
+}
+
+func githubIssueLabels(issue githubIssueRaw) []string {
+	labels := make([]string, 0, len(issue.Labels))
+	for _, label := range issue.Labels {
+		labels = append(labels, label.Name)
+	}
+	sort.Strings(labels)
+	return labels
+}
+
+func githubIssueMilestone(issue githubIssueRaw) string {
+	if issue.Milestone == nil {
+		return ""
+	}
+	return issue.Milestone.Title
 }
 
 func filterEpicCandidates(issues []epicRawIssue, input EpicInput) []epicRawIssue {

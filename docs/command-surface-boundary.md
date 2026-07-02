@@ -67,6 +67,11 @@ Prefer extending an existing family over adding a new root family. Prefer a
 diagnostic subcommand under `ops` when the feature explains runtime conditions
 rather than moving work forward.
 
+Native GitHub sub-issue support follows this rule. Creation uses
+`gira ticket new --parent N`, and existing-ticket changes use the single
+`gira ticket parent` surface instead of separate root-level or duplicated
+`link` and `unlink` command families.
+
 ## Follow-Up Constraints
 
 For the #779 API limit work:
@@ -77,4 +82,3 @@ For the #779 API limit work:
 - #785 should add only concise low-budget warnings to daily commands.
 - GitHub App authentication remains a blocked/future decision until a separate
   auth design resolves permissions, setup, token storage, and migration.
-

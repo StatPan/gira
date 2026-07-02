@@ -11,6 +11,7 @@ const TicketNewReportSchemaVersion = "ticket-new-report/v1"
 type TicketNewInput struct {
 	Repo       RepoRef  `json:"repo"`
 	Title      string   `json:"title"`
+	Parent     int      `json:"parent,omitempty"`
 	Goal       string   `json:"goal,omitempty"`
 	Scope      string   `json:"scope,omitempty"`
 	Acceptance []string `json:"acceptance,omitempty"`
@@ -39,6 +40,7 @@ type TicketNewReport struct {
 	Start           bool                  `json:"start"`
 	Type            string                `json:"type,omitempty"`
 	Priority        string                `json:"priority,omitempty"`
+	Parent          int                   `json:"parent,omitempty"`
 	Labels          []string              `json:"labels"`
 	Milestone       string                `json:"milestone,omitempty"`
 	Body            string                `json:"body"`
@@ -74,6 +76,9 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 	if priority != "" && !validTicketPriority(priority) {
 		return TicketNewReport{}, fmt.Errorf("--priority must be one of p0, p1, p2, p3")
 	}
+	if input.Parent < 0 {
+		return TicketNewReport{}, fmt.Errorf("--parent must be > 0")
+	}
 	body, err := ticketNewBody(input)
 	if err != nil {
 		return TicketNewReport{}, err
@@ -87,6 +92,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		Start:           input.Start,
 		Type:            ticketType,
 		Priority:        priority,
+		Parent:          input.Parent,
 		Labels:          labels,
 		Milestone:       strings.TrimSpace(input.Milestone),
 		Body:            body,
@@ -95,6 +101,11 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 	}
 	if err := preflightTicketNewLabels(input.Repo, labels, runner); err != nil {
 		return report, err
+	}
+	if input.Parent > 0 {
+		if _, err := fetchGitHubIssue(input.Repo, input.Parent, runner); err != nil {
+			return report, fmt.Errorf("preflight parent issue: %w", err)
+		}
 	}
 	if input.DryRun {
 		report.Approval = TicketNewApprovalEvidence(report)
@@ -106,6 +117,15 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 	}
 	report.Created = created
 	report.NextStep = fmt.Sprintf("gira ticket start %d --apply", created.Number)
+	if input.Parent > 0 {
+		child, err := fetchGitHubIssue(input.Repo, created.Number, runner)
+		if err != nil {
+			return report, fmt.Errorf("fetch created issue for parent link: %w", err)
+		}
+		if err := addGitHubSubIssue(input.Repo, input.Parent, child.ID, false, runner); err != nil {
+			return report, fmt.Errorf("link parent issue: %w", err)
+		}
+	}
 	if input.Start {
 		start, err := StartWork(input.Repo, created.Number, false, runner)
 		report.StartResult = start

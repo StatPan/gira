@@ -17,6 +17,9 @@ func (r *epicRunner) Run(name string, args ...string) ([]byte, error) {
 	if out, ok := r.outputs[key]; ok {
 		return out, nil
 	}
+	if strings.Contains(key, "/sub_issues") {
+		return []byte("[]"), nil
+	}
 	return nil, fmt.Errorf("unexpected call: %s", key)
 }
 
@@ -43,6 +46,40 @@ func TestBuildEpicStatusSelectsSoleOpenEpic(t *testing.T) {
 	}
 	if !strings.Contains(report.NextStep, "gira epic finish --repo StatPan/gira --ticket 10 --dry-run") {
 		t.Fatalf("unexpected next step: %s", report.NextStep)
+	}
+}
+
+func TestBuildEpicStatusMergesNativeSubIssues(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &epicRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=open -f per_page=100": []byte(`[[` +
+			`{"number":10,"title":"[Epic] Native parent","state":"open","body":"Tracks #12","labels":[{"name":"type:epic"}],"milestone":{"title":"v1.4"},"html_url":"u10"},` +
+			`{"number":11,"title":"Native child","state":"open","labels":[{"name":"type:task"}],"milestone":null,"html_url":"u11"},` +
+			`{"number":12,"title":"Body child","state":"closed","labels":[{"name":"type:task"}],"milestone":null,"html_url":"u12"}` +
+			`]]`),
+		"gh api repos/StatPan/gira/issues --paginate --slurp -X GET -f state=all -f per_page=100": []byte(`[[` +
+			`{"number":10,"title":"[Epic] Native parent","state":"open","body":"Tracks #12","labels":[{"name":"type:epic"}],"milestone":{"title":"v1.4"},"html_url":"u10"},` +
+			`{"number":11,"title":"Native child","state":"open","labels":[{"name":"type:task"}],"milestone":null,"html_url":"u11"},` +
+			`{"number":12,"title":"Body child","state":"closed","labels":[{"name":"type:task"}],"milestone":null,"html_url":"u12"}` +
+			`]]`),
+		"gh api repos/StatPan/gira/issues/10/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": []byte(`[` +
+			`{"id":1100,"number":11,"title":"Native child","state":"open","labels":[{"name":"type:task"}],"html_url":"u11"}` +
+			`]`),
+	}}
+
+	report, err := BuildEpicStatusReport(EpicInput{Repo: repo}, runner)
+	if err != nil {
+		t.Fatalf("BuildEpicStatusReport error: %v", err)
+	}
+	if report.ChildCount.Total != 2 || report.ChildCount.Open != 1 || report.ChildCount.Closed != 1 {
+		t.Fatalf("unexpected child counts: %+v", report.ChildCount)
+	}
+	sources := map[int]string{}
+	for _, child := range report.Children {
+		sources[child.Number] = child.Source
+	}
+	if sources[11] != "native" || sources[12] != "body" {
+		t.Fatalf("unexpected child sources: %+v", sources)
 	}
 }
 

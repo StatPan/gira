@@ -18,6 +18,9 @@ The root help is what humans feel first. The registry is larger because it also
 feeds agents, generated docs, and adapter capabilities. These two surfaces
 should be separated in teaching and review.
 
+This page measures command surface size. For task-level UX/AX burden, use
+[CLI Workflow Complexity](/cli-workflow-complexity).
+
 ## Diagnosis
 
 Gira is better than raw `gh` when it reduces workflow state and required

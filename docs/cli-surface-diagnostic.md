@@ -2,7 +2,9 @@
 
 This is the #803 diagnosis for keeping Gira convenient while the command
 surface grows. It uses the current help output and command registry as the
-baseline, then turns the findings into decision rules for future work.
+baseline, then turns the findings into decision rules for future work. The
+task-level UX/AX node-count diagnosis lives in
+[docs/cli-workflow-complexity.md](cli-workflow-complexity.md).
 
 ## Current Surface
 
@@ -102,6 +104,9 @@ These are separate tasks, not part of this diagnosis:
 5. Add a lightweight command-surface checklist to the public-command workflow so
    every new command states why it is a root, subcommand, option, diagnostic, or
    generated reference entry.
+6. Use [docs/cli-workflow-complexity.md](cli-workflow-complexity.md) to compare
+   task-level command, argument, decision, provider, fallback, and cognitive
+   nodes before teaching new workflow surfaces.
 
 ## Decision
 

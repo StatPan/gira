@@ -4922,6 +4922,56 @@ func TestTicketSupersedeParsesReplacementBodyAndJSON(t *testing.T) {
 	}
 }
 
+func TestTicketSupersedeReadsReplacementBodyFromStdin(t *testing.T) {
+	restore := newTicketSupersedeReport
+	t.Cleanup(func() { newTicketSupersedeReport = restore })
+	newTicketSupersedeReport = func(input gira.TicketSupersedeInput) (gira.TicketSupersedeReport, error) {
+		if input.Body != "## Goal\nBody from stdin" || !input.DryRun {
+			t.Fatalf("unexpected input: %+v", input)
+		}
+		return gira.TicketSupersedeReport{
+			Command:     "ticket supersede",
+			Repo:        input.Repo.FullName(),
+			DryRun:      true,
+			Body:        input.Body,
+			Original:    gira.TicketSupersedeIssue{Number: input.Ticket, Title: "Old gate"},
+			Replacement: gira.TicketSupersedeIssue{Title: input.ReplacementTitle, Body: input.Body},
+			Actions:     []gira.TicketSupersedeAction{{Action: "replacement:create", Status: "planned"}},
+			NextStep:    "gira ticket supersede --apply",
+		}, nil
+	}
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	if _, err := writer.WriteString("## Goal\nBody from stdin\n"); err != nil {
+		t.Fatalf("write stdin pipe: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stdin pipe writer: %v", err)
+	}
+	originalStdin := os.Stdin
+	os.Stdin = reader
+	t.Cleanup(func() {
+		os.Stdin = originalStdin
+		_ = reader.Close()
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "supersede", "64", "--repo", "StatPan/gira", "--replacement-title", "New gate", "--body-file", "-", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.TicketSupersedeReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket supersede stdin JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Body != "## Goal\nBody from stdin" || report.Approval == nil {
+		t.Fatalf("unexpected stdin supersede report: %+v", report)
+	}
+}
+
 func TestTicketSupersedeApplyJSONOmitsApprovalEvidence(t *testing.T) {
 	restore := newTicketSupersedeReport
 	t.Cleanup(func() { newTicketSupersedeReport = restore })

@@ -3,7 +3,9 @@
 This document is the #779 and #781 baseline for keeping Gira's command surface
 small while still exposing the diagnostics operators and agents need. The #803
 inventory and risk diagnosis lives in
-[docs/cli-surface-diagnostic.md](cli-surface-diagnostic.md).
+[docs/cli-surface-diagnostic.md](cli-surface-diagnostic.md). The UX/AX
+task-level workflow complexity diagnosis lives in
+[docs/cli-workflow-complexity.md](cli-workflow-complexity.md).
 
 Gira should stay CLI-first, but CLI-first does not mean every internal concern
 gets a top-level command. Daily commands should guide work. Ops commands should
@@ -77,6 +79,10 @@ Native GitHub sub-issue support follows this rule. Creation uses
 Use [docs/cli-surface-diagnostic.md](cli-surface-diagnostic.md) when deciding
 whether a new behavior should be a root command, subcommand, option, diagnostic
 surface, generated reference entry, or no public command.
+
+Use [docs/cli-workflow-complexity.md](cli-workflow-complexity.md) when deciding
+whether a workflow surface actually reduces command, argument, decision,
+provider, fallback, and cognitive nodes compared with raw `gh`.
 
 ## Follow-Up Constraints
 

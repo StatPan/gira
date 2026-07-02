@@ -60,6 +60,7 @@ export default defineConfig({
           { text: 'Cost Profiles', link: '/cost-profiles' },
           { text: 'Command Surface', link: '/command-surface' },
           { text: 'CLI Surface Diagnostic', link: '/cli-surface-diagnostic' },
+          { text: 'CLI Workflow Complexity', link: '/cli-workflow-complexity' },
           { text: 'Goal Mode', link: '/goal-mode' },
           { text: 'Sprint And Release', link: '/sprint-release' },
           { text: 'Readiness And Audit', link: '/readiness-audit' },

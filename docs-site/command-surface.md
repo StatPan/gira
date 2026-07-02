@@ -53,3 +53,6 @@ Canonical source: [docs/command-surface-boundary.md](https://github.com/StatPan/
 
 For the current inventory, risks, and follow-up slices, see
 [CLI Surface Diagnostic](/cli-surface-diagnostic).
+
+For task-level UX/AX node counts, see
+[CLI Workflow Complexity](/cli-workflow-complexity).

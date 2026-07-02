@@ -1,0 +1,217 @@
+schema_version: agent-github-replay/v1
+name: ticket-lifecycle
+repo: StatPan/gira
+evidence_level: replayed_transcript
+workflow: ticket lifecycle
+outcome: issue started, linked PR opened, review note posted, checks observed, PR merged, issue marked done with receipt
+raw_gh:
+  name: raw gh baseline
+  steps:
+    - command: gh issue view 123 --repo StatPan/gira --json number,title,state,labels,body,milestone,assignees
+      actions: [ticket_discovery]
+      required_args: [issue_number, repo, json_fields]
+      decision_nodes: [verify_issue_is_ready]
+      cognitive_nodes: [map_labels_to_workflow_status]
+      provider_calls: 1
+      discovery_reads: 1
+      fallback_escapes: 0
+      verifications: [issue_open]
+    - command: gh issue edit 123 --repo StatPan/gira --remove-label status:ready --add-label status:in-progress
+      actions: [label_status_transition]
+      required_args: [issue_number, repo, remove_status_label, add_status_label]
+      decision_nodes: [choose_in_progress_transition]
+      provider_calls: 1
+      direct_labels: [status:ready, status:in-progress]
+    - command: git switch -c issue-123-agent-github-replay
+      actions: [branch_binding]
+      required_args: [branch_name]
+      decision_nodes: [derive_branch_name]
+      cognitive_nodes: [remember_ticket_branch_binding]
+      provider_calls: 0
+    - command: gh pr create --repo StatPan/gira --base main --head issue-123-agent-github-replay --title "Add agent GitHub replay" --body "Closes #123"
+      actions: [pr_creation]
+      required_args: [repo, base_branch, head_branch, title, closing_body]
+      decision_nodes: [choose_base_branch, write_pr_title, write_closing_reference]
+      provider_calls: 1
+      pr_actions: [create_pr]
+      durable_evidence: [pull_request]
+    - command: gh pr view 456 --repo StatPan/gira --json number,state,isDraft,body,mergeStateStatus,reviewDecision,statusCheckRollup
+      actions: [pr_creation, checks_review_state]
+      required_args: [pr_number, repo, json_fields]
+      decision_nodes: [validate_linked_pr, parse_pr_readiness]
+      cognitive_nodes: [map_status_rollup_to_blocker, map_review_decision_to_next_step]
+      provider_calls: 1
+      discovery_reads: 1
+      pr_actions: [validate_pr]
+      verifications: [closing_reference, branch_binding]
+    - command: gh pr diff 456 --repo StatPan/gira --name-only
+      actions: [review_packet]
+      required_args: [pr_number, repo, name_only]
+      decision_nodes: [choose_review_scope]
+      cognitive_nodes: [map_changed_files_to_review_risk]
+      provider_calls: 1
+      discovery_reads: 1
+    - command: gh pr comment 456 --repo StatPan/gira --body-file self-review.md
+      actions: [review_packet, comments_receipts]
+      required_args: [pr_number, repo, body_file]
+      decision_nodes: [write_self_review_body]
+      provider_calls: 1
+      pr_actions: [comment_pr]
+      comments: [self_review]
+      durable_evidence: [pr_comment]
+    - command: gh pr checks 456 --repo StatPan/gira --watch
+      actions: [checks_review_state]
+      required_args: [pr_number, repo, watch]
+      decision_nodes: [wait_until_checks_green]
+      cognitive_nodes: [interpret_check_terminal_state]
+      provider_calls: 2
+      discovery_reads: 1
+      verifications: [checks_pass]
+    - command: gh pr merge 456 --repo StatPan/gira --squash --delete-branch
+      actions: [finish_merge]
+      required_args: [pr_number, repo, squash, delete_branch]
+      decision_nodes: [choose_merge_method, confirm_branch_cleanup]
+      provider_calls: 1
+      pr_actions: [merge_pr, delete_branch]
+      verifications: [merged_pr]
+    - command: gh issue view 123 --repo StatPan/gira --json state,labels
+      actions: [finish_merge]
+      required_args: [issue_number, repo, json_fields]
+      decision_nodes: [verify_issue_close_or_done_state]
+      cognitive_nodes: [map_final_labels_to_done_state]
+      provider_calls: 1
+      discovery_reads: 1
+      verifications: [issue_state_checked]
+    - command: gh issue edit 123 --repo StatPan/gira --remove-label status:in-progress --add-label status:done
+      actions: [label_status_transition, finish_merge]
+      required_args: [issue_number, repo, remove_status_label, add_status_label]
+      decision_nodes: [choose_done_transition]
+      provider_calls: 1
+      direct_labels: [status:in-progress, status:done]
+    - command: gh issue comment 123 --repo StatPan/gira --body-file finish-receipt.md
+      actions: [comments_receipts, finish_merge]
+      required_args: [issue_number, repo, body_file]
+      decision_nodes: [write_finish_receipt]
+      provider_calls: 1
+      comments: [finish_receipt]
+      durable_evidence: [issue_comment]
+gira:
+  name: gira lifecycle workflow
+  steps:
+    - command: gira ticket view 123 --json
+      actions: [ticket_discovery]
+      required_args: [issue_number, json]
+      decision_nodes: [verify_ticket_ready]
+      provider_calls: 1
+      discovery_reads: 1
+      verifications: [issue_open]
+    - command: gira ticket start 123 --dry-run --json
+      actions: [branch_binding, label_status_transition]
+      required_args: [issue_number, dry_run, json]
+      decision_nodes: [approve_start_plan]
+      provider_calls: 1
+      discovery_reads: 1
+      verifications: [approval_plan]
+    - command: gira ticket start 123 --apply --json
+      actions: [branch_binding, label_status_transition]
+      required_args: [issue_number, apply, json]
+      provider_calls: 1
+      durable_evidence: [ticket_branch, status_transition]
+    - command: gira ticket pr --dry-run --json
+      actions: [pr_creation]
+      required_args: [dry_run, json, current_branch_context]
+      decision_nodes: [approve_pr_plan]
+      provider_calls: 1
+      discovery_reads: 1
+      verifications: [closing_reference_plan]
+    - command: gira ticket pr --apply --json
+      actions: [pr_creation]
+      required_args: [apply, json, current_branch_context]
+      provider_calls: 1
+      pr_actions: [create_pr]
+      durable_evidence: [pull_request]
+    - command: gira ticket review --diff-summary --json
+      actions: [review_packet]
+      required_args: [diff_summary, json, current_branch_context]
+      decision_nodes: [verify_review_packet]
+      provider_calls: 2
+      discovery_reads: 1
+      pr_actions: [validate_pr]
+      verifications: [review_packet]
+    - command: gira ticket self-review --diff-summary --dry-run --json
+      actions: [review_packet, comments_receipts]
+      required_args: [diff_summary, dry_run, json, current_branch_context]
+      decision_nodes: [approve_self_review_note]
+      provider_calls: 1
+      verifications: [self_review_note_plan]
+    - command: gira ticket self-review --diff-summary --apply --json
+      actions: [review_packet, comments_receipts]
+      required_args: [diff_summary, apply, json, current_branch_context]
+      provider_calls: 1
+      pr_actions: [comment_pr]
+      comments: [self_review]
+      durable_evidence: [pr_comment]
+    - command: gira ticket wait --timeout 5m --json
+      actions: [checks_review_state]
+      required_args: [timeout, json, current_branch_context]
+      provider_calls: 2
+      discovery_reads: 1
+      verifications: [checks_pass, review_pass]
+    - command: gira ticket finish --dry-run --json
+      actions: [checks_review_state, finish_merge]
+      required_args: [dry_run, json, current_branch_context]
+      decision_nodes: [approve_finish_plan]
+      provider_calls: 2
+      discovery_reads: 1
+      verifications: [merge_ready, finish_receipt_plan]
+    - command: gira ticket finish --apply --json
+      actions: [label_status_transition, comments_receipts, finish_merge]
+      required_args: [apply, json, current_branch_context]
+      provider_calls: 3
+      pr_actions: [merge_pr, delete_branch]
+      comments: [finish_receipt]
+      verifications: [merged_pr, issue_done]
+      durable_evidence: [merge, issue_comment, status_transition]
+expected:
+  raw_gh:
+    command_nodes: 12
+    agent_steps: 12
+    argument_nodes: 39
+    decision_nodes: 16
+    cognitive_nodes: 7
+    provider_calls: 12
+    discovery_reads: 5
+    fallback_escapes: 0
+    direct_labels_touched: 4
+    pr_actions: 5
+    comments: 2
+    verifications: 6
+    workflow_cost_x2: 196
+  gira:
+    command_nodes: 11
+    agent_steps: 11
+    argument_nodes: 34
+    decision_nodes: 6
+    cognitive_nodes: 0
+    provider_calls: 16
+    discovery_reads: 6
+    fallback_escapes: 0
+    direct_labels_touched: 0
+    pr_actions: 5
+    comments: 2
+    verifications: 11
+    workflow_cost_x2: 144
+  improvements:
+    command_nodes: 1
+    agent_steps: 1
+    argument_nodes: 5
+    decision_nodes: 10
+    cognitive_nodes: 7
+    provider_calls: -4
+    discovery_reads: -1
+    fallback_escapes: 0
+    direct_labels_touched: 4
+    pr_actions: 0
+    comments: 0
+    verifications: -5
+    workflow_cost_x2: 52

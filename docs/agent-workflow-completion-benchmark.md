@@ -160,6 +160,28 @@ Each fixture declares normalized GitHub-like evidence plus expected workflow dec
 
 The suite is intentionally local and deterministic. It does not call GitHub, execute model providers, or score individual humans or agents.
 
+## GitHub Replay Fixture
+
+Workflow completion fixtures answer "does Gira choose the correct next safe
+action from normalized GitHub-like state?"
+
+The replay fixture in
+`internal/gira/testdata/agent_github_replay/ticket-lifecycle.yaml` answers a
+different question: "for the same GitHub-native lifecycle, how much explicit
+workflow surface does an agent handle with raw `gh` versus Gira?"
+
+Run it with:
+
+```bash
+go test ./internal/gira -run AgentGitHubReplay -v
+```
+
+The fixture is deterministic and does not mutate GitHub during test execution.
+It records concrete raw `gh` and Gira command transcripts, then the test
+recomputes command nodes, arguments, decisions, cognitive nodes, provider-call
+estimates, discovery reads, direct label touches, PR actions, comments,
+verifications, fallback escapes, and the workflow-cost score.
+
 ## Operational Contract Gate
 
 The benchmark fixtures also pass through the `ticket-status/v1` operational contract gate described in [Operational Contract Gates](operational-contract-gates.md).

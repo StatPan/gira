@@ -79,9 +79,38 @@ func TestBuildTicketSupersedeReportDryRunPlansReplacement(t *testing.T) {
 		t.Fatalf("unexpected supersede approval plan: %+v", report.Approval)
 	}
 	for _, call := range runner.calls {
+		if strings.Contains(call, "gh pr list") || strings.Contains(call, "/pulls") || strings.Contains(call, "/timeline") {
+			t.Fatalf("dry-run without --close-draft-pr should not inspect linked PRs: %v", runner.calls)
+		}
 		if strings.Contains(call, "issue create") || strings.Contains(call, "issue close") || strings.Contains(call, "issue comment") {
 			t.Fatalf("dry-run mutated GitHub: %v", runner.calls)
 		}
+	}
+}
+
+func TestBuildTicketSupersedeReportDryRunCloseDraftPRInspectsLinkedPR(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &ticketSupersedeRunner{}
+
+	report, err := BuildTicketSupersedeReport(TicketSupersedeInput{
+		Repo:             repo,
+		Ticket:           64,
+		ReplacementTitle: "New gate",
+		Body:             "## Goal\nDefine release gate.",
+		CloseDraftPR:     true,
+		DryRun:           true,
+	}, runner)
+	if err != nil {
+		t.Fatalf("BuildTicketSupersedeReport error: %v", err)
+	}
+	if report.DraftPR.Number != 65 || report.DraftPR.Action != "close" {
+		t.Fatalf("expected draft PR close plan: %+v", report.DraftPR)
+	}
+	if !containsSupersedeCallPrefix(runner.calls, "gh pr list --repo StatPan/gira") {
+		t.Fatalf("expected linked PR inspection when --close-draft-pr is set: %v", runner.calls)
+	}
+	if !supersedeHasAction(report.Actions, "draft_pr:close") {
+		t.Fatalf("missing draft PR close action: %+v", report.Actions)
 	}
 }
 
@@ -124,4 +153,22 @@ func TestBuildTicketSupersedeReportApplyCreatesLinksAndCloses(t *testing.T) {
 	if !strings.Contains(FormatTicketSupersede(report), "replacement=#94") {
 		t.Fatalf("format missing replacement:\n%s", FormatTicketSupersede(report))
 	}
+}
+
+func containsSupersedeCallPrefix(calls []string, prefix string) bool {
+	for _, call := range calls {
+		if strings.HasPrefix(call, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func supersedeHasAction(actions []TicketSupersedeAction, action string) bool {
+	for _, item := range actions {
+		if item.Action == action {
+			return true
+		}
+	}
+	return false
 }

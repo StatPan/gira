@@ -133,23 +133,27 @@ func BuildTicketSupersedeReport(input TicketSupersedeInput, runner CommandRunner
 		plannedSupersedeAction("original:resolution", input.DryRun, "remove active status labels and add resolution:superseded"),
 		plannedSupersedeAction("original:close", input.DryRun, "close original issue"),
 	)
-	prStatus, prErr := DevPRStatus(input.Repo, input.Ticket, runner)
-	if prErr == nil && prStatus.PRNumber > 0 {
-		report.DraftPR = TicketSupersedeDraftPR{
-			Number: prStatus.PRNumber,
-			URL:    prStatus.PRURL,
-			State:  prStatus.State,
-			Draft:  containsString(prStatus.Blockers, "draft"),
-			Action: "report",
-		}
-		if report.DraftPR.Draft && input.CloseDraftPR {
-			report.DraftPR.Action = "close"
-			report.Actions = append(report.Actions, plannedSupersedeAction("draft_pr:close", input.DryRun, fmt.Sprintf("close draft PR #%d", prStatus.PRNumber)))
+	if input.CloseDraftPR {
+		prStatus, prErr := DevPRStatus(input.Repo, input.Ticket, runner)
+		if prErr == nil && prStatus.PRNumber > 0 {
+			report.DraftPR = TicketSupersedeDraftPR{
+				Number: prStatus.PRNumber,
+				URL:    prStatus.PRURL,
+				State:  prStatus.State,
+				Draft:  containsString(prStatus.Blockers, "draft"),
+				Action: "report",
+			}
+			if report.DraftPR.Draft {
+				report.DraftPR.Action = "close"
+				report.Actions = append(report.Actions, plannedSupersedeAction("draft_pr:close", input.DryRun, fmt.Sprintf("close draft PR #%d", prStatus.PRNumber)))
+			} else {
+				report.Actions = append(report.Actions, TicketSupersedeAction{Action: "draft_pr:inspect", Status: "skipped", Detail: "linked PR is not a draft"})
+			}
 		} else {
-			report.Actions = append(report.Actions, TicketSupersedeAction{Action: "draft_pr:inspect", Status: "skipped", Detail: "linked PR reported but not closed"})
+			report.Actions = append(report.Actions, TicketSupersedeAction{Action: "draft_pr:inspect", Status: "skipped", Detail: "no linked draft PR found"})
 		}
 	} else {
-		report.Actions = append(report.Actions, TicketSupersedeAction{Action: "draft_pr:inspect", Status: "skipped", Detail: "no linked PR found"})
+		report.Actions = append(report.Actions, TicketSupersedeAction{Action: "draft_pr:inspect", Status: "skipped", Detail: "pass --close-draft-pr to inspect and close linked draft PRs"})
 	}
 
 	if input.DryRun {

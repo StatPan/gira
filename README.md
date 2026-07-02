@@ -19,6 +19,20 @@ checks are green, review blockers are clear, the issue is closed, active status
 labels are normalized, and the next command is obvious. Gira makes that finish
 step explicit.
 
+The product promise is measurable. Gira keeps the final state GitHub-native,
+then reduces the workflow labor needed to reach that same state. Current
+diagnostics compare Gira against equivalent raw `gh` workflows and show:
+
+- 51% lower ticket lifecycle burden.
+- 52% lower native sub-issue creation burden.
+- 60% lower supersede workflow burden.
+
+These are not vanity command counts. They measure commands, required
+arguments, decisions, provider details, fallback, and concepts a human or agent
+must handle. If a Gira workflow does not beat raw `gh`, it becomes a product
+improvement target. The KPI model is documented in
+[docs/workflow-efficiency-kpis.md](docs/workflow-efficiency-kpis.md).
+
 Use Gira when you want GitHub to remain the source of truth, while still having
 a Jira-like lifecycle that coding agents can operate safely:
 

@@ -57,3 +57,6 @@ Before adding or teaching a workflow command, answer:
 
 Canonical source:
 [docs/cli-workflow-complexity.md](https://github.com/StatPan/gira/blob/main/docs/cli-workflow-complexity.md).
+
+Related:
+[Workflow Efficiency KPIs](/workflow-efficiency-kpis).

@@ -207,3 +207,7 @@ metric. The current command count is useful but insufficient. Gira should
 measure whether it reduces command, argument, decision, provider, fallback, and
 cognitive nodes for representative tasks, then use that evidence before adding
 more public command surface.
+
+See [Workflow Efficiency KPIs](workflow-efficiency-kpis.md) for the product
+metrics that turn these workflow-cost scores into raw `gh` reduction
+percentages.

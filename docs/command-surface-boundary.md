@@ -1,7 +1,9 @@
 # Command Surface Boundary
 
 This document is the #779 and #781 baseline for keeping Gira's command surface
-small while still exposing the diagnostics operators and agents need.
+small while still exposing the diagnostics operators and agents need. The #803
+inventory and risk diagnosis lives in
+[docs/cli-surface-diagnostic.md](cli-surface-diagnostic.md).
 
 Gira should stay CLI-first, but CLI-first does not mean every internal concern
 gets a top-level command. Daily commands should guide work. Ops commands should
@@ -71,6 +73,10 @@ Native GitHub sub-issue support follows this rule. Creation uses
 `gira ticket new --parent N`, and existing-ticket changes use the single
 `gira ticket parent` surface instead of separate root-level or duplicated
 `link` and `unlink` command families.
+
+Use [docs/cli-surface-diagnostic.md](cli-surface-diagnostic.md) when deciding
+whether a new behavior should be a root command, subcommand, option, diagnostic
+surface, generated reference entry, or no public command.
 
 ## Follow-Up Constraints
 

@@ -51,3 +51,5 @@ when the public surface needs generated docs or adapter metadata.
 
 Canonical source: [docs/command-surface-boundary.md](https://github.com/StatPan/gira/blob/main/docs/command-surface-boundary.md).
 
+For the current inventory, risks, and follow-up slices, see
+[CLI Surface Diagnostic](/cli-surface-diagnostic).

@@ -180,6 +180,36 @@ For an existing repository, run `gira adopt repo --dry-run` before full bootstra
 
 You can still call `gh` directly for low-level GitHub operations, but lifecycle work should use Gira ticket controls when available: `ticket view`, `ticket status`, `ticket start`, `ticket pr`, `ticket review`, `ticket self-review`, `ticket note`, `ticket supersede`, `ticket checks`, `ticket wait`, and `ticket finish`. Use raw `gh` only when Gira has no lifecycle command or when you intentionally need an unopinionated GitHub operation. The ticket commands keep the lifecycle consistent: they create or reuse the linked PR, require a closing body such as `Closes #TICKET`, compute blockers, render review packets and context notes, supersede stale work with linked replacement evidence, wait for pending checks, merge only when review and checks allow it, clean up the branch when safe, and give the next Gira command to run.
 
+### Agent GitHub Replay Result
+
+Gira includes an executable replay fixture for a GitHub-native ticket lifecycle:
+`internal/gira/testdata/agent_github_replay/ticket-lifecycle.yaml`.
+
+Run the comparison with:
+
+```bash
+go test ./internal/gira -run AgentGitHubReplay -v
+```
+
+Current fixture result:
+
+| Metric | Raw `gh` | Gira | Delta |
+| --- | ---: | ---: | ---: |
+| Command nodes | 12 | 11 | 1 |
+| Argument nodes | 39 | 34 | 5 |
+| Decision nodes | 16 | 6 | 10 |
+| Cognitive nodes | 7 | 0 | 7 |
+| Direct labels touched by the agent | 4 | 0 | 4 |
+| Provider calls | 12 | 16 | -4 |
+| Discovery reads | 5 | 6 | -1 |
+| Fallback escapes | 0 | 0 | 0 |
+| Workflow cost x2 | 196 | 144 | 52 |
+
+This is replay evidence, not live API instrumentation. The result shows less
+agent workflow burden in the recorded command transcript, while provider calls
+and discovery reads still need stateful Gira work before making API-efficiency
+claims.
+
 `gira epic list`, `gira epic status`, and `gira epic finish` close the larger planning loop without requiring raw `gh issue list` or `gh issue close`. `epic list` is a `type:epic` view over GitHub issues with the same compact list filters as ticket list. Gira can resolve an epic from the current `issue-N-*` branch, `--title`, `--slug`, `--milestone`, or a sole open `type:epic`; `--ticket N` remains the explicit fallback. `epic status` reads native GitHub sub-issues when available and merges them with older body or milestone child inference. `epic finish --apply` refuses to close while child issues are still open, then normalizes active status labels and closes the epic through GitHub.
 
 `gira stats repo --repo OWNER/REPO --since 90d` renders the first Closure Funnel report. It is GitHub read-only, defaults to human text output, and uses `--json` only for automation. The report counts opened/closed issues, superseded issues, opened/merged PRs, closing-link hygiene, check friction, stale open work, and closure rate. `gira stats workspace --since 90d` is the planned multi-repo rollup; see [docs/closure-funnel-stats.md](docs/closure-funnel-stats.md).

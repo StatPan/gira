@@ -3,12 +3,15 @@
 Gira is GitHub-native. The final source of truth is still GitHub issues,
 branches, PRs, checks, reviews, labels, comments, and milestones.
 
-The measurable product claim is that Gira reduces the workflow labor needed to
-reach the same GitHub-backed outcome.
+The measurable product claim is that an agent can reach the same GitHub-backed
+outcome with less workflow labor, fewer unsafe decisions, and fewer
+raw-provider escapes.
 
-The current percentages are modeled baselines from command graphs and
-workflow-node counts. They are not live replay benchmarks or API
-instrumentation results yet.
+The current scores are modeled baselines from command graphs and workflow-node
+counts. They are not live replay benchmarks or API instrumentation results.
+Do not publish numeric reduction claims until an agent replay or instrumented
+benchmark has recorded the exact fixture, commands, labels, PR actions,
+provider calls, and post-apply verification.
 
 Empirical validation should compare three paths:
 
@@ -24,7 +27,7 @@ stateful Gira target
 
 | KPI | Formula | What it proves |
 | --- | --- | --- |
-| Workflow burden reduction | `(raw_gh_workflow_cost - gira_workflow_cost) / raw_gh_workflow_cost` | How much less task burden a human feels. |
+| Workflow burden reduction | `(raw_gh_workflow_cost - gira_workflow_cost) / raw_gh_workflow_cost` | How much less task burden an agent must handle. |
 | Agent burden reduction | `(raw_agent_steps - gira_agent_steps) / raw_agent_steps` | How much less an agent must infer, sequence, or repair. |
 | Discovery read reduction | `avoided_discovery_reads / raw_gh_discovery_reads` | How much Terraform-like state can reduce repeated provider lookup. |
 | Provider API reduction | `(raw_gh_provider_calls - gira_provider_calls) / raw_gh_provider_calls` | How much GitHub API pressure is reduced. |
@@ -34,18 +37,22 @@ Workflow burden uses the node model from
 [CLI Workflow Complexity](/cli-workflow-complexity): commands, arguments,
 decisions, provider leakage, fallback, and cognitive concepts.
 
-## Current Modeled Baseline
+## Agent Replay Basis
 
-| Workflow | Raw `gh` cost | Gira cost | Burden reduction |
-| --- | ---: | ---: | ---: |
-| Ticket lifecycle | 42.0 | 20.5 | 51% |
-| Create native sub-issue | 22.0 | 10.5 | 52% |
-| Attach existing sub-issue | 20.0 | 12.0 | 40% |
-| Supersede ticket | 30.0 | 12.0 | 60% |
+Benchmark an agent performing concrete GitHub-native actions:
 
-Use these numbers as a scorecard. If a Gira workflow does not beat raw `gh`,
-it needs a clear product reason: safety, idempotency, audit evidence, or agent
-reliability.
+- ticket discovery and normalization;
+- label and status transitions;
+- branch binding;
+- PR creation or validation with closing text;
+- review packet and durable comments;
+- check and review inspection;
+- finish or merge with issue closure evidence;
+- parent/child links and supersede flows;
+- raw provider escapes such as `gh api`, REST, or GraphQL.
+
+Modeled scores can guide product work, but public percentages require replay
+or instrumentation evidence.
 
 ## Stateful Direction
 

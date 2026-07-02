@@ -4,15 +4,19 @@ Gira is GitHub-native, so the canonical state change is intentionally the same
 as a correct raw `gh` workflow: GitHub issues, labels, branches, PRs, checks,
 reviews, comments, and milestones remain the source of truth.
 
-The product claim is not that Gira creates a different backend. The claim is
-that Gira reduces the amount of workflow labor needed to reach the same
-GitHub-backed outcome.
+The product claim is not that Gira creates a different backend. The claim to
+prove is that an agent can do the same GitHub-native work with less workflow
+labor, fewer unsafe decisions, and fewer raw-provider escapes.
 
 The current numbers in this document are modeled baselines from the #807
 workflow-node diagnostic. They are not live replay benchmarks, wall-clock
 measurements, or GitHub API instrumentation results yet.
 
-To validate the claim empirically, each golden workflow should compare:
+Do not publish numeric reduction claims from modeled baselines. Public numbers
+require a replay or instrumented benchmark with a fixed fixture and retained
+evidence.
+
+To validate the claim empirically, each golden workflow must compare:
 
 ```text
 raw gh baseline
@@ -27,12 +31,41 @@ projection, cache, ledger, or recent command state can avoid repeated discovery
 reads and repeated operator decisions, while GitHub remains authoritative for
 workflow truth.
 
+## Benchmark Subject
+
+The primary benchmark subject is an agent, not a generic human operator.
+
+An agent benchmark must record every explicit action the agent had to perform
+or reason about. The comparison should include both visible commands and the
+GitHub-native work those commands complete.
+
+Required action inventory:
+
+| Action area | Raw `gh` action examples | Gira action examples | Count when |
+| --- | --- | --- | --- |
+| Ticket discovery | `gh issue view`, `gh issue list`, inspect labels/body/milestone | `gira ticket view`, `gira ticket status`, `gira queue next` | Agent must find or validate the work item. |
+| Ticket normalization | `gh issue edit --add-label`, edit issue body, add status/type labels | `gira ticket new`, future normalization command, `gira ticket note` | Agent must make an issue executable or record context. |
+| Branch binding | create branch name, checkout base, remember issue number | `gira ticket start --dry-run|--apply` | Agent starts issue-backed work. |
+| Label/status transition | add/remove `status:*`, `type:*`, `priority:*`, `agent:*`, `lane:*` labels | lifecycle commands that normalize status labels | Agent changes workflow state. |
+| PR creation/validation | `gh pr create`, set title/body/base/head, ensure `Closes #N` | `gira ticket pr --dry-run|--apply` | Agent opens or verifies a linked PR. |
+| Review packet | `gh pr diff`, inspect changed files, summarize risk | `gira ticket review`, `gira ticket self-review` | Agent prepares review evidence. |
+| Comments/receipts | `gh issue comment`, `gh pr comment`, hand-written finish note | `gira ticket note`, finish receipt, supersede notes | Agent writes durable context. |
+| Checks and review state | `gh pr checks`, `gh pr view`, status rollup polling | `gira ticket checks`, `gira ticket wait` | Agent waits, branches, or repairs based on CI/review. |
+| Finish/merge | `gh pr merge`, delete branch, close issue, relabel Done | `gira ticket finish --dry-run|--apply` | Agent completes the work unit. |
+| Parent/child links | raw sub-issue API calls or provider IDs | `gira ticket new --parent`, `gira ticket parent` | Agent creates or repairs hierarchy. |
+| Supersede/replace | create replacement issue, cross-comment, relabel, close old issue | `gira ticket supersede --dry-run|--apply` | Agent replaces stale or wrong work. |
+| Provider escape | direct REST/GraphQL/`gh api` calls | fallback from Gira to provider command | Agent leaves the product workflow surface. |
+
+The replay log must include the exact command sequence, the required arguments
+the agent had to discover, the decision points it had to make, and the durable
+GitHub evidence produced.
+
 ## Primary KPIs
 
 ### Workflow Burden Reduction
 
-This is the main product KPI for humans. It measures how much task-level
-workflow burden Gira removes compared with raw `gh`.
+This is the main product KPI for agent-operated workflow. It measures how much
+task-level workflow burden Gira removes compared with raw `gh`.
 
 ```text
 workflow_burden_reduction =
@@ -148,21 +181,16 @@ A command that supports `--dry-run|--apply` should be able to prove that the
 same operation becomes a no-op after a successful apply, unless the underlying
 provider state changed externally.
 
-## Example KPI Table
+## Modeled Baselines
 
-The current #807 diagnostic gives a first modeled burden baseline:
+The #807 diagnostic contains modeled workflow-node baselines. Treat those
+tables as internal product diagnosis only. Do not copy their percentages into
+README, release notes, landing pages, or benchmark claims.
 
-| Workflow | Raw `gh` cost | Gira cost | Burden reduction | Interpretation |
-| --- | ---: | ---: | ---: | --- |
-| Ticket lifecycle | 42.0 | 20.5 | 51% | Gira halves the task burden by binding issue, branch, PR, checks, labels, and finish evidence. |
-| Create native sub-issue | 22.0 | 10.5 | 52% | `ticket new --parent` hides native sub-issue provider details. |
-| Attach existing sub-issue | 20.0 | 12.0 | 40% | Good reduction, but the command shape is less intuitive than it should be. |
-| Supersede ticket | 30.0 | 12.0 | 60% | Gira replaces a manual audit trail with one bounded dry-run/apply command pair. |
-
-The table should be treated as a living product scorecard. A Gira workflow that
+Use modeled baselines to choose what to validate next. A Gira workflow that
 does not beat the raw `gh` baseline needs a reason: stronger safety,
 idempotency, auditability, or agent reliability. If it has none, improve or
-remove that surface.
+remove that surface before publishing the workflow as a product advantage.
 
 ## Evidence Levels
 
@@ -170,13 +198,14 @@ Use explicit evidence labels when publishing KPI numbers:
 
 | Evidence level | Meaning | Allowed claim |
 | --- | --- | --- |
-| Modeled | Calculated from documented command graphs and workflow-node counts. | "Model estimates 51% lower burden." |
-| Replayed | Raw `gh` and Gira happy paths were executed in a disposable repo and steps were recorded. | "Replay reduced operator steps by X%." |
+| Modeled | Calculated from documented command graphs and workflow-node counts. | Internal diagnosis only; do not publish reduction percentages. |
+| Replayed | Raw `gh` and Gira agent happy paths were executed in a disposable repo and steps were recorded. | "Agent replay reduced workflow steps by X%." |
 | Instrumented | Provider calls, GraphQL cost, REST requests, wall time, and no-op convergence were captured during replay. | "Instrumentation reduced provider reads by X%." |
 
-Do not present modeled percentages as empirical benchmarks. Before using a KPI
-as a benchmark claim, record the exact repo fixture, commands, provider call
-counts, API quota deltas, timestamps, and post-apply no-op check.
+Do not present modeled percentages as empirical benchmarks. Before using any
+number as a benchmark claim, record the exact repo fixture, command transcript,
+labels touched, PR actions, comments, provider call counts, API quota deltas,
+timestamps, and post-apply no-op check.
 
 ## Measurement Procedure
 
@@ -243,17 +272,8 @@ Use the KPIs as a quality gate:
 - If discovery read reduction is high, local state or ledger is probably worth
   implementing.
 
-Use the same numbers for product proof:
-
-```text
-Gira reduced ticket lifecycle burden by 51% against raw gh.
-Gira reduced native sub-issue creation burden by 52%.
-Gira reduced supersede workflow burden by 60%.
-```
-
-These statements are useful only when the raw `gh` baseline, Gira workflow, and
-counting method are visible. The score should make Gira easier to trust, not
-turn into hidden marketing math.
+Use public numbers only after replay or instrumentation evidence exists. The
+score should make Gira easier to trust, not turn into hidden marketing math.
 
 ## Stateful Direction
 

@@ -8,7 +8,11 @@ The product claim is not that Gira creates a different backend. The claim is
 that Gira reduces the amount of workflow labor needed to reach the same
 GitHub-backed outcome.
 
-Measure that claim directly. For each golden workflow, compare:
+The current numbers in this document are modeled baselines from the #807
+workflow-node diagnostic. They are not live replay benchmarks, wall-clock
+measurements, or GitHub API instrumentation results yet.
+
+To validate the claim empirically, each golden workflow should compare:
 
 ```text
 raw gh baseline
@@ -146,7 +150,7 @@ provider state changed externally.
 
 ## Example KPI Table
 
-The current #807 diagnostic already gives a first burden baseline:
+The current #807 diagnostic gives a first modeled burden baseline:
 
 | Workflow | Raw `gh` cost | Gira cost | Burden reduction | Interpretation |
 | --- | ---: | ---: | ---: | --- |
@@ -159,6 +163,20 @@ The table should be treated as a living product scorecard. A Gira workflow that
 does not beat the raw `gh` baseline needs a reason: stronger safety,
 idempotency, auditability, or agent reliability. If it has none, improve or
 remove that surface.
+
+## Evidence Levels
+
+Use explicit evidence labels when publishing KPI numbers:
+
+| Evidence level | Meaning | Allowed claim |
+| --- | --- | --- |
+| Modeled | Calculated from documented command graphs and workflow-node counts. | "Model estimates 51% lower burden." |
+| Replayed | Raw `gh` and Gira happy paths were executed in a disposable repo and steps were recorded. | "Replay reduced operator steps by X%." |
+| Instrumented | Provider calls, GraphQL cost, REST requests, wall time, and no-op convergence were captured during replay. | "Instrumentation reduced provider reads by X%." |
+
+Do not present modeled percentages as empirical benchmarks. Before using a KPI
+as a benchmark claim, record the exact repo fixture, commands, provider call
+counts, API quota deltas, timestamps, and post-apply no-op check.
 
 ## Measurement Procedure
 

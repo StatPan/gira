@@ -6,7 +6,11 @@ branches, PRs, checks, reviews, labels, comments, and milestones.
 The measurable product claim is that Gira reduces the workflow labor needed to
 reach the same GitHub-backed outcome.
 
-Compare three paths:
+The current percentages are modeled baselines from command graphs and
+workflow-node counts. They are not live replay benchmarks or API
+instrumentation results yet.
+
+Empirical validation should compare three paths:
 
 ```text
 raw gh baseline
@@ -30,7 +34,7 @@ Workflow burden uses the node model from
 [CLI Workflow Complexity](/cli-workflow-complexity): commands, arguments,
 decisions, provider leakage, fallback, and cognitive concepts.
 
-## Current Baseline
+## Current Modeled Baseline
 
 | Workflow | Raw `gh` cost | Gira cost | Burden reduction |
 | --- | ---: | ---: | ---: |

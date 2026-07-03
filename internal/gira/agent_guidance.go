@@ -109,6 +109,7 @@ func RenderAgentOperatorDocsSiteMarkdown(spec AgentGuidanceSpec, commands []Comm
 	sortGuideSpecs(agentCommands)
 	b.WriteString("# Agent Operator Skill\n\n")
 	fmt.Fprintf(&b, "The canonical Gira agent/operator skill lives in\n[`%s`](https://github.com/StatPan/gira/blob/main/%s).\n\n", spec.CanonicalSource, spec.CanonicalSource)
+	b.WriteString("This docs-site page is a thin copy for public navigation. Keep lifecycle,\nsafety, and evidence policy in the canonical skill, then refresh this page from\nthe shared docs contract renderer.\n\n")
 	b.WriteString("Use it as the source of truth for coding agents operating Gira-managed\nrepositories. Adapter files such as `AGENTS.md`, `CLAUDE.md`,\n`.github/copilot-instructions.md`, Cursor rules, and `gira guide agent` should\nsummarize that skill instead of redefining it.\n\n")
 	writeMarkdownList(&b, "## Operating Model", spec.OperatingModel)
 	b.WriteString("## Registry-Backed Lifecycle Commands\n\n")

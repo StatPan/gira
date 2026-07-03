@@ -3,6 +3,10 @@
 The canonical Gira agent/operator skill lives in
 [`docs/skills/gira-agent-operator.md`](https://github.com/StatPan/gira/blob/main/docs/skills/gira-agent-operator.md).
 
+This docs-site page is a thin copy for public navigation. Keep lifecycle,
+safety, and evidence policy in the canonical skill, then refresh this page from
+the shared docs contract renderer.
+
 Use it as the source of truth for coding agents operating Gira-managed
 repositories. Adapter files such as `AGENTS.md`, `CLAUDE.md`,
 `.github/copilot-instructions.md`, Cursor rules, and `gira guide agent` should

@@ -63,20 +63,23 @@ type GoalFinishReadiness struct {
 }
 
 type GoalFinishChildEvidence struct {
-	Number         int      `json:"number"`
-	Title          string   `json:"title"`
-	State          string   `json:"state"`
-	Status         string   `json:"status"`
-	Category       string   `json:"category"`
-	PRNumber       int      `json:"pr_number,omitempty"`
-	PRURL          string   `json:"pr_url,omitempty"`
-	PRState        string   `json:"pr_state,omitempty"`
-	ChecksStatus   string   `json:"checks_status,omitempty"`
-	ReviewStatus   string   `json:"review_status,omitempty"`
-	ReceiptPresent bool     `json:"receipt_present"`
-	Evidence       []string `json:"evidence,omitempty"`
-	Blockers       []string `json:"blockers,omitempty"`
-	URL            string   `json:"url,omitempty"`
+	Number            int      `json:"number"`
+	Title             string   `json:"title"`
+	State             string   `json:"state"`
+	Status            string   `json:"status"`
+	Category          string   `json:"category"`
+	PRNumber          int      `json:"pr_number,omitempty"`
+	PRURL             string   `json:"pr_url,omitempty"`
+	PRState           string   `json:"pr_state,omitempty"`
+	ChecksStatus      string   `json:"checks_status,omitempty"`
+	ReviewStatus      string   `json:"review_status,omitempty"`
+	ReceiptPresent    bool     `json:"receipt_present"`
+	PlanningOnly      bool     `json:"planning_only,omitempty"`
+	PRNotRequired     bool     `json:"pr_not_required,omitempty"`
+	ChecksNotRequired bool     `json:"checks_not_required,omitempty"`
+	Evidence          []string `json:"evidence,omitempty"`
+	Blockers          []string `json:"blockers,omitempty"`
+	URL               string   `json:"url,omitempty"`
 }
 
 type GoalFinishReceipt struct {
@@ -179,19 +182,23 @@ func buildGoalFinishReadiness(repo RepoRef, status GoalStatusReport, terminal st
 }
 
 func goalFinishChildEvidence(repo RepoRef, child GoalStatusChild, runner CommandRunner) GoalFinishChildEvidence {
+	receipt := goalFinishChildReceiptEvidence(repo, child.Number, runner)
 	evidence := GoalFinishChildEvidence{
-		Number:         child.Number,
-		Title:          child.Title,
-		State:          child.State,
-		Status:         child.Status,
-		Category:       child.Category,
-		PRNumber:       child.PRNumber,
-		PRURL:          child.PRURL,
-		PRState:        child.PRState,
-		ChecksStatus:   child.ChecksStatus,
-		ReviewStatus:   child.ReviewStatus,
-		ReceiptPresent: goalFinishReceiptPresent(repo, child.Number, runner),
-		URL:            child.URL,
+		Number:            child.Number,
+		Title:             child.Title,
+		State:             child.State,
+		Status:            child.Status,
+		Category:          child.Category,
+		PRNumber:          child.PRNumber,
+		PRURL:             child.PRURL,
+		PRState:           child.PRState,
+		ChecksStatus:      child.ChecksStatus,
+		ReviewStatus:      child.ReviewStatus,
+		ReceiptPresent:    receipt.Present,
+		PlanningOnly:      receipt.PlanningOnly,
+		PRNotRequired:     receipt.PRNotRequired,
+		ChecksNotRequired: receipt.ChecksNotRequired,
+		URL:               child.URL,
 	}
 	if child.PRNumber > 0 {
 		evidence.Evidence = append(evidence.Evidence, "linked_pr")
@@ -205,6 +212,15 @@ func goalFinishChildEvidence(repo RepoRef, child GoalStatusChild, runner Command
 	if evidence.ReceiptPresent {
 		evidence.Evidence = append(evidence.Evidence, "finish_receipt")
 	}
+	if evidence.PlanningOnly {
+		evidence.Evidence = append(evidence.Evidence, "planning_only_completion")
+	}
+	if evidence.PRNotRequired {
+		evidence.Evidence = append(evidence.Evidence, "pr_not_required")
+	}
+	if evidence.ChecksNotRequired {
+		evidence.Evidence = append(evidence.Evidence, "checks_not_required")
+	}
 	evidence.Blockers = goalFinishChildBlockers(child, evidence)
 	return evidence
 }
@@ -217,7 +233,7 @@ func goalFinishChildBlockers(child GoalStatusChild, evidence GoalFinishChildEvid
 	if child.Category == "blocked" {
 		blockers = append(blockers, fmt.Sprintf("child_%d_blocked", child.Number))
 	}
-	if evidence.PRNumber == 0 {
+	if evidence.PRNumber == 0 && !goalFinishChildPRNotRequired(child, evidence) {
 		blockers = append(blockers, fmt.Sprintf("child_%d_missing_pr", child.Number))
 	}
 	if evidence.PRNumber > 0 && !strings.EqualFold(evidence.PRState, "MERGED") {
@@ -229,7 +245,9 @@ func goalFinishChildBlockers(child GoalStatusChild, evidence GoalFinishChildEvid
 	case "pending":
 		blockers = append(blockers, fmt.Sprintf("child_%d_checks_pending", child.Number))
 	case "missing":
-		blockers = append(blockers, fmt.Sprintf("child_%d_checks_missing", child.Number))
+		if !goalFinishChildChecksNotRequired(child, evidence) {
+			blockers = append(blockers, fmt.Sprintf("child_%d_checks_missing", child.Number))
+		}
 	}
 	if child.Category == "done" && !evidence.ReceiptPresent {
 		blockers = append(blockers, fmt.Sprintf("child_%d_missing_finish_receipt", child.Number))
@@ -237,10 +255,25 @@ func goalFinishChildBlockers(child GoalStatusChild, evidence GoalFinishChildEvid
 	return blockers
 }
 
-func goalFinishReceiptPresent(repo RepoRef, issue int, runner CommandRunner) bool {
+func goalFinishChildPRNotRequired(child GoalStatusChild, evidence GoalFinishChildEvidence) bool {
+	return child.Category == "done" && evidence.ReceiptPresent && evidence.PlanningOnly && evidence.PRNotRequired
+}
+
+func goalFinishChildChecksNotRequired(child GoalStatusChild, evidence GoalFinishChildEvidence) bool {
+	return child.Category == "done" && evidence.ReceiptPresent && evidence.PlanningOnly && evidence.ChecksNotRequired
+}
+
+type goalFinishChildReceipt struct {
+	Present           bool
+	PlanningOnly      bool
+	PRNotRequired     bool
+	ChecksNotRequired bool
+}
+
+func goalFinishChildReceiptEvidence(repo RepoRef, issue int, runner CommandRunner) goalFinishChildReceipt {
 	out, err := runner.Run("gh", "issue", "view", strconv.Itoa(issue), "--repo", repo.FullName(), "--json", "comments")
 	if err != nil {
-		return false
+		return goalFinishChildReceipt{}
 	}
 	var raw struct {
 		Comments []struct {
@@ -248,15 +281,54 @@ func goalFinishReceiptPresent(repo RepoRef, issue int, runner CommandRunner) boo
 		} `json:"comments"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
-		return false
+		return goalFinishChildReceipt{}
 	}
+	var receipt goalFinishChildReceipt
 	for _, comment := range raw.Comments {
-		lower := strings.ToLower(comment.Body)
-		if strings.Contains(lower, "finish receipt") || strings.Contains(lower, "finish-receipt/v1") {
-			return true
+		current := parseGoalFinishChildReceiptComment(comment.Body)
+		receipt.Present = receipt.Present || current.Present
+		receipt.PlanningOnly = receipt.PlanningOnly || current.PlanningOnly
+		receipt.PRNotRequired = receipt.PRNotRequired || current.PRNotRequired
+		receipt.ChecksNotRequired = receipt.ChecksNotRequired || current.ChecksNotRequired
+	}
+	return receipt
+}
+
+func parseGoalFinishChildReceiptComment(body string) goalFinishChildReceipt {
+	lower := strings.ToLower(body)
+	receipt := goalFinishChildReceipt{
+		Present: strings.Contains(lower, "finish receipt") || strings.Contains(lower, "finish-receipt/v1") || strings.Contains(lower, "ticket-finish-receipt/v1"),
+	}
+	if !receipt.Present {
+		return receipt
+	}
+	receipt.PlanningOnly = strings.Contains(lower, "planning_done") ||
+		strings.Contains(lower, "planning-only") ||
+		strings.Contains(lower, "planning only") ||
+		strings.Contains(lower, "not_required_planning_only") ||
+		strings.Contains(lower, "not required planning only")
+	receipt.PRNotRequired = goalFinishReceiptFieldNotRequired(lower, []string{"pr", "linked pr", "pull request"})
+	receipt.ChecksNotRequired = goalFinishReceiptFieldNotRequired(lower, []string{"checks", "check"})
+	return receipt
+}
+
+func goalFinishReceiptFieldNotRequired(lower string, fields []string) bool {
+	for _, line := range strings.Split(lower, "\n") {
+		line = strings.TrimSpace(strings.TrimLeft(line, "-* "))
+		for _, field := range fields {
+			if !strings.HasPrefix(line, field) {
+				continue
+			}
+			if strings.Contains(line, "not_required") || strings.Contains(line, "not required") {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+func goalFinishReceiptPresent(repo RepoRef, issue int, runner CommandRunner) bool {
+	return goalFinishChildReceiptEvidence(repo, issue, runner).Present
 }
 
 func goalFinishGoalReceiptPresent(repo RepoRef, goal int, runner CommandRunner) bool {

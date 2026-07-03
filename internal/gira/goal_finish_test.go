@@ -66,6 +66,55 @@ func TestBuildGoalFinishReportBlocksMissingEvidence(t *testing.T) {
 	}
 }
 
+func TestBuildGoalFinishReportAcceptsPlanningOnlyChildReceipt(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	childComments := `{"comments":[{"body":"## Finish Receipt\n\n- Schema: ticket-finish-receipt/v1\n- Evidence: planning_done\n- PR: not_required_planning_only\n- Checks: not_required_no_code_change\n- Decision: synthetic PR not created for planning-only work"}]}`
+	runner := goalFinishRunner(childComments, `[]`, goalFinishChildIssue("closed", "status:done"))
+
+	report, err := BuildGoalFinishReport(GoalFinishInput{Repo: repo, Goal: 100, DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalFinishReport error: %v", err)
+	}
+	if !report.Readiness.Ready || report.Readiness.TerminalRecommendation != "done" {
+		t.Fatalf("expected planning-only child to be ready for done: %+v", report.Readiness)
+	}
+	for _, blocker := range []string{"child_101_missing_pr", "child_101_checks_missing", "child_101_missing_finish_receipt"} {
+		if containsString(report.Readiness.Blockers, blocker) {
+			t.Fatalf("planning-only receipt should suppress %s: %+v", blocker, report.Readiness.Blockers)
+		}
+	}
+	if len(report.Readiness.Children) != 1 {
+		t.Fatalf("expected one child evidence item: %+v", report.Readiness.Children)
+	}
+	child := report.Readiness.Children[0]
+	if !child.PlanningOnly || !child.PRNotRequired || !child.ChecksNotRequired {
+		t.Fatalf("planning-only exception not exposed in child evidence: %+v", child)
+	}
+	for _, want := range []string{"finish_receipt", "planning_only_completion", "pr_not_required", "checks_not_required"} {
+		if !containsString(child.Evidence, want) {
+			t.Fatalf("child evidence missing %s: %+v", want, child.Evidence)
+		}
+	}
+}
+
+func TestBuildGoalFinishReportGenericReceiptStillBlocksMissingPRChecks(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := goalFinishRunner(`{"comments":[{"body":"## Finish Receipt\n\n- Schema: finish-receipt/v1\n- Evidence: done"}]}`, `[]`, goalFinishChildIssue("closed", "status:done"))
+
+	report, err := BuildGoalFinishReport(GoalFinishInput{Repo: repo, Goal: 100, DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalFinishReport error: %v", err)
+	}
+	for _, want := range []string{"child_101_missing_pr", "child_101_checks_missing"} {
+		if !containsString(report.Readiness.Blockers, want) {
+			t.Fatalf("generic receipt should still require %s: %+v", want, report.Readiness.Blockers)
+		}
+	}
+	if containsString(report.Readiness.Blockers, "child_101_missing_finish_receipt") {
+		t.Fatalf("generic finish receipt should satisfy receipt presence: %+v", report.Readiness.Blockers)
+	}
+}
+
 func TestBuildGoalFinishReportHumanReviewTerminalState(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := goalFinishRunner(`{"comments":[{"body":"## Finish Receipt\nDone"}]}`, goalFinishMergedPR("SUCCESS"), goalFinishChildIssue("closed", "status:done"))

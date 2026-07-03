@@ -116,6 +116,28 @@ reference, or docs-site artifacts are not committed. Tagged releases also attach
 a `gira_VERSION_docs.tar.gz` snapshot so the skill/docs contract for that
 version remains inspectable after current docs move on.
 
+## Docs To Docs-Site Thin Copies
+
+When a `docs-site/` page mirrors a canonical document under `docs/`, keep the
+site page as a thin public navigation copy instead of a second policy source.
+The canonical document owns the complete operating rules, state fields,
+review boundaries, and examples. The docs-site copy should name the canonical
+path near the top, explain that it is a thin copy, and keep only the shortest
+overview or quick-start commands needed for site readers.
+
+Current thin-copy pairs:
+
+- `docs/skills/gira-agent-operator.md` -> `docs-site/agent-operator-skill.md`
+- `docs/pm-skill.md` -> `docs-site/pm-skill.md`
+
+For generated pages such as `docs-site/agent-operator-skill.md`, update the
+canonical source or shared renderer first, then run
+`sh scripts/check-docs-contract.sh .` and commit the refreshed output. For
+manual thin copies such as `docs-site/pm-skill.md`, update the canonical doc
+first, then keep the site page to a link, concise purpose statement, and
+minimal commands. Do not add new lifecycle, safety, PM policy, or review
+requirements only to the docs-site copy.
+
 This taxonomy keeps a clean recovery model: rerun `bootstrap` for local files, rerun `sync` for GitHub metadata, rerun `status` to decide what to do next, and rerun `onboard verify` to confirm the repo is truly ready for daily operation.
 
 ## CLI Development Path

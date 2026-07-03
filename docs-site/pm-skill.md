@@ -1,64 +1,40 @@
 # Gira PM Skill
 
+The canonical Gira PM skill lives in
+[`docs/pm-skill.md`](https://github.com/StatPan/gira/blob/main/docs/pm-skill.md).
+
+This docs-site page is a thin copy for public navigation. Keep PM policy,
+state fields, review boundaries, and benchmarked practices in the canonical
+document, then update this page only as a concise route into that source.
+
+## Purpose
+
 Gira PM converts raw intent into durable, task-local PM state that coding
-workers can execute without relying on hidden thread memory.
+workers can execute without relying on hidden thread memory. Thread memory is
+optional; the task packet in GitHub is authoritative.
 
-## Principle
-
-Gira does not use `needs human` as a terminal state. If a task appears to need
-human judgment, Gira decomposes why and converts that reason into executable
-work: retrieve context, derive a decision policy, reduce risk, add verification,
-split scope, or create a follow-up task packet.
-
-## Render a PM task packet
+## Create a PM Packet
 
 ```bash
 gira pm spec --repo OWNER/REPO --from-file request.md > pm-task.md
-```
-
-Then create a ticket from the durable packet:
-
-```bash
 gira ticket new --repo OWNER/REPO --title "TITLE" --body-file pm-task.md --type task --dry-run
 ```
 
-The generated packet includes:
+Apply only after the packet is bounded enough to execute:
 
-- `<!-- gira:pm-state version=1 -->`
-- product context
-- customer or user outcome
-- product goal alignment
-- problem
-- goal
-- decision policy
-- appetite and boundary
-- acceptance criteria
-- signals, metrics, or evidence
-- non-goals
-- rabbit holes
-- context packet
-- risk decomposition
-- reversibility or rollout
-- verification expectations
-- suggested worker mode
-- next action
+```bash
+gira ticket new --repo OWNER/REPO --title "TITLE" --body-file pm-task.md --type task --apply
+```
 
-Thread memory is optional. The task packet is authoritative.
+## PM Acceptance QA
 
-## PM acceptance QA
-
-After implementation and engineering review, rehydrate the same PM state from
-the issue and compare it with PR evidence:
+After implementation and engineering review, compare PR evidence with the
+task-local PM state:
 
 ```bash
 gira pm qa --repo OWNER/REPO --ticket 123 --diff-summary
 ```
 
-PM QA checks product/task acceptance. Engineering review still owns code
-quality, correctness, regression risk, security, and tests.
-
-PM QA expects an implementation claims matrix:
-
-| Acceptance criterion | PR claim | Evidence | PM QA result |
-| --- | --- | --- | --- |
-| Criterion from PM state | Claimed behavior | Test, diff, screenshot, log, command, or explanation | accepted / mismatch / unknown |
+PM QA checks whether the PR satisfies the stated product problem, acceptance
+criteria, decision policy, non-goals, and unresolved risk. Engineering review
+still owns code quality, correctness, regression risk, security, and tests.

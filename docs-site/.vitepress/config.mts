@@ -74,6 +74,7 @@ export default defineConfig({
         items: [
           { text: 'Worker Boundary', link: '/worker-boundary' },
           { text: 'Agent Operator Skill', link: '/agent-operator-skill' },
+          { text: 'PM Skill', link: '/pm-skill' },
           { text: 'Agent Delegation Lanes', link: '/agent-delegation-lanes' },
           { text: 'Hosted Control Plane', link: '/hosted-control-plane' }
         ]

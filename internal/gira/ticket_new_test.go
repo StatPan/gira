@@ -98,6 +98,37 @@ func TestTicketNewDryRunRendersStructuredBody(t *testing.T) {
 	}
 }
 
+func TestTicketNewExplicitStatusLabelOverridesDefaultReady(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &ticketNewRunner{outputs: ticketNewLabelOutputs("type:task", "status:ready", "status:blocked")}
+
+	report, err := BuildTicketNewReport(TicketNewInput{
+		Repo:   repo,
+		Title:  "Repro explicit status",
+		Goal:   "Repro explicit status",
+		Type:   "task",
+		Labels: []string{"status:blocked"},
+		DryRun: true,
+	}, runner)
+	if err != nil {
+		t.Fatalf("BuildTicketNewReport error: %v", err)
+	}
+	if containsString(report.Labels, "status:ready") {
+		t.Fatalf("labels include default status:ready despite explicit status label: %+v", report.Labels)
+	}
+	if !containsString(report.Labels, "status:blocked") {
+		t.Fatalf("labels missing explicit status:blocked: %+v", report.Labels)
+	}
+	if report.TicketReadiness.Readiness != "blocked" {
+		t.Fatalf("unexpected readiness with explicit status override: %+v", report.TicketReadiness)
+	}
+	for _, finding := range report.TicketReadiness.Findings {
+		if finding.Kind == "multiple_status_labels" {
+			t.Fatalf("explicit status override still produces multiple status finding: %+v", report.TicketReadiness)
+		}
+	}
+}
+
 func TestTicketNewLabelPreflightUsesRESTBeforeGraphQLHeavyLabelList(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &ticketNewRunner{

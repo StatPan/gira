@@ -1,8 +1,9 @@
 # Dashboard Export Artifacts
 
-This document defines the first concrete artifact contract for Gira dashboard exports.
-
-It turns the vendor-neutral dashboard boundary from `docs/dashboard-consumer-contract.md` into an implementable file/output shape for downstream consumers.
+This document defines the first concrete artifact contract for Gira dashboard
+exports. It supersedes the older vendor-neutral planning note in
+`docs/dashboard-consumer-contract.md` by making the output shape implementable
+for downstream consumers.
 
 ## Contract Goals
 

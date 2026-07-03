@@ -141,6 +141,59 @@ func TestBuildProjectsSyncReportApplyIsIdempotentForExistingItems(t *testing.T) 
 	}
 }
 
+func TestBuildProjectsSyncReportDryRunMatchesShortRepoProjectItemsAfterApply(t *testing.T) {
+	config := WorkspaceConfigResolved{
+		Name:      "payroll-mcp",
+		Owner:     "heumlabs",
+		InboxRepo: ParseRepoRefMust("heumlabs/payroll-mcp"),
+		Repos:     []RepoRef{ParseRepoRefMust("heumlabs/payroll-mcp")},
+		Project:   ProjectConfig{Owner: "heumlabs", Title: "Payroll Agent"},
+	}
+	client := &fakeProjectsSyncClient{
+		project:     ProjectsSyncProject{ID: "PVT_14", Owner: "heumlabs", Number: 14, Title: "Payroll Agent"},
+		projects:    []ProjectsSyncProject{{ID: "PVT_14", Owner: "heumlabs", Number: 14, Title: "Payroll Agent"}},
+		fields:      allProjectsSyncCanonicalFields(),
+		statusField: ProjectsSyncStatusField{ID: "status-field", Options: map[string]string{"Todo": "todo", "In Progress": "progress", "Done": "done"}},
+		linked:      map[string]bool{"heumlabs/payroll-mcp": true},
+		issues: map[string][]ProjectsSyncIssue{
+			"heumlabs/payroll-mcp": {
+				{
+					Repo:             "heumlabs/payroll-mcp",
+					Number:           341,
+					Title:            "Payroll release alignment",
+					URL:              "https://github.com/heumlabs/payroll-mcp/issues/341",
+					Labels:           []string{"status:ready", "priority:p2", "area:backend"},
+					Milestone:        "release alignment",
+					MilestoneDueDate: "2026-09-30",
+				},
+			},
+		},
+		items: []ProjectsSyncItem{{
+			ID:         "PVTI_lADOAhQkPM4BauOUzgxkKMM",
+			Repo:       "payroll-mcp",
+			Number:     341,
+			Status:     "Todo",
+			Priority:   "P2",
+			Layer:      "Backend",
+			TargetDate: "2026-09-30",
+		}},
+	}
+
+	report, err := BuildProjectsSyncReport(config, client, true, time.Date(2026, 7, 3, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectsSyncReport error: %v", err)
+	}
+	if len(report.Actions) != 0 {
+		t.Fatalf("fresh dry-run should be converged, got actions: %+v", report.Actions)
+	}
+	if report.Counts.ProjectItemsAdd != 0 || report.Counts.StatusUpdates != 0 || report.Counts.FieldUpdates != 0 || report.Counts.DateUpdates != 0 {
+		t.Fatalf("fresh dry-run planned duplicate work: %+v", report.Counts)
+	}
+	if report.Counts.ProjectItemsSkip != 1 || report.Counts.ProjectItemsSkipReasons.AlreadyPresent != 1 {
+		t.Fatalf("existing short-repo item should be matched as already present: %+v", report.Counts.ProjectItemsSkipReasons)
+	}
+}
+
 func TestBuildProjectsSyncReportBreaksDownProjectItemSkipReasons(t *testing.T) {
 	config := WorkspaceConfigResolved{
 		Name:      "personal",

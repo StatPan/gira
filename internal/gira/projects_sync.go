@@ -636,13 +636,16 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 			return ProjectsSyncReport{}, err
 		}
 	}
+	repos := uniqueProjectRepos(config)
 	itemByIssue := map[string]ProjectsSyncItem{}
 	validItems := []ProjectsSyncItem{}
 	for _, item := range items {
-		if strings.TrimSpace(item.Repo) == "" || item.Number <= 0 {
+		normalizedRepo, ok := normalizeProjectsSyncItemRepo(item.Repo, repos)
+		if !ok || item.Number <= 0 {
 			recordProjectItemSkip(&report, "unsupported_item_shape")
 			continue
 		}
+		item.Repo = normalizedRepo
 		key := projectIssueKey(item.Repo, item.Number)
 		if _, exists := itemByIssue[key]; exists {
 			recordProjectItemSkip(&report, "duplicate_candidate")
@@ -651,7 +654,6 @@ func BuildProjectsSyncReportWithOptions(config WorkspaceConfigResolved, client P
 		itemByIssue[key] = item
 		validItems = append(validItems, item)
 	}
-	repos := uniqueProjectRepos(config)
 	repoInScope := map[string]struct{}{}
 	for _, repo := range repos {
 		repoInScope[strings.ToLower(repo.FullName())] = struct{}{}
@@ -1144,6 +1146,31 @@ func uniqueProjectRepos(config WorkspaceConfigResolved) []RepoRef {
 		out = append(out, repo)
 	}
 	return out
+}
+
+func normalizeProjectsSyncItemRepo(repo string, workspaceRepos []RepoRef) (string, bool) {
+	repo = strings.TrimSpace(repo)
+	if repo == "" {
+		return "", false
+	}
+	if strings.Contains(repo, "/") {
+		return repo, true
+	}
+	var match RepoRef
+	matches := 0
+	for _, candidate := range workspaceRepos {
+		if strings.EqualFold(candidate.Name, repo) {
+			match = candidate
+			matches++
+		}
+	}
+	if matches == 1 {
+		return match.FullName(), true
+	}
+	if matches > 1 {
+		return "", false
+	}
+	return repo, true
 }
 
 func projectIssueKey(repo string, issue int) string {

@@ -6,6 +6,13 @@ CLI should not assume GitHub can be polled like an unlimited runtime database.
 This page summarizes the limit buckets Gira must model before adding workflow
 run-count estimates, local projections, or provider-specific runtime behavior.
 
+This is the public entry point for the API/provider cluster. The canonical
+source is
+[`docs/github-api-limits.md`](https://github.com/StatPan/gira/blob/main/docs/github-api-limits.md).
+Use [Cost Profiles](/cost-profiles) for static workflow estimates and
+[Command Surface](/command-surface) for why the diagnostic surface is
+`gira ops limit`.
+
 ## Buckets
 
 | Bucket | Current GitHub limit shape | Gira implication |

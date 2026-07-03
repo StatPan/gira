@@ -5,6 +5,11 @@ boundary work. It defines where future local runtime projections, cache
 snapshots, and possible SQLite files may live without turning local state into
 workflow truth.
 
+API/provider cluster role: supporting storage boundary. Start with
+[GitHub API Limit Operating Model](github-api-limits.md) for the current
+entry point, then use this document when deciding where cache, projections,
+runtime evidence, or future SQLite files may live.
+
 Gira should use existing storage roots. It should not create a new product home,
 hidden planning database, or local source of truth for issue completion.
 

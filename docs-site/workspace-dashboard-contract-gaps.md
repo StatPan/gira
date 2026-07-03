@@ -3,6 +3,10 @@
 The first Gira 3.0 dashboard implementation should bridge existing workspace
 and dashboard export contracts instead of inventing a new state model.
 
+This page is a supporting dashboard/export document. The current dashboard
+cluster entry point is
+[`docs/dashboard-export-artifacts.md`](https://github.com/StatPan/gira/blob/main/docs/dashboard-export-artifacts.md).
+
 Source document:
 [`docs/workspace-dashboard-contract-gaps.md`](https://github.com/StatPan/gira/blob/main/docs/workspace-dashboard-contract-gaps.md).
 

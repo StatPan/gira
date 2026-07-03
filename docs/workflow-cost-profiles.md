@@ -3,6 +3,10 @@
 This document defines the first static cost model for #779 and #783. The
 numbers are conservative planning estimates, not measured rolling averages.
 
+API/provider cluster role: supporting cost table. Start with
+[GitHub API Limit Operating Model](github-api-limits.md) for the current
+entry point, then use this document when calculating safe run-count estimates.
+
 The model exists so Gira can later answer "how many more times can I run this
 flow?" without pretending that GitHub is an unlimited database. The estimates
 are intentionally fixed for the first implementation slice.

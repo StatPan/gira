@@ -4,6 +4,11 @@ This document decides how Gira should project local dashboard signals before it
 adds any local database, hosted dashboard, or broader GitHub Projects view
 automation.
 
+Dashboard cluster role: supporting direction. Start with
+[Dashboard Export Artifacts](dashboard-export-artifacts.md) for the current
+dashboard/export entry point, then use this document for pulse, storage,
+GitHub Projects, and SQLite threshold decisions.
+
 Milestone: 3.3 Dashboard Signal Integration. Planning ticket: #711.
 Implementation successor: #712.
 

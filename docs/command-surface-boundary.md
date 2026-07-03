@@ -7,6 +7,13 @@ inventory and risk diagnosis lives in
 task-level workflow complexity diagnosis lives in
 [docs/cli-workflow-complexity.md](cli-workflow-complexity.md).
 
+CLI surface cluster entry point: this is the current command-surface policy.
+Read it first when deciding whether behavior belongs in a root command,
+subcommand, option, diagnostic surface, generated reference entry, or no public
+command. Use [CLI Surface Diagnostic](cli-surface-diagnostic.md) for the
+current inventory and [CLI Workflow Complexity](cli-workflow-complexity.md) for
+task-level UX/AX node counts.
+
 Gira should stay CLI-first, but CLI-first does not mean every internal concern
 gets a top-level command. Daily commands should guide work. Ops commands should
 explain the machine.

@@ -3,6 +3,12 @@
 This is the #807 UX/AX diagnostic for measuring whether Gira's workflow CLI
 reduces task burden compared with raw `gh`.
 
+CLI surface cluster role: supporting task metric. Start with
+[Command Surface Boundary](command-surface-boundary.md) for the current entry
+point and policy, then use this document when comparing Gira workflows to raw
+`gh` through command, argument, decision, provider, fallback, and cognitive
+nodes.
+
 The answer is not character count. Character count is a weak proxy because a
 short command can still require hidden domain knowledge, unsafe fallback, or a
 confusing object order. The useful unit is a workflow node: one thing a human

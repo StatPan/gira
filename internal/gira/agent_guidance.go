@@ -37,7 +37,7 @@ func CoreAgentGuidanceSpec() AgentGuidanceSpec {
 			"Route project-only items to repository issues before implementation.",
 			"Do not start work missing status:ready until triaged or adopted.",
 			"Reuse an existing branch or PR only when it clearly belongs to the ticket.",
-			"Fix failed checks before finish unless explicitly instructed.",
+			"Do not merge or finish work with failed checks unless explicitly instructed\n  and the risk is documented.",
 			"Ask for clarification when acceptance criteria or repo/ticket context is ambiguous.",
 		},
 		RawGHAllowed: []string{

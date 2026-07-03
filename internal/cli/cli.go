@@ -6592,7 +6592,7 @@ func extractTicketIdentifierPositional(args []string, stderr io.Writer) ([]strin
 	cleaned := make([]string, 0, len(args))
 	var identifier ticketIdentifier
 	seen := false
-	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--role": {}, "--profile": {}, "--pr": {}, "--output": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--role": {}, "--profile": {}, "--pr": {}, "--output": {}, "--base": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)

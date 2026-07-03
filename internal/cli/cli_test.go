@@ -3403,6 +3403,54 @@ func TestTicketStartDryRunJSONPreservesApplyTicketNumber(t *testing.T) {
 	}
 }
 
+func TestTicketStartPositionalAcceptsSplitBaseFlag(t *testing.T) {
+	restore := newWorkStartResultWithOptions
+	t.Cleanup(func() { newWorkStartResultWithOptions = restore })
+	newWorkStartResultWithOptions = func(repo gira.RepoRef, issue int, options gira.WorkStartOptions) (gira.WorkStartResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 || !options.DryRun || options.BaseOverride != "dev" {
+			t.Fatalf("unexpected args repo=%s issue=%d options=%+v", repo.FullName(), issue, options)
+		}
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-126-base", BaseBranch: options.BaseOverride, BaseSource: "explicit --base", DryRun: true, NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "126", "--repo", "StatPan/gira", "--base", "dev", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkStartResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket start JSON: %v\n%s", err, stdout.String())
+	}
+	if report.BaseBranch != "dev" {
+		t.Fatalf("base_branch = %q, want dev; stdout=%s", report.BaseBranch, stdout.String())
+	}
+}
+
+func TestTicketStartPositionalAcceptsEqualsBaseFlag(t *testing.T) {
+	restore := newWorkStartResultWithOptions
+	t.Cleanup(func() { newWorkStartResultWithOptions = restore })
+	newWorkStartResultWithOptions = func(repo gira.RepoRef, issue int, options gira.WorkStartOptions) (gira.WorkStartResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 126 || !options.DryRun || options.BaseOverride != "dev" {
+			t.Fatalf("unexpected args repo=%s issue=%d options=%+v", repo.FullName(), issue, options)
+		}
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-126-base", BaseBranch: options.BaseOverride, BaseSource: "explicit --base", DryRun: true, NextStatus: "In progress"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "126", "--repo", "StatPan/gira", "--base=dev", "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkStartResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket start JSON: %v\n%s", err, stdout.String())
+	}
+	if report.BaseBranch != "dev" {
+		t.Fatalf("base_branch = %q, want dev; stdout=%s", report.BaseBranch, stdout.String())
+	}
+}
+
 func TestTicketStartApplyJSONIncludesSchemaVersion(t *testing.T) {
 	restore := newWorkStartResult
 	t.Cleanup(func() { newWorkStartResult = restore })

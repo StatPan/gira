@@ -187,6 +187,9 @@ Candidate future improvements should be filed as separate tickets if accepted:
 These are follow-ups, not prerequisites for treating the current contracts as
 public workflow-control surfaces.
 
-## Related Benchmark
+## Related Fixture Suite
 
-See [Agent Workflow Completion Benchmark](agent-workflow-completion-benchmark.md) for the local fixture-suite boundary that should protect finish, readiness, review, queue, and handoff workflow decisions without becoming a model leaderboard or code-generation benchmark.
+The accepted local fixture suite lives under
+`internal/gira/testdata/agent_workflow_benchmark/` and protects finish,
+readiness, review, queue, and handoff workflow decisions without becoming a
+model leaderboard or code-generation benchmark.

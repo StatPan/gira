@@ -45,5 +45,5 @@ code storage, personal productivity leaderboards, or dashboard customization.
 GitHub should use a GitHub App with least-privilege installation tokens and no
 default source-content scope. Jira Cloud should use a SaaS OAuth 2.0 app for the
 normal hosted path; Forge is a separate Atlassian-hosted deployment option. The
-detailed roadmap is in
+older hosted research note is archived in
 [docs/hosted-control-plane-roadmap.md](https://github.com/StatPan/gira/blob/main/docs/hosted-control-plane-roadmap.md).

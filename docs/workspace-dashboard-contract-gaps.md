@@ -3,6 +3,11 @@
 This document defines the contract gap between the existing workspace status
 read model and the Gira 3.0 local report bundle.
 
+Dashboard cluster role: supporting contract. Start with
+[Dashboard Export Artifacts](dashboard-export-artifacts.md) for the current
+dashboard/export entry point, then use this document for workspace-mode
+additions to that bundle.
+
 Parent roadmap: #525. Research predecessor: #666. Contract slice: #667.
 Implementation successor: #668.
 

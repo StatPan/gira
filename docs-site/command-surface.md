@@ -4,6 +4,13 @@ Gira should stay CLI-first, but CLI-first does not mean every internal concern
 gets a top-level command. Daily commands should guide work. Ops commands should
 explain the machine.
 
+This is the public entry point for the CLI surface cluster. The canonical
+source is
+[`docs/command-surface-boundary.md`](https://github.com/StatPan/gira/blob/main/docs/command-surface-boundary.md).
+Use [CLI Surface Diagnostic](/cli-surface-diagnostic) for inventory and
+[CLI Workflow Complexity](/cli-workflow-complexity) for task-level UX/AX node
+counts.
+
 ## Surface Classes
 
 | Surface | Purpose | Examples |

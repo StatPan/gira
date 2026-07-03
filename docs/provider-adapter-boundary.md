@@ -4,6 +4,11 @@ This document resolves #787 under the broader #779 API-limit and provider
 boundary work. It defines the first provider adapter boundary for a
 GitHub-first Gira with GitLab as the next target provider.
 
+API/provider cluster role: supporting provider boundary. Start with
+[GitHub API Limit Operating Model](github-api-limits.md) for the current
+entry point, then use this document when evaluating GitLab/provider portability
+without moving workflow truth out of provider ledgers.
+
 Gira is not moving workflow truth into a local control plane. GitHub today, and
 GitLab in the next provider slice, remain canonical collaboration ledgers for
 issues, pull or merge requests, comments, labels, milestones, checks, reviews,

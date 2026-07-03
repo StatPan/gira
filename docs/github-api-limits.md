@@ -4,6 +4,15 @@ This document is the #779 and #780 baseline for rate-limit-aware Gira work. It
 records the GitHub API limits Gira must model before adding workflow run-count
 estimates, local projections, or provider-specific runtime behavior.
 
+API/provider cluster entry point: this is the current operating model. Read it
+first for GitHub budget, auth, and freshness rules, then use
+[Workflow Cost Profiles](workflow-cost-profiles.md) for static run estimates,
+[Provider Adapter Boundary](provider-adapter-boundary.md) for GitLab/provider
+portability, [Local Runtime Projection Storage](local-runtime-projection-storage.md)
+for cache/projection placement, and
+[External Drift And Provenance Policy](external-drift-policy.md) for evidence
+classification.
+
 Gira should treat GitHub as the canonical collaboration ledger, but it should
 not assume GitHub can be polled like an unlimited runtime database. API budget
 is an operating constraint that daily commands, agent queues, and future local

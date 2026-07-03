@@ -6,6 +6,11 @@ baseline, then turns the findings into decision rules for future work. The
 task-level UX/AX node-count diagnosis lives in
 [docs/cli-workflow-complexity.md](cli-workflow-complexity.md).
 
+CLI surface cluster role: supporting inventory and risk diagnosis. Start with
+[Command Surface Boundary](command-surface-boundary.md) for the current entry
+point and policy, then use this document to inspect surface size and risky
+command families.
+
 ## Current Surface
 
 As of this diagnosis:

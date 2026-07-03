@@ -5,6 +5,14 @@ exports. It supersedes the older vendor-neutral planning note in
 `docs/dashboard-consumer-contract.md` by making the output shape implementable
 for downstream consumers.
 
+Cluster entry point: this is the current dashboard/export contract. Read it
+first for dashboard bundle layout, then use
+[Workspace Dashboard Contract Gaps](workspace-dashboard-contract-gaps.md) for
+workspace-mode additions and
+[Dashboard Signal Projection](dashboard-signal-projection.md) for pulse,
+storage, and no-DB projection direction. The older
+[Dashboard Consumer Contract](dashboard-consumer-contract.md) is archived only.
+
 ## Contract Goals
 
 The artifact contract should let Gira produce one stable export bundle that downstream tools can consume without becoming canonical owners.

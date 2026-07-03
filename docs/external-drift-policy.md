@@ -4,6 +4,11 @@ This document resolves #788 under the broader #779 API-limit and provider
 boundary work. It defines how Gira treats provider changes made outside Gira
 commands.
 
+API/provider cluster role: supporting provenance policy. Start with
+[GitHub API Limit Operating Model](github-api-limits.md) for the current
+entry point, then use this document when classifying Gira-controlled,
+reconstructed, external-drift, or unknown evidence.
+
 Gira remains a supported workflow gateway over provider ledgers. GitHub today,
 and GitLab in the future, remain the canonical collaboration ledgers for issues,
 pull or merge requests, comments, labels, milestones, checks, reviews, and merge

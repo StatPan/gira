@@ -1,9 +1,8 @@
 # Gira Agent Operator Skill
 
 This is the canonical agent/operator skill for Gira-managed repositories.
-Adapters such as `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`,
-Cursor rules, `gira guide agent`, and docs-site pages should summarize or point
-to this file instead of redefining the operating rules.
+Existing adapters, generated summaries, and docs-site pages should summarize or
+point to this file instead of redefining the operating rules.
 
 ## Purpose
 
@@ -15,14 +14,15 @@ plus closed issues are completion evidence.
 ## Canonical And Adapted Surfaces
 
 - Canonical source: `docs/skills/gira-agent-operator.md`.
+- PM task-packet source: `docs/pm-skill.md`.
 - CLI summary: `gira guide agent` and `gira guide skill`.
-- Codex/OpenAI adapter: `AGENTS.md`.
-- Optional adapters: `CLAUDE.md`, `.github/copilot-instructions.md`, and
-  `.cursor/rules/gira.mdc`.
+- Existing Codex/OpenAI adapter: `AGENTS.md`.
+- Future optional adapter paths, when present: `CLAUDE.md`,
+  `.github/copilot-instructions.md`, and `.cursor/rules/gira.mdc`.
 - Human documentation: docs-site agent operator skill page.
 
-Adapters may add surface-specific wording, but they should not change the
-lifecycle, safety, or evidence rules defined here.
+Existing and future adapters may add surface-specific wording, but they should
+not change the lifecycle, safety, or evidence rules defined here.
 
 ## Operating Model
 

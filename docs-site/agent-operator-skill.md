@@ -8,9 +8,11 @@ safety, and evidence policy in the canonical skill, then refresh this page from
 the shared docs contract renderer.
 
 Use it as the source of truth for coding agents operating Gira-managed
-repositories. Adapter files such as `AGENTS.md`, `CLAUDE.md`,
-`.github/copilot-instructions.md`, Cursor rules, and `gira guide agent` should
-summarize that skill instead of redefining it.
+repositories. PM task-packet rules live in
+[`docs/pm-skill.md`](https://github.com/StatPan/gira/blob/main/docs/pm-skill.md).
+Existing adapters such as `AGENTS.md`, generated summaries such as
+`gira guide agent`, and future optional adapter paths should summarize the
+canonical sources instead of redefining them.
 
 ## Operating Model
 

@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -316,8 +317,8 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		}
 		return finishWithLocalSync(repo, issueNumber, runner, result, true, &status, &status, options)
 	}
-	if _, err := runner.Run("gh", "pr", "merge", fmt.Sprintf("%d", status.PRNumber), "--repo", repo.FullName(), "--squash", "--delete-branch"); err != nil {
-		return result, fmt.Errorf("merge PR: %w", err)
+	if err := finishMergePR(repo, status, runner, &result); err != nil {
+		return result, err
 	}
 	result.Merged = true
 	jiraDone, err = planJiraDoneTransition(repo, dryRun, jiraDone)
@@ -340,6 +341,86 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		result.Actions = append(result.Actions, plannedOrAppliedAction("jira:done", false, jiraDone.ApplyDetail()))
 	}
 	return finishWithLocalSync(repo, issueNumber, runner, result, true, nil, &status, options)
+}
+
+func finishMergePR(repo RepoRef, status DevPRStatusResult, runner CommandRunner, result *WorkFinishResult) error {
+	if _, err := runner.Run("gh", "pr", "merge", fmt.Sprintf("%d", status.PRNumber), "--repo", repo.FullName(), "--squash", "--delete-branch"); err != nil {
+		if !finishGraphQLRateLimitError(err) {
+			return fmt.Errorf("merge PR: %w", err)
+		}
+		diagnostic := finishMergeRateLimitDiagnostic(repo, runner)
+		fallbackDetail, fallbackErr := finishMergePRViaREST(repo, status.PRNumber, runner)
+		if fallbackErr != nil {
+			if result != nil {
+				result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge_fallback", Status: "blocked", Detail: strings.TrimSpace("GraphQL merge rate limit; " + diagnostic + "; " + fallbackErr.Error())})
+			}
+			return fmt.Errorf("merge PR: GraphQL rate limit; %s; REST fallback failed: %w", diagnostic, fallbackErr)
+		}
+		if result != nil {
+			result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge_fallback", Status: "applied", Detail: strings.TrimSpace(fallbackDetail + "; " + diagnostic)})
+		}
+	}
+	return nil
+}
+
+func finishGraphQLRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "graphql") && (strings.Contains(message, "rate limit") || strings.Contains(message, "rate_limit") || strings.Contains(message, "api rate"))
+}
+
+func finishMergeRateLimitDiagnostic(repo RepoRef, runner CommandRunner) string {
+	report, err := BuildAPILimitReport(repo, runner, time.Now().UTC())
+	if err != nil {
+		return "visible API budget unavailable: " + err.Error()
+	}
+	return fmt.Sprintf(
+		"visible API budget core_remaining=%d/%d graphql_remaining=%d/%d",
+		report.Core.Remaining,
+		report.Core.Limit,
+		report.GraphQL.Remaining,
+		report.GraphQL.Limit,
+	)
+}
+
+func finishMergePRViaREST(repo RepoRef, prNumber int, runner CommandRunner) (string, error) {
+	output, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/pulls/%d", repo.FullName(), prNumber))
+	if err != nil {
+		return "", fmt.Errorf("inspect PR via REST: %w", err)
+	}
+	var pr struct {
+		State          string `json:"state"`
+		Mergeable      *bool  `json:"mergeable"`
+		MergeableState string `json:"mergeable_state"`
+		Head           struct {
+			SHA string `json:"sha"`
+		} `json:"head"`
+	}
+	if err := json.Unmarshal(output, &pr); err != nil {
+		return "", fmt.Errorf("parse REST PR JSON: %w", err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(pr.State), "open") {
+		return "", fmt.Errorf("PR #%d state is %q, want open", prNumber, pr.State)
+	}
+	if pr.Mergeable == nil {
+		return "", fmt.Errorf("PR #%d REST mergeable value is unavailable", prNumber)
+	}
+	if !*pr.Mergeable {
+		return "", fmt.Errorf("PR #%d is not REST mergeable", prNumber)
+	}
+	if !strings.EqualFold(strings.TrimSpace(pr.MergeableState), "clean") {
+		return "", fmt.Errorf("PR #%d mergeable_state is %q, want clean", prNumber, pr.MergeableState)
+	}
+	headSHA := strings.TrimSpace(pr.Head.SHA)
+	if headSHA == "" {
+		return "", fmt.Errorf("PR #%d REST head SHA is empty", prNumber)
+	}
+	if _, err := runner.Run("gh", "api", "-X", "PUT", fmt.Sprintf("repos/%s/pulls/%d/merge", repo.FullName(), prNumber), "-f", "merge_method=squash", "-f", "sha="+headSHA); err != nil {
+		return "", fmt.Errorf("REST squash merge PR #%d with expected_head_sha=%s: %w", prNumber, headSHA, err)
+	}
+	return fmt.Sprintf("REST squash merge PR #%d with expected_head_sha=%s after clean mergeable REST check", prNumber, headSHA), nil
 }
 
 type jiraDoneTransitionGate struct {

@@ -80,6 +80,58 @@ func TestFinishWorkApplyMarksDraftReadyThenMerges(t *testing.T) {
 	}
 }
 
+func TestFinishWorkApplyGraphQLRateLimitFallsBackToRESTMerge(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"https://github.com/StatPan/gira/pull/220","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-219-finish","baseRefName":"main","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"https://github.com/StatPan/gira/pull/220","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","headRefName":"issue-219-finish","baseRefName":"main","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		},
+		"gh api rate_limit": {
+			[]byte(`{"resources":{"core":{"limit":5000,"remaining":4916,"used":84,"reset":1783069200},"graphql":{"limit":5000,"remaining":4942,"used":58,"reset":1783069200},"search":{"limit":30,"remaining":30,"used":0,"reset":1783069200}}}`),
+		},
+		"gh api repos/StatPan/gira/pulls/220": {
+			[]byte(`{"state":"open","mergeable":true,"mergeable_state":"clean","head":{"sha":"abc123"}}`),
+		},
+		"gh api -X PUT repos/StatPan/gira/pulls/220/merge -f merge_method=squash -f sha=abc123": {
+			[]byte(`{"sha":"merge123","merged":true,"message":"Pull Request successfully merged"}`),
+		},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+		},
+	}, errs: map[string]error{
+		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch": fmt.Errorf("GraphQL: API rate limit exceeded for user ID 159117309"),
+	}}
+
+	result, err := FinishWork(repo, 219, false, 0, runner)
+	if err != nil {
+		t.Fatalf("FinishWork error: %v", err)
+	}
+	if !result.Merged || result.PRNumber != 220 || len(result.Blockers) != 0 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	for _, want := range []string{
+		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch",
+		"gh api rate_limit",
+		"gh api repos/StatPan/gira/pulls/220",
+		"gh api -X PUT repos/StatPan/gira/pulls/220/merge -f merge_method=squash -f sha=abc123",
+	} {
+		if !containsCall(runner.calls, want) {
+			t.Fatalf("missing call %q in %v", want, runner.calls)
+		}
+	}
+	detail := finishActionDetail(result.Actions, "pr:merge_fallback")
+	for _, want := range []string{"expected_head_sha=abc123", "core_remaining=4916/5000", "graphql_remaining=4942/5000"} {
+		if !strings.Contains(detail, want) {
+			t.Fatalf("fallback detail missing %q: %q", want, detail)
+		}
+	}
+	if !finishActionStatus(result.Actions, "pr:merge_fallback", "applied") {
+		t.Fatalf("missing applied fallback action: %+v", result.Actions)
+	}
+}
+
 func TestFinishWorkApplySyncLocalOptInTargetsPRBase(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{

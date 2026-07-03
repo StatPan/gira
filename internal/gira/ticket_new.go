@@ -278,7 +278,10 @@ func labelAxis(label string) (string, bool) {
 }
 
 func ticketNewLabels(ticketType string, priority string, extra []string) []string {
-	labels := []string{"type:" + ticketType, "status:ready"}
+	labels := []string{"type:" + ticketType}
+	if !hasLabelAxis(extra, "status") {
+		labels = append(labels, "status:ready")
+	}
 	if priority != "" {
 		labels = append(labels, "priority:"+priority)
 	}
@@ -296,6 +299,17 @@ func ticketNewLabels(ticketType string, priority string, extra []string) []strin
 		deduped = append(deduped, trimmed)
 	}
 	return deduped
+}
+
+func hasLabelAxis(labels []string, axis string) bool {
+	axis = strings.ToLower(strings.TrimSpace(axis))
+	for _, label := range labels {
+		currentAxis, ok := labelAxis(label)
+		if ok && currentAxis == axis {
+			return true
+		}
+	}
+	return false
 }
 
 func validTicketType(value string) bool {

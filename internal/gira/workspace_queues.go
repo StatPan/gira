@@ -47,7 +47,26 @@ type WorkspaceQueueItem struct {
 	Evidence        WorkspaceQueueEvidence `json:"evidence"`
 	ReasonCodes     []string               `json:"reason_codes"`
 	NextSafeCommand string                 `json:"next_safe_command"`
+	Resolution      *WorkspaceResolution   `json:"resolution,omitempty"`
 }
+
+type WorkspaceResolution struct {
+	State          string               `json:"state"`
+	CausalReason   DecisionCausalReason `json:"causal_reason,omitempty"`
+	SourceSignals  []string             `json:"source_signals"`
+	NextSafeAction string               `json:"next_safe_action"`
+}
+
+const (
+	WorkspaceResolutionNeedsDecomposition   = "needs_decomposition"
+	WorkspaceResolutionNeedsContext         = "needs_context"
+	WorkspaceResolutionNeedsPolicy          = "needs_policy"
+	WorkspaceResolutionNeedsVerification    = "needs_verification"
+	WorkspaceResolutionNeedsRiskReduction   = "needs_risk_reduction"
+	WorkspaceResolutionWaitingExternal      = "waiting_external"
+	WorkspaceResolutionNonDelegableDecision = "non_delegable_decision"
+	WorkspaceResolutionResumeReady          = "resume_ready"
+)
 
 type WorkspaceQueuePR struct {
 	Number         int    `json:"number"`
@@ -141,7 +160,7 @@ func BuildWorkspaceQueues(workspace WorkspaceSummary, statuses []WorkStatusResul
 }
 
 func workspaceQueueItem(queue string, status WorkStatusResult, reasonCodes []string, nextSafeCommand string) WorkspaceQueueItem {
-	return WorkspaceQueueItem{
+	item := WorkspaceQueueItem{
 		Queue:           queue,
 		Repo:            status.Repo,
 		Issue:           status.Issue,
@@ -155,6 +174,8 @@ func workspaceQueueItem(queue string, status WorkStatusResult, reasonCodes []str
 		ReasonCodes:     uniqueWorkspaceQueueReasons(reasonCodes),
 		NextSafeCommand: nextSafeCommand,
 	}
+	item.Resolution = workspaceQueueResolution(status)
+	return item
 }
 
 func workspaceQueuePR(status WorkStatusResult) *WorkspaceQueuePR {
@@ -202,6 +223,9 @@ func workspaceAgentReadyReasons(status WorkStatusResult) []string {
 	reasons := []string{"ticket_ready"}
 	if status.TicketReadiness != nil {
 		reasons = append(reasons, "ticket_readiness_ready")
+	}
+	if resolution := workspaceQueueResolution(status); resolution != nil && resolution.State == WorkspaceResolutionResumeReady {
+		reasons = append(reasons, "resolution_resume_ready")
 	}
 	return reasons
 }
@@ -307,7 +331,9 @@ func workspaceHumanDecisionReasons(status WorkStatusResult) []string {
 	reasons := []string{}
 	for _, label := range status.Labels {
 		switch strings.ToLower(strings.TrimSpace(label)) {
-		case "agent:human", "needs:human", "needs:decision", "type:decision":
+		case "agent:human", "needs:human", "needs:decision", "type:decision",
+			"needs:decomposition", "needs:context", "needs:policy", "needs:verification",
+			"needs:risk-reduction", "waiting:external", "needs:authority", "authority:required":
 			reasons = append(reasons, "label_"+workspaceQueueReasonToken(label))
 		}
 	}
@@ -318,6 +344,97 @@ func workspaceHumanDecisionReasons(status WorkStatusResult) []string {
 		reasons = append(reasons, "pr_readiness_ask_human")
 	}
 	return reasons
+}
+
+func workspaceQueueResolution(status WorkStatusResult) *WorkspaceResolution {
+	type resolutionSignal struct {
+		state  string
+		reason DecisionCausalReason
+		source string
+	}
+	explicit := []resolutionSignal{}
+	legacy := []string{}
+	for _, label := range status.Labels {
+		normalized := strings.ToLower(strings.TrimSpace(label))
+		source := "label_" + workspaceQueueReasonToken(label)
+		switch normalized {
+		case "needs:decomposition":
+			explicit = append(explicit, resolutionSignal{state: WorkspaceResolutionNeedsDecomposition, source: source})
+		case "needs:context":
+			explicit = append(explicit, resolutionSignal{state: WorkspaceResolutionNeedsContext, reason: DecisionReasonMissingContext, source: source})
+		case "needs:policy":
+			explicit = append(explicit, resolutionSignal{state: WorkspaceResolutionNeedsPolicy, reason: DecisionReasonMissingPolicy, source: source})
+		case "needs:verification":
+			explicit = append(explicit, resolutionSignal{state: WorkspaceResolutionNeedsVerification, reason: DecisionReasonInsufficientVerification, source: source})
+		case "needs:risk-reduction":
+			explicit = append(explicit, resolutionSignal{state: WorkspaceResolutionNeedsRiskReduction, reason: DecisionReasonIrreversibleRisk, source: source})
+		case "waiting:external":
+			explicit = append(explicit, resolutionSignal{state: WorkspaceResolutionWaitingExternal, source: source})
+		case "needs:authority", "authority:required":
+			explicit = append(explicit, resolutionSignal{state: WorkspaceResolutionNonDelegableDecision, reason: DecisionReasonAuthorityBoundary, source: source})
+		case "resume:ready":
+			explicit = append(explicit, resolutionSignal{state: WorkspaceResolutionResumeReady, source: source})
+		case "agent:human", "needs:human", "needs:decision", "type:decision":
+			legacy = append(legacy, source)
+		}
+	}
+	if status.TicketReadiness != nil && status.TicketReadiness.NextAction == "ask_human" {
+		legacy = append(legacy, "ticket_readiness_ask_human")
+	}
+	if status.PRReadiness != nil && status.PRReadiness.NextAction == "ask_human" {
+		legacy = append(legacy, "pr_readiness_ask_human")
+	}
+
+	sources := append([]string(nil), legacy...)
+	for _, signal := range explicit {
+		sources = append(sources, signal.source)
+	}
+	sources = uniqueWorkspaceQueueReasons(sources)
+	if len(explicit) == 1 {
+		return &WorkspaceResolution{
+			State:          explicit[0].state,
+			CausalReason:   explicit[0].reason,
+			SourceSignals:  sources,
+			NextSafeAction: workspaceResolutionNextAction(explicit[0].state),
+		}
+	}
+	if len(explicit) > 1 {
+		return &WorkspaceResolution{
+			State:          WorkspaceResolutionNeedsDecomposition,
+			CausalReason:   DecisionReasonConflictingConstraints,
+			SourceSignals:  sources,
+			NextSafeAction: workspaceResolutionNextAction(WorkspaceResolutionNeedsDecomposition),
+		}
+	}
+	if len(legacy) > 0 {
+		return &WorkspaceResolution{
+			State:          WorkspaceResolutionNeedsDecomposition,
+			SourceSignals:  sources,
+			NextSafeAction: workspaceResolutionNextAction(WorkspaceResolutionNeedsDecomposition),
+		}
+	}
+	return nil
+}
+
+func workspaceResolutionNextAction(state string) string {
+	switch state {
+	case WorkspaceResolutionNeedsContext:
+		return "create_context_retrieval_task"
+	case WorkspaceResolutionNeedsPolicy:
+		return "derive_or_request_decision_policy"
+	case WorkspaceResolutionNeedsVerification:
+		return "create_verification_task"
+	case WorkspaceResolutionNeedsRiskReduction:
+		return "create_risk_reduction_task"
+	case WorkspaceResolutionWaitingExternal:
+		return "wait_for_external_state"
+	case WorkspaceResolutionNonDelegableDecision:
+		return "prepare_minimal_decision_packet"
+	case WorkspaceResolutionResumeReady:
+		return "resume_dependent_work"
+	default:
+		return "decompose_resolution_gap"
+	}
 }
 
 func isClosedWorkspaceQueueIssue(status WorkStatusResult) bool {

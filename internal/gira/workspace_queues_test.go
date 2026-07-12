@@ -102,6 +102,91 @@ func TestBuildWorkspaceQueuesClassifiesCoreQueues(t *testing.T) {
 	if got := report.Queues.HumanDecision[0]; got.Issue != 15 || !strings.Contains(got.NextSafeCommand, "ticket handoff") || !hasWorkspaceQueueReason(got, "label_needs_human") {
 		t.Fatalf("human_decision item = %+v", got)
 	}
+	if got := report.Queues.HumanDecision[0].Resolution; got == nil || got.State != WorkspaceResolutionNeedsDecomposition || got.CausalReason != "" || got.NextSafeAction != "decompose_resolution_gap" {
+		t.Fatalf("legacy human decision resolution = %+v", got)
+	}
+}
+
+func TestWorkspaceQueueMapsExplicitResolutionSignals(t *testing.T) {
+	tests := []struct {
+		label      string
+		state      string
+		reason     DecisionCausalReason
+		nextAction string
+	}{
+		{label: "needs:decomposition", state: WorkspaceResolutionNeedsDecomposition, nextAction: "decompose_resolution_gap"},
+		{label: "needs:context", state: WorkspaceResolutionNeedsContext, reason: DecisionReasonMissingContext, nextAction: "create_context_retrieval_task"},
+		{label: "needs:policy", state: WorkspaceResolutionNeedsPolicy, reason: DecisionReasonMissingPolicy, nextAction: "derive_or_request_decision_policy"},
+		{label: "needs:verification", state: WorkspaceResolutionNeedsVerification, reason: DecisionReasonInsufficientVerification, nextAction: "create_verification_task"},
+		{label: "needs:risk-reduction", state: WorkspaceResolutionNeedsRiskReduction, reason: DecisionReasonIrreversibleRisk, nextAction: "create_risk_reduction_task"},
+		{label: "waiting:external", state: WorkspaceResolutionWaitingExternal, nextAction: "wait_for_external_state"},
+		{label: "needs:authority", state: WorkspaceResolutionNonDelegableDecision, reason: DecisionReasonAuthorityBoundary, nextAction: "prepare_minimal_decision_packet"},
+	}
+	for index, tt := range tests {
+		t.Run(tt.label, func(t *testing.T) {
+			report := BuildWorkspaceQueues(WorkspaceSummary{}, []WorkStatusResult{{
+				Repo: "StatPan/gira", Issue: 100 + index, Title: tt.label, State: "open", Status: "Ready", Labels: []string{"type:task", "status:ready", tt.label},
+			}})
+			if report.Counts.HumanDecision != 1 || report.Counts.AgentReady != 0 {
+				t.Fatalf("counts = %+v", report.Counts)
+			}
+			resolution := report.Queues.HumanDecision[0].Resolution
+			if resolution == nil || resolution.State != tt.state || resolution.CausalReason != tt.reason || resolution.NextSafeAction != tt.nextAction {
+				t.Fatalf("resolution = %+v, want state=%s reason=%s next=%s", resolution, tt.state, tt.reason, tt.nextAction)
+			}
+			if len(resolution.SourceSignals) != 1 || !strings.Contains(resolution.SourceSignals[0], workspaceQueueReasonToken(tt.label)) {
+				t.Fatalf("source signals = %+v", resolution.SourceSignals)
+			}
+		})
+	}
+}
+
+func TestWorkspaceQueueResumeReadyReturnsToAgentQueue(t *testing.T) {
+	report := BuildWorkspaceQueues(WorkspaceSummary{}, []WorkStatusResult{{
+		Repo: "StatPan/gira", Issue: 150, Title: "Resume", State: "open", Status: "Ready",
+		Labels:          []string{"type:task", "status:ready", "resume:ready"},
+		TicketReadiness: &TicketReadinessReport{SchemaVersion: TicketReadinessSchemaVersion, Readiness: "ready", NextAction: "start_ticket"},
+	}})
+	if report.Counts.AgentReady != 1 || report.Counts.HumanDecision != 0 {
+		t.Fatalf("counts = %+v", report.Counts)
+	}
+	item := report.Queues.AgentReady[0]
+	if item.Resolution == nil || item.Resolution.State != WorkspaceResolutionResumeReady || item.Resolution.NextSafeAction != "resume_dependent_work" {
+		t.Fatalf("resolution = %+v", item.Resolution)
+	}
+	if !hasWorkspaceQueueReason(item, "resolution_resume_ready") {
+		t.Fatalf("agent-ready reasons = %+v", item.ReasonCodes)
+	}
+}
+
+func TestWorkspaceQueueConflictingExplicitSignalsNeedDecomposition(t *testing.T) {
+	report := BuildWorkspaceQueues(WorkspaceSummary{}, []WorkStatusResult{{
+		Repo: "StatPan/gira", Issue: 200, Title: "Conflicting", State: "open", Status: "Ready",
+		Labels: []string{"type:decision", "status:ready", "needs:context", "needs:authority"},
+	}})
+	resolution := report.Queues.HumanDecision[0].Resolution
+	if resolution == nil || resolution.State != WorkspaceResolutionNeedsDecomposition || resolution.CausalReason != DecisionReasonConflictingConstraints {
+		t.Fatalf("resolution = %+v", resolution)
+	}
+}
+
+func TestWorkspaceQueueResolutionJSONIsAdditive(t *testing.T) {
+	report := BuildWorkspaceQueues(WorkspaceSummary{}, []WorkStatusResult{{
+		Repo: "StatPan/gira", Issue: 201, Title: "Policy", State: "open", Status: "Ready", Labels: []string{"type:decision", "status:ready", "needs:policy"},
+	}})
+	payload, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal report: %v", err)
+	}
+	text := string(payload)
+	for _, want := range []string{`"human_decision"`, `"resolution"`, `"state":"needs_policy"`, `"causal_reason":"missing_policy"`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("queue JSON missing %s: %s", want, text)
+		}
+	}
+	if got, err := NormalizeWorkspaceQueueName("human"); err != nil || got != "human_decision" {
+		t.Fatalf("legacy human alias = %q, %v", got, err)
+	}
 }
 
 func TestBuildWorkspaceQueuesSkipsClosedAndKeepsPrivacyBoundary(t *testing.T) {

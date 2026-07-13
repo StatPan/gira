@@ -4540,6 +4540,8 @@ func runGoalPlan(args []string, stdout io.Writer, stderr io.Writer) int {
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
 	apply := fs.Bool("apply", false, "Create proposed child tickets")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	compactJSON := fs.Bool("compact-json", false, "Emit compact Goal Plan JSON output")
+	expectPlan := fs.String("expect-plan", "", "Required compact dry-run plan ID for --apply")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
 	if err := fs.Parse(args); err != nil {
@@ -4564,10 +4566,47 @@ func runGoalPlan(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, goalHelp)
 		return 2
 	}
+	if *jsonOutput && *compactJSON {
+		fmt.Fprint(stderr, "choose at most one of --json or --compact-json\n")
+		return 2
+	}
+	if *expectPlan != "" && (!*compactJSON || !*apply) {
+		fmt.Fprint(stderr, "--expect-plan requires --compact-json --apply\n")
+		return 2
+	}
+	if *compactJSON && *apply && *expectPlan == "" {
+		fmt.Fprint(stderr, "--compact-json --apply requires --expect-plan from a dry-run\n")
+		return 2
+	}
 	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
+	}
+	if *compactJSON && *apply {
+		preview, err := newGoalPlanReport(gira.GoalPlanInput{Repo: repo, Goal: *goal, DryRun: true})
+		compact := gira.BuildGoalPlanCompactReport(preview, "apply", *expectPlan)
+		if err != nil || !compact.Matched {
+			if !compact.Matched {
+				compact.StopConditions = append(compact.StopConditions, "plan_changed")
+				compact.NextAction = "rerun_dry_run"
+				compact.NextStep = compact.DetailCommand
+			}
+			out, _ := json.MarshalIndent(compact, "", "  ")
+			fmt.Fprintf(stdout, "%s\n", out)
+			if err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+			}
+			return 1
+		}
+		report, err := newGoalPlanReport(gira.GoalPlanInput{Repo: repo, Goal: *goal, Apply: true})
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		out, _ := json.MarshalIndent(gira.BuildGoalPlanCompactReport(report, "apply", *expectPlan), "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
 	}
 	report, err := newGoalPlanReport(gira.GoalPlanInput{Repo: repo, Goal: *goal, DryRun: *dryRun, Apply: *apply})
 	if err != nil {
@@ -4582,6 +4621,15 @@ func runGoalPlan(args []string, stdout io.Writer, stderr io.Writer) int {
 		out, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			fmt.Fprintf(stderr, "encode goal plan JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	if *compactJSON {
+		out, err := json.MarshalIndent(gira.BuildGoalPlanCompactReport(report, "dry_run", ""), "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "encode compact goal plan JSON: %v\n", err)
 			return 2
 		}
 		fmt.Fprintf(stdout, "%s\n", out)

@@ -28,6 +28,49 @@ func TestBuildGoalStatusReportNoChildrenPlansChildren(t *testing.T) {
 	}
 }
 
+func TestBuildGoalStatusReportIncludesNativeChildren(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := onboardFakeRunner{responses: map[string]string{
+		"gh api repos/StatPan/gira/issues/100": `{"number":100,"title":"Goal mode","state":"open","body":"## Goal\nShip goal mode","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
+		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{"number":101,"title":"Native child","state":"open"}]`,
+		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`:        `[]`,
+		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
+		"gh api repos/StatPan/gira/issues/101":                  `{"number":101,"title":"Native child","state":"open","body":"## Goal\nReady\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:ready"}]}`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+	}}
+
+	report, err := BuildGoalStatusReport(GoalStatusInput{Repo: repo, Goal: 100}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalStatusReport error: %v", err)
+	}
+	if len(report.Children) != 1 || report.Children[0].Number != 101 || report.NextAction != "start_next_child" {
+		t.Fatalf("native child was not reflected in goal status: %+v", report)
+	}
+}
+
+func TestDiscoverGoalChildRefsMergesNativeAndCompatibilityEvidence(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := onboardFakeRunner{responses: map[string]string{
+		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{"number":101,"title":"Duplicate native","state":"open"},{"number":102,"title":"Native only","state":"open"}]`,
+		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[{
+"number":101}]`,
+		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"Created child tickets: #102 and #103"}]}`,
+	}}
+
+	refs, err := discoverGoalChildRefs(repo, devStartIssue{Number: 100, Body: "## Child tickets\n- #101\n"}, runner)
+	if err != nil {
+		t.Fatalf("discoverGoalChildRefs error: %v", err)
+	}
+	if len(refs) != 3 {
+		t.Fatalf("child refs = %+v, want 3 unique refs", refs)
+	}
+	for i, want := range []int{101, 102, 103} {
+		if refs[i].Repo != repo || refs[i].Number != want {
+			t.Fatalf("child refs = %+v, want ordered native/compatibility union", refs)
+		}
+	}
+}
+
 func TestBuildGoalStatusReportSummarizesMixedChildren(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := onboardFakeRunner{responses: map[string]string{

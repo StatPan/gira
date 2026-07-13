@@ -110,6 +110,40 @@ func TestBuildGoalPlanReportDedupesExistingChildren(t *testing.T) {
 	}
 }
 
+func TestBuildGoalPlanReportDedupesNativeChildren(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := goalPlanRunner(
+		goalPlanGoalJSON(100, goalPlanBody("## Goal\nShip goal mode\n\n## Scope\nCLI goal planning\n\n## Goal Plan\n- Add API\n- Add CLI\n", ""), []string{"type:epic", "status:ready"}),
+		`[]`,
+		`{"comments":[]}`,
+		map[string]string{
+			"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{"number":101,"title":"[Task] Add API","state":"closed"}]`,
+			"gh api repos/StatPan/gira/issues/101": `{"number":101,"title":"[Task] Add API","state":"closed","body":"## Goal\nAdd API\n\n## Scope\nAPI\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
+			"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		},
+	)
+
+	report, err := BuildGoalPlanReport(GoalPlanInput{Repo: repo, Goal: 100, DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalPlanReport error: %v", err)
+	}
+	if len(report.ProposedTickets) != 1 || report.ProposedTickets[0].Title != "[Task] Add CLI" {
+		t.Fatalf("native child should be skipped from proposals: %+v", report)
+	}
+	if len(report.SkippedCandidates) != 1 || report.SkippedCandidates[0].DuplicateOf != 101 {
+		t.Fatalf("native child skip was not reported: %+v", report.SkippedCandidates)
+	}
+}
+
+func TestGoalPlanDuplicateChildNumberDoesNotMatchSharedGoalModeWords(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	children := []GoalStatusChild{{Repo: repo.FullName(), Number: 101, Title: "[Task] Unify Goal Plan native child discovery"}}
+
+	if got := goalPlanDuplicateChildNumber("[Task] Add end-to-end Goal Mode fixtures and operator documentation", repo, children); got != 0 {
+		t.Fatalf("shared goal words should not suppress distinct work, got duplicate #%d", got)
+	}
+}
+
 func TestBuildGoalPlanReportBlockedHumanDecision(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	body := goalPlanBody("## Goal\nShip goal mode\n\n## Scope\nCLI goal planning\n\n## Goal Plan\n- Add API\n\n## Human Decision\nChoose provider policy first\n", "")

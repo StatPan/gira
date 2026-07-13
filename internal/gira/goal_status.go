@@ -130,6 +130,15 @@ type goalChildRef struct {
 
 func discoverGoalChildRefs(repo RepoRef, goal devStartIssue, runner CommandRunner) ([]goalChildRef, error) {
 	refs := map[string]goalChildRef{}
+	if nativeChildren, err := listGitHubSubIssues(repo, goal.Number, runner); err == nil {
+		for _, child := range nativeChildren {
+			if child.Number <= 0 || child.Number == goal.Number || child.PullRequest != nil {
+				continue
+			}
+			ref := goalChildRef{Repo: repo, Number: child.Number}
+			refs[goalChildRefKey(ref)] = ref
+		}
+	}
 	search := fmt.Sprintf("repo:%s is:issue \"Parent: #%d\"", repo.FullName(), goal.Number)
 	out, err := runner.Run("gh", "issue", "list", "--repo", repo.FullName(), "--state", "all", "--search", search, "--json", "number,title,state,url", "--limit", "100")
 	if err != nil {

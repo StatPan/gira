@@ -506,9 +506,6 @@ func goalPlanFuzzyTitleMatch(candidate []string, existing []string) bool {
 	if common >= 2 && common*2 >= len(candidate) {
 		return true
 	}
-	if containsString(candidate, "goal") && containsString(candidate, "mode") && containsString(existing, "goal") {
-		return true
-	}
 	return false
 }
 

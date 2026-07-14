@@ -6,6 +6,8 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v2.8.0 - 2026-07-14
+
 - Added compact Goal Plan exchange for agent workflows with
   `gira goal plan --compact-json`: the measured dry-run fixture falls from
   4,318 bytes / 1,123 tokens to 1,442 bytes / 426 tokens, while retaining

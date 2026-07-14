@@ -446,13 +446,15 @@ func CoreCommandSpecs() []CommandSpec {
 		{
 			Path:    []string{"goal", "plan"},
 			Summary: "Propose or create same-repo or target-repo child ticket packets from a goal issue.",
-			Usage:   "gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]",
+			Usage:   "gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json|--compact-json] [--expect-plan ID]",
 			Since:   "v1.17.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
 				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional; inferred when omitted."},
 				{Name: "--dry-run", Summary: "Preview proposed child tickets, including target_repo, without mutation."},
 				{Name: "--apply", Summary: "Create reviewed child tickets in their target repos from the proposed plan."},
+				{Name: "--compact-json", Summary: "Emit compact goal-plan-compact/v1 JSON; compact apply requires --expect-plan from dry-run."},
+				{Name: "--expect-plan", Summary: "Required dry-run plan ID for --compact-json --apply."},
 				{Name: "--json", Summary: "Emit stable goal-plan/v1 JSON."},
 			},
 			Docs:        []string{"docs/goal-operating-model.md", "docs-site/command-reference.md"},

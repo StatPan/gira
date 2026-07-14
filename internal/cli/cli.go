@@ -6494,7 +6494,7 @@ func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bo
 func extractNumericPositional(args []string, noun string, stderr io.Writer) ([]string, int, bool) {
 	cleaned := make([]string, 0, len(args))
 	positional := 0
-	valueFlags := map[string]struct{}{"--repo": {}, "--goal": {}, "--terminal": {}, "--output": {}, "--role": {}, "--profile": {}, "--context-budget": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--goal": {}, "--terminal": {}, "--output": {}, "--role": {}, "--profile": {}, "--context-budget": {}, "--expect-plan": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)

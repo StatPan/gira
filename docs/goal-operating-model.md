@@ -205,6 +205,24 @@ automation. The commands should reuse `ticket start`, `ticket pr`,
 `ticket checks`, `ticket wait`, and `ticket finish` instead of reimplementing
 ticket lifecycle logic.
 
+### Compact goal-plan exchange
+
+`gira goal plan --compact-json` is the bounded machine exchange for agents that
+need a plan without the full rendered child-ticket bodies. Run a dry-run first,
+record its `plan_id`, then require that exact value for the mutation:
+
+```bash
+gira goal plan 123 --repo OWNER/REPO --dry-run --compact-json
+gira goal plan 123 --repo OWNER/REPO --apply --compact-json --expect-plan gpp-...
+```
+
+The compact dry-run contains proposal summaries and payload hashes. A matching
+compact apply emits only a mutation receipt; it does not repeat those proposals.
+If GitHub state changes between the two commands, apply stops before mutation
+with `plan_changed` and instructs the caller to run dry-run again. `--json`
+remains the complete `goal-plan/v1` automation format for callers that need the
+full ticket packets.
+
 ## GitHub State Mapping
 
 Minimum viable GitHub mapping:

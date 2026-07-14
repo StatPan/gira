@@ -7131,6 +7131,89 @@ func TestGoalPlanApplyJSONUsesInjectedBuilder(t *testing.T) {
 	}
 }
 
+func TestGoalPlanCompactApplyStopsBeforeMutationWhenPlanChanges(t *testing.T) {
+	restore := newGoalPlanReport
+	t.Cleanup(func() { newGoalPlanReport = restore })
+	calls := 0
+	newGoalPlanReport = func(input gira.GoalPlanInput) (gira.GoalPlanReport, error) {
+		calls++
+		if !input.DryRun || input.Apply {
+			t.Fatalf("compact apply must not invoke mutation after a plan mismatch: %+v", input)
+		}
+		return goalPlanCLITestReport(input), nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "plan", "521", "--repo", "StatPan/gira", "--apply", "--compact-json", "--expect-plan", "gpp-stale"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if calls != 1 {
+		t.Fatalf("goal plan builder calls = %d, want only dry-run preview", calls)
+	}
+	if !strings.Contains(stdout.String(), `"plan_changed"`) || !strings.Contains(stdout.String(), `"next_action": "rerun_dry_run"`) {
+		t.Fatalf("compact mismatch response missing stop contract:\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), `"receipt"`) {
+		t.Fatalf("compact mismatch must not claim an apply receipt:\n%s", stdout.String())
+	}
+}
+
+func TestGoalPlanCompactApplyEmitsReceiptAfterMatchingPreview(t *testing.T) {
+	restore := newGoalPlanReport
+	t.Cleanup(func() { newGoalPlanReport = restore })
+	var inputs []gira.GoalPlanInput
+	newGoalPlanReport = func(input gira.GoalPlanInput) (gira.GoalPlanReport, error) {
+		inputs = append(inputs, input)
+		report := goalPlanCLITestReport(input)
+		if input.Apply {
+			report.CreatedChildren = []gira.GoalPlanChild{{Number: 700, Title: "[Task] Add plan"}}
+			report.Actions = []gira.GoalPlanAction{{Action: "child_ticket:create", Status: "applied", Issue: 700}}
+		}
+		return report, nil
+	}
+	expected := gira.BuildGoalPlanCompactReport(goalPlanCLITestReport(gira.GoalPlanInput{Repo: gira.RepoRef{Owner: "StatPan", Name: "gira"}, Goal: 521, DryRun: true}), "dry_run", "").PlanID
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "plan", "521", "--repo", "StatPan/gira", "--apply", "--compact-json", "--expect-plan", expected}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if len(inputs) != 2 || !inputs[0].DryRun || inputs[0].Apply || inputs[1].DryRun || !inputs[1].Apply {
+		t.Fatalf("compact apply inputs = %+v, want preview then apply", inputs)
+	}
+	if !strings.Contains(stdout.String(), `"receipt"`) || strings.Contains(stdout.String(), `"proposals"`) || !strings.Contains(stdout.String(), `"issue": 700`) {
+		t.Fatalf("compact apply receipt contract invalid:\n%s", stdout.String())
+	}
+}
+
+func TestGoalPlanCompactApplyRequiresExpectedPlan(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"goal", "plan", "521", "--repo", "StatPan/gira", "--apply", "--compact-json"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--compact-json --apply requires --expect-plan from a dry-run") {
+		t.Fatalf("stderr missing compact apply guard:\n%s", stderr.String())
+	}
+}
+
+func goalPlanCLITestReport(input gira.GoalPlanInput) gira.GoalPlanReport {
+	return gira.GoalPlanReport{
+		Command:       "goal plan",
+		SchemaVersion: gira.GoalPlanSchemaVersion,
+		Repo:          input.Repo.FullName(),
+		DryRun:        input.DryRun,
+		Apply:         input.Apply,
+		Goal:          gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 2.0", State: "open", Status: "Ready"},
+		ProposedTickets: []gira.GoalPlanTicket{
+			{Title: "[Task] Add plan", TargetRepo: input.Repo.FullName(), Type: "task", Goal: "Add plan", Scope: "CLI", Acceptance: []string{"works"}, ExpectedEvidence: []string{"go test ./..."}, Body: "compact fixture"},
+		},
+		NextAction: "create_child_tickets",
+		NextStep:   "review proposed tickets",
+	}
+}
+
 func TestGoalPlanRequiresExactlyOneMode(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"goal", "plan", "521", "--repo", "StatPan/gira"}, &stdout, &stderr)

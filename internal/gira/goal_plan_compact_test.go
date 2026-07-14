@@ -24,8 +24,16 @@ func TestBuildGoalPlanCompactReportOmitsBodiesAndIsDeterministic(t *testing.T) {
 
 func TestBuildGoalPlanCompactApplyReceiptDoesNotRepeatProposals(t *testing.T) {
 	report := GoalPlanReport{Repo: "StatPan/gira", Goal: GoalStatusIssue{Number: 100}, CreatedChildren: []GoalPlanChild{{Number: 101, Title: "Created"}}, Actions: []GoalPlanAction{{Action: "child_ticket:create", Status: "applied"}}}
-	compact := BuildGoalPlanCompactReport(report, "apply", "gpp-expected")
-	if compact.Receipt == nil || len(compact.Proposals) != 0 || compact.Matched {
+	compact := BuildGoalPlanCompactReport(report, "apply", BuildGoalPlanCompactReport(report, "dry_run", "").PlanID)
+	if compact.Receipt == nil || len(compact.Proposals) != 0 || !compact.Matched {
 		t.Fatalf("unexpected compact receipt: %+v", compact)
+	}
+}
+
+func TestBuildGoalPlanCompactMismatchDoesNotClaimReceipt(t *testing.T) {
+	report := GoalPlanReport{Repo: "StatPan/gira", Goal: GoalStatusIssue{Number: 100}, CreatedChildren: []GoalPlanChild{{Number: 101, Title: "Created"}}}
+	compact := BuildGoalPlanCompactReport(report, "apply", "gpp-stale")
+	if compact.Matched || compact.Receipt != nil || len(compact.Proposals) != 0 {
+		t.Fatalf("mismatched compact apply must not claim mutation: %+v", compact)
 	}
 }

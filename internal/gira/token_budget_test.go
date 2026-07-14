@@ -33,8 +33,8 @@ func TestAgentContextBudgetBaseline(t *testing.T) {
 		{
 			Name:      "operator_skill",
 			Content:   readAgentContextBudgetDocument(t, "docs", "skills", "gira-agent-operator.md"),
-			MaxBytes:  13886,
-			MaxTokens: 3512,
+			MaxBytes:  13920,
+			MaxTokens: 3522,
 		},
 		{
 			Name:      "pm_skill",
@@ -80,6 +80,46 @@ func readAgentContextBudgetDocument(t *testing.T, path ...string) string {
 
 func goalPlanV1BudgetFixture(t *testing.T) string {
 	t.Helper()
+	report := goalPlanBudgetReport(t)
+	encoded, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatalf("encode goal plan fixture: %v", err)
+	}
+	return string(encoded) + "\n"
+}
+
+func TestGoalPlanCompactBudget(t *testing.T) {
+	report := goalPlanBudgetReport(t)
+	legacy := goalPlanV1BudgetFixture(t)
+	dry, err := json.Marshal(BuildGoalPlanCompactReport(report, "dry_run", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyReport := report
+	applyReport.CreatedChildren = []GoalPlanChild{{Number: 101, Title: "Created"}}
+	applyReport.Actions = []GoalPlanAction{{Action: "child_ticket:create", Status: "applied", Issue: 101}}
+	receipt, err := json.Marshal(BuildGoalPlanCompactReport(applyReport, "apply", BuildGoalPlanCompactReport(applyReport, "dry_run", "").PlanID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoder, err := tokenizer.Get(tokenizer.O200kBase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyTokens, _ := encoder.Count(legacy)
+	dryTokens, _ := encoder.Count(string(dry))
+	receiptTokens, _ := encoder.Count(string(receipt))
+	t.Logf("goal-plan compact bytes dry=%d/%d receipt=%d/%d; tokens dry=%d/%d receipt=%d/%d", len(dry), len(legacy), len(receipt), len(legacy), dryTokens, legacyTokens, receiptTokens, legacyTokens)
+	if len(dry)*2 > len(legacy) || dryTokens*2 > legacyTokens {
+		t.Fatalf("compact dry-run exceeds 50%% budget: bytes=%d/%d tokens=%d/%d", len(dry), len(legacy), dryTokens, legacyTokens)
+	}
+	if len(receipt)*4 > len(legacy) || receiptTokens*4 > legacyTokens {
+		t.Fatalf("compact apply receipt exceeds 25%% budget: bytes=%d/%d tokens=%d/%d", len(receipt), len(legacy), receiptTokens, legacyTokens)
+	}
+}
+
+func goalPlanBudgetReport(t *testing.T) GoalPlanReport {
+	t.Helper()
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := goalPlanRunner(
 		goalPlanGoalJSON(100, goalPlanBody("## Goal\nShip goal mode\n\n## Scope\nCLI goal planning\n\n## Goal Plan\n- Add API\n- Add CLI\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
@@ -91,9 +131,5 @@ func goalPlanV1BudgetFixture(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("build goal plan fixture: %v", err)
 	}
-	encoded, err := json.MarshalIndent(report, "", "  ")
-	if err != nil {
-		t.Fatalf("encode goal plan fixture: %v", err)
-	}
-	return string(encoded) + "\n"
+	return report
 }

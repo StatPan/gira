@@ -10,21 +10,21 @@ import (
 const GoalPlanCompactSchemaVersion = "goal-plan-compact/v1"
 
 type GoalPlanCompactReport struct {
-	Command        string                  `json:"command"`
-	SchemaVersion  string                  `json:"schema_version"`
-	Mode           string                  `json:"mode"`
-	PlanID         string                  `json:"plan_id"`
-	ExpectedPlanID string                  `json:"expected_plan_id,omitempty"`
-	Matched        bool                    `json:"matched"`
-	Source         GoalPlanCompactSource   `json:"source"`
-	Defaults       GoalPlanCompactDefaults `json:"defaults,omitempty"`
-	Proposals      []GoalPlanCompactTicket `json:"proposals,omitempty"`
-	Receipt        *GoalPlanCompactReceipt `json:"receipt,omitempty"`
-	StopConditions []string                `json:"stop_conditions,omitempty"`
-	Warnings       []string                `json:"warnings,omitempty"`
-	NextAction     string                  `json:"next_action"`
-	NextStep       string                  `json:"next_step"`
-	DetailCommand  string                  `json:"detail_command"`
+	Command        string                   `json:"command"`
+	SchemaVersion  string                   `json:"schema_version"`
+	Mode           string                   `json:"mode"`
+	PlanID         string                   `json:"plan_id"`
+	ExpectedPlanID string                   `json:"expected_plan_id,omitempty"`
+	Matched        bool                     `json:"matched"`
+	Source         GoalPlanCompactSource    `json:"source"`
+	Defaults       *GoalPlanCompactDefaults `json:"defaults,omitempty"`
+	Proposals      []GoalPlanCompactTicket  `json:"proposals,omitempty"`
+	Receipt        *GoalPlanCompactReceipt  `json:"receipt,omitempty"`
+	StopConditions []string                 `json:"stop_conditions,omitempty"`
+	Warnings       []string                 `json:"warnings,omitempty"`
+	NextAction     string                   `json:"next_action"`
+	NextStep       string                   `json:"next_step"`
+	DetailCommand  string                   `json:"detail_command"`
 }
 
 type GoalPlanCompactSource struct {
@@ -59,13 +59,16 @@ func BuildGoalPlanCompactReport(report GoalPlanReport, mode string, expected str
 	compact := GoalPlanCompactReport{Command: "goal plan", SchemaVersion: GoalPlanCompactSchemaVersion, Mode: mode, ExpectedPlanID: expected, Matched: expected == "" || expected == goalPlanFingerprint(report), Source: GoalPlanCompactSource{Repo: report.Repo, Goal: report.Goal.Number, Title: report.Goal.Title}, StopConditions: append([]string(nil), report.StopConditions...), Warnings: append([]string(nil), report.Warnings...), NextAction: report.NextAction, NextStep: report.NextStep, DetailCommand: fmt.Sprintf("gira goal plan --repo %s --goal %d --dry-run --json", report.Repo, report.Goal.Number)}
 	compact.PlanID = goalPlanFingerprint(report)
 	if mode == "apply" {
+		if !compact.Matched {
+			return compact
+		}
 		compact.Proposals = nil
 		compact.Receipt = &GoalPlanCompactReceipt{Created: append([]GoalPlanChild(nil), report.CreatedChildren...), Skipped: append([]GoalPlanSkip(nil), report.SkippedCandidates...), Actions: append([]GoalPlanAction(nil), report.Actions...)}
 		return compact
 	}
 	if len(report.ProposedTickets) > 0 {
 		first := report.ProposedTickets[0]
-		compact.Defaults = GoalPlanCompactDefaults{Type: first.Type, Priority: first.Priority, Labels: append([]string(nil), first.Labels...), Scope: first.Scope, ExpectedEvidence: append([]string(nil), first.ExpectedEvidence...)}
+		compact.Defaults = &GoalPlanCompactDefaults{Type: first.Type, Priority: first.Priority, Labels: append([]string(nil), first.Labels...), Scope: first.Scope, ExpectedEvidence: append([]string(nil), first.ExpectedEvidence...)}
 	}
 	for i, ticket := range report.ProposedTickets {
 		sum := sha256.Sum256([]byte(ticket.Body))

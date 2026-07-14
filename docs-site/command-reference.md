@@ -340,7 +340,7 @@ Propose or create same-repo or target-repo child ticket packets from a goal issu
 Usage:
 
 ```bash
-gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]
+gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json|--compact-json] [--expect-plan ID]
 ```
 
 Since: `v1.17.0`
@@ -351,6 +351,8 @@ Flags:
 - `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
 - `--dry-run`: Preview proposed child tickets, including target_repo, without mutation.
 - `--apply`: Create reviewed child tickets in their target repos from the proposed plan.
+- `--compact-json`: Emit compact goal-plan-compact/v1 JSON; compact apply requires --expect-plan from dry-run.
+- `--expect-plan`: Required dry-run plan ID for --compact-json --apply.
 - `--json`: Emit stable goal-plan/v1 JSON.
 
 Examples:

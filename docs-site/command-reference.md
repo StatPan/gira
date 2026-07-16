@@ -960,12 +960,12 @@ Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/com
 
 ## `pm spec`
 
-Render a durable PM state and worker-ready task packet from raw intent.
+Render a compact profile-aware PM packet.
 
 Usage:
 
 ```bash
-gira pm spec [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode plan] [--json]
+gira pm spec [--profile PROFILE] [INPUT] [--json]
 ```
 
 Since: `v2.5.0`
@@ -976,15 +976,23 @@ Flags:
 - `--repo`: Optional target GitHub repo in OWNER/REPO format.
 - `--intent`: Raw product/development intent.
 - `--from-file`: Read raw intent from file, or '-' for stdin.
-- `--worker-mode`: Suggested worker mode: research, plan, implement, review, fix_review, or pm_qa.
-- `--json`: Emit stable gira-pm-task-packet/v1 JSON with Markdown embedded.
+- `--profile`: discovery, decision, experiment, delivery, rollout, measurement, documentation, or legacy. Default: delivery.
+- `--context-ref`: Stable parent premise or policy reference; repeatable.
+- `--worker-mode`: Suggested worker mode override; defaults by profile.
+- `--json`: Emit stable gira-pm-task-packet/v2 JSON; legacy profile emits v1.
 
 Examples:
 
-- Render a PM task packet from stdin
+- Render a compact delivery packet
 
 ```bash
-gira pm spec --repo OWNER/app --from-file - > pm-task.md
+gira pm spec --profile delivery --context-ref issue:OWNER/app#100 --repo OWNER/app --from-file request.md > pm-task.md
+```
+
+- Render the legacy universal packet
+
+```bash
+gira pm spec --profile legacy --repo OWNER/app --from-file - > pm-task.md
 ```
 
 - Create a ticket from a rendered packet

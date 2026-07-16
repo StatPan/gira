@@ -11,6 +11,7 @@ func TestBuildPMTaskSpecReportRendersDurablePMState(t *testing.T) {
 		Repo:                "StatPan/gira",
 		RawIntent:           "Turn rough product requests into worker-ready issue packets.",
 		SuggestedWorkerMode: "research",
+		Profile:             "legacy",
 	})
 	if err != nil {
 		t.Fatalf("BuildPMTaskSpecReport error: %v", err)

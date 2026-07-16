@@ -4,8 +4,7 @@ Gira PM converts raw intent into durable, task-local PM state for coding
 workers.
 
 Canonical PM role and authority: [Gira PM Operating
-Policy](pm-operating-policy.md). This file defines task packets and acceptance
-QA only.
+Policy](pm-operating-policy.md). This file defines PM CLI packets and QA.
 
 ## Core Principle
 
@@ -20,26 +19,12 @@ reduce scope, or create a follow-up packet.
 
 Thread memory is optional. The task packet is authoritative.
 
-Every PM-generated issue body should include:
-
-- `<!-- gira:pm-state version=1 -->`
-- product context
-- customer or user outcome
-- product goal alignment
-- problem
-- goal
-- decision policy
-- appetite and boundary
-- acceptance criteria
-- signals, metrics, or evidence
-- non-goals
-- rabbit holes
-- context packet
-- risk decomposition
-- reversibility or rollout
-- verification expectations
-- suggested worker mode
-- next action
+V2 packets share actor, problem, outcome, goal alignment, parent/source refs, and
+non-goals. Add only the chosen profile: discovery, decision, experiment,
+delivery, rollout, measurement, or documentation. `legacy` retains the v1
+universal packet. Delivery additionally requires `Product Uncertainty` to be
+`resolved`; promote discovery/decision/experiment work by retaining its stable
+reference in both Parent Context and Source References.
 
 ## CLI Seed
 
@@ -65,10 +50,10 @@ gira pm context --repo OWNER/REPO --ticket 123
 
 Supersede via new IDs; retries do not overwrite. Store safe references.
 
-After repairing material diagnostics, use the compatible `pm spec` renderer:
+After repairing diagnostics, render the smallest sufficient packet:
 
 ```bash
-gira pm spec --repo OWNER/REPO --from-file request.md > pm-task.md
+gira pm spec --profile delivery --context-ref issue:OWNER/REPO#100 --repo OWNER/REPO --from-file request.md > pm-task.md
 ```
 
 Create a GitHub issue from that packet:

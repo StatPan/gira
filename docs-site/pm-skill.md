@@ -37,10 +37,12 @@ Typed records are append-only GitHub comments. Identical retries are
 idempotent; supersession preserves history; compact context expands with
 `--json`. Secrets and private transcripts are rejected.
 
-After repairing diagnostics, `pm spec` remains the compatible packet renderer:
+After repairing diagnostics, choose the smallest task profile. Delivery is the
+default; use discovery, decision, experiment, rollout, measurement, or
+documentation as appropriate. `legacy` retains v1:
 
 ```bash
-gira pm spec --repo OWNER/REPO --from-file request.md > pm-task.md
+gira pm spec --profile delivery --context-ref issue:OWNER/REPO#100 --repo OWNER/REPO --from-file request.md > pm-task.md
 gira ticket new --repo OWNER/REPO --title "TITLE" --body-file pm-task.md --type task --dry-run
 ```
 

@@ -88,6 +88,16 @@ func EvaluateTicketReadiness(body string, labels []string, issueState string) Ti
 		return report
 	}
 
+	if profile := PMTaskProfileFromBody(body); profile != "" {
+		profileReadiness := EvaluatePMProfileReadiness(body)
+		report.Findings = append(report.Findings, profileReadiness.Findings...)
+		if hasTicketReadinessSeverity(report.Findings, "error") {
+			report.Readiness = "needs_refinement"
+			report.NextAction = profileReadiness.NextAction
+		}
+		return report
+	}
+
 	if emptyReadinessSection(markdownSection(body, "Goal")) {
 		report.Findings = append(report.Findings, ticketReadinessFinding(
 			"error",

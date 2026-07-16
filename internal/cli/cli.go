@@ -401,14 +401,14 @@ Usage:
   gira pm compile [--intent TEXT|--from-file PATH|-] [--repo OWNER/REPO] [--goal N] [--json]
   gira pm record --repo OWNER/REPO --ticket N --id ID --kind KIND [--text TEXT|--from-file PATH|-] [--source REF] --dry-run|--apply [--json]
   gira pm context --repo OWNER/REPO --ticket N [--context-budget N] [--json]
-  gira pm spec [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode plan] [--json]
+  gira pm spec [--profile PROFILE] [--context-ref REF] [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode MODE] [--json]
   gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]
 
 Commands:
   compile  Compile intent into deterministic pm-ir/v1 and diagnostics without mutation
   record   Append an idempotent typed PM ledger record to a GitHub issue
   context  Hydrate compact current PM state from typed and legacy issue evidence
-  spec  Render a durable PM state and worker-ready task packet from raw intent
+  spec  Render a compact profile-aware PM task packet from raw intent
   qa    Render a PM acceptance QA prompt from task-local PM state and PR evidence
 
 Flags:
@@ -424,14 +424,16 @@ Flags:
   --supersedes string  Prior record ID superseded by this record
   --at string          RFC3339 record time; defaults to the current time
   --context-budget int Maximum compact context size in characters. Default: 6000
+  --profile string     discovery|decision|experiment|delivery|rollout|measurement|documentation|legacy. Default: delivery
+  --context-ref string Stable parent premise/policy reference; repeatable
   --intent string      Raw product/development intent
   --from-file string   Read raw intent from file, or "-" for stdin
-  --worker-mode string Suggested worker mode: research|plan|implement|review|fix_review|pm_qa. Default: plan
+  --worker-mode string Suggested worker mode override; defaults by profile
   --ticket int        Ticket number for PM QA
   --pr int            Explicit PR number for PM QA
   --diff-summary      Include changed files and diff stat in PM QA
   --include-diff      Include full diff when used with --diff-summary
-  --json              Emit stable gira-pm-task-packet/v1 JSON with Markdown embedded
+  --json              Emit stable JSON; profiles use task-packet/v2 and legacy uses v1
   -h, --help          Show help
 `
 
@@ -2394,10 +2396,13 @@ func runPMSpec(args []string, stdout io.Writer, stderr io.Writer) int {
 	repo := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	intent := fs.String("intent", "", "Raw product/development intent")
 	fromFile := fs.String("from-file", "", "Read raw intent from file, or - for stdin")
-	workerMode := fs.String("worker-mode", "plan", "Suggested worker mode")
+	workerMode := fs.String("worker-mode", "", "Suggested worker mode; defaults by profile")
+	profile := fs.String("profile", "delivery", "PM task profile")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
+	var contextRefs repeatedStringFlag
+	fs.Var(&contextRefs, "context-ref", "Stable parent premise/policy reference")
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(stderr, "%v\n\n", err)
 		_, _ = io.WriteString(stderr, pmHelp)
@@ -2422,6 +2427,8 @@ func runPMSpec(args []string, stdout io.Writer, stderr io.Writer) int {
 		Repo:                *repo,
 		RawIntent:           rawIntent,
 		SuggestedWorkerMode: *workerMode,
+		Profile:             *profile,
+		ContextRefs:         contextRefs,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)

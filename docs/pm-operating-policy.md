@@ -145,7 +145,7 @@ useful but does not yet satisfy the complete PM policy.
 | Compile | `pm compile`, `pm spec` | `pm-ir/v1`, `pm-compile-report/v1`, `gira-pm-task-packet/v1` | partial | deterministic intent diagnostics are implemented; typed discovery, decisions, and automatic packet projection remain separate follow-up work |
 | Discover | issue prose and research tickets | no dedicated contract | unsupported | opportunity, hypothesis, experiment, and learning types |
 | Decide | `pm record`, decision policy helpers and queue resolution from #839 | `pm-ledger-record/v1`, `pm-record-report/v1`, `decision-policy/v1` | partial | append-safe decision state exists; option comparison and Goal routing integration remain follow-up work |
-| Plan | `goal plan --compact-json` | `goal-plan/v1`, `goal-plan-compact/v1` | partial | manually supplied bullet decomposition and generic task packets |
+| Plan | `pm spec`, `goal plan --compact-json` | `pm-task-profile/v1`, `pm-profile-promotion/v1`, `gira-pm-task-packet/v2`, `goal-plan/v1`, `goal-plan-compact/v1` | partial | typed compact packets are implemented; outcome-tree decomposition and graph projection remain follow-up work |
 | Execute | ticket lifecycle and queue take | readiness, approval, start, PR, checks, finish schemas | supported | consume typed PM profiles without weakening lifecycle gates |
 | Observe | `goal status`, `goal report`, workspace queues | `goal-status/v1`, `goal-dossier/v1`, `workspace-queues/v1` | partial | delivery health without product learning or outcome confidence |
 | Replan | manual issue edits and supersede | ticket supersede receipt | partial | no Goal-level evidence-triggered replan contract |
@@ -217,6 +217,34 @@ summary by default. `--json` expands the full typed history. Existing untyped
 decision/evidence prose remains visible only as `legacy_evidence`; Gira does not
 fabricate typed fields during migration. GitHub stays canonical and no private
 transcript or secret belongs in the ledger.
+
+### Typed Task Profiles And Promotion
+
+`gira pm spec` defaults to the compact `delivery` profile in
+`gira-pm-task-packet/v2`; `--profile legacy` retains the readable v1 universal
+packet. All v2 profiles share actor, problem, desired outcome, goal alignment,
+parent context, source references, and non-goals. Profile-specific contracts are:
+
+| Profile | Required focus | Verification |
+| --- | --- | --- |
+| discovery | opportunity, evidence gap, research question | learning evidence |
+| decision | one question, options, policy, authority | decision receipt |
+| experiment | hypothesis, assumption, method, success/stop | experiment evidence |
+| delivery | resolved product uncertainty, acceptance, boundary, dependencies | engineering verification |
+| rollout | exposure plan, reversibility, guardrails, rollback | rollout evidence |
+| measurement | signal, baseline, target, window, data source | measurement evidence |
+| documentation | audience, knowledge gap, boundary, source of truth | documentation acceptance |
+
+`pm-task-profile/v1` readiness replaces universal section checks only when its
+marker is present. Discovery and experiment are not rejected for missing
+implementation details. Delivery fails closed unless Product Uncertainty is
+exactly `resolved`. `pm-profile-promotion/v1` additionally requires a ready
+discovery, decision, or experiment source and its stable reference in both the
+delivery Parent Context and Source References. Mixed-profile Goals evaluate each
+child against its own marker; unmarked v1 packets continue through legacy
+readiness. Ticket readiness reports invalid profiles and missing profile fields
+without rewriting historical packets. Global Doctor remains a no-op because
+profile validity is issue-local and already evaluated at ticket handoff.
 
 ## Compatibility And Migration
 

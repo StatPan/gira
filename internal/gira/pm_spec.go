@@ -10,22 +10,28 @@ const PMTaskPacketSchemaVersion = "gira-pm-task-packet/v1"
 const PMStateMarker = "<!-- gira:pm-state version=1 -->"
 
 type PMTaskSpecInput struct {
-	Title               string `json:"title,omitempty"`
-	Repo                string `json:"repo,omitempty"`
-	RawIntent           string `json:"raw_intent"`
-	SuggestedWorkerMode string `json:"suggested_worker_mode,omitempty"`
-}
-
-type PMTaskSpecReport struct {
-	Command             string   `json:"command"`
-	SchemaVersion       string   `json:"schema_version"`
 	Title               string   `json:"title,omitempty"`
 	Repo                string   `json:"repo,omitempty"`
 	RawIntent           string   `json:"raw_intent"`
-	SuggestedWorkerMode string   `json:"suggested_worker_mode"`
-	RequiredSections    []string `json:"required_sections"`
-	Markdown            string   `json:"markdown"`
-	NextStep            string   `json:"next_step"`
+	SuggestedWorkerMode string   `json:"suggested_worker_mode,omitempty"`
+	Profile             string   `json:"profile,omitempty"`
+	ContextRefs         []string `json:"context_refs,omitempty"`
+}
+
+type PMTaskSpecReport struct {
+	Command             string                    `json:"command"`
+	SchemaVersion       string                    `json:"schema_version"`
+	Title               string                    `json:"title,omitempty"`
+	Repo                string                    `json:"repo,omitempty"`
+	RawIntent           string                    `json:"raw_intent"`
+	SuggestedWorkerMode string                    `json:"suggested_worker_mode"`
+	Profile             string                    `json:"profile"`
+	ProfileSchema       string                    `json:"profile_schema,omitempty"`
+	ContextRefs         []string                  `json:"context_refs"`
+	RequiredSections    []string                  `json:"required_sections"`
+	ProfileReadiness    *PMProfileReadinessReport `json:"profile_readiness,omitempty"`
+	Markdown            string                    `json:"markdown"`
+	NextStep            string                    `json:"next_step"`
 }
 
 func BuildPMTaskSpecReport(input PMTaskSpecInput) (PMTaskSpecReport, error) {
@@ -33,7 +39,21 @@ func BuildPMTaskSpecReport(input PMTaskSpecInput) (PMTaskSpecReport, error) {
 	if rawIntent == "" {
 		return PMTaskSpecReport{}, fmt.Errorf("raw intent is required")
 	}
-	mode := normalizePMWorkerMode(input.SuggestedWorkerMode)
+	profileName := normalizePMTaskProfile(input.Profile)
+	legacy := profileName == "legacy"
+	var profile PMTaskProfileSpec
+	if !legacy {
+		var ok bool
+		profile, ok = FindPMTaskProfile(profileName)
+		if !ok {
+			return PMTaskSpecReport{}, fmt.Errorf("unsupported PM task profile %q; use %s", profileName, strings.Join(PMTaskProfileNames(), ", "))
+		}
+	}
+	modeInput := input.SuggestedWorkerMode
+	if strings.TrimSpace(modeInput) == "" && !legacy {
+		modeInput = profile.SuggestedWorkerMode
+	}
+	mode := normalizePMWorkerMode(modeInput)
 	title := strings.TrimSpace(input.Title)
 	if title == "" {
 		title = firstNonEmptyLine(rawIntent)
@@ -41,12 +61,19 @@ func BuildPMTaskSpecReport(input PMTaskSpecInput) (PMTaskSpecReport, error) {
 	repo := strings.TrimSpace(input.Repo)
 	report := PMTaskSpecReport{
 		Command:             "pm spec",
-		SchemaVersion:       PMTaskPacketSchemaVersion,
+		SchemaVersion:       PMTaskPacketV2SchemaVersion,
 		Title:               title,
 		Repo:                repo,
 		RawIntent:           rawIntent,
 		SuggestedWorkerMode: mode,
-		RequiredSections: []string{
+		Profile:             profileName,
+		ProfileSchema:       PMTaskProfileSchemaVersion,
+		ContextRefs:         normalizePMLedgerRefs(input.ContextRefs),
+	}
+	if legacy {
+		report.SchemaVersion = PMTaskPacketSchemaVersion
+		report.ProfileSchema = ""
+		report.RequiredSections = []string{
 			"Product Context",
 			"Customer / User Outcome",
 			"Product Goal Alignment",
@@ -64,9 +91,14 @@ func BuildPMTaskSpecReport(input PMTaskSpecInput) (PMTaskSpecReport, error) {
 			"Verification Expectations",
 			"Suggested Worker Mode",
 			"Next Action",
-		},
+		}
+		report.Markdown = RenderPMTaskSpecMarkdown(report)
+	} else {
+		report.RequiredSections = append(append([]string{}, profile.RequiredSections...), profile.VerificationSections...)
+		report.Markdown = RenderPMTaskProfileMarkdown(report, profile)
+		readiness := EvaluatePMProfileReadiness(report.Markdown)
+		report.ProfileReadiness = &readiness
 	}
-	report.Markdown = RenderPMTaskSpecMarkdown(report)
 	report.NextStep = pmTaskSpecNextStep(report)
 	return report, nil
 }

@@ -118,6 +118,32 @@ func TestGoalPlanCompactBudget(t *testing.T) {
 	}
 }
 
+func TestPMTaskProfileCompactBudget(t *testing.T) {
+	input := PMTaskSpecInput{Title: "Bounded delivery", Repo: "OWNER/repo", RawIntent: "Deliver a source-linked outcome without repeating parent context.", ContextRefs: []string{"issue:OWNER/repo#100"}}
+	compact, err := BuildPMTaskSpecReport(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Profile = "legacy"
+	legacy, err := BuildPMTaskSpecReport(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoder, err := tokenizer.Get(tokenizer.O200kBase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compactTokens, _ := encoder.Count(compact.Markdown)
+	legacyTokens, _ := encoder.Count(legacy.Markdown)
+	t.Logf("pm profile compact bytes=%d tokens=%d legacy_bytes=%d legacy_tokens=%d", len(compact.Markdown), compactTokens, len(legacy.Markdown), legacyTokens)
+	if len(compact.Markdown) > 3000 || compactTokens > 800 {
+		t.Fatalf("profile packet exceeds absolute budget: bytes=%d tokens=%d", len(compact.Markdown), compactTokens)
+	}
+	if len(compact.Markdown)*2 >= len(legacy.Markdown) || compactTokens*2 >= legacyTokens {
+		t.Fatalf("profile packet is not at least 50%% smaller: compact=%d/%d legacy=%d/%d", len(compact.Markdown), compactTokens, len(legacy.Markdown), legacyTokens)
+	}
+}
+
 func goalPlanBudgetReport(t *testing.T) GoalPlanReport {
 	t.Helper()
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}

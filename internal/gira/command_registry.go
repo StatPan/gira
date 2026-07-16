@@ -289,19 +289,30 @@ func CoreCommandSpecs() []CommandSpec {
 		{
 			Path:    []string{"pm", "record"},
 			Summary: "Append an idempotent typed record to a GitHub-native PM ledger.",
-			Usage:   "gira pm record --repo OWNER/REPO --ticket N --id ID --kind KIND [--text TEXT|--from-file PATH|-] [--source REF] --dry-run|--apply [--json]",
+			Usage:   "gira pm record --repo OWNER/REPO --ticket N --id ID --kind KIND [--text TEXT|--from-file PATH|-] [--source REF] [--link RELATION=ID] --dry-run|--apply [--json]",
 			Since:   "v3.0.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
 				{Name: "--ticket", Summary: "GitHub issue holding the PM ledger."},
 				{Name: "--id", Summary: "Stable append-safe record ID."},
-				{Name: "--kind", Summary: "context_source, evidence, inference, assumption, decision, question, or learning."},
+				{Name: "--kind", Summary: "Ledger kind, including outcome, opportunity, hypothesis, risk, and experiment."},
 				{Name: "--text", Summary: "Record claim or statement."},
 				{Name: "--from-file", Summary: "Read record text from file, or '-' for stdin."},
 				{Name: "--source", Summary: "Inspectable source reference; repeatable."},
 				{Name: "--actor-kind", Summary: "human, ai, system, or integration. Default: human."},
 				{Name: "--status", Summary: "Optional kind-specific lifecycle status."},
 				{Name: "--supersedes", Summary: "Prior record ID superseded by this record."},
+				{Name: "--link", Summary: "Discovery relation=target record ID; repeatable."},
+				{Name: "--goal-ref", Summary: "Linked Goal reference; repeatable."},
+				{Name: "--task-profile", Summary: "Linked PM task profile; repeatable."},
+				{Name: "--risk-type", Summary: "value, usability, feasibility, or viability."},
+				{Name: "--evidence-strength", Summary: "anecdotal, qualitative, quantitative, or replicated."},
+				{Name: "--confidence", Summary: "low, medium, or high; kept separate from evidence strength."},
+				{Name: "--falsification-test", Summary: "Test that can falsify a hypothesis."},
+				{Name: "--test-waiver", Summary: "Why a formal falsification test is disproportionate."},
+				{Name: "--experiment-state", Summary: "planned, running, success, failure, inconclusive, or invalid."},
+				{Name: "--conclusion", Summary: "validated, invalidated, inconclusive, or no_build learning."},
+				{Name: "--outcome-state", Summary: "proposed, observing, achieved, not_achieved, or unknown."},
 				{Name: "--at", Summary: "RFC3339 record time; defaults to current time."},
 				{Name: "--dry-run", Summary: "Preview validation and append action without mutation."},
 				{Name: "--apply", Summary: "Append the typed issue comment after validation."},
@@ -331,6 +342,25 @@ func CoreCommandSpecs() []CommandSpec {
 			Examples: []CommandExample{
 				{Summary: "Hydrate bounded current PM state", Command: "gira pm context --repo OWNER/app --ticket 123"},
 				{Summary: "Inspect full typed history", Command: "gira pm context --repo OWNER/app --ticket 123 --json"},
+			},
+			Adapter: adapterRead(JSONSupportStable),
+		},
+		{
+			Path:    []string{"pm", "discovery"},
+			Summary: "Trace product outcomes through opportunities, hypotheses, experiments, learning, and decisions.",
+			Usage:   "gira pm discovery --repo OWNER/REPO --ticket N [--context-budget N] [--json]",
+			Since:   "v3.0.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--ticket", Summary: "GitHub issue holding the PM ledger."},
+				{Name: "--context-budget", Summary: "Maximum compact context size in characters. Default: 6000."},
+				{Name: "--json", Summary: "Emit full stable pm-discovery-graph/v1 JSON."},
+			},
+			Docs:        []string{"docs/pm-operating-policy.md", "docs/pm-skill.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"quickstart"},
+			Examples: []CommandExample{
+				{Summary: "Inspect a bounded opportunity-to-outcome graph", Command: "gira pm discovery --repo OWNER/app --ticket 123"},
+				{Summary: "Inspect the complete trace and diagnostics", Command: "gira pm discovery --repo OWNER/app --ticket 123 --json"},
 			},
 			Adapter: adapterRead(JSONSupportStable),
 		},
@@ -1336,6 +1366,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 		case "pm record":
 			specs[i].Adapter = adapterApply("appends a typed GitHub issue comment; --dry-run validates idempotency, privacy, and history resolution", JSONSupportStable)
 		case "pm context":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "pm discovery":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "pm qa":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Reads GitHub issue and PR context; does not mutate GitHub."}

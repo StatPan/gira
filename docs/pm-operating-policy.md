@@ -142,8 +142,8 @@ useful but does not yet satisfy the complete PM policy.
 | PM stage | Current surface | Contract | Coverage | V3 gap |
 | --- | --- | --- | --- | --- |
 | Hydrate | `pm context`, `ticket handoff`, `goal handoff`, `dispatch goal` | `pm-context/v1`, `worker-handoff/v1`, `goal-handoff/v1`, dispatch packet | partial | typed issue ledger hydration is implemented; cross-goal bootstrap and freshness policy remain follow-up work |
-| Compile | `pm compile`, `pm spec` | `pm-ir/v1`, `pm-compile-report/v1`, `gira-pm-task-packet/v1` | partial | deterministic intent diagnostics are implemented; typed discovery, decisions, and automatic packet projection remain separate follow-up work |
-| Discover | issue prose and research tickets | no dedicated contract | unsupported | opportunity, hypothesis, experiment, and learning types |
+| Compile | `pm compile`, `pm spec` | `pm-ir/v1`, `pm-compile-report/v1`, `gira-pm-task-packet/v1`, `gira-pm-task-packet/v2` | partial | deterministic intent diagnostics and profile-aware packets are implemented; automatic IR projection remains follow-up work |
+| Discover | `pm record`, `pm discovery` | `pm-ledger-record/v1`, `pm-discovery-graph/v1` | supported | connect the graph to portfolio measurement and automatic replanning in later slices |
 | Decide | `pm record`, decision policy helpers and queue resolution from #839 | `pm-ledger-record/v1`, `pm-record-report/v1`, `decision-policy/v1` | partial | append-safe decision state exists; option comparison and Goal routing integration remain follow-up work |
 | Plan | `pm spec`, `goal plan --compact-json` | `pm-task-profile/v1`, `pm-profile-promotion/v1`, `gira-pm-task-packet/v2`, `goal-plan/v1`, `goal-plan-compact/v1` | partial | typed compact packets are implemented; outcome-tree decomposition and graph projection remain follow-up work |
 | Execute | ticket lifecycle and queue take | readiness, approval, start, PR, checks, finish schemas | supported | consume typed PM profiles without weakening lifecycle gates |
@@ -191,8 +191,8 @@ info diagnostics describe safe compiler limitations. Codes and severities are
 stable within `pm-compile-report/v1`.
 
 `gira pm spec` remains compatible and continues rendering
-`gira-pm-task-packet/v1`; v1 compilation does not silently rewrite or replace
-that packet. Later projection work must consume `pm-ir/v1` explicitly and keep
+`gira-pm-task-packet/v2` (or explicit `legacy` v1); compilation does not silently
+rewrite either packet. Later projection work must consume `pm-ir/v1` explicitly and keep
 mixed-version behavior visible.
 
 ### Typed PM Ledger Boundary
@@ -201,7 +201,8 @@ mixed-version behavior visible.
 comment after `--dry-run`; `--apply` is the only mutation path. Records require
 a stable ID, kind, statement, actor kind, timestamp, lifecycle status, and at
 least one inspectable source reference. Kinds are context source,
-evidence, inference, assumption, decision, question, and learning.
+evidence, inference, assumption, decision, question, learning, outcome,
+opportunity, hypothesis, risk, and experiment.
 
 Assumptions progress through `proposed`, `testing`, `supported`, `invalidated`,
 or `expired`. Decisions progress through `proposed`, `accepted`, `superseded`,
@@ -217,6 +218,31 @@ summary by default. `--json` expands the full typed history. Existing untyped
 decision/evidence prose remains visible only as `legacy_evidence`; Gira does not
 fabricate typed fields during migration. GitHub stays canonical and no private
 transcript or secret belongs in the ledger.
+
+### Discovery And Learning Graph
+
+Discovery records form an inspectable, append-only trace: outcome ← opportunity
+← hypothesis ← experiment ← learning ← decision. Opportunities `support`
+outcomes, hypotheses `address` opportunities, experiments `test` hypotheses,
+learning is `learned_from` experiments, and decisions are `based_on` learning.
+Risks attach to hypotheses and use one proportionate type: value, usability,
+feasibility, or viability. A task need not manufacture all four risk types.
+
+Every hypothesis has a falsification test or an explicit proportionality waiver.
+Completed experiments distinguish success, failure, inconclusive, and invalid.
+Evidence strength (`anecdotal`, `qualitative`, `quantitative`, `replicated`) and
+confidence (`low`, `medium`, `high`) remain separate fields; Gira does not hide
+them in an aggregate score. Learning concludes validated, invalidated,
+inconclusive, or no-build. An inconclusive experiment cannot validate a claim.
+Outcome state is recorded separately from delivery completion.
+
+`gira pm discovery` is read-only. Its compact default exposes current traces and
+stable `PMD001`-`PMD008` diagnostics within a context budget; `--json` emits the
+full graph, source refs, superseded history, and provenance. Missing targets,
+invalid relation types, missing evidence, and false validation remain visible;
+the command never fabricates a link or mutates GitHub.
+Optional typed Goal references and task-profile links preserve where learning
+belongs and which work contract it may promote into.
 
 ### Typed Task Profiles And Promotion
 

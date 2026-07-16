@@ -881,6 +881,41 @@ gira pm context --repo OWNER/app --ticket 123 --json
 
 Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
 
+## `pm discovery`
+
+Trace product outcomes through opportunities, hypotheses, experiments, learning, and decisions.
+
+Usage:
+
+```bash
+gira pm discovery --repo OWNER/REPO --ticket N [--context-budget N] [--json]
+```
+
+Since: `v3.0.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--ticket`: GitHub issue holding the PM ledger.
+- `--context-budget`: Maximum compact context size in characters. Default: 6000.
+- `--json`: Emit full stable pm-discovery-graph/v1 JSON.
+
+Examples:
+
+- Inspect a bounded opportunity-to-outcome graph
+
+```bash
+gira pm discovery --repo OWNER/app --ticket 123
+```
+
+- Inspect the complete trace and diagnostics
+
+```bash
+gira pm discovery --repo OWNER/app --ticket 123 --json
+```
+
+Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
+
 ## `pm qa`
 
 Render a PM acceptance QA prompt from task-local PM state and PR evidence.
@@ -920,7 +955,7 @@ Append an idempotent typed record to a GitHub-native PM ledger.
 Usage:
 
 ```bash
-gira pm record --repo OWNER/REPO --ticket N --id ID --kind KIND [--text TEXT|--from-file PATH|-] [--source REF] --dry-run|--apply [--json]
+gira pm record --repo OWNER/REPO --ticket N --id ID --kind KIND [--text TEXT|--from-file PATH|-] [--source REF] [--link RELATION=ID] --dry-run|--apply [--json]
 ```
 
 Since: `v3.0.0`
@@ -930,13 +965,24 @@ Flags:
 - `--repo`: Target GitHub repo in OWNER/REPO format.
 - `--ticket`: GitHub issue holding the PM ledger.
 - `--id`: Stable append-safe record ID.
-- `--kind`: context_source, evidence, inference, assumption, decision, question, or learning.
+- `--kind`: Ledger kind, including outcome, opportunity, hypothesis, risk, and experiment.
 - `--text`: Record claim or statement.
 - `--from-file`: Read record text from file, or '-' for stdin.
 - `--source`: Inspectable source reference; repeatable.
 - `--actor-kind`: human, ai, system, or integration. Default: human.
 - `--status`: Optional kind-specific lifecycle status.
 - `--supersedes`: Prior record ID superseded by this record.
+- `--link`: Discovery relation=target record ID; repeatable.
+- `--goal-ref`: Linked Goal reference; repeatable.
+- `--task-profile`: Linked PM task profile; repeatable.
+- `--risk-type`: value, usability, feasibility, or viability.
+- `--evidence-strength`: anecdotal, qualitative, quantitative, or replicated.
+- `--confidence`: low, medium, or high; kept separate from evidence strength.
+- `--falsification-test`: Test that can falsify a hypothesis.
+- `--test-waiver`: Why a formal falsification test is disproportionate.
+- `--experiment-state`: planned, running, success, failure, inconclusive, or invalid.
+- `--conclusion`: validated, invalidated, inconclusive, or no_build learning.
+- `--outcome-state`: proposed, observing, achieved, not_achieved, or unknown.
 - `--at`: RFC3339 record time; defaults to current time.
 - `--dry-run`: Preview validation and append action without mutation.
 - `--apply`: Append the typed issue comment after validation.

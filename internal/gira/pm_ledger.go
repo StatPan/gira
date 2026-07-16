@@ -28,15 +28,31 @@ const (
 var pmLedgerIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 type PMLedgerRecord struct {
-	SchemaVersion string   `json:"schema_version"`
-	ID            string   `json:"id"`
-	Kind          string   `json:"kind"`
-	Text          string   `json:"text"`
-	SourceRefs    []string `json:"source_refs"`
-	ActorKind     string   `json:"actor_kind"`
-	RecordedAt    string   `json:"recorded_at"`
-	Status        string   `json:"status"`
-	Supersedes    string   `json:"supersedes,omitempty"`
+	SchemaVersion     string         `json:"schema_version"`
+	ID                string         `json:"id"`
+	Kind              string         `json:"kind"`
+	Text              string         `json:"text"`
+	SourceRefs        []string       `json:"source_refs"`
+	ActorKind         string         `json:"actor_kind"`
+	RecordedAt        string         `json:"recorded_at"`
+	Status            string         `json:"status"`
+	Supersedes        string         `json:"supersedes,omitempty"`
+	Links             []PMLedgerLink `json:"links,omitempty"`
+	GoalRefs          []string       `json:"goal_refs,omitempty"`
+	TaskProfiles      []string       `json:"task_profiles,omitempty"`
+	RiskType          string         `json:"risk_type,omitempty"`
+	EvidenceStrength  string         `json:"evidence_strength,omitempty"`
+	Confidence        string         `json:"confidence,omitempty"`
+	FalsificationTest string         `json:"falsification_test,omitempty"`
+	TestWaiver        string         `json:"test_waiver,omitempty"`
+	ExperimentState   string         `json:"experiment_state,omitempty"`
+	Conclusion        string         `json:"conclusion,omitempty"`
+	OutcomeState      string         `json:"outcome_state,omitempty"`
+}
+
+type PMLedgerLink struct {
+	Relation string `json:"relation"`
+	TargetID string `json:"target_id"`
 }
 
 type PMLedgerDiagnostic struct {
@@ -49,18 +65,29 @@ type PMLedgerDiagnostic struct {
 }
 
 type PMRecordInput struct {
-	Repo       RepoRef
-	Ticket     int
-	ID         string
-	Kind       string
-	Text       string
-	SourceRefs []string
-	ActorKind  string
-	Status     string
-	Supersedes string
-	RecordedAt time.Time
-	DryRun     bool
-	Apply      bool
+	Repo              RepoRef
+	Ticket            int
+	ID                string
+	Kind              string
+	Text              string
+	SourceRefs        []string
+	ActorKind         string
+	Status            string
+	Supersedes        string
+	Links             []PMLedgerLink
+	GoalRefs          []string
+	TaskProfiles      []string
+	RiskType          string
+	EvidenceStrength  string
+	Confidence        string
+	FalsificationTest string
+	TestWaiver        string
+	ExperimentState   string
+	Conclusion        string
+	OutcomeState      string
+	RecordedAt        time.Time
+	DryRun            bool
+	Apply             bool
 }
 
 type PMRecordAction struct {
@@ -211,6 +238,18 @@ func BuildPMRecordReport(input PMRecordInput, runner CommandRunner) (PMRecordRep
 		report.NextStep = "repair PM record diagnostics"
 		return report, fmt.Errorf("PM ledger history resolution failed")
 	}
+	markCurrentPMLedgerRecords(prospective)
+	prospectiveByID := make(map[string]PMContextRecord, len(prospective))
+	for _, item := range prospective {
+		prospectiveByID[item.Record.ID] = item
+	}
+	graphDiagnostics := validatePMDiscoveryGraph(prospectiveByID)
+	report.Diagnostics = append(report.Diagnostics, graphDiagnostics...)
+	if hasPMLedgerErrors(graphDiagnostics) {
+		report.Actions = append(report.Actions, PMRecordAction{Action: "record:append", Status: "blocked", Target: record.ID, Detail: "discovery graph validation failed"})
+		report.NextStep = "repair PM discovery links or evidence"
+		return report, fmt.Errorf("PM discovery graph validation failed")
+	}
 	status := "planned"
 	if input.Apply {
 		if _, err := runner.Run("gh", "issue", "comment", strconv.Itoa(input.Ticket), "--repo", input.Repo.FullName(), "--body", RenderPMLedgerRecordComment(record)); err != nil {
@@ -318,6 +357,10 @@ func validateStoredPMLedgerRecord(record PMLedgerRecord) []PMLedgerDiagnostic {
 	_, normalizedDiagnostics := normalizePMLedgerRecord(PMRecordInput{
 		ID: record.ID, Kind: record.Kind, Text: record.Text, SourceRefs: record.SourceRefs,
 		ActorKind: record.ActorKind, Status: record.Status, Supersedes: record.Supersedes, RecordedAt: recordedAt,
+		Links: record.Links, GoalRefs: record.GoalRefs, TaskProfiles: record.TaskProfiles,
+		RiskType: record.RiskType, EvidenceStrength: record.EvidenceStrength, Confidence: record.Confidence,
+		FalsificationTest: record.FalsificationTest, TestWaiver: record.TestWaiver, ExperimentState: record.ExperimentState,
+		Conclusion: record.Conclusion, OutcomeState: record.OutcomeState,
 	})
 	return append(diagnostics, normalizedDiagnostics...)
 }
@@ -328,6 +371,15 @@ func normalizePMLedgerRecord(input PMRecordInput) (PMLedgerRecord, []PMLedgerDia
 		ID:            strings.TrimSpace(input.ID), Kind: normalizePMLedgerKind(input.Kind), Text: strings.TrimSpace(input.Text),
 		SourceRefs: normalizePMLedgerRefs(input.SourceRefs), ActorKind: strings.ToLower(strings.TrimSpace(input.ActorKind)),
 		Status: strings.ToLower(strings.TrimSpace(input.Status)), Supersedes: strings.TrimSpace(input.Supersedes),
+		Links: normalizePMLedgerLinks(input.Links), GoalRefs: normalizePMLedgerRefs(input.GoalRefs), TaskProfiles: normalizePMDiscoveryProfiles(input.TaskProfiles),
+		RiskType:         strings.ToLower(strings.TrimSpace(input.RiskType)),
+		EvidenceStrength: strings.ToLower(strings.TrimSpace(input.EvidenceStrength)), Confidence: strings.ToLower(strings.TrimSpace(input.Confidence)),
+		FalsificationTest: strings.TrimSpace(input.FalsificationTest), TestWaiver: strings.TrimSpace(input.TestWaiver),
+		ExperimentState: strings.ToLower(strings.TrimSpace(input.ExperimentState)), Conclusion: strings.ToLower(strings.TrimSpace(input.Conclusion)),
+		OutcomeState: strings.ToLower(strings.TrimSpace(input.OutcomeState)),
+	}
+	if record.Kind == "outcome" && record.OutcomeState == "" {
+		record.OutcomeState = "proposed"
 	}
 	if input.RecordedAt.IsZero() {
 		input.RecordedAt = time.Now().UTC()
@@ -338,7 +390,7 @@ func normalizePMLedgerRecord(input PMRecordInput) (PMLedgerRecord, []PMLedgerDia
 		diagnostics = append(diagnostics, pmLedgerDiagnostic("error", PMLedgerDiagnosticInvalidRecord, record.ID, "record ID is missing or invalid", "the record cannot be referenced or superseded safely", "use 1-128 letters, numbers, dots, colons, underscores, or hyphens"))
 	}
 	if !validPMLedgerKind(record.Kind) {
-		diagnostics = append(diagnostics, pmLedgerDiagnostic("error", PMLedgerDiagnosticInvalidRecord, record.ID, "record kind is unsupported", "the ledger cannot apply deterministic lifecycle rules", "use context_source, evidence, inference, assumption, decision, question, or learning"))
+		diagnostics = append(diagnostics, pmLedgerDiagnostic("error", PMLedgerDiagnosticInvalidRecord, record.ID, "record kind is unsupported", "the ledger cannot apply deterministic lifecycle rules", "use a documented ledger or discovery record kind"))
 	}
 	if record.Text == "" {
 		diagnostics = append(diagnostics, pmLedgerDiagnostic("error", PMLedgerDiagnosticInvalidRecord, record.ID, "record text is empty", "the typed record has no inspectable claim", "supply --text or --from-file"))
@@ -361,8 +413,23 @@ func normalizePMLedgerRecord(input PMRecordInput) (PMLedgerRecord, []PMLedgerDia
 	if record.Supersedes == record.ID && record.ID != "" {
 		diagnostics = append(diagnostics, pmLedgerDiagnostic("error", PMLedgerDiagnosticSupersessionCycle, record.ID, "record supersedes itself", "history contains a cycle", "reference a distinct predecessor ID"))
 	}
-	if containsSensitivePMContent(append([]string{record.Text}, record.SourceRefs...)) {
+	sensitiveValues := append([]string{record.Text, record.FalsificationTest, record.TestWaiver}, record.SourceRefs...)
+	sensitiveValues = append(sensitiveValues, record.GoalRefs...)
+	sensitiveValues = append(sensitiveValues, record.TaskProfiles...)
+	for _, link := range record.Links {
+		sensitiveValues = append(sensitiveValues, link.Relation, link.TargetID)
+	}
+	if containsSensitivePMContent(sensitiveValues) {
 		diagnostics = append(diagnostics, pmLedgerDiagnostic("error", PMLedgerDiagnosticSensitiveContent, record.ID, "record resembles a secret or private transcript", "durable GitHub comments could disclose restricted content", "store only a safe reference or redacted summary"))
+	}
+	diagnostics = append(diagnostics, validatePMDiscoveryRecord(record)...)
+	for _, profile := range record.TaskProfiles {
+		if profile == "legacy" {
+			continue
+		}
+		if _, ok := FindPMTaskProfile(profile); !ok {
+			diagnostics = append(diagnostics, pmLedgerDiagnostic("error", PMLedgerDiagnosticInvalidRecord, record.ID, "task profile link is unsupported", "discovery cannot promote into a known work contract", "use a documented PM task profile"))
+		}
 	}
 	sortPMLedgerDiagnostics(diagnostics)
 	return record, diagnostics
@@ -412,7 +479,14 @@ func findPMLedgerRecord(records []PMContextRecord, candidate PMLedgerRecord) (bo
 }
 
 func samePMLedgerSemantics(a, b PMLedgerRecord) bool {
-	return a.ID == b.ID && a.Kind == b.Kind && a.Text == b.Text && a.ActorKind == b.ActorKind && a.Status == b.Status && a.Supersedes == b.Supersedes && strings.Join(normalizePMLedgerRefs(a.SourceRefs), "\x00") == strings.Join(normalizePMLedgerRefs(b.SourceRefs), "\x00")
+	a.RecordedAt, b.RecordedAt = "", ""
+	a.SourceRefs, b.SourceRefs = normalizePMLedgerRefs(a.SourceRefs), normalizePMLedgerRefs(b.SourceRefs)
+	a.GoalRefs, b.GoalRefs = normalizePMLedgerRefs(a.GoalRefs), normalizePMLedgerRefs(b.GoalRefs)
+	a.TaskProfiles, b.TaskProfiles = normalizePMDiscoveryProfiles(a.TaskProfiles), normalizePMDiscoveryProfiles(b.TaskProfiles)
+	a.Links, b.Links = normalizePMLedgerLinks(a.Links), normalizePMLedgerLinks(b.Links)
+	aJSON, _ := json.Marshal(a)
+	bJSON, _ := json.Marshal(b)
+	return string(aJSON) == string(bJSON)
 }
 
 func resolvePMLedgerHistory(records []PMContextRecord) []PMLedgerDiagnostic {
@@ -481,7 +555,7 @@ func normalizePMLedgerKind(value string) string {
 }
 
 func validPMLedgerKind(value string) bool {
-	return containsPMValue([]string{"context_source", "evidence", "inference", "assumption", "decision", "question", "learning"}, value)
+	return containsPMValue([]string{"context_source", "evidence", "inference", "assumption", "decision", "question", "learning", "outcome", "opportunity", "hypothesis", "risk", "experiment"}, value)
 }
 
 func defaultPMLedgerStatus(kind string) string {
@@ -506,8 +580,43 @@ func validPMLedgerStatus(kind, status string) bool {
 		"question":       {"open", "resolved", "superseded"},
 		"assumption":     {"proposed", "testing", "supported", "invalidated", "expired"},
 		"decision":       {"proposed", "accepted", "superseded", "revoked", "review_due"},
+		"outcome":        {"active", "superseded", "revoked"},
+		"opportunity":    {"active", "superseded", "revoked"},
+		"hypothesis":     {"active", "superseded", "revoked"},
+		"risk":           {"active", "superseded", "revoked"},
+		"experiment":     {"active", "superseded", "revoked"},
 	}
 	return containsPMValue(allowed[kind], status)
+}
+
+func normalizePMLedgerLinks(values []PMLedgerLink) []PMLedgerLink {
+	out := make([]PMLedgerLink, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		link := PMLedgerLink{Relation: strings.ReplaceAll(strings.ToLower(strings.TrimSpace(value.Relation)), "-", "_"), TargetID: strings.TrimSpace(value.TargetID)}
+		key := link.Relation + "\x00" + link.TargetID
+		if link.Relation != "" && link.TargetID != "" && !seen[key] {
+			seen[key] = true
+			out = append(out, link)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Relation != out[j].Relation {
+			return out[i].Relation < out[j].Relation
+		}
+		return out[i].TargetID < out[j].TargetID
+	})
+	return out
+}
+
+func normalizePMDiscoveryProfiles(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		if profile := normalizePMTaskProfile(value); profile != "" {
+			normalized = append(normalized, profile)
+		}
+	}
+	return normalizePMLedgerRefs(normalized)
 }
 
 func containsPMValue(values []string, candidate string) bool {
@@ -590,6 +699,11 @@ func hasPMLedgerDiagnosticCode(diagnostics []PMLedgerDiagnostic, code string) bo
 func redactSensitivePMLedgerRecord(record PMLedgerRecord) PMLedgerRecord {
 	record.Text = "[redacted: sensitive PM ledger content]"
 	record.SourceRefs = []string{}
+	record.Links = nil
+	record.GoalRefs = nil
+	record.TaskProfiles = nil
+	record.FalsificationTest = ""
+	record.TestWaiver = ""
 	return record
 }
 

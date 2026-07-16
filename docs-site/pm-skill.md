@@ -31,11 +31,19 @@ guessing product semantics. Persist typed state only after preview:
 ```bash
 gira pm record --repo OWNER/REPO --ticket 123 --id evidence.1 --kind evidence --text "Observed result" --source log:5 --dry-run
 gira pm context --repo OWNER/REPO --ticket 123
+gira pm discovery --repo OWNER/REPO --ticket 123
 ```
 
 Typed records are append-only GitHub comments. Identical retries are
 idempotent; supersession preserves history; compact context expands with
 `--json`. Secrets and private transcripts are rejected.
+
+Discovery records connect product outcomes to opportunities, falsifiable
+hypotheses, proportionate risks, experiments, learning, and decisions. Evidence
+strength stays separate from confidence; inconclusive experiments cannot count
+as validation. `pm discovery` shows the bounded current trace by default and the
+full source-linked `pm-discovery-graph/v1` with `--json`. Records can retain
+typed Goal references and PM task-profile links for later promotion into work.
 
 After repairing diagnostics, choose the smallest task profile. Delivery is the
 default; use discovery, decision, experiment, rollout, measurement, or

@@ -1,26 +1,24 @@
 # Gira PM Skill
 
-Gira PM converts raw intent into durable, task-local PM state for coding
-workers.
+Gira PM converts intent into durable, task-local state for coding workers.
 
-Canonical PM role and authority: [Gira PM Operating
-Policy](pm-operating-policy.md). This file defines PM CLI packets and QA.
+Canonical role and authority: [Gira PM Operating
+Policy](pm-operating-policy.md). This file defines CLI packets and QA.
 
 ## Core Principle
 
 Gira does not use `needs human` as a terminal state.
 
-First classify missing context/policy, conflicting constraints, irreversible
-risk, insufficient verification, authority, or undefined success. Then retrieve
-evidence, derive policy, choose a reversible default, split risk, add a test,
-reduce scope, or create a follow-up packet.
+Classify missing context/policy, conflicts, irreversible risk, insufficient
+verification, authority, or undefined success. Retrieve evidence, derive policy,
+choose a reversible default, split risk, test, reduce scope, or create a packet.
 
 ## Task-Local PM State
 
-Thread memory is optional. The task packet is authoritative.
+The task packet, not thread memory, is authoritative.
 
-V2 packets share actor, problem, outcome, goal alignment, parent/source refs, and
-non-goals. Add only the chosen profile: discovery, decision, experiment,
+V2 packets share actor, problem, outcome, goal, parent/source refs, and
+non-goals. Add one profile: discovery, decision, experiment,
 delivery, rollout, measurement, or documentation. `legacy` retains the v1
 universal packet. Delivery additionally requires `Product Uncertainty` to be
 `resolved`; promote discovery/decision/experiment work by retaining its stable
@@ -37,8 +35,8 @@ gira pm compile --repo OWNER/REPO --goal 123 --from-file request.md --json
 ```
 
 Headings map to premise, actor, problem, outcome, constraints, non-goals,
-authority, evidence, assumptions, decision debt, success, and candidate work.
-Free prose is retained but not guessed into missing fields. Goal context is
+authority, evidence, assumptions, decision debt, success, and work.
+Free prose is retained but not guessed into fields. Goal context is
 read-only and requires both `--repo` and `--goal`.
 
 Persist after preview; hydrate current state:
@@ -46,9 +44,11 @@ Persist after preview; hydrate current state:
 ```bash
 gira pm record --repo OWNER/REPO --ticket 123 --id evidence.1 --kind evidence --text "Observed result" --source log:5 --dry-run
 gira pm context --repo OWNER/REPO --ticket 123
+gira pm discovery --repo OWNER/REPO --ticket 123
 ```
 
 Supersede via new IDs; retries do not overwrite. Store safe references.
+Discovery traces outcome→opportunity→hypothesis→experiment→learning→decision.
 
 After repairing diagnostics, render the smallest sufficient packet:
 
@@ -73,7 +73,7 @@ gira ticket new --repo OWNER/REPO --title "TITLE" --body-file pm-task.md --type 
 Engineering review checks code quality, correctness, regression risk, security,
 and tests.
 
-PM acceptance QA checks the implemented PR against the task-local PM state:
+PM QA asks:
 
 - Does the PR solve the stated problem?
 - Does it satisfy each acceptance criterion?
@@ -81,9 +81,8 @@ PM acceptance QA checks the implemented PR against the task-local PM state:
 - Did it preserve the decision policy?
 - Did it leave unresolved risk that should become a follow-up task?
 
-PM QA does not end at `needs human`. If judgment is missing, it decomposes the
-missing judgment into a decision policy repair, context retrieval task, risk
-reduction task, implementation fix, or follow-up task packet.
+PM QA does not end at `needs human`. It decomposes missing judgment into policy
+repair, context retrieval, risk reduction, implementation, or follow-up work.
 
 ## Benchmarked PM Practices
 

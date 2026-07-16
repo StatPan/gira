@@ -84,9 +84,14 @@ These actions are still bounded by repository policy. Branch protection, review
 requirements, failed checks, missing labels, missing issue structure, and
 permissions override the goal's autonomy text.
 
-## Stop Conditions
+## Stop And Resolution Conditions
 
-An agent must stop and ask a human when any of these conditions appears:
+An agent must stop the affected mutation when any condition below appears. It
+must then follow the decomposition-first causal resolution policy in
+[Gira PM Operating Policy](pm-operating-policy.md): retrieve missing context,
+derive an available policy, isolate conflicts, create verification work, or
+split reversible preparation before asking a person. Independent safe work may
+continue when the Goal and checkout remain unambiguous.
 
 - The objective, acceptance criteria, or target repo is ambiguous.
 - The next step would change credentials, secrets, permissions, billing,
@@ -103,8 +108,12 @@ An agent must stop and ask a human when any of these conditions appears:
 - The goal is in `lane:hybrid`, `lane:human`, or has `requires-human-approval`
   and the next action is merge, release, closure, or irreversible cleanup.
 
-Stop comments should be specific. They should name the blocker, the evidence,
-the safest next command or decision, and what work remains possible afterward.
+Only the residual authority or product-direction decision is handed to a
+person. The handoff must name one exact question, viable options and impacts,
+evidence already gathered, authority required, the safest default when one
+exists, the next command, work that remains possible, and the resume condition.
+Existing `ask_human` and `human_review` values remain compatibility routing
+states; they do not prove causal decomposition has already happened.
 
 ## Decomposition
 
@@ -123,8 +132,11 @@ Goal decomposition lowers direction into normal executable tickets:
 
 The planner should avoid creating a queue that only mirrors a brainstorm. A
 child ticket is ready only when a worker can start without additional product
-judgment. If decomposition reveals missing direction, the goal should move to a
-human-decision state instead of generating speculative tickets.
+judgment. If decomposition reveals missing direction, it should create bounded
+context, policy, verification, or risk-reduction work where possible. The goal
+moves to a residual decision state only when those steps cannot resolve the
+remaining product or authority judgment; it must not generate speculative
+delivery tickets.
 
 ## Safe Progress
 

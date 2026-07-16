@@ -88,6 +88,11 @@ Gira PM mode turns raw intent into durable, task-local PM state for coding
 workers. It does not use `needs human` as a terminal state; it decomposes
 missing judgment into context retrieval, decision policy derivation, risk
 reduction, verification, scope splitting, or follow-up task packets.
+The canonical human/AI PM role, authority boundary, and shared operating loop
+are defined in
+[docs/pm-operating-policy.md](docs/pm-operating-policy.md); MCP and other
+adapters expose that protocol but do not make a connected model a PM by
+themselves.
 
 ```bash
 gira pm spec --repo OWNER/REPO --from-file request.md > pm-task.md

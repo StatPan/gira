@@ -1,7 +1,11 @@
 # Gira PM Skill
 
-Gira PM converts raw intent into durable, task-local PM state that coding
-workers can execute without relying on hidden thread memory.
+Gira PM converts raw intent into durable, task-local PM state for coding
+workers.
+
+Canonical PM role and authority: [Gira PM Operating
+Policy](pm-operating-policy.md). This file defines task packets and acceptance
+QA only.
 
 ## Core Principle
 
@@ -51,10 +55,6 @@ Every PM-generated issue body should include:
 - verification expectations
 - suggested worker mode
 - next action
-
-This lets implementation workers, engineering reviewers, and PM acceptance QA
-rehydrate the same task context from GitHub instead of depending on a private
-chat transcript.
 
 ## CLI Seed
 

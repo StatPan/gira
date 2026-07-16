@@ -31,6 +31,7 @@ Schema version: `gira-command-capabilities/v1`
 | `gira milestone plan` | none | `apply_mutation` | `stable_json` | selects and assigns candidate tickets; --dry-run previews candidate set and mutations | docs-site/sprint-release.md, docs-site/ticket-workflow.md |
 | `gira milestone status` | none | `read` | `stable_json` | none | docs-site/sprint-release.md, docs-site/ticket-workflow.md |
 | `gira ops limit` | none | `read` | `stable_json` | none | docs/github-api-limits.md, docs/workflow-cost-profiles.md, docs/command-surface-boundary.md, docs-site/api-limits.md, docs-site/cost-profiles.md, docs-site/command-surface.md, docs-site/command-reference.md |
+| `gira pm compile` | none | `read` | `stable_json` | none | docs/pm-operating-policy.md, docs/pm-skill.md, docs-site/command-reference.md |
 | `gira pm qa` | none | `read` | `stable_json` | none | docs/pm-skill.md, docs-site/command-reference.md |
 | `gira pm spec` | none | `read` | `stable_json` | none | docs/pm-skill.md, docs-site/command-reference.md |
 | `gira queue handoff` | none | `read` | `stable_json` | none | docs/workspace.md, docs/agent-handoff-queue.md, docs-site/agent-handoff-queue.md, docs-site/command-reference.md |

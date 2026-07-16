@@ -95,6 +95,7 @@ adapters expose that protocol but do not make a connected model a PM by
 themselves.
 
 ```bash
+gira pm compile --repo OWNER/REPO --goal 123 --from-file request.md
 gira pm spec --repo OWNER/REPO --from-file request.md > pm-task.md
 gira ticket new --repo OWNER/REPO --title "TITLE" --body-file pm-task.md --type task --dry-run
 gira pm qa --repo OWNER/REPO --ticket 123 --diff-summary

@@ -267,6 +267,26 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"pm", "compile"},
+			Summary: "Compile product intent into deterministic pm-ir/v1 and actionable diagnostics.",
+			Usage:   "gira pm compile [--intent TEXT|--from-file PATH|-] [--repo OWNER/REPO] [--goal N] [--json]",
+			Since:   "v3.0.0",
+			Flags: []FlagSpec{
+				{Name: "--intent", Summary: "Raw product/development intent."},
+				{Name: "--from-file", Summary: "Read raw intent from file, or '-' for stdin."},
+				{Name: "--repo", Summary: "Optional target GitHub repo in OWNER/REPO format; required with --goal."},
+				{Name: "--goal", Summary: "Optional GitHub Goal issue supplying explicit PM context."},
+				{Name: "--json", Summary: "Emit the full stable pm-compile-report/v1 with pm-ir/v1 embedded."},
+			},
+			Docs:        []string{"docs/pm-operating-policy.md", "docs/pm-skill.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"quickstart"},
+			Examples: []CommandExample{
+				{Summary: "Compile local intent into compact diagnostics", Command: "gira pm compile --from-file request.md"},
+				{Summary: "Include explicit Goal context and emit full IR", Command: "gira pm compile --repo OWNER/app --goal 123 --from-file request.md --json"},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only deterministic compilation; optional Goal context reads GitHub and no path mutates files or GitHub."},
+		},
+		{
 			Path:    []string{"pm", "spec"},
 			Summary: "Render a durable PM state and worker-ready task packet from raw intent.",
 			Usage:   "gira pm spec [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode plan] [--json]",
@@ -1260,6 +1280,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "pm spec":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Local rendering only; does not call GitHub or mutate files."}
+		case "pm compile":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only deterministic compilation; optional Goal context reads GitHub and no path mutates files or GitHub."}
 		case "pm qa":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Reads GitHub issue and PR context; does not mutate GitHub."}
 		case "completion":

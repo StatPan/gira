@@ -810,6 +810,42 @@ gira ops limit --repo OWNER/app --json
 
 Documented in: `docs/github-api-limits.md`, `docs/workflow-cost-profiles.md`, `docs/command-surface-boundary.md`, `docs-site/api-limits.md`, `docs-site/cost-profiles.md`, `docs-site/command-surface.md`, `docs-site/command-reference.md`
 
+## `pm compile`
+
+Compile product intent into deterministic pm-ir/v1 and actionable diagnostics.
+
+Usage:
+
+```bash
+gira pm compile [--intent TEXT|--from-file PATH|-] [--repo OWNER/REPO] [--goal N] [--json]
+```
+
+Since: `v3.0.0`
+
+Flags:
+
+- `--intent`: Raw product/development intent.
+- `--from-file`: Read raw intent from file, or '-' for stdin.
+- `--repo`: Optional target GitHub repo in OWNER/REPO format; required with --goal.
+- `--goal`: Optional GitHub Goal issue supplying explicit PM context.
+- `--json`: Emit the full stable pm-compile-report/v1 with pm-ir/v1 embedded.
+
+Examples:
+
+- Compile local intent into compact diagnostics
+
+```bash
+gira pm compile --from-file request.md
+```
+
+- Include explicit Goal context and emit full IR
+
+```bash
+gira pm compile --repo OWNER/app --goal 123 --from-file request.md --json
+```
+
+Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
+
 ## `pm qa`
 
 Render a PM acceptance QA prompt from task-local PM state and PR evidence.

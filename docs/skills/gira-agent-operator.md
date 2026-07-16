@@ -14,15 +14,13 @@ plus closed issues are completion evidence.
 ## Canonical And Adapted Surfaces
 
 - Canonical source: `docs/skills/gira-agent-operator.md`.
+- Canonical PM role and authority policy: `docs/pm-operating-policy.md`.
 - PM task-packet source: `docs/pm-skill.md`.
 - CLI summary: `gira guide agent` and `gira guide skill`.
 - Existing Codex/OpenAI adapter: `AGENTS.md`.
 - Future optional adapter paths, when present: `CLAUDE.md`,
   `.github/copilot-instructions.md`, and `.cursor/rules/gira.mdc`.
 - Human documentation: docs-site agent operator skill page.
-
-Existing and future adapters may add surface-specific wording, but they should
-not change the lifecycle, safety, or evidence rules defined here.
 
 ## Operating Model
 
@@ -176,8 +174,8 @@ provenance levels and receipt expectations.
   it only when it is clearly the issue branch and local changes are safe.
 - Existing PR: validate linkage and checks instead of opening a duplicate PR.
 - Failed checks: diagnose and fix within the issue scope, then rerun or wait.
-- Incomplete acceptance criteria: ask for clarification or update the issue
-  before implementing broad inferred behavior.
+- Incomplete acceptance criteria: follow the PM policy; classify and split safe
+  work, then ask only for the residual decision.
 - Ambiguous repo or ticket context: pass `--repo OWNER/REPO` and the ticket
   number explicitly.
 

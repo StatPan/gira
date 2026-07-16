@@ -4,7 +4,7 @@
 
 Gira turns a GitHub repository into an AI-ready project operating system. GitHub is the execution backend: Issues are task packets, PRs are change units, milestones are phase/sprint boundaries, and repo templates define the process.
 
-Canonical operating rules live in [docs/skills/gira-agent-operator.md](docs/skills/gira-agent-operator.md). PM task-packet rules live in [docs/pm-skill.md](docs/pm-skill.md). This file is the Codex/OpenAI adapter and should stay short.
+Canonical lifecycle: [agent operator](docs/skills/gira-agent-operator.md). Canonical PM policy: [PM operating policy](docs/pm-operating-policy.md); task packets: [PM skill](docs/pm-skill.md). This is the short Codex/OpenAI adapter.
 
 ## MVP Boundaries
 

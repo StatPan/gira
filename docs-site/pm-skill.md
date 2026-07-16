@@ -2,6 +2,8 @@
 
 The canonical Gira PM skill lives in
 [`docs/pm-skill.md`](https://github.com/StatPan/gira/blob/main/docs/pm-skill.md).
+The shared human/AI PM role and authority rules live in the canonical
+[`docs/pm-operating-policy.md`](https://github.com/StatPan/gira/blob/main/docs/pm-operating-policy.md).
 
 This docs-site page is a thin copy for public navigation. Keep PM policy,
 state fields, review boundaries, and benchmarked practices in the canonical

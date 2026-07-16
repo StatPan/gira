@@ -235,6 +235,41 @@ func TicketNoteApprovalEvidence(report TicketNoteReport) *ApprovalEvidence {
 	}
 }
 
+func PMRecordApprovalEvidence(report PMRecordReport) *ApprovalEvidence {
+	blockers := []string{}
+	warnings := []string{}
+	for _, diagnostic := range report.Diagnostics {
+		if diagnostic.Severity == "error" {
+			blockers = append(blockers, diagnostic.Code)
+		} else if diagnostic.Severity == "warning" {
+			warnings = append(warnings, diagnostic.Code)
+		}
+	}
+	actions := make([]ApprovalPlannedAction, 0, len(report.Actions))
+	for _, action := range report.Actions {
+		actions = append(actions, ApprovalPlannedAction{Action: action.Action, Target: action.Target, Detail: action.Status + ": " + action.Detail})
+	}
+	return &ApprovalEvidence{
+		SchemaVersion: ApprovalPlanSchemaVersion, Capability: AdapterCapabilityApplyMutation,
+		CanonicalCommand: "gira pm record", DryRunCommand: pmRecordApprovalCommand(report, "--dry-run"), ApplyCommand: pmRecordApprovalCommand(report, "--apply"),
+		Repo: report.Repo, Issue: report.Ticket, OutputSchema: PMRecordReportSchemaVersion,
+		PlannedActions: actions, Blockers: stableStringSlice(blockers), Warnings: stableStringSlice(warnings),
+		PostApplyVerification: fmt.Sprintf("gira pm context --repo %s --ticket %d --json", report.Repo, report.Ticket),
+	}
+}
+
+func pmRecordApprovalCommand(report PMRecordReport, mode string) string {
+	args := []string{"gira pm record", "--repo", report.Repo, "--ticket", strconv.Itoa(report.Ticket), "--id", QuoteShellArg(report.Record.ID), "--kind", report.Record.Kind, "--actor-kind", report.Record.ActorKind, "--status", report.Record.Status, "--at", report.Record.RecordedAt, "--text", QuoteShellArg(report.Record.Text)}
+	for _, ref := range report.Record.SourceRefs {
+		args = append(args, "--source", QuoteShellArg(ref))
+	}
+	if report.Record.Supersedes != "" {
+		args = append(args, "--supersedes", QuoteShellArg(report.Record.Supersedes))
+	}
+	args = append(args, mode)
+	return strings.Join(args, " ")
+}
+
 func ticketNoteApprovalCommand(report TicketNoteReport, mode string) string {
 	args := []string{
 		"gira ticket note",

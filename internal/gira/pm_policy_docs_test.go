@@ -50,6 +50,9 @@ func TestPMOperatingPolicyCoverageMapNamesCurrentContracts(t *testing.T) {
 	for _, want := range []string{
 		"`pm-ir/v1`",
 		"`pm-compile-report/v1`",
+		"`pm-context/v1`",
+		"`pm-ledger-record/v1`",
+		"`pm-record-report/v1`",
 		"`gira-pm-task-packet/v1`",
 		"`decision-policy/v1`",
 		"`goal-plan-compact/v1`",

@@ -26,8 +26,18 @@ gira pm compile --repo OWNER/REPO --goal 123 --from-file request.md --json
 ```
 
 The compiler preserves supplied meaning and marks unresolved fields rather than
-guessing product semantics. `pm spec` remains the compatible task-packet
-renderer:
+guessing product semantics. Persist typed state only after preview:
+
+```bash
+gira pm record --repo OWNER/REPO --ticket 123 --id evidence.1 --kind evidence --text "Observed result" --source log:5 --dry-run
+gira pm context --repo OWNER/REPO --ticket 123
+```
+
+Typed records are append-only GitHub comments. Identical retries are
+idempotent; supersession preserves history; compact context expands with
+`--json`. Secrets and private transcripts are rejected.
+
+After repairing diagnostics, `pm spec` remains the compatible packet renderer:
 
 ```bash
 gira pm spec --repo OWNER/REPO --from-file request.md > pm-task.md

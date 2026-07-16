@@ -141,10 +141,10 @@ useful but does not yet satisfy the complete PM policy.
 
 | PM stage | Current surface | Contract | Coverage | V3 gap |
 | --- | --- | --- | --- | --- |
-| Hydrate | `ticket handoff`, `goal handoff`, `dispatch goal` | `worker-handoff/v1`, `goal-handoff/v1`, dispatch packet | partial | no PM policy/session bootstrap or typed premise ledger |
+| Hydrate | `pm context`, `ticket handoff`, `goal handoff`, `dispatch goal` | `pm-context/v1`, `worker-handoff/v1`, `goal-handoff/v1`, dispatch packet | partial | typed issue ledger hydration is implemented; cross-goal bootstrap and freshness policy remain follow-up work |
 | Compile | `pm compile`, `pm spec` | `pm-ir/v1`, `pm-compile-report/v1`, `gira-pm-task-packet/v1` | partial | deterministic intent diagnostics are implemented; typed discovery, decisions, and automatic packet projection remain separate follow-up work |
 | Discover | issue prose and research tickets | no dedicated contract | unsupported | opportunity, hypothesis, experiment, and learning types |
-| Decide | decision policy helpers and queue resolution from #839 | `decision-policy/v1`, causal resolution metadata | partial | not integrated across PM state and Goal routing |
+| Decide | `pm record`, decision policy helpers and queue resolution from #839 | `pm-ledger-record/v1`, `pm-record-report/v1`, `decision-policy/v1` | partial | append-safe decision state exists; option comparison and Goal routing integration remain follow-up work |
 | Plan | `goal plan --compact-json` | `goal-plan/v1`, `goal-plan-compact/v1` | partial | manually supplied bullet decomposition and generic task packets |
 | Execute | ticket lifecycle and queue take | readiness, approval, start, PR, checks, finish schemas | supported | consume typed PM profiles without weakening lifecycle gates |
 | Observe | `goal status`, `goal report`, workspace queues | `goal-status/v1`, `goal-dossier/v1`, `workspace-queues/v1` | partial | delivery health without product learning or outcome confidence |
@@ -194,6 +194,29 @@ stable within `pm-compile-report/v1`.
 `gira-pm-task-packet/v1`; v1 compilation does not silently rewrite or replace
 that packet. Later projection work must consume `pm-ir/v1` explicitly and keep
 mixed-version behavior visible.
+
+### Typed PM Ledger Boundary
+
+`gira pm record` appends one `pm-ledger-record/v1` as a typed GitHub issue
+comment after `--dry-run`; `--apply` is the only mutation path. Records require
+a stable ID, kind, statement, actor kind, timestamp, lifecycle status, and at
+least one inspectable source reference. Kinds are context source,
+evidence, inference, assumption, decision, question, and learning.
+
+Assumptions progress through `proposed`, `testing`, `supported`, `invalidated`,
+or `expired`. Decisions progress through `proposed`, `accepted`, `superseded`,
+`revoked`, or `review_due`. A new ID plus `supersedes` preserves the predecessor;
+records are never silently overwritten. Identical retries are idempotent.
+Conflicting IDs, missing predecessors, divergent successors, cycles, secrets,
+and private transcript content fail closed with stable `PML001`-`PML006`
+diagnostics.
+
+`gira pm context` reads that append-only history into `pm-context/v1`, resolves
+the current records deterministically, and emits a bounded reference-oriented
+summary by default. `--json` expands the full typed history. Existing untyped
+decision/evidence prose remains visible only as `legacy_evidence`; Gira does not
+fabricate typed fields during migration. GitHub stays canonical and no private
+transcript or secret belongs in the ledger.
 
 ## Compatibility And Migration
 

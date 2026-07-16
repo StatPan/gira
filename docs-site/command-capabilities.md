@@ -32,7 +32,9 @@ Schema version: `gira-command-capabilities/v1`
 | `gira milestone status` | none | `read` | `stable_json` | none | docs-site/sprint-release.md, docs-site/ticket-workflow.md |
 | `gira ops limit` | none | `read` | `stable_json` | none | docs/github-api-limits.md, docs/workflow-cost-profiles.md, docs/command-surface-boundary.md, docs-site/api-limits.md, docs-site/cost-profiles.md, docs-site/command-surface.md, docs-site/command-reference.md |
 | `gira pm compile` | none | `read` | `stable_json` | none | docs/pm-operating-policy.md, docs/pm-skill.md, docs-site/command-reference.md |
+| `gira pm context` | none | `read` | `stable_json` | none | docs/pm-operating-policy.md, docs/pm-skill.md, docs-site/command-reference.md |
 | `gira pm qa` | none | `read` | `stable_json` | none | docs/pm-skill.md, docs-site/command-reference.md |
+| `gira pm record` | none | `apply_mutation` | `stable_json` | appends a typed GitHub issue comment; --dry-run validates idempotency, privacy, and history resolution | docs/pm-operating-policy.md, docs/pm-skill.md, docs-site/command-reference.md |
 | `gira pm spec` | none | `read` | `stable_json` | none | docs/pm-skill.md, docs-site/command-reference.md |
 | `gira queue handoff` | none | `read` | `stable_json` | none | docs/workspace.md, docs/agent-handoff-queue.md, docs-site/agent-handoff-queue.md, docs-site/command-reference.md |
 | `gira queue list` | none | `read` | `stable_json` | none | docs/workspace.md, docs/agent-handoff-queue.md, docs-site/agent-handoff-queue.md, docs-site/command-reference.md |

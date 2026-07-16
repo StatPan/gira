@@ -287,6 +287,54 @@ func CoreCommandSpecs() []CommandSpec {
 			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only deterministic compilation; optional Goal context reads GitHub and no path mutates files or GitHub."},
 		},
 		{
+			Path:    []string{"pm", "record"},
+			Summary: "Append an idempotent typed record to a GitHub-native PM ledger.",
+			Usage:   "gira pm record --repo OWNER/REPO --ticket N --id ID --kind KIND [--text TEXT|--from-file PATH|-] [--source REF] --dry-run|--apply [--json]",
+			Since:   "v3.0.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--ticket", Summary: "GitHub issue holding the PM ledger."},
+				{Name: "--id", Summary: "Stable append-safe record ID."},
+				{Name: "--kind", Summary: "context_source, evidence, inference, assumption, decision, question, or learning."},
+				{Name: "--text", Summary: "Record claim or statement."},
+				{Name: "--from-file", Summary: "Read record text from file, or '-' for stdin."},
+				{Name: "--source", Summary: "Inspectable source reference; repeatable."},
+				{Name: "--actor-kind", Summary: "human, ai, system, or integration. Default: human."},
+				{Name: "--status", Summary: "Optional kind-specific lifecycle status."},
+				{Name: "--supersedes", Summary: "Prior record ID superseded by this record."},
+				{Name: "--at", Summary: "RFC3339 record time; defaults to current time."},
+				{Name: "--dry-run", Summary: "Preview validation and append action without mutation."},
+				{Name: "--apply", Summary: "Append the typed issue comment after validation."},
+				{Name: "--json", Summary: "Emit stable pm-record-report/v1 JSON."},
+			},
+			Docs:        []string{"docs/pm-operating-policy.md", "docs/pm-skill.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"quickstart"},
+			Examples: []CommandExample{
+				{Summary: "Preview an evidence record", Command: "gira pm record --repo OWNER/app --ticket 123 --id evidence.setup.1 --kind evidence --text 'Five setup failures' --source log:run-5 --dry-run"},
+				{Summary: "Append an accepted decision", Command: "gira pm record --repo OWNER/app --ticket 123 --id decision.output.1 --kind decision --status accepted --from-file decision.md --source issue:OWNER/app#123 --apply"},
+			},
+			Adapter: adapterApply("appends a typed GitHub issue comment; --dry-run validates idempotency, privacy, and history resolution", JSONSupportStable),
+		},
+		{
+			Path:    []string{"pm", "context"},
+			Summary: "Hydrate compact current PM state from typed and legacy GitHub issue evidence.",
+			Usage:   "gira pm context --repo OWNER/REPO --ticket N [--context-budget N] [--json]",
+			Since:   "v3.0.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
+				{Name: "--ticket", Summary: "GitHub issue holding the PM ledger."},
+				{Name: "--context-budget", Summary: "Maximum compact context size in characters. Default: 6000."},
+				{Name: "--json", Summary: "Emit full stable pm-context/v1 JSON."},
+			},
+			Docs:        []string{"docs/pm-operating-policy.md", "docs/pm-skill.md", "docs-site/command-reference.md"},
+			GuideTopics: []string{"quickstart"},
+			Examples: []CommandExample{
+				{Summary: "Hydrate bounded current PM state", Command: "gira pm context --repo OWNER/app --ticket 123"},
+				{Summary: "Inspect full typed history", Command: "gira pm context --repo OWNER/app --ticket 123 --json"},
+			},
+			Adapter: adapterRead(JSONSupportStable),
+		},
+		{
 			Path:    []string{"pm", "spec"},
 			Summary: "Render a durable PM state and worker-ready task packet from raw intent.",
 			Usage:   "gira pm spec [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode plan] [--json]",
@@ -1282,6 +1330,10 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Local rendering only; does not call GitHub or mutate files."}
 		case "pm compile":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only deterministic compilation; optional Goal context reads GitHub and no path mutates files or GitHub."}
+		case "pm record":
+			specs[i].Adapter = adapterApply("appends a typed GitHub issue comment; --dry-run validates idempotency, privacy, and history resolution", JSONSupportStable)
+		case "pm context":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "pm qa":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Reads GitHub issue and PR context; does not mutate GitHub."}
 		case "completion":

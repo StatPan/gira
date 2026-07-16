@@ -136,13 +136,13 @@ the previous decision.
 
 ## Current Command And Schema Coverage
 
-This map describes the baseline at the start of V3. `partial` means the surface
-is useful but does not yet satisfy the complete PM policy.
+This map describes the current V3 baseline. `partial` means the surface is
+useful but does not yet satisfy the complete PM policy.
 
 | PM stage | Current surface | Contract | Coverage | V3 gap |
 | --- | --- | --- | --- | --- |
 | Hydrate | `ticket handoff`, `goal handoff`, `dispatch goal` | `worker-handoff/v1`, `goal-handoff/v1`, dispatch packet | partial | no PM policy/session bootstrap or typed premise ledger |
-| Compile | `pm spec` | `gira-pm-task-packet/v1` | partial | template rendering, no PM IR or diagnostic compiler |
+| Compile | `pm compile`, `pm spec` | `pm-ir/v1`, `pm-compile-report/v1`, `gira-pm-task-packet/v1` | partial | deterministic intent diagnostics are implemented; typed discovery, decisions, and automatic packet projection remain separate follow-up work |
 | Discover | issue prose and research tickets | no dedicated contract | unsupported | opportunity, hypothesis, experiment, and learning types |
 | Decide | decision policy helpers and queue resolution from #839 | `decision-policy/v1`, causal resolution metadata | partial | not integrated across PM state and Goal routing |
 | Plan | `goal plan --compact-json` | `goal-plan/v1`, `goal-plan-compact/v1` | partial | manually supplied bullet decomposition and generic task packets |
@@ -156,6 +156,44 @@ is useful but does not yet satisfy the complete PM policy.
 Unsupported coverage MUST be reported honestly. Adapters MUST NOT imply that a
 prompt, template, or generic command transport enforces a PM capability that the
 core does not implement.
+
+### PM Intent Compiler Boundary
+
+`gira pm compile` is the read-only front door for `pm-ir/v1`. It accepts intent
+from `--intent` or `--from-file`; `--repo OWNER/REPO --goal N` may add explicit
+Goal context. The compiler extracts recognized Markdown sections, preserves
+their source spans, and labels values as `supplied`, `inferred`, `assumed`, or
+`unresolved`. It does not infer an actor, problem, or outcome from free prose.
+The only cross-source inference in v1 is an explicitly headed Goal objective
+used as the desired outcome when the local intent leaves that field empty.
+
+Compact text is the default and contains bounded diagnostics plus a command for
+full detail. `--json` emits the complete `pm-compile-report/v1` with embedded
+`pm-ir/v1`, source digests, provenance, all preserved statements, and stable
+diagnostic codes. Compilation never creates files, issues, comments, or other
+GitHub state. Reading optional Goal context does not broaden authority.
+
+| Code | Meaning |
+| --- | --- |
+| `PM001_MISSING_ACTOR` | affected actor is unresolved |
+| `PM002_MISSING_PROBLEM` | product or operational problem is unresolved |
+| `PM003_MISSING_OUTCOME` | desired outcome is unresolved |
+| `PM004_AMBIGUOUS_FIELD` | scalar sections disagree |
+| `PM005_LOW_EVIDENCE` | no inspectable evidence reference is supplied |
+| `PM006_CONFLICTING_STATE` | the same state is required and prohibited |
+| `PM007_AUTHORITY_BOUND` | intent declares an apply-authority boundary |
+| `PM008_UNSTRUCTURED_INTENT` | no PM headings are recognized |
+| `PM009_MISSING_SUCCESS_CONDITION` | success cannot be evaluated |
+| `PM010_UNRECOGNIZED_SECTION` | source is preserved but not semantically mapped |
+
+Errors block reliable product evaluation, warnings expose material risk, and
+info diagnostics describe safe compiler limitations. Codes and severities are
+stable within `pm-compile-report/v1`.
+
+`gira pm spec` remains compatible and continues rendering
+`gira-pm-task-packet/v1`; v1 compilation does not silently rewrite or replace
+that packet. Later projection work must consume `pm-ir/v1` explicitly and keep
+mixed-version behavior visible.
 
 ## Compatibility And Migration
 

@@ -398,16 +398,19 @@ Flags:
 const pmHelp = `PM skill commands for worker-ready task packets.
 
 Usage:
+  gira pm compile [--intent TEXT|--from-file PATH|-] [--repo OWNER/REPO] [--goal N] [--json]
   gira pm spec [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode plan] [--json]
   gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]
 
 Commands:
+  compile  Compile intent into deterministic pm-ir/v1 and diagnostics without mutation
   spec  Render a durable PM state and worker-ready task packet from raw intent
   qa    Render a PM acceptance QA prompt from task-local PM state and PR evidence
 
 Flags:
   --title string       Task title. Defaults to the first non-empty intent line
-  --repo string        Optional target GitHub repo in OWNER/REPO format
+  --repo string        Optional target GitHub repo in OWNER/REPO format; required with --goal
+  --goal int           Optional GitHub Goal issue supplying explicit PM context
   --intent string      Raw product/development intent
   --from-file string   Read raw intent from file, or "-" for stdin
   --worker-mode string Suggested worker mode: research|plan|implement|review|fix_review|pm_qa. Default: plan
@@ -1687,6 +1690,10 @@ var newPMTaskSpecReport = func(input gira.PMTaskSpecInput) (gira.PMTaskSpecRepor
 	return gira.BuildPMTaskSpecReport(input)
 }
 
+var newPMCompileReport = func(input gira.PMCompileRequest) (gira.PMCompileReport, error) {
+	return gira.BuildPMCompileReportFromRequest(input, devCommandRunner)
+}
+
 var newPMAcceptanceQAReport = func(input gira.PMAcceptanceQAInput) (gira.PMAcceptanceQAReport, error) {
 	return gira.BuildPMAcceptanceQAReport(input, devCommandRunner)
 }
@@ -2107,6 +2114,8 @@ func runPM(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	switch args[0] {
+	case "compile":
+		return runPMCompile(args[1:], stdout, stderr)
 	case "spec":
 		return runPMSpec(args[1:], stdout, stderr)
 	case "qa":
@@ -2116,6 +2125,53 @@ func runPM(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, pmHelp)
 		return 2
 	}
+}
+
+func runPMCompile(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pm compile", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	intent := fs.String("intent", "", "Raw product/development intent")
+	fromFile := fs.String("from-file", "", "Read raw intent from file, or - for stdin")
+	repo := fs.String("repo", "", "Optional target GitHub repo in OWNER/REPO format")
+	goal := fs.Int("goal", 0, "Optional GitHub Goal issue supplying PM context")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, pmHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, pmHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		_, _ = io.WriteString(stderr, pmHelp)
+		return 2
+	}
+	rawIntent, err := readPMIntent(*intent, *fromFile, os.Stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	report, err := newPMCompileReport(gira.PMCompileRequest{RawIntent: rawIntent, Repo: *repo, Goal: *goal})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := gira.FormatPMCompileJSON(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode pm compile JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatPMCompile(report))
+	return 0
 }
 
 func runPMQA(args []string, stdout io.Writer, stderr io.Writer) int {

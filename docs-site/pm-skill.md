@@ -17,6 +17,18 @@ optional; the task packet in GitHub is authoritative.
 
 ## Create a PM Packet
 
+Compile intent into bounded diagnostics without mutation, then use `--json`
+when the complete source-linked `pm-ir/v1` is needed:
+
+```bash
+gira pm compile --from-file request.md
+gira pm compile --repo OWNER/REPO --goal 123 --from-file request.md --json
+```
+
+The compiler preserves supplied meaning and marks unresolved fields rather than
+guessing product semantics. `pm spec` remains the compatible task-packet
+renderer:
+
 ```bash
 gira pm spec --repo OWNER/REPO --from-file request.md > pm-task.md
 gira ticket new --repo OWNER/REPO --title "TITLE" --body-file pm-task.md --type task --dry-run

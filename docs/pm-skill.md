@@ -58,7 +58,20 @@ Every PM-generated issue body should include:
 
 ## CLI Seed
 
-Render a worker-ready PM task packet:
+Compile intent without mutation; compact diagnostics are the default and JSON
+contains source-linked `pm-ir/v1`:
+
+```bash
+gira pm compile --from-file request.md
+gira pm compile --repo OWNER/REPO --goal 123 --from-file request.md --json
+```
+
+Headings map to premise, actor, problem, outcome, constraints, non-goals,
+authority, evidence, assumptions, decision debt, success, and candidate work.
+Free prose is retained but not guessed into missing fields. Goal context is
+read-only and requires both `--repo` and `--goal`.
+
+After repairing material diagnostics, use the compatible `pm spec` renderer:
 
 ```bash
 gira pm spec --repo OWNER/REPO --from-file request.md > pm-task.md
@@ -95,20 +108,10 @@ reduction task, implementation fix, or follow-up task packet.
 
 ## Benchmarked PM Practices
 
-Gira PM templates combine several proven product-development practices:
-
-- Scrum/Product Owner discipline: connect work to product goals and make backlog items transparent enough to execute.
-- User-story discipline: name the affected user or job, the desired outcome, and the reason the work matters.
-- Acceptance criteria discipline: define pass/fail, outcome-focused criteria that tell developers when to stop, QA how to test, and PM what to expect.
-- Shape Up discipline: set appetite, boundaries, rabbit holes, and no-gos before implementation.
-- Goals-Signals-Metrics discipline: map intended outcomes to observable signals or evidence.
-- Working Backwards discipline: reason from the desired customer experience back to the work.
-- Acceptance-testing discipline: decompose requirements into atomic, testable criteria.
-- Reversibility discipline: reduce risky work through small slices, rollout plans, feature flags, compatibility paths, or branch-by-abstraction.
-
-These practices are not separate ceremony. They are the checklist Gira uses to
-turn raw intent into a worker-ready task packet and later verify whether a PR
-actually satisfies that packet.
+Gira combines Product Owner and user-story outcome alignment; atomic acceptance
+criteria; Shape Up appetite and boundaries; Goals-Signals-Metrics evidence;
+Working Backwards; and reversible delivery slices. These are proportional
+checks, not separate ceremonies: they shape the packet and later test the PR.
 
 Render PM acceptance QA for a linked PR:
 

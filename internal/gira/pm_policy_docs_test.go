@@ -48,12 +48,15 @@ func TestPMOperatingPolicyIsCanonicalAndReferenced(t *testing.T) {
 func TestPMOperatingPolicyCoverageMapNamesCurrentContracts(t *testing.T) {
 	policy := readPMPolicyDoc(t, filepath.Join("..", "..", "docs", "pm-operating-policy.md"))
 	for _, want := range []string{
+		"`pm-ir/v1`",
+		"`pm-compile-report/v1`",
 		"`gira-pm-task-packet/v1`",
 		"`decision-policy/v1`",
 		"`goal-plan-compact/v1`",
 		"`workspace-queues/v1`",
 		"`gira-pm-qa/v1`",
 		"tool access does not activate or prove PM protocol conformance",
+		"does not infer an actor, problem, or outcome from free prose",
 	} {
 		if !strings.Contains(policy, want) {
 			t.Errorf("PM command/schema coverage map missing %q", want)

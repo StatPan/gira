@@ -266,6 +266,33 @@ func pmRecordApprovalCommand(report PMRecordReport, mode string) string {
 	if report.Record.Supersedes != "" {
 		args = append(args, "--supersedes", QuoteShellArg(report.Record.Supersedes))
 	}
+	for _, link := range report.Record.Links {
+		args = append(args, "--link", QuoteShellArg(link.Relation+"="+link.TargetID))
+	}
+	for _, ref := range report.Record.GoalRefs {
+		args = append(args, "--goal-ref", QuoteShellArg(ref))
+	}
+	for _, profile := range report.Record.TaskProfiles {
+		args = append(args, "--task-profile", QuoteShellArg(profile))
+	}
+	optional := []struct {
+		flag  string
+		value string
+	}{
+		{"--risk-type", report.Record.RiskType},
+		{"--evidence-strength", report.Record.EvidenceStrength},
+		{"--confidence", report.Record.Confidence},
+		{"--falsification-test", report.Record.FalsificationTest},
+		{"--test-waiver", report.Record.TestWaiver},
+		{"--experiment-state", report.Record.ExperimentState},
+		{"--conclusion", report.Record.Conclusion},
+		{"--outcome-state", report.Record.OutcomeState},
+	}
+	for _, item := range optional {
+		if item.value != "" {
+			args = append(args, item.flag, QuoteShellArg(item.value))
+		}
+	}
 	args = append(args, mode)
 	return strings.Join(args, " ")
 }

@@ -401,6 +401,7 @@ Usage:
   gira pm compile [--intent TEXT|--from-file PATH|-] [--repo OWNER/REPO] [--goal N] [--json]
   gira pm record --repo OWNER/REPO --ticket N --id ID --kind KIND [--text TEXT|--from-file PATH|-] [--source REF] --dry-run|--apply [--json]
   gira pm context --repo OWNER/REPO --ticket N [--context-budget N] [--json]
+  gira pm discovery --repo OWNER/REPO --ticket N [--context-budget N] [--json]
   gira pm spec [--profile PROFILE] [--context-ref REF] [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode MODE] [--json]
   gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]
 
@@ -408,6 +409,7 @@ Commands:
   compile  Compile intent into deterministic pm-ir/v1 and diagnostics without mutation
   record   Append an idempotent typed PM ledger record to a GitHub issue
   context  Hydrate compact current PM state from typed and legacy issue evidence
+  discovery  Trace outcomes, opportunities, hypotheses, experiments, learning, and decisions
   spec  Render a compact profile-aware PM task packet from raw intent
   qa    Render a PM acceptance QA prompt from task-local PM state and PR evidence
 
@@ -417,7 +419,10 @@ Flags:
   --goal int           Optional GitHub Goal issue supplying explicit PM context
   --ticket int         GitHub issue holding the PM ledger
   --id string          Stable PM ledger record ID
-  --kind string        context_source|evidence|inference|assumption|decision|question|learning
+  --kind string        Ledger kind, including outcome|opportunity|hypothesis|risk|experiment
+  --link string        Discovery relation=target record ID; repeatable
+  --goal-ref string    Linked Goal reference; repeatable
+  --task-profile string Linked PM task profile; repeatable
   --source string      Inspectable source reference; repeatable
   --actor-kind string  human|ai|system|integration. Default: human
   --status string      Optional kind-specific lifecycle status
@@ -1717,6 +1722,10 @@ var newPMContextReport = func(input gira.PMContextInput) (gira.PMContextReport, 
 	return gira.BuildPMContextReport(input, devCommandRunner)
 }
 
+var newPMDiscoveryReport = func(input gira.PMDiscoveryInput) (gira.PMDiscoveryReport, error) {
+	return gira.BuildPMDiscoveryReport(input, devCommandRunner)
+}
+
 var newPMAcceptanceQAReport = func(input gira.PMAcceptanceQAInput) (gira.PMAcceptanceQAReport, error) {
 	return gira.BuildPMAcceptanceQAReport(input, devCommandRunner)
 }
@@ -2143,6 +2152,8 @@ func runPM(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runPMRecord(args[1:], stdout, stderr)
 	case "context":
 		return runPMContext(args[1:], stdout, stderr)
+	case "discovery":
+		return runPMDiscovery(args[1:], stdout, stderr)
 	case "spec":
 		return runPMSpec(args[1:], stdout, stderr)
 	case "qa":
@@ -2214,6 +2225,14 @@ func runPMRecord(args []string, stdout io.Writer, stderr io.Writer) int {
 	actorKind := fs.String("actor-kind", "human", "Actor kind")
 	status := fs.String("status", "", "Kind-specific lifecycle status")
 	supersedes := fs.String("supersedes", "", "Prior record ID superseded by this record")
+	riskType := fs.String("risk-type", "", "value, usability, feasibility, or viability")
+	evidenceStrength := fs.String("evidence-strength", "", "anecdotal, qualitative, quantitative, or replicated")
+	confidence := fs.String("confidence", "", "low, medium, or high")
+	falsificationTest := fs.String("falsification-test", "", "Falsifiable hypothesis test")
+	testWaiver := fs.String("test-waiver", "", "Why a formal test is disproportionate")
+	experimentState := fs.String("experiment-state", "", "planned, running, success, failure, inconclusive, or invalid")
+	conclusion := fs.String("conclusion", "", "validated, invalidated, inconclusive, or no_build")
+	outcomeState := fs.String("outcome-state", "", "proposed, observing, achieved, not_achieved, or unknown")
 	at := fs.String("at", "", "RFC3339 record time")
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
 	apply := fs.Bool("apply", false, "Append the typed GitHub issue comment")
@@ -2221,7 +2240,13 @@ func runPMRecord(args []string, stdout io.Writer, stderr io.Writer) int {
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
 	var sources repeatedStringFlag
+	var rawLinks repeatedStringFlag
+	var goalRefs repeatedStringFlag
+	var taskProfiles repeatedStringFlag
 	fs.Var(&sources, "source", "Inspectable source reference")
+	fs.Var(&rawLinks, "link", "Discovery relation=target record ID")
+	fs.Var(&goalRefs, "goal-ref", "Linked Goal reference")
+	fs.Var(&taskProfiles, "task-profile", "Linked PM task profile")
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(stderr, "%v\n\n", err)
 		_, _ = io.WriteString(stderr, pmHelp)
@@ -2261,9 +2286,18 @@ func runPMRecord(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
+	links, err := parsePMLedgerLinks(rawLinks)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
 	report, err := newPMRecordReport(gira.PMRecordInput{
 		Repo: repo, Ticket: *ticket, ID: *id, Kind: *kind, Text: textValue, SourceRefs: sources,
 		ActorKind: *actorKind, Status: *status, Supersedes: *supersedes, RecordedAt: recordedAt, DryRun: *dryRun, Apply: *apply,
+		Links: links, GoalRefs: goalRefs, TaskProfiles: taskProfiles,
+		RiskType: *riskType, EvidenceStrength: *evidenceStrength, Confidence: *confidence,
+		FalsificationTest: *falsificationTest, TestWaiver: *testWaiver, ExperimentState: *experimentState,
+		Conclusion: *conclusion, OutcomeState: *outcomeState,
 	})
 	if *jsonOutput {
 		out, _ := json.MarshalIndent(report, "", "  ")
@@ -2275,6 +2309,59 @@ func runPMRecord(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	return 0
+}
+
+func runPMDiscovery(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pm discovery", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "GitHub issue holding the PM ledger")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	contextBudget := fs.Int("context-budget", 6000, "Maximum compact context size in characters")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, pmHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, pmHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n", fs.Arg(0))
+		return 2
+	}
+	if *ticket == 0 && *issue > 0 {
+		*ticket = *issue
+	}
+	if *contextBudget < 512 || *contextBudget > 20000 {
+		fmt.Fprintln(stderr, "--context-budget must be between 512 and 20000")
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	report, err := newPMDiscoveryReport(gira.PMDiscoveryInput{Repo: repo, Ticket: *ticket})
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := gira.FormatPMDiscoveryJSON(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode pm discovery JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatPMDiscovery(report, *contextBudget))
 	return 0
 }
 
@@ -10649,6 +10736,18 @@ func (f *repeatedStringFlag) String() string {
 func (f *repeatedStringFlag) Set(value string) error {
 	*f = append(*f, strings.TrimSpace(value))
 	return nil
+}
+
+func parsePMLedgerLinks(values repeatedStringFlag) ([]gira.PMLedgerLink, error) {
+	links := make([]gira.PMLedgerLink, 0, len(values))
+	for _, raw := range values {
+		relation, target, found := strings.Cut(strings.TrimSpace(raw), "=")
+		if !found || strings.TrimSpace(relation) == "" || strings.TrimSpace(target) == "" {
+			return nil, fmt.Errorf("--link must use relation=target")
+		}
+		links = append(links, gira.PMLedgerLink{Relation: strings.TrimSpace(relation), TargetID: strings.TrimSpace(target)})
+	}
+	return links, nil
 }
 
 func parseQueueRepoFilters(values repeatedStringFlag) ([]gira.RepoRef, []string, error) {

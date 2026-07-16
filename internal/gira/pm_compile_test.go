@@ -151,6 +151,31 @@ func TestPMCompileJSONRoundTripAndCompactBudget(t *testing.T) {
 	}
 }
 
+func TestPMCompileDiagnosticsContractAndCompactCap(t *testing.T) {
+	var input strings.Builder
+	for i := 0; i < 20; i++ {
+		input.WriteString("# Unknown Section ")
+		input.WriteString(string(rune('A' + i)))
+		input.WriteString("\nPreserved source statement.\n")
+	}
+	report, err := BuildPMCompileReport(PMCompileInput{RawIntent: input.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Diagnostics) <= 8 {
+		t.Fatalf("fixture must exercise compact diagnostic cap: %d", len(report.Diagnostics))
+	}
+	for _, diagnostic := range report.Diagnostics {
+		if diagnostic.Severity == "" || diagnostic.Code == "" || diagnostic.Field == "" || diagnostic.Location.SourceID == "" || diagnostic.Location.Section == "" || diagnostic.Reason == "" || diagnostic.Impact == "" || diagnostic.Repair == "" {
+			t.Fatalf("incomplete diagnostic contract: %#v", diagnostic)
+		}
+	}
+	compact := FormatPMCompile(report)
+	if len(compact) > 4096 || !strings.Contains(compact, "additional diagnostics omitted") {
+		t.Fatalf("compact diagnostic output is not bounded: bytes=%d\n%s", len(compact), compact)
+	}
+}
+
 func TestPMCompileDeterministic(t *testing.T) {
 	input := PMCompileInput{RawIntent: readPMCompileFixture(t, "conflicting.md")}
 	first, err := BuildPMCompileReport(input)

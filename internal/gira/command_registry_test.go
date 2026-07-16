@@ -18,6 +18,8 @@ func TestCoreCommandSpecsCoverHighValueCommands(t *testing.T) {
 		{"queue", "take"},
 		{"dispatch", "goal"},
 		{"pm", "compile"},
+		{"pm", "record"},
+		{"pm", "context"},
 		{"jira", "init"},
 		{"jira", "mirror"},
 		{"jira", "transition"},

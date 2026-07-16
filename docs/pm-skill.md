@@ -11,25 +11,10 @@ QA only.
 
 Gira does not use `needs human` as a terminal state.
 
-When a task appears to require human judgment, Gira first identifies the reason:
-
-- missing context
-- missing decision policy
-- conflicting constraints
-- irreversible risk
-- insufficient verification
-- authority boundary
-- undefined success metric
-
-Then Gira converts that reason into executable work:
-
-- retrieve context
-- derive policy from prior decisions
-- choose a reversible default
-- split irreversible work out
-- create verification criteria
-- reduce scope
-- produce a follow-up task packet
+First classify missing context/policy, conflicting constraints, irreversible
+risk, insufficient verification, authority, or undefined success. Then retrieve
+evidence, derive policy, choose a reversible default, split risk, add a test,
+reduce scope, or create a follow-up packet.
 
 ## Task-Local PM State
 
@@ -70,6 +55,15 @@ Headings map to premise, actor, problem, outcome, constraints, non-goals,
 authority, evidence, assumptions, decision debt, success, and candidate work.
 Free prose is retained but not guessed into missing fields. Goal context is
 read-only and requires both `--repo` and `--goal`.
+
+Persist after preview; hydrate current state:
+
+```bash
+gira pm record --repo OWNER/REPO --ticket 123 --id evidence.1 --kind evidence --text "Observed result" --source log:5 --dry-run
+gira pm context --repo OWNER/REPO --ticket 123
+```
+
+Supersede via new IDs; retries do not overwrite. Store safe references.
 
 After repairing material diagnostics, use the compatible `pm spec` renderer:
 

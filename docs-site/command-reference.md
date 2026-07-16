@@ -846,6 +846,41 @@ gira pm compile --repo OWNER/app --goal 123 --from-file request.md --json
 
 Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
 
+## `pm context`
+
+Hydrate compact current PM state from typed and legacy GitHub issue evidence.
+
+Usage:
+
+```bash
+gira pm context --repo OWNER/REPO --ticket N [--context-budget N] [--json]
+```
+
+Since: `v3.0.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--ticket`: GitHub issue holding the PM ledger.
+- `--context-budget`: Maximum compact context size in characters. Default: 6000.
+- `--json`: Emit full stable pm-context/v1 JSON.
+
+Examples:
+
+- Hydrate bounded current PM state
+
+```bash
+gira pm context --repo OWNER/app --ticket 123
+```
+
+- Inspect full typed history
+
+```bash
+gira pm context --repo OWNER/app --ticket 123 --json
+```
+
+Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
+
 ## `pm qa`
 
 Render a PM acceptance QA prompt from task-local PM state and PR evidence.
@@ -877,6 +912,51 @@ gira pm qa --repo OWNER/app --ticket 123 --diff-summary
 ```
 
 Documented in: `docs/pm-skill.md`, `docs-site/command-reference.md`
+
+## `pm record`
+
+Append an idempotent typed record to a GitHub-native PM ledger.
+
+Usage:
+
+```bash
+gira pm record --repo OWNER/REPO --ticket N --id ID --kind KIND [--text TEXT|--from-file PATH|-] [--source REF] --dry-run|--apply [--json]
+```
+
+Since: `v3.0.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo in OWNER/REPO format.
+- `--ticket`: GitHub issue holding the PM ledger.
+- `--id`: Stable append-safe record ID.
+- `--kind`: context_source, evidence, inference, assumption, decision, question, or learning.
+- `--text`: Record claim or statement.
+- `--from-file`: Read record text from file, or '-' for stdin.
+- `--source`: Inspectable source reference; repeatable.
+- `--actor-kind`: human, ai, system, or integration. Default: human.
+- `--status`: Optional kind-specific lifecycle status.
+- `--supersedes`: Prior record ID superseded by this record.
+- `--at`: RFC3339 record time; defaults to current time.
+- `--dry-run`: Preview validation and append action without mutation.
+- `--apply`: Append the typed issue comment after validation.
+- `--json`: Emit stable pm-record-report/v1 JSON.
+
+Examples:
+
+- Preview an evidence record
+
+```bash
+gira pm record --repo OWNER/app --ticket 123 --id evidence.setup.1 --kind evidence --text 'Five setup failures' --source log:run-5 --dry-run
+```
+
+- Append an accepted decision
+
+```bash
+gira pm record --repo OWNER/app --ticket 123 --id decision.output.1 --kind decision --status accepted --from-file decision.md --source issue:OWNER/app#123 --apply
+```
+
+Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
 
 ## `pm spec`
 

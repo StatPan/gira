@@ -399,11 +399,15 @@ const pmHelp = `PM skill commands for worker-ready task packets.
 
 Usage:
   gira pm compile [--intent TEXT|--from-file PATH|-] [--repo OWNER/REPO] [--goal N] [--json]
+  gira pm record --repo OWNER/REPO --ticket N --id ID --kind KIND [--text TEXT|--from-file PATH|-] [--source REF] --dry-run|--apply [--json]
+  gira pm context --repo OWNER/REPO --ticket N [--context-budget N] [--json]
   gira pm spec [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode plan] [--json]
   gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]
 
 Commands:
   compile  Compile intent into deterministic pm-ir/v1 and diagnostics without mutation
+  record   Append an idempotent typed PM ledger record to a GitHub issue
+  context  Hydrate compact current PM state from typed and legacy issue evidence
   spec  Render a durable PM state and worker-ready task packet from raw intent
   qa    Render a PM acceptance QA prompt from task-local PM state and PR evidence
 
@@ -411,6 +415,15 @@ Flags:
   --title string       Task title. Defaults to the first non-empty intent line
   --repo string        Optional target GitHub repo in OWNER/REPO format; required with --goal
   --goal int           Optional GitHub Goal issue supplying explicit PM context
+  --ticket int         GitHub issue holding the PM ledger
+  --id string          Stable PM ledger record ID
+  --kind string        context_source|evidence|inference|assumption|decision|question|learning
+  --source string      Inspectable source reference; repeatable
+  --actor-kind string  human|ai|system|integration. Default: human
+  --status string      Optional kind-specific lifecycle status
+  --supersedes string  Prior record ID superseded by this record
+  --at string          RFC3339 record time; defaults to the current time
+  --context-budget int Maximum compact context size in characters. Default: 6000
   --intent string      Raw product/development intent
   --from-file string   Read raw intent from file, or "-" for stdin
   --worker-mode string Suggested worker mode: research|plan|implement|review|fix_review|pm_qa. Default: plan
@@ -1694,6 +1707,14 @@ var newPMCompileReport = func(input gira.PMCompileRequest) (gira.PMCompileReport
 	return gira.BuildPMCompileReportFromRequest(input, devCommandRunner)
 }
 
+var newPMRecordReport = func(input gira.PMRecordInput) (gira.PMRecordReport, error) {
+	return gira.BuildPMRecordReport(input, devCommandRunner)
+}
+
+var newPMContextReport = func(input gira.PMContextInput) (gira.PMContextReport, error) {
+	return gira.BuildPMContextReport(input, devCommandRunner)
+}
+
 var newPMAcceptanceQAReport = func(input gira.PMAcceptanceQAInput) (gira.PMAcceptanceQAReport, error) {
 	return gira.BuildPMAcceptanceQAReport(input, devCommandRunner)
 }
@@ -2116,6 +2137,10 @@ func runPM(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "compile":
 		return runPMCompile(args[1:], stdout, stderr)
+	case "record":
+		return runPMRecord(args[1:], stdout, stderr)
+	case "context":
+		return runPMContext(args[1:], stdout, stderr)
 	case "spec":
 		return runPMSpec(args[1:], stdout, stderr)
 	case "qa":
@@ -2171,6 +2196,136 @@ func runPMCompile(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatPMCompile(report))
+	return 0
+}
+
+func runPMRecord(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pm record", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "GitHub issue holding the PM ledger")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	id := fs.String("id", "", "Stable PM ledger record ID")
+	kind := fs.String("kind", "", "PM ledger record kind")
+	recordText := fs.String("text", "", "PM ledger record text")
+	fromFile := fs.String("from-file", "", "Read PM ledger record text from file, or - for stdin")
+	actorKind := fs.String("actor-kind", "human", "Actor kind")
+	status := fs.String("status", "", "Kind-specific lifecycle status")
+	supersedes := fs.String("supersedes", "", "Prior record ID superseded by this record")
+	at := fs.String("at", "", "RFC3339 record time")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Append the typed GitHub issue comment")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	var sources repeatedStringFlag
+	fs.Var(&sources, "source", "Inspectable source reference")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, pmHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, pmHelp)
+		return 0
+	}
+	if fs.NArg() > 0 || *dryRun == *apply {
+		if fs.NArg() > 0 {
+			fmt.Fprintf(stderr, "unexpected argument: %s\n", fs.Arg(0))
+		} else {
+			fmt.Fprintln(stderr, "exactly one of --dry-run/--apply is required")
+		}
+		return 2
+	}
+	if *ticket == 0 && *issue > 0 {
+		*ticket = *issue
+	}
+	textValue, err := readPMIntent(*recordText, *fromFile, os.Stdin)
+	if err != nil {
+		err = fmt.Errorf("PM record requires --text or --from-file: %w", err)
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	recordedAt := time.Now().UTC()
+	if strings.TrimSpace(*at) != "" {
+		recordedAt, err = time.Parse(time.RFC3339, strings.TrimSpace(*at))
+		if err != nil {
+			fmt.Fprintf(stderr, "parse --at as RFC3339: %v\n", err)
+			return 2
+		}
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	report, err := newPMRecordReport(gira.PMRecordInput{
+		Repo: repo, Ticket: *ticket, ID: *id, Kind: *kind, Text: textValue, SourceRefs: sources,
+		ActorKind: *actorKind, Status: *status, Supersedes: *supersedes, RecordedAt: recordedAt, DryRun: *dryRun, Apply: *apply,
+	})
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+	} else {
+		fmt.Fprint(stdout, gira.FormatPMRecord(report))
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func runPMContext(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pm context", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "GitHub issue holding the PM ledger")
+	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
+	contextBudget := fs.Int("context-budget", 6000, "Maximum compact context size in characters")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, pmHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, pmHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n", fs.Arg(0))
+		return 2
+	}
+	if *ticket == 0 && *issue > 0 {
+		*ticket = *issue
+	}
+	if *contextBudget < 512 || *contextBudget > 20000 {
+		fmt.Fprintln(stderr, "--context-budget must be between 512 and 20000")
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	report, err := newPMContextReport(gira.PMContextInput{Repo: repo, Ticket: *ticket})
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if *jsonOutput {
+		out, err := gira.FormatPMContextJSON(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "encode pm context JSON: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatPMContext(report, *contextBudget))
 	return 0
 }
 

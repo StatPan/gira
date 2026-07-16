@@ -28,26 +28,27 @@ const (
 var pmLedgerIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 type PMLedgerRecord struct {
-	SchemaVersion     string         `json:"schema_version"`
-	ID                string         `json:"id"`
-	Kind              string         `json:"kind"`
-	Text              string         `json:"text"`
-	SourceRefs        []string       `json:"source_refs"`
-	ActorKind         string         `json:"actor_kind"`
-	RecordedAt        string         `json:"recorded_at"`
-	Status            string         `json:"status"`
-	Supersedes        string         `json:"supersedes,omitempty"`
-	Links             []PMLedgerLink `json:"links,omitempty"`
-	GoalRefs          []string       `json:"goal_refs,omitempty"`
-	TaskProfiles      []string       `json:"task_profiles,omitempty"`
-	RiskType          string         `json:"risk_type,omitempty"`
-	EvidenceStrength  string         `json:"evidence_strength,omitempty"`
-	Confidence        string         `json:"confidence,omitempty"`
-	FalsificationTest string         `json:"falsification_test,omitempty"`
-	TestWaiver        string         `json:"test_waiver,omitempty"`
-	ExperimentState   string         `json:"experiment_state,omitempty"`
-	Conclusion        string         `json:"conclusion,omitempty"`
-	OutcomeState      string         `json:"outcome_state,omitempty"`
+	SchemaVersion     string             `json:"schema_version"`
+	ID                string             `json:"id"`
+	Kind              string             `json:"kind"`
+	Text              string             `json:"text"`
+	SourceRefs        []string           `json:"source_refs"`
+	ActorKind         string             `json:"actor_kind"`
+	RecordedAt        string             `json:"recorded_at"`
+	Status            string             `json:"status"`
+	Supersedes        string             `json:"supersedes,omitempty"`
+	Links             []PMLedgerLink     `json:"links,omitempty"`
+	GoalRefs          []string           `json:"goal_refs,omitempty"`
+	TaskProfiles      []string           `json:"task_profiles,omitempty"`
+	RiskType          string             `json:"risk_type,omitempty"`
+	EvidenceStrength  string             `json:"evidence_strength,omitempty"`
+	Confidence        string             `json:"confidence,omitempty"`
+	FalsificationTest string             `json:"falsification_test,omitempty"`
+	TestWaiver        string             `json:"test_waiver,omitempty"`
+	ExperimentState   string             `json:"experiment_state,omitempty"`
+	Conclusion        string             `json:"conclusion,omitempty"`
+	OutcomeState      string             `json:"outcome_state,omitempty"`
+	Measurement       *PMMeasurementPlan `json:"measurement,omitempty"`
 }
 
 type PMLedgerLink struct {
@@ -85,6 +86,7 @@ type PMRecordInput struct {
 	ExperimentState   string
 	Conclusion        string
 	OutcomeState      string
+	Measurement       *PMMeasurementPlan
 	RecordedAt        time.Time
 	DryRun            bool
 	Apply             bool
@@ -244,6 +246,8 @@ func BuildPMRecordReport(input PMRecordInput, runner CommandRunner) (PMRecordRep
 		prospectiveByID[item.Record.ID] = item
 	}
 	graphDiagnostics := validatePMDiscoveryGraph(prospectiveByID)
+	graphDiagnostics = append(graphDiagnostics, validatePMMeasurementGraph(prospectiveByID)...)
+	sortPMLedgerDiagnostics(graphDiagnostics)
 	report.Diagnostics = append(report.Diagnostics, graphDiagnostics...)
 	if hasPMLedgerErrors(graphDiagnostics) {
 		report.Actions = append(report.Actions, PMRecordAction{Action: "record:append", Status: "blocked", Target: record.ID, Detail: "discovery graph validation failed"})
@@ -361,6 +365,7 @@ func validateStoredPMLedgerRecord(record PMLedgerRecord) []PMLedgerDiagnostic {
 		RiskType: record.RiskType, EvidenceStrength: record.EvidenceStrength, Confidence: record.Confidence,
 		FalsificationTest: record.FalsificationTest, TestWaiver: record.TestWaiver, ExperimentState: record.ExperimentState,
 		Conclusion: record.Conclusion, OutcomeState: record.OutcomeState,
+		Measurement: record.Measurement,
 	})
 	return append(diagnostics, normalizedDiagnostics...)
 }
@@ -377,6 +382,7 @@ func normalizePMLedgerRecord(input PMRecordInput) (PMLedgerRecord, []PMLedgerDia
 		FalsificationTest: strings.TrimSpace(input.FalsificationTest), TestWaiver: strings.TrimSpace(input.TestWaiver),
 		ExperimentState: strings.ToLower(strings.TrimSpace(input.ExperimentState)), Conclusion: strings.ToLower(strings.TrimSpace(input.Conclusion)),
 		OutcomeState: strings.ToLower(strings.TrimSpace(input.OutcomeState)),
+		Measurement:  normalizePMMeasurementPlan(input.Measurement),
 	}
 	if record.Kind == "outcome" && record.OutcomeState == "" {
 		record.OutcomeState = "proposed"
@@ -416,6 +422,7 @@ func normalizePMLedgerRecord(input PMRecordInput) (PMLedgerRecord, []PMLedgerDia
 	sensitiveValues := append([]string{record.Text, record.FalsificationTest, record.TestWaiver}, record.SourceRefs...)
 	sensitiveValues = append(sensitiveValues, record.GoalRefs...)
 	sensitiveValues = append(sensitiveValues, record.TaskProfiles...)
+	sensitiveValues = append(sensitiveValues, pmMeasurementSensitiveValues(record.Measurement)...)
 	for _, link := range record.Links {
 		sensitiveValues = append(sensitiveValues, link.Relation, link.TargetID)
 	}
@@ -423,6 +430,7 @@ func normalizePMLedgerRecord(input PMRecordInput) (PMLedgerRecord, []PMLedgerDia
 		diagnostics = append(diagnostics, pmLedgerDiagnostic("error", PMLedgerDiagnosticSensitiveContent, record.ID, "record resembles a secret or private transcript", "durable GitHub comments could disclose restricted content", "store only a safe reference or redacted summary"))
 	}
 	diagnostics = append(diagnostics, validatePMDiscoveryRecord(record)...)
+	diagnostics = append(diagnostics, validatePMMeasurementRecord(record)...)
 	for _, profile := range record.TaskProfiles {
 		if profile == "legacy" {
 			continue
@@ -483,6 +491,7 @@ func samePMLedgerSemantics(a, b PMLedgerRecord) bool {
 	a.SourceRefs, b.SourceRefs = normalizePMLedgerRefs(a.SourceRefs), normalizePMLedgerRefs(b.SourceRefs)
 	a.GoalRefs, b.GoalRefs = normalizePMLedgerRefs(a.GoalRefs), normalizePMLedgerRefs(b.GoalRefs)
 	a.TaskProfiles, b.TaskProfiles = normalizePMDiscoveryProfiles(a.TaskProfiles), normalizePMDiscoveryProfiles(b.TaskProfiles)
+	a.Measurement, b.Measurement = normalizePMMeasurementPlan(a.Measurement), normalizePMMeasurementPlan(b.Measurement)
 	a.Links, b.Links = normalizePMLedgerLinks(a.Links), normalizePMLedgerLinks(b.Links)
 	aJSON, _ := json.Marshal(a)
 	bJSON, _ := json.Marshal(b)
@@ -555,7 +564,7 @@ func normalizePMLedgerKind(value string) string {
 }
 
 func validPMLedgerKind(value string) bool {
-	return containsPMValue([]string{"context_source", "evidence", "inference", "assumption", "decision", "question", "learning", "outcome", "opportunity", "hypothesis", "risk", "experiment"}, value)
+	return containsPMValue([]string{"context_source", "evidence", "inference", "assumption", "decision", "question", "learning", "outcome", "opportunity", "hypothesis", "risk", "experiment", "measurement"}, value)
 }
 
 func defaultPMLedgerStatus(kind string) string {
@@ -585,6 +594,7 @@ func validPMLedgerStatus(kind, status string) bool {
 		"hypothesis":     {"active", "superseded", "revoked"},
 		"risk":           {"active", "superseded", "revoked"},
 		"experiment":     {"active", "superseded", "revoked"},
+		"measurement":    {"active", "superseded", "revoked"},
 	}
 	return containsPMValue(allowed[kind], status)
 }
@@ -704,6 +714,7 @@ func redactSensitivePMLedgerRecord(record PMLedgerRecord) PMLedgerRecord {
 	record.TaskProfiles = nil
 	record.FalsificationTest = ""
 	record.TestWaiver = ""
+	record.Measurement = nil
 	return record
 }
 

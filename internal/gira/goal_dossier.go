@@ -32,6 +32,7 @@ type GoalDossierReport struct {
 	HandoffReceiptPresent   bool                       `json:"handoff_receipt_present"`
 	Evidence                GoalDossierEvidenceSummary `json:"evidence"`
 	Sources                 []GoalDossierSource        `json:"sources"`
+	Measurement             *PMMeasurementReport       `json:"measurement,omitempty"`
 }
 
 type GoalDossierChildGroup struct {
@@ -70,7 +71,12 @@ func BuildGoalDossierReport(input GoalDossierInput, runner CommandRunner) (GoalD
 		return GoalDossierReport{}, err
 	}
 	next := BuildGoalNextReportFromStatus(input.Repo, status)
-	return BuildGoalDossierReportFromStatus(status, next), nil
+	report := BuildGoalDossierReportFromStatus(status, next)
+	if measurement, measureErr := BuildPMMeasurementReport(PMMeasurementInput{Repo: input.Repo, Ticket: input.Goal}, runner); measureErr == nil && (measurement.Summary.Outcomes > 0 || measurement.Summary.Measurements > 0) {
+		report.Measurement = &measurement
+		report.Sources = append(report.Sources, GoalDossierSource{Name: "pm_measurement", SchemaVersion: PMMeasurementReportSchemaVersion})
+	}
+	return report, nil
 }
 
 func BuildGoalDossierReportFromStatus(status GoalStatusReport, next GoalNextReport) GoalDossierReport {
@@ -207,6 +213,9 @@ func FormatGoalReport(report GoalDossierReport) string {
 	}
 	if len(report.StopConditions) > 0 {
 		fmt.Fprintf(&b, "stop: %s\n", strings.Join(report.StopConditions, ","))
+	}
+	if report.Measurement != nil {
+		fmt.Fprintf(&b, "outcomes: validated=%d not_validated=%d limited=%d blocked=%d diagnostics=%d\n", report.Measurement.Summary.Validated, report.Measurement.Summary.NotValidated, report.Measurement.Summary.Limited, report.Measurement.Summary.Blocked, len(report.Measurement.Diagnostics))
 	}
 	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
 	return b.String()
@@ -372,6 +381,10 @@ code {
 	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>remaining</span></div>\n", report.Evidence.RemainingAutonomousWork)
 	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>blockers</span></div>\n", report.Evidence.BlockerCount)
 	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>checks failing</span></div>\n", report.Evidence.Checks.Failing)
+	if report.Measurement != nil {
+		fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>outcomes validated</span></div>\n", report.Measurement.Summary.Validated)
+		fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>guardrail blocked</span></div>\n", report.Measurement.Summary.Blocked)
+	}
 	b.WriteString("</div>\n")
 	if len(report.Evidence.Sources) > 0 {
 		fmt.Fprintf(&b, "<p class=\"meta\">Sources: %s</p>\n", goalReportHTMLText(strings.Join(report.Evidence.Sources, ", ")))

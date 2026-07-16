@@ -18,6 +18,9 @@ func TestBuildGoalDossierReportSummarizesGoalState(t *testing.T) {
 		"gh api repos/StatPan/gira/issues/102": `{"number":102,"title":"Done child","state":"closed","body":"## Goal\nDone\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 102 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
 	}}
+	measurement := completeQuantitativePlan("Goal activation", "met")
+	measurementContext := string(pmLedgerContextJSON(t, "", []pmLedgerTestComment{{Body: RenderPMLedgerRecordComment(discoveryRecord("outcome.goal", "outcome", nil, nil))}, {Body: RenderPMLedgerRecordComment(measurementRecord("measurement.goal", "outcome.goal", measurement))}}))
+	runner.responses["gh issue view 100 --repo StatPan/gira --json number,title,body,url,comments"] = strings.Replace(measurementContext, `"number":42`, `"number":100`, 1)
 
 	report, err := BuildGoalDossierReport(GoalDossierInput{Repo: repo, Goal: 100}, runner)
 	if err != nil {
@@ -34,6 +37,12 @@ func TestBuildGoalDossierReportSummarizesGoalState(t *testing.T) {
 	}
 	if report.Evidence.ChildCount != 2 || report.Evidence.RemainingAutonomousWork != 1 || report.Evidence.Checks.Total != 2 {
 		t.Fatalf("unexpected evidence summary: %+v", report.Evidence)
+	}
+	if report.Measurement == nil || report.Measurement.Summary.Validated != 1 || report.Sources[len(report.Sources)-1].SchemaVersion != PMMeasurementReportSchemaVersion {
+		t.Fatalf("goal dossier lost measurement evidence: %+v", report.Measurement)
+	}
+	if !strings.Contains(FormatGoalReport(report), "outcomes: validated=1") || !strings.Contains(RenderGoalReportHTML(report), "outcomes validated") {
+		t.Fatal("goal report views omitted measurement evidence")
 	}
 	for _, want := range []string{"goal report: #100 children=2 remaining=1 next=start_child", "children: ready=1 done=1", "selected: #101 next_ready_child"} {
 		if !strings.Contains(FormatGoalReport(report), want) {

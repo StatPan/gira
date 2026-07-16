@@ -295,7 +295,7 @@ func CoreCommandSpecs() []CommandSpec {
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
 				{Name: "--ticket", Summary: "GitHub issue holding the PM ledger."},
 				{Name: "--id", Summary: "Stable append-safe record ID."},
-				{Name: "--kind", Summary: "Ledger kind, including outcome, opportunity, hypothesis, risk, and experiment."},
+				{Name: "--kind", Summary: "Ledger kind, including outcome, opportunity, hypothesis, risk, experiment, and measurement."},
 				{Name: "--text", Summary: "Record claim or statement."},
 				{Name: "--from-file", Summary: "Read record text from file, or '-' for stdin."},
 				{Name: "--source", Summary: "Inspectable source reference; repeatable."},
@@ -313,6 +313,25 @@ func CoreCommandSpecs() []CommandSpec {
 				{Name: "--experiment-state", Summary: "planned, running, success, failure, inconclusive, or invalid."},
 				{Name: "--conclusion", Summary: "validated, invalidated, inconclusive, or no_build learning."},
 				{Name: "--outcome-state", Summary: "proposed, observing, achieved, not_achieved, or unknown."},
+				{Name: "--signal", Summary: "Measurement signal name."},
+				{Name: "--signal-kind", Summary: "leading, lagging, delivery, health, or guardrail."},
+				{Name: "--evidence-type", Summary: "quantitative, qualitative, or limitation."},
+				{Name: "--baseline", Summary: "Baseline value or observation."},
+				{Name: "--baseline-definition", Summary: "Baseline population and calculation definition."},
+				{Name: "--target", Summary: "Target value or qualitative condition."},
+				{Name: "--target-direction", Summary: "increase, decrease, maintain, threshold, or qualitative."},
+				{Name: "--observation-window", Summary: "Bounded observation window."},
+				{Name: "--data-source", Summary: "Inspectable measurement source."},
+				{Name: "--source-status", Summary: "available or unavailable."},
+				{Name: "--owner", Summary: "Measurement decision owner."},
+				{Name: "--decision-rule", Summary: "Action rule for observed evidence."},
+				{Name: "--evaluation", Summary: "met, not_met, inconclusive, unavailable, stable, or regressed."},
+				{Name: "--post-change-definition", Summary: "Post-change population and calculation definition."},
+				{Name: "--qualitative-method", Summary: "Qualitative evidence method."},
+				{Name: "--qualitative-sample", Summary: "Qualitative sample or context."},
+				{Name: "--qualitative-limits", Summary: "Qualitative evidence limitations."},
+				{Name: "--evidence-limitation", Summary: "Why outcome evidence is unavailable."},
+				{Name: "--follow-up-ref", Summary: "Task resolving an evidence limitation."},
 				{Name: "--at", Summary: "RFC3339 record time; defaults to current time."},
 				{Name: "--dry-run", Summary: "Preview validation and append action without mutation."},
 				{Name: "--apply", Summary: "Append the typed issue comment after validation."},
@@ -344,6 +363,11 @@ func CoreCommandSpecs() []CommandSpec {
 				{Summary: "Inspect full typed history", Command: "gira pm context --repo OWNER/app --ticket 123 --json"},
 			},
 			Adapter: adapterRead(JSONSupportStable),
+		},
+		{
+			Path: []string{"pm", "measure"}, Summary: "Validate outcome measurement plans and evidence without mutation.", Usage: "gira pm measure --repo OWNER/REPO --ticket N [--context-budget N] [--json]", Since: "v3.0.0",
+			Flags: []FlagSpec{{Name: "--repo", Summary: "Target GitHub repo."}, {Name: "--ticket", Summary: "Issue holding outcome and measurement records."}, {Name: "--context-budget", Summary: "Maximum compact context size. Default: 6000."}, {Name: "--json", Summary: "Emit full pm-measurement-report/v1 JSON."}},
+			Docs:  []string{"docs/pm-operating-policy.md", "docs/pm-skill.md", "docs-site/command-reference.md"}, GuideTopics: []string{"quickstart"}, Examples: []CommandExample{{Summary: "Validate current outcome evidence", Command: "gira pm measure --repo OWNER/app --ticket 123"}, {Summary: "Inspect full measurement provenance", Command: "gira pm measure --repo OWNER/app --ticket 123 --json"}}, Adapter: adapterRead(JSONSupportStable),
 		},
 		{
 			Path:    []string{"pm", "discovery"},
@@ -1368,6 +1392,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 		case "pm context":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "pm discovery":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "pm measure":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "pm qa":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Reads GitHub issue and PR context; does not mutate GitHub."}

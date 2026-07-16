@@ -916,6 +916,41 @@ gira pm discovery --repo OWNER/app --ticket 123 --json
 
 Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
 
+## `pm measure`
+
+Validate outcome measurement plans and evidence without mutation.
+
+Usage:
+
+```bash
+gira pm measure --repo OWNER/REPO --ticket N [--context-budget N] [--json]
+```
+
+Since: `v3.0.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo.
+- `--ticket`: Issue holding outcome and measurement records.
+- `--context-budget`: Maximum compact context size. Default: 6000.
+- `--json`: Emit full pm-measurement-report/v1 JSON.
+
+Examples:
+
+- Validate current outcome evidence
+
+```bash
+gira pm measure --repo OWNER/app --ticket 123
+```
+
+- Inspect full measurement provenance
+
+```bash
+gira pm measure --repo OWNER/app --ticket 123 --json
+```
+
+Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
+
 ## `pm qa`
 
 Render a PM acceptance QA prompt from task-local PM state and PR evidence.
@@ -965,7 +1000,7 @@ Flags:
 - `--repo`: Target GitHub repo in OWNER/REPO format.
 - `--ticket`: GitHub issue holding the PM ledger.
 - `--id`: Stable append-safe record ID.
-- `--kind`: Ledger kind, including outcome, opportunity, hypothesis, risk, and experiment.
+- `--kind`: Ledger kind, including outcome, opportunity, hypothesis, risk, experiment, and measurement.
 - `--text`: Record claim or statement.
 - `--from-file`: Read record text from file, or '-' for stdin.
 - `--source`: Inspectable source reference; repeatable.
@@ -983,6 +1018,25 @@ Flags:
 - `--experiment-state`: planned, running, success, failure, inconclusive, or invalid.
 - `--conclusion`: validated, invalidated, inconclusive, or no_build learning.
 - `--outcome-state`: proposed, observing, achieved, not_achieved, or unknown.
+- `--signal`: Measurement signal name.
+- `--signal-kind`: leading, lagging, delivery, health, or guardrail.
+- `--evidence-type`: quantitative, qualitative, or limitation.
+- `--baseline`: Baseline value or observation.
+- `--baseline-definition`: Baseline population and calculation definition.
+- `--target`: Target value or qualitative condition.
+- `--target-direction`: increase, decrease, maintain, threshold, or qualitative.
+- `--observation-window`: Bounded observation window.
+- `--data-source`: Inspectable measurement source.
+- `--source-status`: available or unavailable.
+- `--owner`: Measurement decision owner.
+- `--decision-rule`: Action rule for observed evidence.
+- `--evaluation`: met, not_met, inconclusive, unavailable, stable, or regressed.
+- `--post-change-definition`: Post-change population and calculation definition.
+- `--qualitative-method`: Qualitative evidence method.
+- `--qualitative-sample`: Qualitative sample or context.
+- `--qualitative-limits`: Qualitative evidence limitations.
+- `--evidence-limitation`: Why outcome evidence is unavailable.
+- `--follow-up-ref`: Task resolving an evidence limitation.
 - `--at`: RFC3339 record time; defaults to current time.
 - `--dry-run`: Preview validation and append action without mutation.
 - `--apply`: Append the typed issue comment after validation.

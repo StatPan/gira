@@ -109,3 +109,31 @@ func TestRunPMDiscoveryCompactAndJSON(t *testing.T) {
 		t.Fatalf("JSON discovery failed: code=%d stderr=%s output=%s", code, stderr.String(), stdout.String())
 	}
 }
+
+func TestRunPMRecordPassesMeasurementPlan(t *testing.T) {
+	original := newPMRecordReport
+	t.Cleanup(func() { newPMRecordReport = original })
+	var captured gira.PMRecordInput
+	newPMRecordReport = func(input gira.PMRecordInput) (gira.PMRecordReport, error) {
+		captured = input
+		return gira.PMRecordReport{Command: "pm record", SchemaVersion: gira.PMRecordReportSchemaVersion, Repo: input.Repo.FullName(), Ticket: input.Ticket, DryRun: true, Record: gira.PMLedgerRecord{ID: input.ID, Kind: input.Kind}}, nil
+	}
+	var stdout, stderr bytes.Buffer
+	code := runPM([]string{"record", "--repo", "OWNER/repo", "--ticket", "42", "--id", "m.1", "--kind", "measurement", "--text", "Activation", "--source", "metric:a", "--link", "measures=outcome.1", "--signal", "Activation rate", "--signal-kind", "leading", "--evidence-type", "quantitative", "--baseline", "10%", "--baseline-definition", "eligible users", "--target", "20%", "--target-direction", "increase", "--observation-window", "14 days", "--data-source", "warehouse:a", "--owner", "pm", "--decision-rule", "Proceed at 20%", "--evaluation", "met", "--dry-run"}, &stdout, &stderr)
+	if code != 0 || captured.Measurement == nil || captured.Measurement.SignalKind != "leading" || captured.Measurement.DecisionRule == "" {
+		t.Fatalf("measurement not passed: code=%d input=%#v stderr=%s", code, captured, stderr.String())
+	}
+}
+
+func TestRunPMMeasureCompact(t *testing.T) {
+	original := newPMMeasurementReport
+	t.Cleanup(func() { newPMMeasurementReport = original })
+	newPMMeasurementReport = func(input gira.PMMeasurementInput) (gira.PMMeasurementReport, error) {
+		return gira.PMMeasurementReport{Command: "pm measure", SchemaVersion: gira.PMMeasurementReportSchemaVersion, ReadOnly: true, Repo: input.Repo.FullName(), Issue: gira.PMContextIssue{Number: input.Ticket}, Outcomes: []gira.PMMeasurementOutcome{{OutcomeID: "outcome.1", State: "validated", MeasurementIDs: []string{"m.1"}}}, Summary: gira.PMMeasurementSummary{Outcomes: 1, Measurements: 1, Validated: 1}, DetailCommand: "gira pm measure --json"}, nil
+	}
+	var stdout, stderr bytes.Buffer
+	code := runPM([]string{"measure", "--repo", "OWNER/repo", "--ticket", "42", "--context-budget", "512"}, &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), "outcome.1") || !strings.Contains(stdout.String(), "detail:") {
+		t.Fatalf("measure failed: code=%d output=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+}

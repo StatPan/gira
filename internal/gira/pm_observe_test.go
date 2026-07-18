@@ -4,12 +4,47 @@ import (
 	"encoding/json"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
 type countingWorkGraphRunner struct {
 	base  *workGraphRunner
 	calls map[string]int
+}
+
+type cacheProbeRunner struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (r *cacheProbeRunner) Run(string, ...string) ([]byte, error) {
+	r.mu.Lock()
+	r.calls++
+	r.mu.Unlock()
+	return []byte("same result"), nil
+}
+
+func TestPMObserveCacheCoalescesConcurrentReads(t *testing.T) {
+	base := &cacheProbeRunner{}
+	runner := &pmObserveCachedRunner{base: base, results: map[string]*pmObserveCachedResult{}}
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			got, err := runner.Run("gh", "issue", "view", "100")
+			if err != nil || string(got) != "same result" {
+				t.Errorf("cached read = %q, %v", got, err)
+			}
+		}()
+	}
+	wg.Wait()
+	base.mu.Lock()
+	defer base.mu.Unlock()
+	if base.calls != 1 {
+		t.Fatalf("concurrent source reads=%d want=1", base.calls)
+	}
 }
 
 func (r *countingWorkGraphRunner) Run(name string, args ...string) ([]byte, error) {

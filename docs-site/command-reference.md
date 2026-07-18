@@ -422,7 +422,7 @@ Build a visible report for one goal from stable Goal Mode state. Alias: gira goa
 Usage:
 
 ```bash
-gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]
+gira goal report [GOAL] [--repo OWNER/REPO] [--view operator|human|ai|stakeholder|audit] [--json|--html --output PATH]
 ```
 
 Since: `v2.1.0`
@@ -431,16 +431,17 @@ Flags:
 
 - `--repo`: Target GitHub repo in OWNER/REPO format.
 - `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
+- `--view`: Derived PM view: operator, human, ai, stakeholder, or audit. Default: operator.
 - `--json`: Emit stable goal-dossier/v1 JSON.
 - `--html`: Write a static local HTML report.
 - `--output`: Output path for --html.
 
 Examples:
 
-- Export a goal report JSON contract
+- Export a bounded AI PM hydration view
 
 ```bash
-gira goal report 521 --repo OWNER/app --json
+gira goal report 521 --repo OWNER/app --view ai --json
 ```
 
 - Write a local goal report page

@@ -267,6 +267,11 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path: []string{"pm", "bootstrap"}, Summary: "Hydrate a bounded, resumable PM protocol session from canonical Goal state.", Usage: "gira pm bootstrap --repo OWNER/REPO --ticket N [--role human|ai] [--authority CAPABILITY] [--context-budget N] [--json]", Since: "v3.0.0",
+			Flags: []FlagSpec{{Name: "--repo", Summary: "Target GitHub repo."}, {Name: "--ticket", Summary: "Goal issue holding canonical PM state."}, {Name: "--role", Summary: "Caller role: human or ai. Default: human."}, {Name: "--authority", Summary: "Explicit capability evidence; repeatable."}, {Name: "--context-budget", Summary: "Maximum bootstrap characters. Default: 6000."}, {Name: "--json", Summary: "Emit stable pm-bootstrap/v1 JSON."}},
+			Docs:  []string{"docs/pm-operating-policy.md", "docs/v3-pm-harness-release-readiness.md", "docs-site/command-reference.md"}, Examples: []CommandExample{{Summary: "Resume an AI PM session without thread memory", Command: "gira pm bootstrap --repo OWNER/app --ticket 123 --role ai --authority issue:read --json"}}, Adapter: adapterRead(JSONSupportStable),
+		},
+		{
 			Path:    []string{"pm", "compile"},
 			Summary: "Compile product intent into deterministic pm-ir/v1 and actionable diagnostics.",
 			Usage:   "gira pm compile [--intent TEXT|--from-file PATH|-] [--repo OWNER/REPO] [--goal N] [--json]",
@@ -447,6 +452,11 @@ func CoreCommandSpecs() []CommandSpec {
 				{Summary: "Render PM acceptance QA for a ticket PR", Command: "gira pm qa --repo OWNER/app --ticket 123 --diff-summary"},
 			},
 			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Reads GitHub issue and PR context; does not mutate GitHub."},
+		},
+		{
+			Path: []string{"pm", "conformance"}, Summary: "Evaluate PM protocol compliance separately from semantic answer quality.", Usage: "gira pm conformance [--from-file RUN.json|-] [--json]", Since: "v3.0.0",
+			Flags: []FlagSpec{{Name: "--from-file", Summary: "One pm-conformance-run/v1 object or array; built-in human and AI fixtures are the default."}, {Name: "--json", Summary: "Emit stable pm-conformance-report/v1 JSON."}},
+			Docs:  []string{"docs/v3-pm-harness-release-readiness.md", "docs-site/command-reference.md"}, Examples: []CommandExample{{Summary: "Run built-in human and two-host AI conformance", Command: "gira pm conformance --json"}, {Summary: "Evaluate a recorded host run", Command: "gira pm conformance --from-file host-run.json --json"}}, Adapter: adapterRead(JSONSupportStable),
 		},
 		{
 			Path:    []string{"completion"},
@@ -1404,6 +1414,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterApply("delegates to ticket start for a handoff-safe queue item; --dry-run previews selection, handoff readiness, and ticket start", JSONSupportStable)
 		case "dispatch goal":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "pm bootstrap":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "pm spec":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Local rendering only; does not call GitHub or mutate files."}
 		case "pm compile":
@@ -1424,6 +1436,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterApply("persists an evidence-mapped PM acceptance result and typed learning transition; dry-run rejects delivery proxies for outcome validation", JSONSupportStable)
 		case "pm qa":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Reads GitHub issue and PR context; does not mutate GitHub."}
+		case "pm conformance":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "completion":
 			specs[i].Adapter = adapterRead(JSONSupportNone)
 		case "feature list":

@@ -398,6 +398,7 @@ Flags:
 const pmHelp = `PM skill commands for worker-ready task packets.
 
 Usage:
+  gira pm bootstrap --repo OWNER/REPO --ticket N [--role human|ai] [--authority CAPABILITY] [--context-budget N] [--json]
   gira pm compile [--intent TEXT|--from-file PATH|-] [--repo OWNER/REPO] [--goal N] [--json]
   gira pm record --repo OWNER/REPO --ticket N --id ID --kind KIND [--text TEXT|--from-file PATH|-] [--source REF] --dry-run|--apply [--json]
   gira pm context --repo OWNER/REPO --ticket N [--context-budget N] [--json]
@@ -408,8 +409,10 @@ Usage:
   gira pm accept --repo OWNER/REPO --ticket N --from-file RESULT.json --dry-run|--apply [--json]
   gira pm spec [--profile PROFILE] [--context-ref REF] [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode MODE] [--json]
   gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]
+  gira pm conformance [--from-file RUN.json|-] [--json]
 
 Commands:
+  bootstrap  Hydrate a bounded, resumable PM protocol session from canonical state
   compile  Compile intent into deterministic pm-ir/v1 and diagnostics without mutation
   record   Append an idempotent typed PM ledger record to a GitHub issue
   context  Hydrate compact current PM state from typed and legacy issue evidence
@@ -420,6 +423,7 @@ Commands:
   accept   Validate and persist source-linked delivery acceptance and outcome validation
   spec  Render a compact profile-aware PM task packet from raw intent
   qa    Render a PM acceptance QA prompt from task-local PM state and PR evidence
+  conformance  Evaluate protocol compliance separately from semantic PM quality
 
 Flags:
   --title string       Task title. Defaults to the first non-empty intent line
@@ -437,6 +441,8 @@ Flags:
   --supersedes string  Prior record ID superseded by this record
   --at string          RFC3339 record time; defaults to the current time
   --context-budget int Maximum compact context size in characters. Default: 6000
+  --role string        PM caller role: human or ai. Default: human
+  --authority string   Explicit capability evidence; repeatable
   --expect-plan string Approved pmr-* replan fingerprint required by apply
   --override string    Explicit human override, including unblock:#N
   --rationale string   Durable product rationale required with an override
@@ -1727,6 +1733,10 @@ var newPMCompileReport = func(input gira.PMCompileRequest) (gira.PMCompileReport
 	return gira.BuildPMCompileReportFromRequest(input, devCommandRunner)
 }
 
+var newPMBootstrapReport = func(input gira.PMBootstrapInput) (gira.PMBootstrapReport, error) {
+	return gira.BuildPMBootstrapReport(input, devCommandRunner)
+}
+
 var newPMRecordReport = func(input gira.PMRecordInput) (gira.PMRecordReport, error) {
 	return gira.BuildPMRecordReport(input, devCommandRunner)
 }
@@ -2084,6 +2094,12 @@ Commands:
 Tools:
   gira_cli
   gira_workflow_guide
+  gira_pm_bootstrap
+  gira_pm_compile
+  gira_pm_observe
+  gira_pm_replan_plan
+  gira_pm_validate
+  gira_pm_report
   gira_ticket_view
   gira_ticket_status
   gira_ticket_checks
@@ -2179,6 +2195,8 @@ func runPM(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	switch args[0] {
+	case "bootstrap":
+		return runPMBootstrap(args[1:], stdout, stderr)
 	case "compile":
 		return runPMCompile(args[1:], stdout, stderr)
 	case "record":
@@ -2199,11 +2217,108 @@ func runPM(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runPMSpec(args[1:], stdout, stderr)
 	case "qa":
 		return runPMQA(args[1:], stdout, stderr)
+	case "conformance":
+		return runPMConformance(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown pm command: %s\n\n", args[0])
 		_, _ = io.WriteString(stderr, pmHelp)
 		return 2
 	}
+}
+
+func runPMBootstrap(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pm bootstrap", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo")
+	ticket := fs.Int("ticket", 0, "Goal issue holding canonical PM state")
+	issue := fs.Int("issue", 0, "Compatibility alias")
+	role := fs.String("role", "human", "PM caller role: human or ai")
+	budget := fs.Int("context-budget", 6000, "Bounded bootstrap size")
+	jsonOutput := fs.Bool("json", false, "Stable JSON")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	var authority repeatedStringFlag
+	fs.Var(&authority, "authority", "Explicit capability evidence")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, pmHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n", fs.Arg(0))
+		return 2
+	}
+	if *ticket == 0 {
+		*ticket = *issue
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	report, err := newPMBootstrapReport(gira.PMBootstrapInput{Repo: repo, Ticket: *ticket, Role: *role, Authority: authority, Budget: *budget})
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatPMBootstrap(report))
+	return 0
+}
+
+func runPMConformance(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pm conformance", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fromFile := fs.String("from-file", "", "Read one run or an array of runs from JSON, or - for stdin")
+	jsonOutput := fs.Bool("json", false, "Stable JSON")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, pmHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n", fs.Arg(0))
+		return 2
+	}
+	var runs []gira.PMConformanceRun
+	if strings.TrimSpace(*fromFile) != "" {
+		raw, err := readPMIntent("", *fromFile, os.Stdin)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
+		if err := json.Unmarshal([]byte(raw), &runs); err != nil {
+			var run gira.PMConformanceRun
+			if oneErr := json.Unmarshal([]byte(raw), &run); oneErr != nil {
+				fmt.Fprintf(stderr, "parse conformance JSON: %v\n", err)
+				return 2
+			}
+			runs = []gira.PMConformanceRun{run}
+		}
+	}
+	report := gira.BuildPMConformanceReport(runs)
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+	} else {
+		fmt.Fprint(stdout, gira.FormatPMConformance(report))
+	}
+	if !report.ProtocolCompliant {
+		return 1
+	}
+	return 0
 }
 
 func runPMCompile(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -2230,7 +2345,11 @@ func runPMCompile(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, pmHelp)
 		return 2
 	}
-	rawIntent, err := readPMIntent(*intent, *fromFile, os.Stdin)
+	var rawIntent string
+	var err error
+	if *goal == 0 || strings.TrimSpace(*intent) != "" || strings.TrimSpace(*fromFile) != "" {
+		rawIntent, err = readPMIntent(*intent, *fromFile, os.Stdin)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2

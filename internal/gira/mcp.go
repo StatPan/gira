@@ -95,6 +95,24 @@ type mcpToolTemplate struct {
 }
 
 var mcpTools = []mcpToolTemplate{
+	{Name: "gira_pm_bootstrap", Description: "Hydrate the bounded canonical PM protocol session for an AI host.", Ticket: true, Build: func(repo string, ticket int, limit int, queue string) []string {
+		return []string{"pm", "bootstrap", "--repo", repo, "--ticket", strconv.Itoa(ticket), "--role", "ai", "--json"}
+	}},
+	{Name: "gira_pm_compile", Description: "Compile Goal intent through the canonical read-only PM compiler.", Ticket: true, Build: func(repo string, ticket int, limit int, queue string) []string {
+		return []string{"pm", "compile", "--repo", repo, "--goal", strconv.Itoa(ticket), "--json"}
+	}},
+	{Name: "gira_pm_observe", Description: "Diagnose canonical PM state without mutation.", Ticket: true, Build: func(repo string, ticket int, limit int, queue string) []string {
+		return []string{"pm", "observe", "--repo", repo, "--ticket", strconv.Itoa(ticket), "--json"}
+	}},
+	{Name: "gira_pm_replan_plan", Description: "Preview a fingerprinted PM replan without mutation.", Ticket: true, Build: func(repo string, ticket int, limit int, queue string) []string {
+		return []string{"pm", "replan", "--repo", repo, "--ticket", strconv.Itoa(ticket), "--dry-run", "--json"}
+	}},
+	{Name: "gira_pm_validate", Description: "Render the canonical PM acceptance validation packet without mutation.", Ticket: true, Build: func(repo string, ticket int, limit int, queue string) []string {
+		return []string{"pm", "qa", "--repo", repo, "--ticket", strconv.Itoa(ticket), "--json"}
+	}},
+	{Name: "gira_pm_report", Description: "Derive the bounded AI PM report view from canonical state.", Ticket: true, Build: func(repo string, ticket int, limit int, queue string) []string {
+		return []string{"goal", "report", strconv.Itoa(ticket), "--repo", repo, "--view", "ai", "--json"}
+	}},
 	{Name: "gira_ticket_view", Description: "Read Gira ticket packet context.", Ticket: true, Build: func(repo string, ticket int, limit int, queue string) []string {
 		return []string{"ticket", "view", strconv.Itoa(ticket), "--repo", repo, "--json"}
 	}},

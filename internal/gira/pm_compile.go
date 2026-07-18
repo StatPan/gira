@@ -203,6 +203,9 @@ func BuildPMCompileReportFromRequest(request PMCompileRequest, runner CommandRun
 			Body:   issue.Body,
 			URL:    fmt.Sprintf("https://github.com/%s/issues/%d", input.Repo, issue.Number),
 		}
+		if strings.TrimSpace(input.RawIntent) == "" {
+			input.RawIntent = issue.Body
+		}
 	}
 	return BuildPMCompileReport(input)
 }

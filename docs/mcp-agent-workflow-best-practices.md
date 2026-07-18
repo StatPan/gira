@@ -26,6 +26,10 @@ inside one product model instead of creating separate workflows.
    keep the conversation current. The agent should summarize blockers and stale
    assumptions before proposing a mutation.
 
+   For Goal-level PM work, call `gira_pm_bootstrap` first. Expand only the
+   referenced compile, context, observation, or report contract needed for the
+   next action; do not rely on hidden conversation memory.
+
 3. Plan the mutation.
    Run the matching Gira CLI command with `--dry-run`, either directly in a
    terminal or through `gira_cli` over MCP. The agent should show the dry-run
@@ -90,6 +94,8 @@ where it changed, and which evidence link proves it.
 - Creating MCP-only lifecycle terms that do not map to Gira CLI states.
 - Storing tokens in repo files, Gira config, or generated workflow docs.
 - Letting hosted-service assumptions leak into local CLI/MCP behavior.
+- Capturing private transcripts, secrets, worker rankings, or token-spend
+  productivity scores as PM conformance evidence.
 
 ## Hosted MCP boundary
 

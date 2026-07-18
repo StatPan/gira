@@ -33,7 +33,9 @@ Schema version: `gira-command-capabilities/v1`
 | `gira milestone status` | none | `read` | `stable_json` | none | docs-site/sprint-release.md, docs-site/ticket-workflow.md |
 | `gira ops limit` | none | `read` | `stable_json` | none | docs/github-api-limits.md, docs/workflow-cost-profiles.md, docs/command-surface-boundary.md, docs-site/api-limits.md, docs-site/cost-profiles.md, docs-site/command-surface.md, docs-site/command-reference.md |
 | `gira pm accept` | none | `apply_mutation` | `stable_json` | persists an evidence-mapped PM acceptance result and typed learning transition; dry-run rejects delivery proxies for outcome validation | docs/pm-operating-policy.md, docs/pm-skill.md, docs-site/command-reference.md |
+| `gira pm bootstrap` | none | `read` | `stable_json` | none | docs/pm-operating-policy.md, docs/v3-pm-harness-release-readiness.md, docs-site/command-reference.md |
 | `gira pm compile` | none | `read` | `stable_json` | none | docs/pm-operating-policy.md, docs/pm-skill.md, docs-site/command-reference.md |
+| `gira pm conformance` | none | `read` | `stable_json` | none | docs/v3-pm-harness-release-readiness.md, docs-site/command-reference.md |
 | `gira pm context` | none | `read` | `stable_json` | none | docs/pm-operating-policy.md, docs/pm-skill.md, docs-site/command-reference.md |
 | `gira pm discovery` | none | `read` | `stable_json` | none | docs/pm-operating-policy.md, docs/pm-skill.md, docs-site/command-reference.md |
 | `gira pm measure` | none | `read` | `stable_json` | none | docs/pm-operating-policy.md, docs/pm-skill.md, docs-site/command-reference.md |

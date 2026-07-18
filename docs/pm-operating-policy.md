@@ -141,7 +141,7 @@ useful but does not yet satisfy the complete PM policy.
 
 | PM stage | Current surface | Contract | Coverage | V3 gap |
 | --- | --- | --- | --- | --- |
-| Hydrate | `pm context`, `ticket handoff`, `goal handoff`, `dispatch goal` | `pm-context/v1`, `worker-handoff/v1`, `goal-handoff/v1`, dispatch packet | partial | typed issue ledger hydration is implemented; cross-goal bootstrap and freshness policy remain follow-up work |
+| Hydrate | `pm bootstrap`, `pm context`, `ticket handoff`, `goal handoff`, `dispatch goal` | `pm-bootstrap/v1`, `pm-context/v1`, `worker-handoff/v1`, `goal-handoff/v1`, dispatch packet | supported | bootstrap binds policy, role, authority, source refs, fingerprints, and next protocol action without hidden thread memory |
 | Compile | `pm compile`, `pm spec` | `pm-ir/v1`, `pm-compile-report/v1`, `gira-pm-task-packet/v1`, `gira-pm-task-packet/v2` | partial | deterministic intent diagnostics and profile-aware packets are implemented; automatic IR projection remains follow-up work |
 | Discover | `pm record`, `pm discovery` | `pm-ledger-record/v1`, `pm-discovery-graph/v1` | supported | connect the graph to portfolio measurement and automatic replanning in later slices |
 | Decide | `pm record`, decision policy helpers and queue resolution from #839 | `pm-ledger-record/v1`, `pm-record-report/v1`, `decision-policy/v1` | partial | append-safe decision state exists; option comparison and Goal routing integration remain follow-up work |
@@ -151,7 +151,29 @@ useful but does not yet satisfy the complete PM policy.
 | Replan | `pm observe`, `pm replan` | `pm-observe-report/v1`, `pm-replan-report/v1` | supported | connect future portfolio-wide triggers without adding a background daemon or implicit mutation |
 | Validate | `pm qa`, `pm accept` | `gira-pm-qa/v1`, `pm-acceptance-result/v1`, `pm-acceptance-report/v1` | supported | retain engineering review as a separate branch-protection responsibility |
 | Report | `goal report --view operator|human|ai|stakeholder|audit`, workspace and release reports | `goal-dossier/v1`, `goal-pm-view/v1`, source schema refs | supported | portfolio aggregation and hosted presentation remain outside this local derived-view slice |
-| Adapter | generic MCP CLI parity | MCP tool envelopes over CLI | partial | tool access does not activate or prove PM protocol conformance |
+| Adapter | generic MCP CLI parity plus focused bootstrap, compile, observe, replan-plan, validate, and report reads | MCP tool envelopes over CLI; `pm-conformance-report/v1` | supported | model judgment remains host responsibility and is reported separately from protocol compliance |
+
+### PM harness bootstrap and conformance
+
+`gira pm bootstrap --repo OWNER/REPO --ticket N --role human|ai --json`
+creates a bounded read-only session packet. It carries policy and protocol
+versions, explicit authority evidence, source schema/digest references, current
+compile and plan fingerprints, required receipts, and one next protocol action.
+The `pms-*` session identifier is deterministic state evidence, not a credential
+and not a substitute for mutation fingerprints.
+
+Human CLI and MCP-assisted AI callers follow the same transition table. Focused
+MCP PM tools only invoke the corresponding read or dry-run CLI command. Apply
+continues through the normal Gira CLI contract: compile errors block lowering,
+`--expect-plan` rejects stale graph/replan state, and approval/capability evidence
+defines the mutation boundary.
+
+`gira pm conformance` evaluates protocol versions, stages, receipts, supported
+claims, contained weak-model failures, and privacy boundaries. Its protocol
+verdict is deliberately separate from `semantic_quality`; transport compliance
+does not claim that a model has strong PM judgment.
+Importantly, tool access does not activate or prove PM protocol conformance; the bootstrap
+and evaluator only make the required evidence and violations explicit.
 
 ### Durable PM Acceptance
 

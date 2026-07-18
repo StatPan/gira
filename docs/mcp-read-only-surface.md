@@ -14,7 +14,8 @@ This keeps the product contract aligned with the CLI while giving coding-agent h
 
 ## Product boundary
 
-The v1 MCP surface is about finishing work safely, not broad project management.
+The initial MCP surface focused on finishing work safely. V3 adds a bounded PM
+harness without broad generic project-management or model-provider access.
 
 It prioritizes:
 
@@ -22,6 +23,8 @@ It prioritizes:
 - finish readiness and blocker evidence;
 - handoff state for harness-independent agent transitions;
 - queue visibility for choosing the next bounded work packet.
+- canonical PM bootstrap, compilation, observation, dry-run replanning,
+  validation preparation, and reporting.
 
 It does not expose generic GitHub, shell, project-management, or hosted-worker capabilities.
 
@@ -29,6 +32,12 @@ It does not expose generic GitHub, shell, project-management, or hosted-worker c
 
 | MCP tool | CLI contract | Behavior |
 | --- | --- | --- |
+| `gira_pm_bootstrap` | `gira pm bootstrap --repo <owner/repo> --ticket <goal> --role ai --json` | Return policy, authority, source refs, fingerprints, protocol, and next action without hidden thread memory. |
+| `gira_pm_compile` | `gira pm compile --repo <owner/repo> --goal <goal> --json` | Compile Goal intent read-only through `pm-ir/v1`. |
+| `gira_pm_observe` | `gira pm observe --repo <owner/repo> --ticket <goal> --json` | Diagnose current canonical PM state. |
+| `gira_pm_replan_plan` | `gira pm replan --repo <owner/repo> --ticket <goal> --dry-run --json` | Return the fingerprinted replan and residual authority actions without applying. |
+| `gira_pm_validate` | `gira pm qa --repo <owner/repo> --ticket <goal> --json` | Prepare the canonical acceptance/evidence packet. |
+| `gira_pm_report` | `gira goal report <goal> --repo <owner/repo> --view ai --json` | Return the bounded AI projection of canonical PM state. |
 | `gira_ticket_view` | `gira ticket view <ticket> --repo <owner/repo> --json` | Return issue packet context, labels, readiness, body, and current workflow state. |
 | `gira_ticket_status` | `gira ticket status <ticket> --repo <owner/repo> --json` | Return ticket lifecycle state, branch/PR linkage, and recommended next action. |
 | `gira_ticket_checks` | `gira ticket checks <ticket> --repo <owner/repo> --json` | Return PR/check status and finish blockers without changing state. |
@@ -97,9 +106,9 @@ For CLI failures, include:
 
 The MCP wrapper must not retry by switching to mutating commands or raw `gh` commands. Recovery guidance should be returned as data for the caller to decide.
 
-## Explicit exclusions for v1
+## Explicit exclusions for focused tools
 
-The MCP surface must refuse or not define tools for:
+The focused allow-list must refuse or not define tools for:
 
 - any command with `--apply`;
 - `gira ticket start`;
@@ -112,7 +121,14 @@ The MCP surface must refuse or not define tools for:
 - direct writes through internal Go packages;
 - hosted service behavior.
 
-`gira_ticket_finish_plan` is the only finish-related tool in v1, and it is dry-run-only.
+`gira_cli` is a separate exact-argv parity tool: when a supervising host is
+authorized to mutate, it may invoke the same installed CLI dry-run/apply command
+and returns exit code and approval metadata. It does not expose shell or raw
+`gh`, and it does not create an MCP-only mutation contract.
+
+`gira_ticket_finish_plan` remains the only finish-related focused tool, and it is
+dry-run-only. PM mutation is likewise absent from focused tools; use the same
+CLI dry-run/apply contract through explicit `gira_cli` argv when authorized.
 
 ## CLI versus internal package boundary
 

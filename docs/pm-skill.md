@@ -45,9 +45,10 @@ Persist after preview; hydrate current state:
 gira pm record --repo OWNER/REPO --ticket 123 --id evidence.1 --kind evidence --text "Observed result" --source log:5 --dry-run
 gira pm context --repo OWNER/REPO --ticket 123
 gira pm discovery --repo OWNER/REPO --ticket 123
+gira pm measure --repo OWNER/REPO --ticket 123
 ```
 
-Supersede via new IDs; retries do not overwrite. Store safe references.
+Supersede via new IDs; retries do not overwrite. Store references.
 Discovery traces outcome→opportunity→hypothesis→experiment→learning→decision.
 
 After repairing diagnostics, render the smallest sufficient packet:

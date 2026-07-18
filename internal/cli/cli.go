@@ -402,6 +402,7 @@ Usage:
   gira pm record --repo OWNER/REPO --ticket N --id ID --kind KIND [--text TEXT|--from-file PATH|-] [--source REF] --dry-run|--apply [--json]
   gira pm context --repo OWNER/REPO --ticket N [--context-budget N] [--json]
   gira pm discovery --repo OWNER/REPO --ticket N [--context-budget N] [--json]
+  gira pm measure --repo OWNER/REPO --ticket N [--context-budget N] [--json]
   gira pm spec [--profile PROFILE] [--context-ref REF] [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode MODE] [--json]
   gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]
 
@@ -410,6 +411,7 @@ Commands:
   record   Append an idempotent typed PM ledger record to a GitHub issue
   context  Hydrate compact current PM state from typed and legacy issue evidence
   discovery  Trace outcomes, opportunities, hypotheses, experiments, learning, and decisions
+  measure  Validate outcome measurement plans and evidence
   spec  Render a compact profile-aware PM task packet from raw intent
   qa    Render a PM acceptance QA prompt from task-local PM state and PR evidence
 
@@ -419,7 +421,7 @@ Flags:
   --goal int           Optional GitHub Goal issue supplying explicit PM context
   --ticket int         GitHub issue holding the PM ledger
   --id string          Stable PM ledger record ID
-  --kind string        Ledger kind, including outcome|opportunity|hypothesis|risk|experiment
+  --kind string        Ledger kind, including outcome|opportunity|hypothesis|risk|experiment|measurement
   --link string        Discovery relation=target record ID; repeatable
   --goal-ref string    Linked Goal reference; repeatable
   --task-profile string Linked PM task profile; repeatable
@@ -1726,6 +1728,10 @@ var newPMDiscoveryReport = func(input gira.PMDiscoveryInput) (gira.PMDiscoveryRe
 	return gira.BuildPMDiscoveryReport(input, devCommandRunner)
 }
 
+var newPMMeasurementReport = func(input gira.PMMeasurementInput) (gira.PMMeasurementReport, error) {
+	return gira.BuildPMMeasurementReport(input, devCommandRunner)
+}
+
 var newPMAcceptanceQAReport = func(input gira.PMAcceptanceQAInput) (gira.PMAcceptanceQAReport, error) {
 	return gira.BuildPMAcceptanceQAReport(input, devCommandRunner)
 }
@@ -2154,6 +2160,8 @@ func runPM(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runPMContext(args[1:], stdout, stderr)
 	case "discovery":
 		return runPMDiscovery(args[1:], stdout, stderr)
+	case "measure":
+		return runPMMeasure(args[1:], stdout, stderr)
 	case "spec":
 		return runPMSpec(args[1:], stdout, stderr)
 	case "qa":
@@ -2233,6 +2241,25 @@ func runPMRecord(args []string, stdout io.Writer, stderr io.Writer) int {
 	experimentState := fs.String("experiment-state", "", "planned, running, success, failure, inconclusive, or invalid")
 	conclusion := fs.String("conclusion", "", "validated, invalidated, inconclusive, or no_build")
 	outcomeState := fs.String("outcome-state", "", "proposed, observing, achieved, not_achieved, or unknown")
+	signal := fs.String("signal", "", "Measurement signal")
+	signalKind := fs.String("signal-kind", "", "leading, lagging, delivery, health, or guardrail")
+	evidenceType := fs.String("evidence-type", "", "quantitative, qualitative, or limitation")
+	baseline := fs.String("baseline", "", "Baseline value or observation")
+	baselineDefinition := fs.String("baseline-definition", "", "Baseline population and calculation definition")
+	target := fs.String("target", "", "Target value or qualitative condition")
+	targetDirection := fs.String("target-direction", "", "increase, decrease, maintain, threshold, or qualitative")
+	observationWindow := fs.String("observation-window", "", "Bounded observation window")
+	dataSource := fs.String("data-source", "", "Inspectable measurement source")
+	sourceStatus := fs.String("source-status", "available", "available or unavailable")
+	owner := fs.String("owner", "", "Measurement decision owner")
+	decisionRule := fs.String("decision-rule", "", "Action rule for observed evidence")
+	evaluation := fs.String("evaluation", "", "met, not_met, inconclusive, unavailable, stable, or regressed")
+	postChangeDefinition := fs.String("post-change-definition", "", "Post-change population and calculation definition")
+	qualitativeMethod := fs.String("qualitative-method", "", "Qualitative evidence method")
+	qualitativeSample := fs.String("qualitative-sample", "", "Qualitative sample or context")
+	qualitativeLimits := fs.String("qualitative-limits", "", "Qualitative evidence limitations")
+	evidenceLimitation := fs.String("evidence-limitation", "", "Why outcome evidence is unavailable")
+	followUpRef := fs.String("follow-up-ref", "", "Task that resolves an evidence limitation")
 	at := fs.String("at", "", "RFC3339 record time")
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
 	apply := fs.Bool("apply", false, "Append the typed GitHub issue comment")
@@ -2291,6 +2318,10 @@ func runPMRecord(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
+	var measurement *gira.PMMeasurementPlan
+	if strings.EqualFold(strings.TrimSpace(*kind), "measurement") {
+		measurement = &gira.PMMeasurementPlan{Signal: *signal, SignalKind: *signalKind, EvidenceType: *evidenceType, Baseline: *baseline, BaselineDefinition: *baselineDefinition, Target: *target, TargetDirection: *targetDirection, ObservationWindow: *observationWindow, DataSource: *dataSource, SourceStatus: *sourceStatus, Owner: *owner, DecisionRule: *decisionRule, Evaluation: *evaluation, PostChangeDefinition: *postChangeDefinition, QualitativeMethod: *qualitativeMethod, QualitativeSample: *qualitativeSample, QualitativeLimits: *qualitativeLimits, EvidenceLimitation: *evidenceLimitation, FollowUpRef: *followUpRef}
+	}
 	report, err := newPMRecordReport(gira.PMRecordInput{
 		Repo: repo, Ticket: *ticket, ID: *id, Kind: *kind, Text: textValue, SourceRefs: sources,
 		ActorKind: *actorKind, Status: *status, Supersedes: *supersedes, RecordedAt: recordedAt, DryRun: *dryRun, Apply: *apply,
@@ -2298,6 +2329,7 @@ func runPMRecord(args []string, stdout io.Writer, stderr io.Writer) int {
 		RiskType: *riskType, EvidenceStrength: *evidenceStrength, Confidence: *confidence,
 		FalsificationTest: *falsificationTest, TestWaiver: *testWaiver, ExperimentState: *experimentState,
 		Conclusion: *conclusion, OutcomeState: *outcomeState,
+		Measurement: measurement,
 	})
 	if *jsonOutput {
 		out, _ := json.MarshalIndent(report, "", "  ")
@@ -2309,6 +2341,58 @@ func runPMRecord(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	return 0
+}
+
+func runPMMeasure(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pm measure", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo")
+	ticket := fs.Int("ticket", 0, "PM ledger issue")
+	issue := fs.Int("issue", 0, "Compatibility alias")
+	budget := fs.Int("context-budget", 6000, "Compact context budget")
+	jsonOutput := fs.Bool("json", false, "Stable JSON")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, pmHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n", fs.Arg(0))
+		return 2
+	}
+	if *ticket == 0 {
+		*ticket = *issue
+	}
+	if *budget < 512 || *budget > 20000 {
+		fmt.Fprintln(stderr, "--context-budget must be between 512 and 20000")
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	report, err := newPMMeasurementReport(gira.PMMeasurementInput{Repo: repo, Ticket: *ticket})
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if *jsonOutput {
+		out, e := gira.FormatPMMeasurementJSON(report)
+		if e != nil {
+			fmt.Fprintln(stderr, e)
+			return 2
+		}
+		fmt.Fprintf(stdout, "%s\n", out)
+		return 0
+	}
+	fmt.Fprint(stdout, gira.FormatPMMeasurement(report, *budget))
 	return 0
 }
 

@@ -25,6 +25,7 @@ type PMAcceptanceQAReport struct {
 	PMStatePresent bool                    `json:"pm_state_present"`
 	DiffSummary    *AgentReviewDiffSummary `json:"diff_summary,omitempty"`
 	VerdictSchema  PMAcceptanceQAVerdict   `json:"verdict_schema"`
+	Measurement    *PMMeasurementReport    `json:"measurement,omitempty"`
 	Prompt         string                  `json:"prompt"`
 	NextStep       string                  `json:"next_step"`
 }
@@ -79,6 +80,9 @@ func BuildPMAcceptanceQAReport(input PMAcceptanceQAInput, runner CommandRunner) 
 	if agent.Review != nil && agent.Review.DiffSummary != nil {
 		report.DiffSummary = agent.Review.DiffSummary
 	}
+	if measurement, measureErr := BuildPMMeasurementReport(PMMeasurementInput{Repo: input.Repo, Ticket: input.Ticket}, runner); measureErr == nil && (measurement.Summary.Outcomes > 0 || measurement.Summary.Measurements > 0) {
+		report.Measurement = &measurement
+	}
 	report.Prompt = RenderPMAcceptanceQAPrompt(report)
 	return report, nil
 }
@@ -92,6 +96,9 @@ func RenderPMAcceptanceQAPrompt(report PMAcceptanceQAReport) string {
 		fmt.Fprintf(&b, "Pull Request: `#%d` %s\n", report.PR.Number, report.PR.Title)
 	}
 	fmt.Fprintf(&b, "PM State Present: `%t`\n\n", report.PMStatePresent)
+	if report.Measurement != nil {
+		fmt.Fprintf(&b, "Outcome Measurement: validated=%d not_validated=%d limited=%d blocked=%d diagnostics=%d\n\n", report.Measurement.Summary.Validated, report.Measurement.Summary.NotValidated, report.Measurement.Summary.Limited, report.Measurement.Summary.Blocked, len(report.Measurement.Diagnostics))
+	}
 	b.WriteString("## Role Boundary\n\n")
 	b.WriteString("- You are performing PM acceptance QA, not engineering code review.\n")
 	b.WriteString("- Engineering review owns code quality, correctness, regression risk, security, and tests.\n")
@@ -138,6 +145,7 @@ func RenderPMAcceptanceQAPrompt(report PMAcceptanceQAReport) string {
 	b.WriteString("8. Did it avoid rabbit holes and unrelated scope drift?\n")
 	b.WriteString("9. Did it reduce, isolate, or explicitly follow up risks in the PM state?\n")
 	b.WriteString("10. Is the change reversible or safely rolled out when risk requires it?\n\n")
+	b.WriteString("11. Does outcome evidence satisfy the measurement decision rule without delivery proxies or regressed guardrails?\n\n")
 	b.WriteString("## Implementation Claims Matrix\n\n")
 	b.WriteString("| Acceptance criterion | PR claim | Evidence | PM QA result |\n")
 	b.WriteString("| --- | --- | --- | --- |\n")

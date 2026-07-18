@@ -293,6 +293,16 @@ func pmRecordApprovalCommand(report PMRecordReport, mode string) string {
 			args = append(args, item.flag, QuoteShellArg(item.value))
 		}
 	}
+	if p := report.Record.Measurement; p != nil {
+		measurement := []struct{ flag, value string }{
+			{"--signal", p.Signal}, {"--signal-kind", p.SignalKind}, {"--evidence-type", p.EvidenceType}, {"--baseline", p.Baseline}, {"--baseline-definition", p.BaselineDefinition}, {"--target", p.Target}, {"--target-direction", p.TargetDirection}, {"--observation-window", p.ObservationWindow}, {"--data-source", p.DataSource}, {"--source-status", p.SourceStatus}, {"--owner", p.Owner}, {"--decision-rule", p.DecisionRule}, {"--evaluation", p.Evaluation}, {"--post-change-definition", p.PostChangeDefinition}, {"--qualitative-method", p.QualitativeMethod}, {"--qualitative-sample", p.QualitativeSample}, {"--qualitative-limits", p.QualitativeLimits}, {"--evidence-limitation", p.EvidenceLimitation}, {"--follow-up-ref", p.FollowUpRef},
+		}
+		for _, item := range measurement {
+			if item.value != "" {
+				args = append(args, item.flag, QuoteShellArg(item.value))
+			}
+		}
+	}
 	args = append(args, mode)
 	return strings.Join(args, " ")
 }

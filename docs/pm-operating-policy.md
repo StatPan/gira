@@ -147,7 +147,7 @@ useful but does not yet satisfy the complete PM policy.
 | Decide | `pm record`, decision policy helpers and queue resolution from #839 | `pm-ledger-record/v1`, `pm-record-report/v1`, `decision-policy/v1` | partial | append-safe decision state exists; option comparison and Goal routing integration remain follow-up work |
 | Plan | `pm spec`, `goal plan --compact-json` | `pm-task-profile/v1`, `pm-profile-promotion/v1`, `gira-pm-task-packet/v2`, `goal-plan/v1`, `goal-plan-compact/v1` | partial | typed compact packets are implemented; outcome-tree decomposition and graph projection remain follow-up work |
 | Execute | ticket lifecycle and queue take | readiness, approval, start, PR, checks, finish schemas | supported | consume typed PM profiles without weakening lifecycle gates |
-| Observe | `goal status`, `goal report`, workspace queues | `goal-status/v1`, `goal-dossier/v1`, `workspace-queues/v1` | partial | delivery health without product learning or outcome confidence |
+| Observe | `pm measure`, `goal status`, `goal report`, PM QA, workspace queues | `pm-measurement-report/v1`, `goal-status/v1`, `goal-dossier/v1`, `gira-pm-qa/v1`, `workspace-queues/v1` | partial | typed outcome validation is implemented; portfolio aggregation remains follow-up work |
 | Replan | manual issue edits and supersede | ticket supersede receipt | partial | no Goal-level evidence-triggered replan contract |
 | Validate | `pm qa` | `gira-pm-qa/v1` prompt and verdict vocabulary | partial | verdict not persisted; delivery and outcome validation not separated |
 | Report | Goal dossier, workspace and release reports | versioned report schemas | partial | premise, decisions, assumptions, learning, and plan deltas absent |
@@ -243,6 +243,27 @@ invalid relation types, missing evidence, and false validation remain visible;
 the command never fabricates a link or mutates GitHub.
 Optional typed Goal references and task-profile links preserve where learning
 belongs and which work contract it may promote into.
+
+### Outcome Measurement And Validation
+
+Measurement records attach to outcome records with `measures`. Each plan names
+a leading, lagging, delivery, health, or guardrail signal and records evidence
+type, baseline and definition, target/direction, bounded observation window,
+source availability, owner, and decision rule. Quantitative and proportionate
+qualitative evidence are both valid; qualitative plans additionally preserve
+method, sample/context, and limits. When data is unavailable, an explicit
+limitation and follow-up task replace a fabricated result.
+
+`gira pm measure` deterministically reports validated, not-validated,
+inconclusive, limited, or blocked outcome state. Delivery-only evidence cannot
+validate a product outcome. Baseline/post-change definition drift produces a
+comparability warning, and a regressed guardrail blocks validation even when a
+primary target is met. Stable `PMM001`-`PMM011` diagnostics also expose missing
+baselines, unbounded windows, unavailable sources, vanity metrics, and incomplete
+qualitative evidence. Compact output is default; `--json` retains the full plan,
+source refs, and diagnostics. PM QA and Goal dossiers include the report when
+typed measurement state exists; rollout/measurement task-profile links keep
+follow-up work connected without requiring an analytics warehouse.
 
 ### Typed Task Profiles And Promotion
 

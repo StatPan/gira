@@ -995,6 +995,40 @@ gira pm measure --repo OWNER/app --ticket 123 --json
 
 Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
 
+## `pm observe`
+
+Diagnose product-state changes and order bounded PM actions without mutation.
+
+Usage:
+
+```bash
+gira pm observe --repo OWNER/REPO --ticket N [--json]
+```
+
+Since: `v3.0.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo.
+- `--ticket`: Goal issue holding typed PM and work graph state.
+- `--json`: Emit full pm-observe-report/v1 JSON with source reports.
+
+Examples:
+
+- Inspect the next bounded PM actions
+
+```bash
+gira pm observe --repo OWNER/app --ticket 123
+```
+
+- Inspect source diagnoses and recommendation change
+
+```bash
+gira pm observe --repo OWNER/app --ticket 123 --json
+```
+
+Documented in: `docs/pm-operating-policy.md`, `docs/goal-operating-model.md`, `docs-site/command-reference.md`
+
 ## `pm qa`
 
 Render a PM acceptance QA prompt from task-local PM state and PR evidence.
@@ -1101,6 +1135,45 @@ gira pm record --repo OWNER/app --ticket 123 --id decision.output.1 --kind decis
 ```
 
 Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
+
+## `pm replan`
+
+Preview or apply fingerprinted, capability-aware Goal graph mutations.
+
+Usage:
+
+```bash
+gira pm replan --repo OWNER/REPO --ticket N --dry-run|--apply [--expect-plan ID] [--override ACTION --rationale TEXT] [--json]
+```
+
+Since: `v3.0.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo.
+- `--ticket`: Goal issue holding typed PM and work graph state.
+- `--dry-run`: Preview every graph mutation and residual authority action.
+- `--apply`: Apply only safe mutations from an unchanged plan.
+- `--expect-plan`: Approved pmr-* dry-run fingerprint required by apply.
+- `--override`: Explicit human override, including unblock:#N.
+- `--rationale`: Durable product rationale required with an override.
+- `--json`: Emit stable pm-replan-report/v1 JSON.
+
+Examples:
+
+- Preview evidence-triggered mutations
+
+```bash
+gira pm replan --repo OWNER/app --ticket 123 --dry-run --json
+```
+
+- Apply an unchanged replan
+
+```bash
+gira pm replan --repo OWNER/app --ticket 123 --apply --expect-plan pmr-...
+```
+
+Documented in: `docs/pm-operating-policy.md`, `docs/goal-operating-model.md`, `docs-site/command-reference.md`
 
 ## `pm spec`
 

@@ -403,6 +403,8 @@ Usage:
   gira pm context --repo OWNER/REPO --ticket N [--context-budget N] [--json]
   gira pm discovery --repo OWNER/REPO --ticket N [--context-budget N] [--json]
   gira pm measure --repo OWNER/REPO --ticket N [--context-budget N] [--json]
+  gira pm observe --repo OWNER/REPO --ticket N [--json]
+  gira pm replan --repo OWNER/REPO --ticket N --dry-run|--apply [--expect-plan ID] [--override ACTION --rationale TEXT] [--json]
   gira pm spec [--profile PROFILE] [--context-ref REF] [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode MODE] [--json]
   gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]
 
@@ -412,6 +414,8 @@ Commands:
   context  Hydrate compact current PM state from typed and legacy issue evidence
   discovery  Trace outcomes, opportunities, hypotheses, experiments, learning, and decisions
   measure  Validate outcome measurement plans and evidence
+  observe  Diagnose product-state changes and order bounded PM actions without mutation
+  replan   Preview or apply fingerprinted, capability-aware graph mutations
   spec  Render a compact profile-aware PM task packet from raw intent
   qa    Render a PM acceptance QA prompt from task-local PM state and PR evidence
 
@@ -431,6 +435,9 @@ Flags:
   --supersedes string  Prior record ID superseded by this record
   --at string          RFC3339 record time; defaults to the current time
   --context-budget int Maximum compact context size in characters. Default: 6000
+  --expect-plan string Approved pmr-* replan fingerprint required by apply
+  --override string    Explicit human override, including unblock:#N
+  --rationale string   Durable product rationale required with an override
   --profile string     discovery|decision|experiment|delivery|rollout|measurement|documentation|legacy. Default: delivery
   --context-ref string Stable parent premise/policy reference; repeatable
   --intent string      Raw product/development intent
@@ -1734,6 +1741,14 @@ var newPMMeasurementReport = func(input gira.PMMeasurementInput) (gira.PMMeasure
 	return gira.BuildPMMeasurementReport(input, devCommandRunner)
 }
 
+var newPMObserveReport = func(input gira.PMObserveInput) (gira.PMObserveReport, error) {
+	return gira.BuildPMObserveReport(input, devCommandRunner)
+}
+
+var newPMReplanReport = func(input gira.PMReplanInput) (gira.PMReplanReport, error) {
+	return gira.BuildPMReplanReport(input, devCommandRunner)
+}
+
 var newPMAcceptanceQAReport = func(input gira.PMAcceptanceQAInput) (gira.PMAcceptanceQAReport, error) {
 	return gira.BuildPMAcceptanceQAReport(input, devCommandRunner)
 }
@@ -2168,6 +2183,10 @@ func runPM(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runPMDiscovery(args[1:], stdout, stderr)
 	case "measure":
 		return runPMMeasure(args[1:], stdout, stderr)
+	case "observe":
+		return runPMObserve(args[1:], stdout, stderr)
+	case "replan":
+		return runPMReplan(args[1:], stdout, stderr)
 	case "spec":
 		return runPMSpec(args[1:], stdout, stderr)
 	case "qa":
@@ -2399,6 +2418,109 @@ func runPMMeasure(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatPMMeasurement(report, *budget))
+	return 0
+}
+
+func runPMObserve(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pm observe", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo")
+	ticket := fs.Int("ticket", 0, "Goal issue holding PM state")
+	issue := fs.Int("issue", 0, "Compatibility alias")
+	jsonOutput := fs.Bool("json", false, "Stable JSON")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, pmHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n", fs.Arg(0))
+		return 2
+	}
+	if *ticket == 0 {
+		*ticket = *issue
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	report, err := newPMObserveReport(gira.PMObserveInput{Repo: repo, Ticket: *ticket})
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+	} else {
+		fmt.Fprint(stdout, gira.FormatPMObserve(report))
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func runPMReplan(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pm replan", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo")
+	ticket := fs.Int("ticket", 0, "Goal issue holding PM state")
+	issue := fs.Int("issue", 0, "Compatibility alias")
+	dryRun := fs.Bool("dry-run", false, "Preview replan mutations")
+	apply := fs.Bool("apply", false, "Apply approved replan mutations")
+	expect := fs.String("expect-plan", "", "Approved pmr-* fingerprint")
+	override := fs.String("override", "", "Explicit human override")
+	rationale := fs.String("rationale", "", "Durable override rationale")
+	jsonOutput := fs.Bool("json", false, "Stable JSON")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, pmHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n", fs.Arg(0))
+		return 2
+	}
+	if *ticket == 0 {
+		*ticket = *issue
+	}
+	if *dryRun == *apply {
+		fmt.Fprintln(stderr, "choose exactly one of --dry-run or --apply")
+		return 2
+	}
+	if *apply && strings.TrimSpace(*expect) == "" {
+		fmt.Fprintln(stderr, "--apply requires --expect-plan from a dry-run")
+		return 2
+	}
+	if !*apply && strings.TrimSpace(*expect) != "" {
+		fmt.Fprintln(stderr, "--expect-plan requires --apply")
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	report, err := newPMReplanReport(gira.PMReplanInput{Repo: repo, Ticket: *ticket, DryRun: *dryRun, Apply: *apply, ExpectedPlanID: *expect, Override: *override, OverrideRationale: *rationale})
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+	} else {
+		fmt.Fprint(stdout, gira.FormatPMReplan(report))
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
 	return 0
 }
 

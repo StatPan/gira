@@ -370,6 +370,16 @@ func CoreCommandSpecs() []CommandSpec {
 			Docs:  []string{"docs/pm-operating-policy.md", "docs/pm-skill.md", "docs-site/command-reference.md"}, GuideTopics: []string{"quickstart"}, Examples: []CommandExample{{Summary: "Validate current outcome evidence", Command: "gira pm measure --repo OWNER/app --ticket 123"}, {Summary: "Inspect full measurement provenance", Command: "gira pm measure --repo OWNER/app --ticket 123 --json"}}, Adapter: adapterRead(JSONSupportStable),
 		},
 		{
+			Path: []string{"pm", "observe"}, Summary: "Diagnose product-state changes and order bounded PM actions without mutation.", Usage: "gira pm observe --repo OWNER/REPO --ticket N [--json]", Since: "v3.0.0",
+			Flags: []FlagSpec{{Name: "--repo", Summary: "Target GitHub repo."}, {Name: "--ticket", Summary: "Goal issue holding typed PM and work graph state."}, {Name: "--json", Summary: "Emit full pm-observe-report/v1 JSON with source reports."}},
+			Docs:  []string{"docs/pm-operating-policy.md", "docs/goal-operating-model.md", "docs-site/command-reference.md"}, GuideTopics: []string{"agent", "quickstart"}, Examples: []CommandExample{{Summary: "Inspect the next bounded PM actions", Command: "gira pm observe --repo OWNER/app --ticket 123"}, {Summary: "Inspect source diagnoses and recommendation change", Command: "gira pm observe --repo OWNER/app --ticket 123 --json"}}, Adapter: adapterRead(JSONSupportStable),
+		},
+		{
+			Path: []string{"pm", "replan"}, Summary: "Preview or apply fingerprinted, capability-aware Goal graph mutations.", Usage: "gira pm replan --repo OWNER/REPO --ticket N --dry-run|--apply [--expect-plan ID] [--override ACTION --rationale TEXT] [--json]", Since: "v3.0.0",
+			Flags: []FlagSpec{{Name: "--repo", Summary: "Target GitHub repo."}, {Name: "--ticket", Summary: "Goal issue holding typed PM and work graph state."}, {Name: "--dry-run", Summary: "Preview every graph mutation and residual authority action."}, {Name: "--apply", Summary: "Apply only safe mutations from an unchanged plan."}, {Name: "--expect-plan", Summary: "Approved pmr-* dry-run fingerprint required by apply."}, {Name: "--override", Summary: "Explicit human override, including unblock:#N."}, {Name: "--rationale", Summary: "Durable product rationale required with an override."}, {Name: "--json", Summary: "Emit stable pm-replan-report/v1 JSON."}},
+			Docs:  []string{"docs/pm-operating-policy.md", "docs/goal-operating-model.md", "docs-site/command-reference.md"}, GuideTopics: []string{"agent", "quickstart"}, Examples: []CommandExample{{Summary: "Preview evidence-triggered mutations", Command: "gira pm replan --repo OWNER/app --ticket 123 --dry-run --json"}, {Summary: "Apply an unchanged replan", Command: "gira pm replan --repo OWNER/app --ticket 123 --apply --expect-plan pmr-..."}}, Adapter: adapterApply("applies fingerprint-approved safe graph mutations and durable override/replan receipts; irreversible actions remain residual decisions", JSONSupportStable),
+		},
+		{
 			Path:    []string{"pm", "discovery"},
 			Summary: "Trace product outcomes through opportunities, hypotheses, experiments, learning, and decisions.",
 			Usage:   "gira pm discovery --repo OWNER/REPO --ticket N [--context-budget N] [--json]",
@@ -1400,6 +1410,10 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "pm measure":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "pm observe":
+			specs[i].Adapter = adapterRead(JSONSupportStable)
+		case "pm replan":
+			specs[i].Adapter = adapterApply("applies fingerprint-approved safe graph mutations and durable override/replan receipts; irreversible actions remain residual decisions", JSONSupportStable)
 		case "pm qa":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Reads GitHub issue and PR context; does not mutate GitHub."}
 		case "completion":

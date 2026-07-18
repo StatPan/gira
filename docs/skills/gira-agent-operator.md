@@ -1,31 +1,23 @@
 # Gira Agent Operator Skill
 
-This is the canonical operator skill. Adapters and docs should point here
-instead of redefining Gira operating rules.
+This is the canonical operator skill; adapters point here.
 
 ## Purpose
 
-Gira turns GitHub into the execution backend for an AI-ready project operating
-system. Issues are executable work packets, branches are work-start evidence,
-pull requests are change units, milestones are phase boundaries, and merged PRs
-plus closed issues are completion evidence.
+Gira makes GitHub the execution backend: issues are work packets, branches are
+start evidence, PRs are change units, and milestones are phase boundaries.
 
 ## Canonical And Adapted Surfaces
 
-- Canonical source: `docs/skills/gira-agent-operator.md`.
 - Canonical PM role and authority policy: `docs/pm-operating-policy.md`.
 - PM task-packet source: `docs/pm-skill.md`.
-- CLI summary: `gira guide agent` and `gira guide skill`.
-- Existing Codex/OpenAI adapter: `AGENTS.md`.
-- Optional adapters: `CLAUDE.md`, Copilot, and Cursor rules.
-- Human documentation: docs-site agent operator skill page.
+- CLI summary: `gira guide agent`; Codex adapter: `AGENTS.md`.
+- Optional adapters and human docs must link to canonical sources.
 
 ## Operating Model
 
-- GitHub Issues are executable work packets.
-- A branch is evidence that work has started for one issue.
-- A pull request is the unit of code review and change delivery.
-- A merged PR plus a closed linked issue is completion evidence.
+- A branch starts one issue; a PR is its review and delivery unit.
+- A merged PR plus its closed linked issue is completion evidence.
 - Milestones group bounded phases such as sprints, releases, or MVP slices.
 - GitHub Projects are visibility surfaces. Project-only items must be routed to
   repository issues before implementation starts.
@@ -119,7 +111,9 @@ This generated section contains command facts for the agent lifecycle. Update `i
 - `gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]`: Build a visible report for one goal from stable Goal Mode state. Alias: gira goal dossier.
 - `gira goal status [GOAL] [--repo OWNER/REPO] [--json]`: Summarize a goal issue, child ticket graph, blockers, and next safe action.
 - `gira ops limit [--repo OWNER/REPO] [--workflow NAME] [--json]`: Show GitHub REST, GraphQL, search, secondary-limit, and workflow budget diagnostics.
+- `gira pm observe --repo OWNER/REPO --ticket N [--json]`: Diagnose product-state changes and order bounded PM actions without mutation.
 - `gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]`: Render a PM acceptance QA prompt from task-local PM state and PR evidence.
+- `gira pm replan --repo OWNER/REPO --ticket N --dry-run|--apply [--expect-plan ID] [--override ACTION --rationale TEXT] [--json]`: Preview or apply fingerprinted, capability-aware Goal graph mutations.
 - `gira pm spec [--profile PROFILE] [INPUT] [--json]`: Render a compact profile-aware PM packet.
 - `gira queue handoff [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] [--json]`: Select or inspect an agent-ready workspace queue item and embed the worker-handoff/v1 payload.
 - `gira queue list [--config .gira/config.yaml] [--repo OWNER/REPO] [--queue ready|review|finish|blocked|failed|human] [--limit N] [--compact] [--json]`: List workspace queue items derived from workspace-queues/v1.

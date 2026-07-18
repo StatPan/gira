@@ -175,6 +175,26 @@ unchanged graph and posts a receipt. Repeating the approved apply returns the
 existing receipt without duplicating children. Full JSON retains PM IR digest,
 discovery outcome refs, graph semantics, diagnostics, and rendered action data.
 
+### Active Observe and Replan Loop
+
+`gira pm observe` reads the current Goal, typed ledger/discovery graph, work
+graph, delivery children, and measurement evidence. It deterministically
+diagnoses invalidated assumptions, stale context, review-due decisions, open
+questions, blocked learning, missing outcome evidence, scope drift, and invalid
+work graphs. Recommendations use the bounded vocabulary `continue`, `retrieve`,
+`discover`, `decide`, `split`, `replan`, `validate`, `report`, and `stop`, with a
+named capability and residual-authority flag for each action.
+
+`gira pm replan --dry-run` projects those diagnoses onto the typed graph and
+names every `create`, `reuse`, `supersede`, `split`, `defer`, or explicit
+`unblock` mutation. Apply requires the unchanged `pmr-*` fingerprint. Safe
+independent creates and reuses continue; closing or otherwise irreversible work
+is compiled into one decision packet instead of being silently applied. A
+human override requires `--override` and `--rationale`; apply stores the
+rationale as durable typed decision evidence before posting the idempotent
+replan receipt. Receipts retain the prior recommendation digest, so later
+evidence can explain why the proposed plan changed without rewriting history.
+
 ## Safe Progress
 
 `goal next` should choose work by evidence, not by optimism:

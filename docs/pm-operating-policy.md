@@ -149,9 +149,29 @@ useful but does not yet satisfy the complete PM policy.
 | Execute | ticket lifecycle and queue take | readiness, approval, start, PR, checks, finish schemas | supported | consume typed PM profiles without weakening lifecycle gates |
 | Observe | `pm observe`, `pm measure`, `goal status`, `goal report`, PM QA, workspace queues | `pm-observe-report/v1`, `pm-measurement-report/v1`, `goal-status/v1`, `goal-dossier/v1`, `gira-pm-qa/v1`, `workspace-queues/v1` | supported | portfolio aggregation remains follow-up work |
 | Replan | `pm observe`, `pm replan` | `pm-observe-report/v1`, `pm-replan-report/v1` | supported | connect future portfolio-wide triggers without adding a background daemon or implicit mutation |
-| Validate | `pm qa` | `gira-pm-qa/v1` prompt and verdict vocabulary | partial | verdict not persisted; delivery and outcome validation not separated |
+| Validate | `pm qa`, `pm accept` | `gira-pm-qa/v1`, `pm-acceptance-result/v1`, `pm-acceptance-report/v1` | supported | retain engineering review as a separate branch-protection responsibility |
 | Report | Goal dossier, workspace and release reports | versioned report schemas | partial | premise, decisions, assumptions, learning, and plan deltas absent |
 | Adapter | generic MCP CLI parity | MCP tool envelopes over CLI | partial | tool access does not activate or prove PM protocol conformance |
+
+### Durable PM Acceptance
+
+`gira pm qa` remains a read-only review prompt. Its durable boundary is
+`gira pm accept --from-file RESULT.json --dry-run|--apply`. The
+`pm-acceptance-result/v1` input maps every criterion and implementation claim to
+inspectable evidence, records delivery acceptance separately from product
+outcome validation, and identifies the reviewed PR. Merge, check, test, or diff
+evidence may support delivery acceptance but MUST NOT by itself set an outcome
+to `validated`; outcome support requires an explicit measurement, metric, data,
+research, customer, or experiment reference.
+
+Delivery states distinguish `implementation_mismatch` from `spec_repair` so
+the former produces delivery work and the latter produces decision work.
+`inconclusive` outcome evidence produces measurement/observation work rather
+than a success or failure declaration. Apply appends the immutable acceptance
+result plus a typed ledger transition. Identical evidence is idempotent; changed
+evidence receives a new content-derived ID and supersedes, rather than rewrites,
+the prior verdict. `pm observe` consumes the latest valid verdict and routes it
+back into the active PM action loop.
 
 Unsupported coverage MUST be reported honestly. Adapters MUST NOT imply that a
 prompt, template, or generic command transport enforces a PM capability that the

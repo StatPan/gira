@@ -31,6 +31,8 @@ type PMAcceptanceQAReport struct {
 }
 
 type PMAcceptanceQAVerdict struct {
+	DeliveryAcceptance      []string `json:"delivery_acceptance"`
+	OutcomeValidation       []string `json:"outcome_validation"`
 	ProblemSolved           []string `json:"problem_solved"`
 	GoalSatisfied           []string `json:"goal_satisfied"`
 	AcceptanceStatus        []string `json:"acceptance_status"`
@@ -66,6 +68,8 @@ func BuildPMAcceptanceQAReport(input PMAcceptanceQAInput, runner CommandRunner) 
 		PR:             agent.PR,
 		PMStatePresent: strings.Contains(agent.Issue.Body, PMStateMarker),
 		VerdictSchema: PMAcceptanceQAVerdict{
+			DeliveryAcceptance:      []string{"accepted", "implementation_mismatch", "spec_repair", "follow_up", "risk_reduction", "inconclusive"},
+			OutcomeValidation:       []string{"not_evaluated", "validated", "not_validated", "inconclusive"},
 			ProblemSolved:           []string{"yes", "no", "partial", "unknown"},
 			GoalSatisfied:           []string{"yes", "no", "partial", "unknown"},
 			AcceptanceStatus:        []string{"satisfied", "missing", "partial", "unknown"},
@@ -73,7 +77,7 @@ func BuildPMAcceptanceQAReport(input PMAcceptanceQAInput, runner CommandRunner) 
 			NonGoalStatus:           []string{"preserved", "violated", "not_present", "unknown"},
 			ScopeDrift:              []string{"none", "minor", "major", "unknown"},
 			RiskDisposition:         []string{"reduced", "not_reduced", "moved_to_follow_up", "unknown"},
-			RecommendedAction:       []string{"pm:accepted", "pm:implementation-mismatch", "pm:spec-repair", "pm:follow-up-task", "pm:risk-reduction-task"},
+			RecommendedAction:       []string{"pm:accepted", "pm:implementation-mismatch", "pm:spec-repair", "pm:follow-up-task", "pm:risk-reduction-task", "pm:inconclusive"},
 		},
 		NextStep: "Use the PM QA verdict to accept, request implementation fix, repair the spec, or create a follow-up task packet.",
 	}
@@ -151,6 +155,8 @@ func RenderPMAcceptanceQAPrompt(report PMAcceptanceQAReport) string {
 	b.WriteString("| --- | --- | --- | --- |\n")
 	b.WriteString("| Criterion from PM state | Claimed implementation behavior | Test, diff, screenshot, log, command, or explanation | accepted / mismatch / unknown |\n\n")
 	b.WriteString("## Verdict Schema\n\n")
+	b.WriteString("- delivery_acceptance: accepted | implementation_mismatch | spec_repair | follow_up | risk_reduction | inconclusive\n")
+	b.WriteString("- outcome_validation: not_evaluated | validated | not_validated | inconclusive\n")
 	b.WriteString("- recommended_action: pm:accepted | pm:implementation-mismatch | pm:spec-repair | pm:follow-up-task | pm:risk-reduction-task\n")
 	b.WriteString("- problem_solved: yes | no | partial | unknown\n")
 	b.WriteString("- goal_satisfied: yes | no | partial | unknown\n")

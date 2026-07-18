@@ -52,6 +52,7 @@ canonical sources instead of redefining them.
 - `gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]`: Build a visible report for one goal from stable Goal Mode state. Alias: gira goal dossier.
 - `gira goal status [GOAL] [--repo OWNER/REPO] [--json]`: Summarize a goal issue, child ticket graph, blockers, and next safe action.
 - `gira ops limit [--repo OWNER/REPO] [--workflow NAME] [--json]`: Show GitHub REST, GraphQL, search, secondary-limit, and workflow budget diagnostics.
+- `gira pm accept --repo OWNER/REPO --ticket N --from-file RESULT.json --dry-run|--apply [--json]`: Validate and persist source-linked delivery acceptance and product outcome validation.
 - `gira pm observe --repo OWNER/REPO --ticket N [--json]`: Diagnose product-state changes and order bounded PM actions without mutation.
 - `gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]`: Render a PM acceptance QA prompt from task-local PM state and PR evidence.
 - `gira pm replan --repo OWNER/REPO --ticket N --dry-run|--apply [--expect-plan ID] [--override ACTION --rationale TEXT] [--json]`: Preview or apply fingerprinted, capability-aware Goal graph mutations.

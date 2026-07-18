@@ -380,6 +380,11 @@ func CoreCommandSpecs() []CommandSpec {
 			Docs:  []string{"docs/pm-operating-policy.md", "docs/goal-operating-model.md", "docs-site/command-reference.md"}, GuideTopics: []string{"agent", "quickstart"}, Examples: []CommandExample{{Summary: "Preview evidence-triggered mutations", Command: "gira pm replan --repo OWNER/app --ticket 123 --dry-run --json"}, {Summary: "Apply an unchanged replan", Command: "gira pm replan --repo OWNER/app --ticket 123 --apply --expect-plan pmr-..."}}, Adapter: adapterApply("applies fingerprint-approved safe graph mutations and durable override/replan receipts; irreversible actions remain residual decisions", JSONSupportStable),
 		},
 		{
+			Path: []string{"pm", "accept"}, Summary: "Validate and persist source-linked delivery acceptance and product outcome validation.", Usage: "gira pm accept --repo OWNER/REPO --ticket N --from-file RESULT.json --dry-run|--apply [--json]", Since: "v3.0.0",
+			Flags: []FlagSpec{{Name: "--repo", Summary: "Target GitHub repo."}, {Name: "--ticket", Summary: "Issue receiving the acceptance result and learning transition."}, {Name: "--from-file", Summary: "pm-acceptance-result/v1 JSON path, or - for stdin."}, {Name: "--dry-run", Summary: "Validate evidence mappings and transitions without persistence."}, {Name: "--apply", Summary: "Persist the verdict and typed ledger transition idempotently."}, {Name: "--json", Summary: "Emit stable pm-acceptance-report/v1 JSON."}},
+			Docs:  []string{"docs/pm-operating-policy.md", "docs/pm-skill.md", "docs-site/command-reference.md"}, GuideTopics: []string{"agent", "quickstart"}, Examples: []CommandExample{{Summary: "Validate a PM verdict", Command: "gira pm accept --repo OWNER/app --ticket 123 --from-file acceptance.json --dry-run --json"}, {Summary: "Persist verdict and learning transition", Command: "gira pm accept --repo OWNER/app --ticket 123 --from-file acceptance.json --apply"}}, Adapter: adapterApply("persists an evidence-mapped PM acceptance result and typed learning transition; dry-run rejects delivery proxies for outcome validation", JSONSupportStable),
+		},
+		{
 			Path:    []string{"pm", "discovery"},
 			Summary: "Trace product outcomes through opportunities, hypotheses, experiments, learning, and decisions.",
 			Usage:   "gira pm discovery --repo OWNER/REPO --ticket N [--context-budget N] [--json]",
@@ -1414,6 +1419,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "pm replan":
 			specs[i].Adapter = adapterApply("applies fingerprint-approved safe graph mutations and durable override/replan receipts; irreversible actions remain residual decisions", JSONSupportStable)
+		case "pm accept":
+			specs[i].Adapter = adapterApply("persists an evidence-mapped PM acceptance result and typed learning transition; dry-run rejects delivery proxies for outcome validation", JSONSupportStable)
 		case "pm qa":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Reads GitHub issue and PR context; does not mutate GitHub."}
 		case "completion":

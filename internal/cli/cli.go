@@ -1003,6 +1003,7 @@ const goalHelp = `Goal-mode commands for long-running AI-assisted work.
 Usage:
   gira goal new "Title" --dry-run|--apply [--objective TEXT] [--scope TEXT] [--json]
   gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]
+  gira goal graph [GOAL] [--dry-run|--apply --expect-plan ID] [--repo OWNER/REPO] [--json|--compact-json]
   gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]
   gira goal status [GOAL] [--repo OWNER/REPO] [--json]
   gira goal next [GOAL] [--repo OWNER/REPO] [--json]
@@ -1012,6 +1013,7 @@ Usage:
 Commands:
   new     Create a goal issue with the Goal Mode operating sections
   plan    Propose or create child ticket packets from a goal issue
+  graph   Compile or fingerprint-lower a typed PM work graph
   report  Build a visible goal report. Alias: dossier
   status  Summarize a goal issue, child ticket graph, blockers, and next safe action
   next    Select the next safe child ticket or explain why the goal must stop
@@ -1738,6 +1740,10 @@ var newPMAcceptanceQAReport = func(input gira.PMAcceptanceQAInput) (gira.PMAccep
 
 var newGoalPlanReport = func(input gira.GoalPlanInput) (gira.GoalPlanReport, error) {
 	return gira.BuildGoalPlanReport(input, devCommandRunner)
+}
+
+var newPMWorkGraphReport = func(input gira.PMWorkGraphInput) (gira.PMWorkGraphReport, error) {
+	return gira.BuildPMWorkGraphReport(input, devCommandRunner)
 }
 
 var newGoalFinishReport = func(input gira.GoalFinishInput) (gira.GoalFinishReport, error) {
@@ -4702,6 +4708,8 @@ func runGoal(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runGoalNew(args[1:], stdout, stderr)
 	case "plan":
 		return runGoalPlan(args[1:], stdout, stderr)
+	case "graph":
+		return runGoalGraph(args[1:], stdout, stderr)
 	case "report":
 		return runGoalReport(args[1:], "report", stdout, stderr)
 	case "dossier":
@@ -4913,6 +4921,75 @@ func runGoalNew(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatGoalNew(report))
+	return 0
+}
+
+func runGoalGraph(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positional, ok := extractNumericPositional(args, "goal", stderr)
+	if !ok {
+		return 2
+	}
+	fs := flag.NewFlagSet("goal graph", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo")
+	goal := fs.Int("goal", 0, "Goal issue number")
+	dryRun := fs.Bool("dry-run", false, "Preview lowering")
+	apply := fs.Bool("apply", false, "Apply fingerprinted lowering")
+	expect := fs.String("expect-plan", "", "Approved dry-run fingerprint")
+	jsonOutput := fs.Bool("json", false, "Full JSON")
+	compact := fs.Bool("compact-json", false, "Compact JSON")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, goalHelp)
+		return 0
+	}
+	if positional > 0 {
+		if *goal > 0 && *goal != positional {
+			fmt.Fprintln(stderr, "--goal and positional goal must match")
+			return 2
+		}
+		*goal = positional
+	}
+	if *dryRun && *apply {
+		fmt.Fprintln(stderr, "choose at most one of --dry-run or --apply")
+		return 2
+	}
+	if *apply && strings.TrimSpace(*expect) == "" {
+		fmt.Fprintln(stderr, "--apply requires --expect-plan from a dry-run")
+		return 2
+	}
+	if *expect != "" && !*apply {
+		fmt.Fprintln(stderr, "--expect-plan requires --apply")
+		return 2
+	}
+	if *jsonOutput && *compact {
+		fmt.Fprintln(stderr, "choose at most one of --json or --compact-json")
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	report, err := newPMWorkGraphReport(gira.PMWorkGraphInput{Repo: repo, Goal: *goal, DryRun: *dryRun, Apply: *apply, ExpectedPlanID: *expect})
+	if *compact {
+		out, _ := json.MarshalIndent(gira.BuildPMWorkGraphCompact(report), "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+	} else if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+	} else {
+		fmt.Fprint(stdout, gira.FormatPMWorkGraph(report))
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
 	return 0
 }
 

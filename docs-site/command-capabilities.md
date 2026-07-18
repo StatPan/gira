@@ -13,6 +13,7 @@ Schema version: `gira-command-capabilities/v1`
 | `gira feature for` | gira feat for | `read` | `stable_json` | none | docs/feature-map.md, docs-site/feature-map.md, docs-site/command-reference.md |
 | `gira feature list` | gira feat list | `read` | `stable_json` | none | docs/feature-map.md, docs-site/feature-map.md, docs-site/command-reference.md |
 | `gira goal finish` | none | `apply_mutation` | `stable_json` | posts an idempotent goal finish receipt; explicit --terminal done may normalize labels and close the goal, while explicit --terminal human_review preserves blocker handoff | docs/goal-operating-model.md, docs-site/command-reference.md |
+| `gira goal graph` | none | `apply_mutation` | `stable_json` | compiles read-only by default; --apply lowers fingerprint-approved child actions and posts a receipt | docs/goal-operating-model.md, docs/pm-operating-policy.md, docs-site/command-reference.md |
 | `gira goal handoff` | none | `read` | `stable_json` | none | docs/goal-operating-model.md, docs-site/command-reference.md |
 | `gira goal new` | none | `apply_mutation` | `stable_json` | creates a GitHub issue with Goal Mode operating sections; --dry-run previews payload, labels, and approval evidence | docs/goal-operating-model.md, docs-site/command-reference.md |
 | `gira goal next` | none | `read` | `stable_json` | none | docs/goal-operating-model.md, docs-site/command-reference.md |

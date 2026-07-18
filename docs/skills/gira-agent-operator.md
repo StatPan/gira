@@ -1,8 +1,7 @@
 # Gira Agent Operator Skill
 
-This is the canonical agent/operator skill for Gira-managed repositories.
-Existing adapters, generated summaries, and docs-site pages should summarize or
-point to this file instead of redefining the operating rules.
+This is the canonical operator skill. Adapters and docs should point here
+instead of redefining Gira operating rules.
 
 ## Purpose
 
@@ -18,8 +17,7 @@ plus closed issues are completion evidence.
 - PM task-packet source: `docs/pm-skill.md`.
 - CLI summary: `gira guide agent` and `gira guide skill`.
 - Existing Codex/OpenAI adapter: `AGENTS.md`.
-- Future optional adapter paths, when present: `CLAUDE.md`,
-  `.github/copilot-instructions.md`, and `.cursor/rules/gira.mdc`.
+- Optional adapters: `CLAUDE.md`, Copilot, and Cursor rules.
 - Human documentation: docs-site agent operator skill page.
 
 ## Operating Model
@@ -113,6 +111,7 @@ This generated section contains command facts for the agent lifecycle. Update `i
 - `gira feature for ISSUE [--repo OWNER/REPO] [--limit N] [--json]`: Show which feature or capability a work issue is linked to.
 - `gira feature list [--repo OWNER/REPO] [--limit N] [--json]`: List optional issue-backed feature or capability records.
 - `gira goal finish [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--terminal done|human_review|blocked|superseded|abandoned] [--json]`: Preview goal finish readiness, then post receipts and close ready goals or preserve human-review handoffs.
+- `gira goal graph [GOAL] [--dry-run|--apply --expect-plan ID] [--repo OWNER/REPO] [--json|--compact-json]`: Compile PM intent and discovery state into a typed, verifiable Goal work graph.
 - `gira goal handoff [GOAL] [--repo OWNER/REPO] [--role implementer] [--profile default] [--json]`: Build a goal-level LLM handoff that includes goal context and the next safe child ticket worker packet.
 - `gira goal new "Title" --dry-run|--apply [--repo OWNER/REPO] [--objective TEXT] [--scope TEXT] [--json]`: Create a Goal Mode issue with objective, scope, autonomy, quality, stop, and child-ticket planning sections.
 - `gira goal next [GOAL] [--repo OWNER/REPO] [--json]`: Select the next safe child ticket for a goal or explain why work must stop.

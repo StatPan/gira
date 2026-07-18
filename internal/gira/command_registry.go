@@ -590,6 +590,11 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path: []string{"goal", "graph"}, Summary: "Compile PM intent and discovery state into a typed, verifiable Goal work graph.", Usage: "gira goal graph [GOAL] [--dry-run|--apply --expect-plan ID] [--repo OWNER/REPO] [--json|--compact-json]", Since: "v3.0.0",
+			Flags: []FlagSpec{{Name: "--repo", Summary: "Target GitHub repo."}, {Name: "--goal", Summary: "Goal issue number; positional is supported."}, {Name: "--dry-run", Summary: "Preview fingerprinted lowering without mutation."}, {Name: "--apply", Summary: "Lower create/supersede actions and post an idempotent receipt."}, {Name: "--expect-plan", Summary: "Required approved dry-run pm-work-graph fingerprint for apply."}, {Name: "--json", Summary: "Emit full pm-work-graph-report/v1."}, {Name: "--compact-json", Summary: "Emit body-free pm-work-graph-compact/v1."}},
+			Docs:  []string{"docs/goal-operating-model.md", "docs/pm-operating-policy.md", "docs-site/command-reference.md"}, GuideTopics: []string{"agent", "quickstart"}, Examples: []CommandExample{{Summary: "Compile a typed work graph", Command: "gira goal graph 521 --repo OWNER/app --compact-json"}, {Summary: "Preview lowering", Command: "gira goal graph 521 --repo OWNER/app --dry-run --compact-json"}, {Summary: "Apply an unchanged plan", Command: "gira goal graph 521 --repo OWNER/app --apply --expect-plan pwg-... --compact-json"}}, Adapter: adapterApply("compiles read-only by default; --apply lowers fingerprint-approved child actions and posts a receipt", JSONSupportStable),
+		},
+		{
 			Path:    []string{"goal", "next"},
 			Summary: "Select the next safe child ticket for a goal or explain why work must stop.",
 			Usage:   "gira goal next [GOAL] [--repo OWNER/REPO] [--json]",
@@ -1413,6 +1418,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterRead(JSONSupportStable, "gira goal dossier")
 		case "goal plan":
 			specs[i].Adapter = adapterApply("creates linked child tickets from reviewed goal-plan proposals when run with --apply; --dry-run previews the same plan", JSONSupportStable)
+		case "goal graph":
+			specs[i].Adapter = adapterApply("compiles read-only by default; --apply lowers fingerprint-approved child actions and posts a receipt", JSONSupportStable)
 		case "goal next":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "goal handoff":

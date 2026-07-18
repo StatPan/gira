@@ -138,6 +138,43 @@ moves to a residual decision state only when those steps cannot resolve the
 remaining product or authority judgment; it must not generate speculative
 delivery tickets.
 
+### Typed Work Graph
+
+`gira goal graph` is the deterministic path from PM intent and discovery state
+to independently verifiable child work. It leaves the legacy bullet-based
+`goal plan` path unchanged. A Goal opts in with a `## Work Graph` fenced JSON
+block using `pm-work-graph-source/v1`:
+
+```json
+{
+  "schema_version": "pm-work-graph-source/v1",
+  "nodes": [{
+    "id": "delivery.cli",
+    "title": "Add the bounded CLI slice",
+    "purpose": "Deliver the selected workflow",
+    "profile": "delivery",
+    "parent_outcome": "outcome.activation",
+    "uncertainty": "resolved",
+    "size": "small",
+    "verification": [{"method": "go test ./...", "evidence": "passing checks"}],
+    "dependencies": [{"node_id": "decision.policy", "kind": "information", "reason": "implementation requires the selected policy"}]
+  }]
+}
+```
+
+Every node requires purpose, PM task profile, parent outcome, and inspectable
+verification. Dependencies require `ordering` or `information` semantics plus a
+reason; array order is never treated as dependency evidence. Cycles, missing
+resume conditions, oversized unsplit slices, and unresolved delivery judgment
+fail closed. Equivalent existing children become `reuse`; explicit graph state
+produces `create`, `supersede`, `split`, or `defer` actions.
+
+Compile is read-only by default. `--dry-run --compact-json` emits body-free node
+facts and a `pwg-*` fingerprint. `--apply --expect-plan ID` lowers only the
+unchanged graph and posts a receipt. Repeating the approved apply returns the
+existing receipt without duplicating children. Full JSON retains PM IR digest,
+discovery outcome refs, graph semantics, diagnostics, and rendered action data.
+
 ## Safe Progress
 
 `goal next` should choose work by evidence, not by optimism:

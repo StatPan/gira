@@ -226,6 +226,50 @@ gira goal finish 521 --repo OWNER/app --dry-run --json
 
 Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
 
+## `goal graph`
+
+Compile PM intent and discovery state into a typed, verifiable Goal work graph.
+
+Usage:
+
+```bash
+gira goal graph [GOAL] [--dry-run|--apply --expect-plan ID] [--repo OWNER/REPO] [--json|--compact-json]
+```
+
+Since: `v3.0.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo.
+- `--goal`: Goal issue number; positional is supported.
+- `--dry-run`: Preview fingerprinted lowering without mutation.
+- `--apply`: Lower create/supersede actions and post an idempotent receipt.
+- `--expect-plan`: Required approved dry-run pm-work-graph fingerprint for apply.
+- `--json`: Emit full pm-work-graph-report/v1.
+- `--compact-json`: Emit body-free pm-work-graph-compact/v1.
+
+Examples:
+
+- Compile a typed work graph
+
+```bash
+gira goal graph 521 --repo OWNER/app --compact-json
+```
+
+- Preview lowering
+
+```bash
+gira goal graph 521 --repo OWNER/app --dry-run --compact-json
+```
+
+- Apply an unchanged plan
+
+```bash
+gira goal graph 521 --repo OWNER/app --apply --expect-plan pwg-... --compact-json
+```
+
+Documented in: `docs/goal-operating-model.md`, `docs/pm-operating-policy.md`, `docs-site/command-reference.md`
+
 ## `goal handoff`
 
 Build a goal-level LLM handoff that includes goal context and the next safe child ticket worker packet.

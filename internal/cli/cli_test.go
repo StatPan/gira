@@ -6693,7 +6693,7 @@ func TestGoalDossierJSONUsesInjectedBuilder(t *testing.T) {
 	restore := newGoalDossierReport
 	t.Cleanup(func() { newGoalDossierReport = restore })
 	newGoalDossierReport = func(input gira.GoalDossierInput) (gira.GoalDossierReport, error) {
-		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 || input.View != "operator" {
 			t.Fatalf("unexpected goal dossier input: %+v repo=%s", input, input.Repo.FullName())
 		}
 		selected := gira.GoalNextCandidate{Number: 573, Title: "Next", Category: "ready", Reason: "next_ready_child", NextStep: "gira ticket start --repo StatPan/gira --ticket 573 --apply"}
@@ -6730,7 +6730,7 @@ func TestGoalReportJSONUsesInjectedBuilder(t *testing.T) {
 	restore := newGoalDossierReport
 	t.Cleanup(func() { newGoalDossierReport = restore })
 	newGoalDossierReport = func(input gira.GoalDossierInput) (gira.GoalDossierReport, error) {
-		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 {
+		if input.Repo.FullName() != "StatPan/gira" || input.Goal != 521 || input.View != "ai" {
 			t.Fatalf("unexpected goal report input: %+v repo=%s", input, input.Repo.FullName())
 		}
 		selected := gira.GoalNextCandidate{Number: 573, Title: "Next", Category: "ready", Reason: "next_ready_child", NextStep: "gira ticket start --repo StatPan/gira --ticket 573 --apply"}
@@ -6752,7 +6752,7 @@ func TestGoalReportJSONUsesInjectedBuilder(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"goal", "report", "521", "--repo", "StatPan/gira", "--json"}, &stdout, &stderr)
+	code := Run([]string{"goal", "report", "521", "--repo", "StatPan/gira", "--view", "ai", "--json"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}

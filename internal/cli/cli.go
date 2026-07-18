@@ -1013,7 +1013,7 @@ Usage:
   gira goal new "Title" --dry-run|--apply [--objective TEXT] [--scope TEXT] [--json]
   gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira goal graph [GOAL] [--dry-run|--apply --expect-plan ID] [--repo OWNER/REPO] [--json|--compact-json]
-  gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]
+  gira goal report [GOAL] [--repo OWNER/REPO] [--view operator|human|ai|stakeholder|audit] [--json|--html --output PATH]
   gira goal status [GOAL] [--repo OWNER/REPO] [--json]
   gira goal next [GOAL] [--repo OWNER/REPO] [--json]
   gira goal handoff [GOAL] [--repo OWNER/REPO] [--role implementer] [--profile default] [--json]
@@ -5427,6 +5427,7 @@ func runGoalReport(args []string, commandName string, stdout io.Writer, stderr i
 	fs.SetOutput(io.Discard)
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	goal := fs.Int("goal", 0, "Goal issue number")
+	view := fs.String("view", "operator", "PM view: operator, human, ai, stakeholder, or audit")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	htmlOutput := fs.Bool("html", false, "Write a static local HTML report")
 	outputPath := fs.String("output", "", "Output path for --html")
@@ -5469,7 +5470,7 @@ func runGoalReport(args []string, commandName string, stdout io.Writer, stderr i
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	report, err := newGoalDossierReport(gira.GoalDossierInput{Repo: repo, Goal: *goal})
+	report, err := newGoalDossierReport(gira.GoalDossierInput{Repo: repo, Goal: *goal, View: *view})
 	if err != nil {
 		if *jsonOutput {
 			out, _ := json.MarshalIndent(report, "", "  ")
@@ -7150,7 +7151,7 @@ func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bo
 func extractNumericPositional(args []string, noun string, stderr io.Writer) ([]string, int, bool) {
 	cleaned := make([]string, 0, len(args))
 	positional := 0
-	valueFlags := map[string]struct{}{"--repo": {}, "--goal": {}, "--terminal": {}, "--output": {}, "--role": {}, "--profile": {}, "--context-budget": {}, "--expect-plan": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--goal": {}, "--terminal": {}, "--output": {}, "--role": {}, "--profile": {}, "--view": {}, "--context-budget": {}, "--expect-plan": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)

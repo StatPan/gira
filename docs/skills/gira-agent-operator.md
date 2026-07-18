@@ -105,7 +105,7 @@ This generated section contains command facts for the agent lifecycle. Update `i
 - `gira goal new "Title" --dry-run|--apply [--repo OWNER/REPO] [--objective TEXT] [--scope TEXT] [--json]`: Create a Goal Mode issue with objective, scope, autonomy, quality, stop, and child-ticket planning sections.
 - `gira goal next [GOAL] [--repo OWNER/REPO] [--json]`: Select the next safe child ticket for a goal or explain why work must stop.
 - `gira goal plan [GOAL] --dry-run|--apply [--repo OWNER/REPO] [--json|--compact-json] [--expect-plan ID]`: Propose or create same-repo or target-repo child ticket packets from a goal issue.
-- `gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]`: Build a visible report for one goal from stable Goal Mode state. Alias: gira goal dossier.
+- `gira goal report [GOAL] [--repo OWNER/REPO] [--view operator|human|ai|stakeholder|audit] [--json|--html --output PATH]`: Build a visible report for one goal from stable Goal Mode state. Alias: gira goal dossier.
 - `gira goal status [GOAL] [--repo OWNER/REPO] [--json]`: Summarize a goal issue, child ticket graph, blockers, and next safe action.
 - `gira ops limit [--repo OWNER/REPO] [--workflow NAME] [--json]`: Show GitHub REST, GraphQL, search, secondary-limit, and workflow budget diagnostics.
 - `gira pm accept --repo OWNER/REPO --ticket N --from-file RESULT.json --dry-run|--apply [--json]`: Validate and persist source-linked delivery acceptance and product outcome validation.

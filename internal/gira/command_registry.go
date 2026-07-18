@@ -567,11 +567,12 @@ func CoreCommandSpecs() []CommandSpec {
 		{
 			Path:    []string{"goal", "report"},
 			Summary: "Build a visible report for one goal from stable Goal Mode state. Alias: gira goal dossier.",
-			Usage:   "gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]",
+			Usage:   "gira goal report [GOAL] [--repo OWNER/REPO] [--view operator|human|ai|stakeholder|audit] [--json|--html --output PATH]",
 			Since:   "v2.1.0",
 			Flags: []FlagSpec{
 				{Name: "--repo", Summary: "Target GitHub repo in OWNER/REPO format."},
 				{Name: "--goal", Summary: "Goal issue number. Can also be numeric positional; inferred when omitted."},
+				{Name: "--view", Summary: "Derived PM view: operator, human, ai, stakeholder, or audit. Default: operator."},
 				{Name: "--json", Summary: "Emit stable goal-dossier/v1 JSON."},
 				{Name: "--html", Summary: "Write a static local HTML report."},
 				{Name: "--output", Summary: "Output path for --html."},
@@ -579,7 +580,7 @@ func CoreCommandSpecs() []CommandSpec {
 			Docs:        []string{"docs/goal-operating-model.md", "docs-site/goal-mode.md", "docs-site/command-reference.md"},
 			GuideTopics: []string{"agent", "ticket"},
 			Examples: []CommandExample{
-				{Summary: "Export a goal report JSON contract", Command: "gira goal report 521 --repo OWNER/app --json"},
+				{Summary: "Export a bounded AI PM hydration view", Command: "gira goal report 521 --repo OWNER/app --view ai --json"},
 				{Summary: "Write a local goal report page", Command: "gira goal report 521 --repo OWNER/app --html --output out/gira/goal-521.html"},
 			},
 		},

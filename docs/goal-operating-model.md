@@ -266,13 +266,36 @@ Suggested implementation order:
 | `gira goal plan` | Read a goal issue and print proposed child ticket packets. Optional `--apply` creates linked child issues. |
 | `gira goal next` | Select the next safe child ticket or explain the stop condition. |
 | `gira goal status` | Summarize goal, child tickets, PR evidence, blockers, drift, and remaining autonomous work. |
-| `gira goal report` | Package goal status, grouped children, blockers, stop conditions, evidence summary, and next safe action into one visible JSON or HTML artifact. Alias: `gira goal dossier`. |
+| `gira goal report` | Derive an operator, human-PM, AI-hydration, stakeholder, or audit view from the same canonical PM state and package it as text, JSON, or local HTML. Alias: `gira goal dossier`. |
 | `gira goal finish` | Verify child ticket convergence, post a human-review receipt when blockers remain, and later close or hand off the goal. |
 
 Each command should support `--dry-run|--apply` for mutations and `--json` for
 automation. The commands should reuse `ticket start`, `ticket pr`,
 `ticket checks`, `ticket wait`, and `ticket finish` instead of reimplementing
 ticket lifecycle logic.
+
+### Canonical PM report views
+
+`gira goal report GOAL --view VIEW` accepts `operator` (the default), `human`,
+`ai`, `stakeholder`, or `audit`. These are projections, not additional sources
+of truth. Every view carries `goal-pm-view/v1`, its input schema versions, and a
+common `state_digest` so consumers can prove that different presentations came
+from the same PM state.
+
+- `operator` keeps delivery queues, diagnoses, and the next safe judgment.
+- `human` explains what changed, why, what was learned, and what judgment is
+  still required. Residual decisions include viable options, authority, impact,
+  and a resume condition.
+- `ai` is deterministic and bounded. It carries compact references and an
+  explicit audit expansion command instead of embedding source documents.
+- `stakeholder` separates delivery from validated outcomes and removes ticket
+  implementation detail while retaining product risks and decisions.
+- `audit` preserves source references, content digests, provenance, and
+  supersession metadata without treating the exported report as canonical.
+
+HTML is a local, regenerable artifact. It escapes source-derived text and obeys
+the same view filtering as JSON. Missing PM sources are reported as diagnostics;
+the existing delivery dossier remains available for backward compatibility.
 
 ### Compact goal-plan exchange
 

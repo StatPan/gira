@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const (
@@ -96,20 +97,31 @@ type PMObserveState struct {
 type pmObserveCachedResult struct {
 	value []byte
 	err   error
+	done  chan struct{}
 }
 
 type pmObserveCachedRunner struct {
 	base    CommandRunner
-	results map[string]pmObserveCachedResult
+	results map[string]*pmObserveCachedResult
+	mu      sync.Mutex
 }
 
 func (r *pmObserveCachedRunner) Run(name string, args ...string) ([]byte, error) {
 	key := name + "\x00" + strings.Join(args, "\x00")
+	r.mu.Lock()
 	if result, ok := r.results[key]; ok {
+		r.mu.Unlock()
+		<-result.done
 		return append([]byte(nil), result.value...), result.err
 	}
+	result := &pmObserveCachedResult{done: make(chan struct{})}
+	r.results[key] = result
+	r.mu.Unlock()
+
 	value, err := r.base.Run(name, args...)
-	r.results[key] = pmObserveCachedResult{value: append([]byte(nil), value...), err: err}
+	result.value = append([]byte(nil), value...)
+	result.err = err
+	close(result.done)
 	return value, err
 }
 
@@ -117,7 +129,7 @@ func BuildPMObserveReport(input PMObserveInput, runner CommandRunner) (PMObserve
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
-	runner = &pmObserveCachedRunner{base: runner, results: map[string]pmObserveCachedResult{}}
+	runner = &pmObserveCachedRunner{base: runner, results: map[string]*pmObserveCachedResult{}}
 	report := PMObserveReport{Command: "pm observe", SchemaVersion: PMObserveSchemaVersion, ReadOnly: true, Repo: input.Repo.FullName(), Ticket: input.Ticket, Diagnoses: []PMObserveDiagnosis{}, Actions: []PMObserveAction{}, Diagnostics: []PMLedgerDiagnostic{}}
 	if input.Ticket <= 0 {
 		return report, fmt.Errorf("ticket must be > 0")

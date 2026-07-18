@@ -13,6 +13,7 @@ const GoalDossierSchemaVersion = "goal-dossier/v1"
 type GoalDossierInput struct {
 	Repo RepoRef `json:"repo"`
 	Goal int     `json:"goal"`
+	View string  `json:"view,omitempty"`
 }
 
 type GoalDossierReport struct {
@@ -33,6 +34,8 @@ type GoalDossierReport struct {
 	Evidence                GoalDossierEvidenceSummary `json:"evidence"`
 	Sources                 []GoalDossierSource        `json:"sources"`
 	Measurement             *PMMeasurementReport       `json:"measurement,omitempty"`
+	PMView                  *GoalPMView                `json:"pm_view,omitempty"`
+	Diagnostics             []string                   `json:"diagnostics,omitempty"`
 }
 
 type GoalDossierChildGroup struct {
@@ -66,15 +69,50 @@ type GoalDossierSource struct {
 }
 
 func BuildGoalDossierReport(input GoalDossierInput, runner CommandRunner) (GoalDossierReport, error) {
+	if runner == nil {
+		runner = ExecCommandRunner{}
+	}
+	runner = &pmObserveCachedRunner{base: runner, results: map[string]*pmObserveCachedResult{}}
 	status, err := BuildGoalStatusReport(GoalStatusInput{Repo: input.Repo, Goal: input.Goal}, runner)
 	if err != nil {
 		return GoalDossierReport{}, err
 	}
 	next := BuildGoalNextReportFromStatus(input.Repo, status)
 	report := BuildGoalDossierReportFromStatus(status, next)
-	if measurement, measureErr := BuildPMMeasurementReport(PMMeasurementInput{Repo: input.Repo, Ticket: input.Goal}, runner); measureErr == nil && (measurement.Summary.Outcomes > 0 || measurement.Summary.Measurements > 0) {
-		report.Measurement = &measurement
+	observe, observeErr := BuildPMObserveReport(PMObserveInput{Repo: input.Repo, Ticket: input.Goal}, runner)
+	if observeErr != nil {
+		report.Diagnostics = append(report.Diagnostics, "pm_state_unavailable: "+observeErr.Error())
+		return report, nil
+	}
+	if observe.Measurement != nil && (observe.Measurement.Summary.Outcomes > 0 || observe.Measurement.Summary.Measurements > 0) {
+		report.Measurement = observe.Measurement
+	}
+	goal, fetchErr := fetchDevIssue(input.Repo, input.Goal, runner)
+	if fetchErr != nil {
+		report.Diagnostics = append(report.Diagnostics, "pm_ir_source_unavailable: "+fetchErr.Error())
+		return report, nil
+	}
+	compile, compileErr := BuildPMCompileReport(PMCompileInput{RawIntent: goal.Body, Repo: input.Repo.FullName(), Goal: &PMCompileGoal{Number: goal.Number, Title: goal.Title, Body: goal.Body, URL: githubIssueURL(input.Repo, goal.Number)}})
+	if compileErr != nil {
+		report.Diagnostics = append(report.Diagnostics, "pm_ir_unavailable: "+compileErr.Error())
+		return report, nil
+	}
+	view, viewErr := BuildGoalPMView(input.View, compile, observe)
+	if viewErr != nil {
+		return report, viewErr
+	}
+	report.PMView = &view
+	report.Sources = append(report.Sources, GoalDossierSource{Name: "goal_pm_view", SchemaVersion: GoalPMViewSchemaVersion})
+	if report.Measurement != nil {
 		report.Sources = append(report.Sources, GoalDossierSource{Name: "pm_measurement", SchemaVersion: PMMeasurementReportSchemaVersion})
+	}
+	if view.Kind != "operator" {
+		report.ChildGroups = nil
+		report.SelectedTicket = nil
+	}
+	if view.Kind == "stakeholder" {
+		report.Blockers = nil
+		report.StopConditions = nil
 	}
 	return report, nil
 }
@@ -217,6 +255,12 @@ func FormatGoalReport(report GoalDossierReport) string {
 	if report.Measurement != nil {
 		fmt.Fprintf(&b, "outcomes: validated=%d not_validated=%d limited=%d blocked=%d diagnostics=%d\n", report.Measurement.Summary.Validated, report.Measurement.Summary.NotValidated, report.Measurement.Summary.Limited, report.Measurement.Summary.Blocked, len(report.Measurement.Diagnostics))
 	}
+	if report.PMView != nil {
+		b.WriteString(FormatGoalPMView(*report.PMView))
+	}
+	for _, diagnostic := range report.Diagnostics {
+		fmt.Fprintf(&b, "diagnostic: %s\n", diagnostic)
+	}
 	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
 	return b.String()
 }
@@ -349,6 +393,20 @@ code {
 		fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>%s</span></div>\n", pair.count, goalReportHTMLText(pair.name))
 	}
 	b.WriteString("</div>\n</section>\n")
+	if report.PMView != nil {
+		view := report.PMView
+		b.WriteString("<section>\n<h2>Product and PM state</h2>\n<div class=\"grid\">\n")
+		fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d/%d</strong><span>delivery done</span></div>\n", view.Delivery.Done, view.Delivery.Total)
+		fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d/%d</strong><span>outcomes validated</span></div>\n", view.Outcome.Validated, view.Outcome.Outcomes)
+		fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>residual decisions</span></div>\n", len(view.Residual))
+		b.WriteString("</div>\n<div class=\"list\">\n")
+		for _, summary := range view.Summaries {
+			fmt.Fprintf(&b, "<p class=\"item\">%s</p>\n", goalReportHTMLText(summary))
+		}
+		b.WriteString("</div>\n")
+		fmt.Fprintf(&b, "<p class=\"meta\">PM view=%s schema=%s digest=%s</p>\n", goalReportHTMLText(view.Kind), goalReportHTMLText(view.SchemaVersion), goalReportHTMLText(view.StateDigest))
+		b.WriteString("</section>\n")
+	}
 
 	b.WriteString("<section>\n<h2>Tickets</h2>\n")
 	if len(report.ChildGroups) == 0 {

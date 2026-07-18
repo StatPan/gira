@@ -150,7 +150,7 @@ useful but does not yet satisfy the complete PM policy.
 | Observe | `pm observe`, `pm measure`, `goal status`, `goal report`, PM QA, workspace queues | `pm-observe-report/v1`, `pm-measurement-report/v1`, `goal-status/v1`, `goal-dossier/v1`, `gira-pm-qa/v1`, `workspace-queues/v1` | supported | portfolio aggregation remains follow-up work |
 | Replan | `pm observe`, `pm replan` | `pm-observe-report/v1`, `pm-replan-report/v1` | supported | connect future portfolio-wide triggers without adding a background daemon or implicit mutation |
 | Validate | `pm qa`, `pm accept` | `gira-pm-qa/v1`, `pm-acceptance-result/v1`, `pm-acceptance-report/v1` | supported | retain engineering review as a separate branch-protection responsibility |
-| Report | Goal dossier, workspace and release reports | versioned report schemas | partial | premise, decisions, assumptions, learning, and plan deltas absent |
+| Report | `goal report --view operator|human|ai|stakeholder|audit`, workspace and release reports | `goal-dossier/v1`, `goal-pm-view/v1`, source schema refs | supported | portfolio aggregation and hosted presentation remain outside this local derived-view slice |
 | Adapter | generic MCP CLI parity | MCP tool envelopes over CLI | partial | tool access does not activate or prove PM protocol conformance |
 
 ### Durable PM Acceptance

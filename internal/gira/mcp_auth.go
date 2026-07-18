@@ -26,17 +26,31 @@ type MCPAuthConfig struct {
 }
 
 type MCPAuthReport struct {
-	SchemaVersion string      `json:"schema_version"`
-	Command       string      `json:"command"`
-	Repo          string      `json:"repo,omitempty"`
-	Mode          MCPAuthMode `json:"mode"`
-	TokenVariable string      `json:"token_variable,omitempty"`
-	TokenPresent  bool        `json:"token_present"`
-	GitHubHost    string      `json:"github_host,omitempty"`
-	GHAuthOK      bool        `json:"gh_auth_ok"`
-	Warnings      []string    `json:"warnings,omitempty"`
-	NextAction    string      `json:"next_action"`
-	NextStep      string      `json:"next_step"`
+	SchemaVersion string             `json:"schema_version"`
+	Command       string             `json:"command"`
+	Repo          string             `json:"repo,omitempty"`
+	Mode          MCPAuthMode        `json:"mode"`
+	TokenVariable string             `json:"token_variable,omitempty"`
+	TokenPresent  bool               `json:"token_present"`
+	GitHubHost    string             `json:"github_host,omitempty"`
+	GHAuthOK      bool               `json:"gh_auth_ok"`
+	PMHarness     MCPPMHarnessParity `json:"pm_harness"`
+	Warnings      []string           `json:"warnings,omitempty"`
+	NextAction    string             `json:"next_action"`
+	NextStep      string             `json:"next_step"`
+}
+
+type MCPPMHarnessParity struct {
+	Ready            bool     `json:"ready"`
+	SchemaCurrent    bool     `json:"schema_current"`
+	EvidencePresent  bool     `json:"conformance_evidence_present"`
+	PolicyVersion    string   `json:"policy_version"`
+	ProtocolVersion  string   `json:"protocol_version"`
+	FocusedTools     []string `json:"focused_tools"`
+	MissingTools     []string `json:"missing_tools,omitempty"`
+	ConformanceRuns  int      `json:"conformance_runs"`
+	AIConfigurations int      `json:"ai_configurations"`
+	UnsafeMutations  int      `json:"unsafe_mutations"`
 }
 
 type MCPCommandRunner struct {
@@ -102,6 +116,7 @@ func BuildMCPAuthReport(repo string, env []string, runner CommandRunner) MCPAuth
 		GitHubHost:    auth.GitHubHost,
 		NextAction:    "ready",
 		NextStep:      "gira mcp serve",
+		PMHarness:     buildMCPPMHarnessParity(),
 	}
 	if auth.Mode == MCPAuthModeEnvToken {
 		report.GHAuthOK = true
@@ -138,12 +153,35 @@ func FormatMCPAuthReport(report MCPAuthReport) string {
 	if report.TokenVariable != "" {
 		fmt.Fprintf(&b, "token variable: %s present=%t\n", report.TokenVariable, report.TokenPresent)
 	}
+	fmt.Fprintf(&b, "pm harness: ready=%t policy=%s protocol=%s ai_configs=%d unsafe_mutations=%d\n", report.PMHarness.Ready, report.PMHarness.PolicyVersion, report.PMHarness.ProtocolVersion, report.PMHarness.AIConfigurations, report.PMHarness.UnsafeMutations)
 	for _, warning := range report.Warnings {
 		fmt.Fprintf(&b, "warning: %s\n", warning)
 	}
 	fmt.Fprintf(&b, "next action: %s\n", report.NextAction)
 	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
 	return b.String()
+}
+
+func buildMCPPMHarnessParity() MCPPMHarnessParity {
+	required := []string{"gira_pm_bootstrap", "gira_pm_compile", "gira_pm_observe", "gira_pm_replan_plan", "gira_pm_validate", "gira_pm_report"}
+	available := map[string]bool{}
+	for _, tool := range MCPToolSpecs() {
+		available[tool.Name] = true
+	}
+	parity := MCPPMHarnessParity{PolicyVersion: PMHarnessPolicyVersion, ProtocolVersion: PMHarnessProtocolVersion, FocusedTools: required}
+	for _, name := range required {
+		if !available[name] {
+			parity.MissingTools = append(parity.MissingTools, name)
+		}
+	}
+	conformance := BuildPMConformanceReport(nil)
+	parity.ConformanceRuns = conformance.Summary.Runs
+	parity.AIConfigurations = conformance.Summary.AIConfigurations
+	parity.UnsafeMutations = conformance.Summary.UnsafeMutations
+	parity.SchemaCurrent = conformance.PolicyVersion == PMHarnessPolicyVersion && conformance.ProtocolVersion == PMHarnessProtocolVersion
+	parity.EvidencePresent = parity.ConformanceRuns >= 3 && parity.AIConfigurations >= 2
+	parity.Ready = len(parity.MissingTools) == 0 && parity.SchemaCurrent && parity.EvidencePresent && conformance.ProtocolCompliant && parity.UnsafeMutations == 0
+	return parity
 }
 
 func envMap(env []string) map[string]string {

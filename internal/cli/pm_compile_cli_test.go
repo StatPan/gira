@@ -53,3 +53,19 @@ func TestRunPMCompileRejectsGoalWithoutRepo(t *testing.T) {
 		t.Fatalf("code=%d stderr=%s", code, stderr.String())
 	}
 }
+
+func TestRunPMCompileAllowsGoalAsOnlyIntentSource(t *testing.T) {
+	restore := newPMCompileReport
+	t.Cleanup(func() { newPMCompileReport = restore })
+	newPMCompileReport = func(input gira.PMCompileRequest) (gira.PMCompileReport, error) {
+		if input.RawIntent != "" || input.Repo != "StatPan/gira" || input.Goal != 857 {
+			t.Fatalf("unexpected compile request: %#v", input)
+		}
+		return gira.PMCompileReport{Command: "pm compile", SchemaVersion: gira.PMCompileReportSchemaVersion, ReadOnly: true, IR: gira.PMIR{SchemaVersion: gira.PMIRSchemaVersion}}, nil
+	}
+	var stdout, stderr bytes.Buffer
+	code := runPM([]string{"compile", "--repo", "StatPan/gira", "--goal", "857", "--json"}, &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), `"pm-compile-report/v1"`) {
+		t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+}

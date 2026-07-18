@@ -65,6 +65,9 @@ func TestBuildMCPAuthReportUsesEnvTokenWithoutRunningGH(t *testing.T) {
 	if runner.name != "" {
 		t.Fatalf("env-token mode should not run gh auth status: %+v", runner)
 	}
+	if !report.PMHarness.Ready || !report.PMHarness.SchemaCurrent || !report.PMHarness.EvidencePresent || report.PMHarness.AIConfigurations != 2 || report.PMHarness.UnsafeMutations != 0 || len(report.PMHarness.MissingTools) != 0 {
+		t.Fatalf("PM harness parity is not release-ready: %#v", report.PMHarness)
+	}
 	text := FormatMCPAuthReport(report)
 	if strings.Contains(text, "secret") || !strings.Contains(text, "GITHUB_TOKEN") {
 		t.Fatalf("report should redact token but name variable:\n%s", text)

@@ -37,6 +37,25 @@ This keeps agent ergonomics high without creating an MCP-only workflow model.
 | Apply a mutation | CLI `--apply` | MCP v1 intentionally does not expose apply. |
 | Unsupported MCP action | CLI fallback | Use the equivalent Gira command, not raw `gh` or ad hoc shell. |
 
+## PM harness parity
+
+Start both human and AI PM operation with the same canonical bootstrap:
+
+| PM step | CLI | Focused MCP adapter |
+| --- | --- | --- |
+| Bootstrap | `gira pm bootstrap --repo OWNER/REPO --ticket N --role human|ai --json` | `gira_pm_bootstrap` (AI role) |
+| Compile Goal | `gira pm compile --repo OWNER/REPO --goal N --json` | `gira_pm_compile` |
+| Observe | `gira pm observe --repo OWNER/REPO --ticket N --json` | `gira_pm_observe` |
+| Preview replan | `gira pm replan --repo OWNER/REPO --ticket N --dry-run --json` | `gira_pm_replan_plan` |
+| Prepare validation | `gira pm qa --repo OWNER/REPO --ticket N --json` | `gira_pm_validate` |
+| Report | `gira goal report N --repo OWNER/REPO --view ai --json` | `gira_pm_report` |
+
+The adapters contain no PM state machine. Their argv points back to these CLI
+contracts and they never add `--apply`. Mutations use `gira_cli` or direct CLI
+only after a visible dry-run, matching fingerprint, and authority evidence.
+`gira mcp doctor --json` reports the focused-tool parity set, policy/protocol
+versions, built-in conformance evidence, and unsafe-mutation count.
+
 ## Normal Ticket Lifecycle
 
 A human or agent can use either CLI or MCP for read steps, then use CLI for mutation.

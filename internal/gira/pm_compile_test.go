@@ -213,6 +213,19 @@ func TestBuildPMCompileReportFromRequestHydratesGoalReadOnly(t *testing.T) {
 	}
 }
 
+func TestBuildPMCompileReportFromRequestUsesGoalBodyWhenIntentOmitted(t *testing.T) {
+	runner := &devStartRunner{outputs: map[string][]byte{
+		"gh api repos/OWNER/repo/issues/857": []byte(`{"number":857,"title":"V3 active PM","body":"# Actor\nPM\n# Problem\nSessions lose context.\n# Desired Outcome\nSessions resume from canonical state.\n# Evidence\n- issue #857\n# Success Conditions\n- Bootstrap is deterministic.","state":"open","labels":[{"name":"type:goal"}]}`),
+	}}
+	report, err := BuildPMCompileReportFromRequest(PMCompileRequest{Repo: "OWNER/repo", Goal: 857}, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.IR.Problem.Value != "Sessions lose context." || report.IR.GoalContext == nil || report.IR.SourceDigest == "" {
+		t.Fatalf("Goal body was not used as intent: %#v", report.IR)
+	}
+}
+
 func TestBuildPMCompileReportFromRequestRequiresRepoForGoal(t *testing.T) {
 	_, err := BuildPMCompileReportFromRequest(PMCompileRequest{RawIntent: "intent", Goal: 857}, nil)
 	if err == nil || !strings.Contains(err.Error(), "--goal requires --repo") {

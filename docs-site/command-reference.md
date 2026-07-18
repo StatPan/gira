@@ -892,6 +892,37 @@ gira pm accept --repo OWNER/app --ticket 123 --from-file acceptance.json --apply
 
 Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
 
+## `pm bootstrap`
+
+Hydrate a bounded, resumable PM protocol session from canonical Goal state.
+
+Usage:
+
+```bash
+gira pm bootstrap --repo OWNER/REPO --ticket N [--role human|ai] [--authority CAPABILITY] [--context-budget N] [--json]
+```
+
+Since: `v3.0.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo.
+- `--ticket`: Goal issue holding canonical PM state.
+- `--role`: Caller role: human or ai. Default: human.
+- `--authority`: Explicit capability evidence; repeatable.
+- `--context-budget`: Maximum bootstrap characters. Default: 6000.
+- `--json`: Emit stable pm-bootstrap/v1 JSON.
+
+Examples:
+
+- Resume an AI PM session without thread memory
+
+```bash
+gira pm bootstrap --repo OWNER/app --ticket 123 --role ai --authority issue:read --json
+```
+
+Documented in: `docs/pm-operating-policy.md`, `docs/v3-pm-harness-release-readiness.md`, `docs-site/command-reference.md`
+
 ## `pm compile`
 
 Compile product intent into deterministic pm-ir/v1 and actionable diagnostics.
@@ -927,6 +958,39 @@ gira pm compile --repo OWNER/app --goal 123 --from-file request.md --json
 ```
 
 Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
+
+## `pm conformance`
+
+Evaluate PM protocol compliance separately from semantic answer quality.
+
+Usage:
+
+```bash
+gira pm conformance [--from-file RUN.json|-] [--json]
+```
+
+Since: `v3.0.0`
+
+Flags:
+
+- `--from-file`: One pm-conformance-run/v1 object or array; built-in human and AI fixtures are the default.
+- `--json`: Emit stable pm-conformance-report/v1 JSON.
+
+Examples:
+
+- Run built-in human and two-host AI conformance
+
+```bash
+gira pm conformance --json
+```
+
+- Evaluate a recorded host run
+
+```bash
+gira pm conformance --from-file host-run.json --json
+```
+
+Documented in: `docs/v3-pm-harness-release-readiness.md`, `docs-site/command-reference.md`
 
 ## `pm context`
 

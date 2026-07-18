@@ -139,6 +139,30 @@ func TestExecuteMCPToolFinishPlanIsDryRunOnly(t *testing.T) {
 	}
 }
 
+func TestMCPFocusedPMToolsAreReadOnlyCLIAdapters(t *testing.T) {
+	cases := map[string]string{
+		"gira_pm_bootstrap":   "pm bootstrap --repo StatPan/gira --ticket 868 --role ai --json",
+		"gira_pm_compile":     "pm compile --repo StatPan/gira --goal 868 --json",
+		"gira_pm_observe":     "pm observe --repo StatPan/gira --ticket 868 --json",
+		"gira_pm_replan_plan": "pm replan --repo StatPan/gira --ticket 868 --dry-run --json",
+		"gira_pm_validate":    "pm qa --repo StatPan/gira --ticket 868 --json",
+		"gira_pm_report":      "goal report 868 --repo StatPan/gira --view ai --json",
+	}
+	for name, want := range cases {
+		t.Run(name, func(t *testing.T) {
+			runner := &mcpRunner{out: []byte(`{"schema_version":"fixture/v1"}`)}
+			envelope, toolErr := ExecuteMCPTool(name, mcpArgs(map[string]any{"repo": "StatPan/gira", "ticket": 868}), runner)
+			if toolErr != nil {
+				t.Fatal(toolErr)
+			}
+			got := strings.Join(runner.args, " ")
+			if got != want || strings.Contains(got, "--apply") || !envelope.ReadOnly {
+				t.Fatalf("adapter diverged or mutated: got=%q envelope=%#v", got, envelope)
+			}
+		})
+	}
+}
+
 func TestExecuteMCPToolWorkflowGuideIsReadOnlyAndDoesNotRunCommand(t *testing.T) {
 	runner := &mcpRunner{out: []byte(`{}`)}
 	envelope, toolErr := ExecuteMCPTool("gira_workflow_guide", nil, runner)

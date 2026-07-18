@@ -405,6 +405,7 @@ Usage:
   gira pm measure --repo OWNER/REPO --ticket N [--context-budget N] [--json]
   gira pm observe --repo OWNER/REPO --ticket N [--json]
   gira pm replan --repo OWNER/REPO --ticket N --dry-run|--apply [--expect-plan ID] [--override ACTION --rationale TEXT] [--json]
+  gira pm accept --repo OWNER/REPO --ticket N --from-file RESULT.json --dry-run|--apply [--json]
   gira pm spec [--profile PROFILE] [--context-ref REF] [--title TITLE] [--repo OWNER/REPO] [--intent TEXT|--from-file PATH|-] [--worker-mode MODE] [--json]
   gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]
 
@@ -416,6 +417,7 @@ Commands:
   measure  Validate outcome measurement plans and evidence
   observe  Diagnose product-state changes and order bounded PM actions without mutation
   replan   Preview or apply fingerprinted, capability-aware graph mutations
+  accept   Validate and persist source-linked delivery acceptance and outcome validation
   spec  Render a compact profile-aware PM task packet from raw intent
   qa    Render a PM acceptance QA prompt from task-local PM state and PR evidence
 
@@ -1749,6 +1751,10 @@ var newPMReplanReport = func(input gira.PMReplanInput) (gira.PMReplanReport, err
 	return gira.BuildPMReplanReport(input, devCommandRunner)
 }
 
+var newPMAcceptanceReport = func(input gira.PMAcceptanceInput) (gira.PMAcceptanceReport, error) {
+	return gira.BuildPMAcceptanceReport(input, devCommandRunner)
+}
+
 var newPMAcceptanceQAReport = func(input gira.PMAcceptanceQAInput) (gira.PMAcceptanceQAReport, error) {
 	return gira.BuildPMAcceptanceQAReport(input, devCommandRunner)
 }
@@ -2187,6 +2193,8 @@ func runPM(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runPMObserve(args[1:], stdout, stderr)
 	case "replan":
 		return runPMReplan(args[1:], stdout, stderr)
+	case "accept":
+		return runPMAccept(args[1:], stdout, stderr)
 	case "spec":
 		return runPMSpec(args[1:], stdout, stderr)
 	case "qa":
@@ -2516,6 +2524,66 @@ func runPMReplan(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "%s\n", out)
 	} else {
 		fmt.Fprint(stdout, gira.FormatPMReplan(report))
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func runPMAccept(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pm accept", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo")
+	ticket := fs.Int("ticket", 0, "Issue receiving the PM acceptance result")
+	issue := fs.Int("issue", 0, "Compatibility alias")
+	fromFile := fs.String("from-file", "", "Read pm-acceptance-result/v1 JSON, or - for stdin")
+	dryRun := fs.Bool("dry-run", false, "Validate without persistence")
+	apply := fs.Bool("apply", false, "Persist verdict and learning transition")
+	jsonOutput := fs.Bool("json", false, "Stable JSON")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	if *help {
+		fmt.Fprint(stdout, pmHelp)
+		return 0
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n", fs.Arg(0))
+		return 2
+	}
+	if *ticket == 0 {
+		*ticket = *issue
+	}
+	if *dryRun == *apply {
+		fmt.Fprintln(stderr, "choose exactly one of --dry-run or --apply")
+		return 2
+	}
+	raw, err := readPMIntent("", *fromFile, os.Stdin)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	var result gira.PMAcceptanceResult
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		fmt.Fprintf(stderr, "parse acceptance JSON: %v\n", err)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	report, err := newPMAcceptanceReport(gira.PMAcceptanceInput{Repo: repo, Ticket: *ticket, Result: result, DryRun: *dryRun, Apply: *apply})
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+	} else {
+		fmt.Fprint(stdout, gira.FormatPMAcceptance(report))
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, err)

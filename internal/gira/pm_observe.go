@@ -40,15 +40,18 @@ type PMObserveAction struct {
 }
 
 type PMObserveSnapshot struct {
-	ContextDigest     string `json:"context_digest"`
-	GraphPlanID       string `json:"graph_plan_id"`
-	Children          int    `json:"children"`
-	OpenChildren      int    `json:"open_children"`
-	BlockedChildren   int    `json:"blocked_children"`
-	CurrentRecords    int    `json:"current_records"`
-	OutcomeRecords    int    `json:"outcome_records"`
-	MeasurementNodes  int    `json:"measurement_nodes"`
-	ValidatedOutcomes int    `json:"validated_outcomes"`
+	ContextDigest      string `json:"context_digest"`
+	GraphPlanID        string `json:"graph_plan_id"`
+	Children           int    `json:"children"`
+	OpenChildren       int    `json:"open_children"`
+	BlockedChildren    int    `json:"blocked_children"`
+	CurrentRecords     int    `json:"current_records"`
+	OutcomeRecords     int    `json:"outcome_records"`
+	MeasurementNodes   int    `json:"measurement_nodes"`
+	ValidatedOutcomes  int    `json:"validated_outcomes"`
+	AcceptanceID       string `json:"acceptance_id,omitempty"`
+	DeliveryAcceptance string `json:"delivery_acceptance,omitempty"`
+	OutcomeValidation  string `json:"outcome_validation,omitempty"`
 }
 
 type PMObserveChange struct {
@@ -76,6 +79,7 @@ type PMObserveReport struct {
 	Measurement   *PMMeasurementReport `json:"measurement,omitempty"`
 	WorkGraph     *PMWorkGraphReport   `json:"work_graph,omitempty"`
 	GoalStatus    *GoalStatusReport    `json:"goal_status,omitempty"`
+	Acceptance    *PMAcceptanceResult  `json:"acceptance,omitempty"`
 }
 
 type PMObserveState struct {
@@ -86,6 +90,7 @@ type PMObserveState struct {
 	GoalStatus  GoalStatusReport
 	PriorPlanID string
 	PriorDigest string
+	Acceptance  []PMAcceptanceResult
 }
 
 type pmObserveCachedResult struct {
@@ -138,9 +143,16 @@ func BuildPMObserveReport(input PMObserveInput, runner CommandRunner) (PMObserve
 		return report, err
 	}
 	priorPlan, priorDigest := latestPMReplanReceipt(input.Repo, input.Ticket, runner)
-	state := PMObserveState{Context: context, Discovery: discovery, Measurement: measurement, WorkGraph: graph, GoalStatus: status, PriorPlanID: priorPlan, PriorDigest: priorDigest}
+	acceptance, err := LoadPMAcceptanceHistory(input.Repo, input.Ticket, runner)
+	if err != nil {
+		return report, err
+	}
+	state := PMObserveState{Context: context, Discovery: discovery, Measurement: measurement, WorkGraph: graph, GoalStatus: status, PriorPlanID: priorPlan, PriorDigest: priorDigest, Acceptance: acceptance}
 	report = BuildPMObserveFromState(input, state)
 	report.Context, report.Discovery, report.Measurement, report.WorkGraph, report.GoalStatus = &context, &discovery, &measurement, &graph, &status
+	if latest, ok := currentPMAcceptance(acceptance); ok && latest.Issue == input.Ticket {
+		report.Acceptance = &latest
+	}
 	return report, nil
 }
 
@@ -162,6 +174,20 @@ func BuildPMObserveFromState(input PMObserveInput, state PMObserveState) PMObser
 		}
 		if strings.EqualFold(child.Status, "Blocked") {
 			report.Snapshot.BlockedChildren++
+		}
+	}
+	if latest, ok := currentPMAcceptance(state.Acceptance); ok && latest.Issue == input.Ticket {
+		report.Snapshot.AcceptanceID = latest.ID
+		report.Snapshot.DeliveryAcceptance = latest.DeliveryState
+		report.Snapshot.OutcomeValidation = latest.OutcomeState
+		switch latest.DeliveryState {
+		case "implementation_mismatch":
+			report.Diagnoses = append(report.Diagnoses, pmObserveDiagnosis("PMO013_IMPLEMENTATION_MISMATCH", "error", latest.ID, "latest PM acceptance found an implementation defect", "acceptance:"+latest.ID))
+		case "spec_repair":
+			report.Diagnoses = append(report.Diagnoses, pmObserveDiagnosis("PMO014_SPEC_DEFECT", "error", latest.ID, "latest PM acceptance requires specification repair", "acceptance:"+latest.ID))
+		}
+		if latest.OutcomeState == "inconclusive" {
+			report.Diagnoses = append(report.Diagnoses, pmObserveDiagnosis("PMO015_OUTCOME_INCONCLUSIVE", "warning", latest.ID, "latest product outcome evidence is inconclusive", "acceptance:"+latest.ID))
 		}
 	}
 	for _, item := range state.Context.Records {
@@ -253,6 +279,12 @@ func pmObserveActions(diagnoses []PMObserveDiagnosis, state PMObserveState) []PM
 			add("stop", d.Target, d.Reason, "plan:write", false, 70)
 		case "PMO012_OVERSIZED_WORK":
 			add("split", d.Target, d.Reason, "plan:write", false, 18)
+		case "PMO013_IMPLEMENTATION_MISMATCH":
+			add("replan", d.Target, d.Reason, "issue:create", false, 20)
+		case "PMO014_SPEC_DEFECT":
+			add("decide", d.Target, d.Reason, "decision:authority", true, 30)
+		case "PMO015_OUTCOME_INCONCLUSIVE":
+			add("validate", d.Target, d.Reason, "evidence:write", false, 40)
 		}
 	}
 	if len(byKey) == 0 {

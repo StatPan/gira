@@ -85,15 +85,16 @@ PM QA asks:
 PM QA does not end at `needs human`. It decomposes missing judgment into policy
 repair, context retrieval, risk reduction, implementation, or follow-up work.
 
-## Benchmarked PM Practices
+## Benchmarks
 
-Gira combines Product Owner and user-story outcome alignment; atomic acceptance
-criteria; Shape Up appetite and boundaries; Goals-Signals-Metrics evidence;
-Working Backwards; and reversible delivery slices. These are proportional
-checks, not separate ceremonies: they shape the packet and later test the PR.
+Use outcome alignment, atomic acceptance, bounded appetite, evidence, and
+reversible slices proportionally—not as separate ceremonies.
 
 Render PM acceptance QA for a linked PR:
 
 ```bash
 gira pm qa --repo OWNER/REPO --ticket 123 --diff-summary
 ```
+
+`gira pm accept --from-file acceptance.json --dry-run|--apply` persists
+source-linked delivery/outcome verdicts, supersedes history, and feeds observe.

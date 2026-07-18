@@ -7,20 +7,17 @@ This is the canonical operator skill; adapters point here.
 Gira makes GitHub the execution backend: issues are work packets, branches are
 start evidence, PRs are change units, and milestones are phase boundaries.
 
-## Canonical And Adapted Surfaces
+## Canonical Surfaces
 
-- Canonical PM role and authority policy: `docs/pm-operating-policy.md`.
-- PM task-packet source: `docs/pm-skill.md`.
-- CLI summary: `gira guide agent`; Codex adapter: `AGENTS.md`.
-- Optional adapters and human docs must link to canonical sources.
+- PM policy: `docs/pm-operating-policy.md`; packets: `docs/pm-skill.md`.
+- CLI: `gira guide agent`; Codex adapter: `AGENTS.md`.
 
 ## Operating Model
 
 - A branch starts one issue; a PR is its review and delivery unit.
 - A merged PR plus its closed linked issue is completion evidence.
-- Milestones group bounded phases such as sprints, releases, or MVP slices.
-- GitHub Projects are visibility surfaces. Project-only items must be routed to
-  repository issues before implementation starts.
+- Milestones group bounded phases. Project-only items must become repository
+  issues before implementation.
 - GitHub labels, milestones, issues, and PRs remain the source of truth.
 
 ## Standard Agent Flow
@@ -111,6 +108,7 @@ This generated section contains command facts for the agent lifecycle. Update `i
 - `gira goal report [GOAL] [--repo OWNER/REPO] [--json|--html --output PATH]`: Build a visible report for one goal from stable Goal Mode state. Alias: gira goal dossier.
 - `gira goal status [GOAL] [--repo OWNER/REPO] [--json]`: Summarize a goal issue, child ticket graph, blockers, and next safe action.
 - `gira ops limit [--repo OWNER/REPO] [--workflow NAME] [--json]`: Show GitHub REST, GraphQL, search, secondary-limit, and workflow budget diagnostics.
+- `gira pm accept --repo OWNER/REPO --ticket N --from-file RESULT.json --dry-run|--apply [--json]`: Validate and persist source-linked delivery acceptance and product outcome validation.
 - `gira pm observe --repo OWNER/REPO --ticket N [--json]`: Diagnose product-state changes and order bounded PM actions without mutation.
 - `gira pm qa --repo OWNER/REPO --ticket N [--pr N] [--diff-summary] [--include-diff] [--json]`: Render a PM acceptance QA prompt from task-local PM state and PR evidence.
 - `gira pm replan --repo OWNER/REPO --ticket N --dry-run|--apply [--expect-plan ID] [--override ACTION --rationale TEXT] [--json]`: Preview or apply fingerprinted, capability-aware Goal graph mutations.

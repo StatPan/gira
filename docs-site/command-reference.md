@@ -854,6 +854,43 @@ gira ops limit --repo OWNER/app --json
 
 Documented in: `docs/github-api-limits.md`, `docs/workflow-cost-profiles.md`, `docs/command-surface-boundary.md`, `docs-site/api-limits.md`, `docs-site/cost-profiles.md`, `docs-site/command-surface.md`, `docs-site/command-reference.md`
 
+## `pm accept`
+
+Validate and persist source-linked delivery acceptance and product outcome validation.
+
+Usage:
+
+```bash
+gira pm accept --repo OWNER/REPO --ticket N --from-file RESULT.json --dry-run|--apply [--json]
+```
+
+Since: `v3.0.0`
+
+Flags:
+
+- `--repo`: Target GitHub repo.
+- `--ticket`: Issue receiving the acceptance result and learning transition.
+- `--from-file`: pm-acceptance-result/v1 JSON path, or - for stdin.
+- `--dry-run`: Validate evidence mappings and transitions without persistence.
+- `--apply`: Persist the verdict and typed ledger transition idempotently.
+- `--json`: Emit stable pm-acceptance-report/v1 JSON.
+
+Examples:
+
+- Validate a PM verdict
+
+```bash
+gira pm accept --repo OWNER/app --ticket 123 --from-file acceptance.json --dry-run --json
+```
+
+- Persist verdict and learning transition
+
+```bash
+gira pm accept --repo OWNER/app --ticket 123 --from-file acceptance.json --apply
+```
+
+Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/command-reference.md`
+
 ## `pm compile`
 
 Compile product intent into deterministic pm-ir/v1 and actionable diagnostics.

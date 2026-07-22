@@ -62,7 +62,7 @@ Schema version: `gira-command-capabilities/v1`
 | `gira stats repo` | none | `read` | `stable_json` | none | README.md, docs/closure-funnel-stats.md, docs-site/closure-funnel-stats.md |
 | `gira stats workspace` | none | `unsupported` | `planned` | none | docs/closure-funnel-stats.md, docs-site/closure-funnel-stats.md |
 | `gira ticket checks` | none | `read` | `stable_json` | none | README.md, docs-site/ticket-workflow.md, docs/dogfood.md |
-| `gira ticket finish` | none | `apply_mutation` | `stable_json` | may merge the linked PR, post receipts, normalize labels, and close the issue; --dry-run previews readiness and actions | README.md, docs-site/ticket-workflow.md, docs/dogfood.md |
+| `gira ticket finish` | none | `apply_mutation` | `stable_json` | may merge the linked PR, post receipts, normalize labels, and close the issue; Draft PR apply stops after ready transition, and --dry-run warns before merge or remote branch deletion | README.md, docs-site/ticket-workflow.md, docs/dogfood.md |
 | `gira ticket handoff` | none | `read` | `stable_json` | none | docs-site/ticket-workflow.md, docs-site/command-reference.md, docs/dogfood.md |
 | `gira ticket new` | none | `apply_mutation` | `stable_json` | creates a GitHub issue, may set a native parent, and may optionally start it; --dry-run previews issue body, labels, and parent plan | README.md, docs-site/ticket-workflow.md, docs/dogfood.md |
 | `gira ticket note` | none | `apply_mutation` | `stable_json` | posts issue or PR comments; --dry-run previews resolved targets and rendered note | README.md, docs-site/ticket-workflow.md, docs/dogfood.md |

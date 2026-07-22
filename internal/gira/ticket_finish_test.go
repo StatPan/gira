@@ -3,6 +3,7 @@ package gira
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -24,6 +25,9 @@ func (r *finishRunner) Run(name string, args ...string) ([]byte, error) {
 		return nil, err
 	}
 	queue := r.outputs[key]
+	if len(queue) == 0 && key == "gh api repos/StatPan/gira/pulls/220" {
+		return []byte(`{"number":220,"body":"Closes #219","state":"closed","merged_at":"2026-07-22T00:00:00Z","merge_commit_sha":"merge220","html_url":"https://github.com/StatPan/gira/pull/220","head":{"ref":"issue-219-finish","sha":"head220"},"base":{"ref":"main"}}`), nil
+	}
 	if len(queue) == 0 && strings.HasPrefix(key, "gh issue comment ") {
 		return nil, nil
 	}
@@ -193,6 +197,55 @@ func TestFinishWorkApplyGraphQLRateLimitFallsBackToRESTMerge(t *testing.T) {
 	if !finishActionStatus(result.Actions, "pr:merge_fallback", "applied") {
 		t.Fatalf("missing applied fallback action: %+v", result.Actions)
 	}
+	if result.Receipt.PullRequest.Number != 220 || result.Receipt.PullRequest.HeadSHA != "head220" || result.Receipt.PullRequest.MergeCommitSHA != "merge220" || !result.Receipt.PullRequest.ClosingReference {
+		t.Fatalf("finish receipt did not preserve verified PR evidence: %+v", result.Receipt.PullRequest)
+	}
+}
+
+func TestFinishWorkAlreadyMergedSelectsReplacementAndVerifiesReceipt(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	body := RenderTicketLifecycleBlock(TicketLifecycleState{WorkBranch: "issue-597-replacement"})
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh issue view 597 --repo StatPan/gira --json number,title,body": {
+			[]byte(`{"number":597,"title":"Replacement delivery","body":` + strconv.Quote(body) + `}`),
+		},
+		"gh api repos/StatPan/gira/issues/597/timeline --paginate": {
+			[]byte(`[
+				{"source":{"issue":{"number":599,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/599"}}}},
+				{"source":{"issue":{"number":634,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/634"}}}}
+			]`),
+		},
+		"gh api repos/StatPan/gira/pulls/599": {
+			[]byte(`{"number":599,"body":"Closes #597","state":"closed","html_url":"old","head":{"ref":"issue-597-old","sha":"head599"},"base":{"ref":"main"}}`),
+		},
+		"gh api repos/StatPan/gira/pulls/634": {
+			[]byte(`{"number":634,"body":"Closes #597","state":"closed","merged_at":"2026-07-18T10:00:00Z","merge_commit_sha":"merge634","html_url":"replacement","head":{"ref":"issue-597-replacement","sha":"head634"},"base":{"ref":"main"}}`),
+			[]byte(`{"number":634,"body":"Closes #597","state":"closed","merged_at":"2026-07-18T10:00:00Z","merge_commit_sha":"merge634","html_url":"replacement","head":{"ref":"issue-597-replacement","sha":"head634"},"base":{"ref":"main"}}`),
+		},
+		"gh api repos/StatPan/gira/pulls/634/reviews --paginate": {
+			[]byte(`[{"state":"APPROVED","submitted_at":"2026-07-18T09:00:00Z"}]`),
+		},
+		"gh api repos/StatPan/gira/commits/head634/check-runs -X GET -f per_page=100": {
+			[]byte(`{"check_runs":[{"status":"completed","conclusion":"success"}]}`),
+		},
+		"gh api repos/StatPan/gira/commits/head634/status": {[]byte(`{"statuses":[]}`)},
+		"gh api repos/StatPan/gira/issues/597": {
+			[]byte(`{"number":597,"title":"Replacement delivery","state":"closed","labels":[]}`),
+			[]byte(`{"number":597,"title":"Replacement delivery","state":"closed","labels":[]}`),
+		},
+	}, errs: map[string]error{}}
+
+	result, err := FinishWork(repo, 597, false, 0, runner)
+	if err != nil {
+		t.Fatalf("FinishWork error: %v; calls=%v", err, runner.calls)
+	}
+	pr := result.Receipt.PullRequest
+	if !result.AlreadyDone || !result.Merged || result.PRNumber != 634 || pr.Number != 634 || pr.State != "MERGED" || pr.HeadSHA != "head634" || pr.MergeCommitSHA != "merge634" || !pr.ClosingReference {
+		t.Fatalf("finish receipt regressed to superseded PR: result=%+v receipt=%+v", result, pr)
+	}
+	if strings.Contains(result.Receipt.RenderedBody, "#599 state=") {
+		t.Fatalf("receipt represented closed-unmerged PR #599:\n%s", result.Receipt.RenderedBody)
+	}
 }
 
 func TestFinishWorkApplySyncLocalOptInTargetsPRBase(t *testing.T) {
@@ -203,6 +256,7 @@ func TestFinishWorkApplySyncLocalOptInTargetsPRBase(t *testing.T) {
 			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","headRefName":"issue-219-finish","baseRefName":"release/2.0","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 		},
 		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch": {nil},
+		"gh api repos/StatPan/gira/pulls/220":                          {[]byte(`{"number":220,"body":"Closes #219","state":"closed","merged_at":"2026-07-22T00:00:00Z","merge_commit_sha":"merge220","html_url":"u","head":{"ref":"issue-219-finish","sha":"head220"},"base":{"ref":"release/2.0"}}`)},
 		"git remote get-url origin":                                    {[]byte("git@github.com:StatPan/gira.git\n")},
 		"git branch --show-current":                                    {[]byte("issue-219-finish\n")},
 		"git status --porcelain":                                       {[]byte("")},
@@ -310,8 +364,8 @@ func TestFinishWorkApplyRetriesTransientMissingLinkedPR(t *testing.T) {
 	if !containsFinishCallPrefix(runner.calls, "gh issue comment 219 --repo StatPan/gira --body ## Finish Receipt") || !finishActionStatus(result.Actions, "finish:receipt", "applied") {
 		t.Fatalf("expected applied finish receipt comment, calls=%v actions=%+v", runner.calls, result.Actions)
 	}
-	if got := countFinishCall(runner.calls, "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20"); got != 3 {
-		t.Fatalf("expected transient retry plus final status lookup, got %d calls: %v", got, runner.calls)
+	if got := countFinishCall(runner.calls, "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20"); got != 2 {
+		t.Fatalf("expected transient retry followed by exact merged-PR verification, got %d discovery calls: %v", got, runner.calls)
 	}
 }
 

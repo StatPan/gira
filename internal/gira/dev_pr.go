@@ -27,19 +27,22 @@ type DevPRCreateOptions struct {
 }
 
 type DevPRStatusResult struct {
-	Repo           string       `json:"repo"`
-	Issue          int          `json:"issue"`
-	PRNumber       int          `json:"pr_number,omitempty"`
-	PRURL          string       `json:"pr_url,omitempty"`
-	State          string       `json:"state,omitempty"`
-	Mergeable      string       `json:"mergeable,omitempty"`
-	ReviewDecision string       `json:"review_decision,omitempty"`
-	IsDraft        bool         `json:"is_draft,omitempty"`
-	Binding        DevPRBinding `json:"binding,omitempty"`
-	Blockers       []string     `json:"blockers"`
-	Checks         []DevPRCheck `json:"checks,omitempty"`
-	Ready          bool         `json:"ready"`
-	LookupAttempts int          `json:"lookup_attempts,omitempty"`
+	Repo             string       `json:"repo"`
+	Issue            int          `json:"issue"`
+	PRNumber         int          `json:"pr_number,omitempty"`
+	PRURL            string       `json:"pr_url,omitempty"`
+	State            string       `json:"state,omitempty"`
+	Mergeable        string       `json:"mergeable,omitempty"`
+	ReviewDecision   string       `json:"review_decision,omitempty"`
+	IsDraft          bool         `json:"is_draft,omitempty"`
+	Binding          DevPRBinding `json:"binding,omitempty"`
+	Blockers         []string     `json:"blockers"`
+	Checks           []DevPRCheck `json:"checks,omitempty"`
+	Ready            bool         `json:"ready"`
+	LookupAttempts   int          `json:"lookup_attempts,omitempty"`
+	HeadSHA          string       `json:"head_sha,omitempty"`
+	MergeCommitSHA   string       `json:"merge_commit_sha,omitempty"`
+	ClosingReference bool         `json:"closing_reference"`
 }
 
 type DevPRBinding struct {
@@ -49,6 +52,7 @@ type DevPRBinding struct {
 	BaseRef              string   `json:"base_ref,omitempty"`
 	ExpectedHeadPrefixes []string `json:"expected_head_prefixes,omitempty"`
 	Blockers             []string `json:"blockers,omitempty"`
+	CandidatePRs         []int    `json:"candidate_prs,omitempty"`
 }
 
 type devPRBindingPolicy struct {
@@ -76,7 +80,11 @@ type prSummary struct {
 	MergeState     string `json:"mergeStateStatus"`
 	HeadRefName    string `json:"headRefName"`
 	BaseRefName    string `json:"baseRefName"`
-	StatusRollup   []struct {
+	HeadRefOID     string `json:"headRefOid"`
+	MergeCommit    *struct {
+		OID string `json:"oid"`
+	} `json:"mergeCommit"`
+	StatusRollup []struct {
 		Name       string `json:"name"`
 		Workflow   string `json:"workflowName"`
 		Conclusion string `json:"conclusion"`
@@ -110,6 +118,7 @@ type restPull struct {
 	HTMLURL        string  `json:"html_url"`
 	Draft          bool    `json:"draft"`
 	MergedAt       *string `json:"merged_at"`
+	MergeCommitSHA string  `json:"merge_commit_sha"`
 	MergeableState string  `json:"mergeable_state"`
 	Head           struct {
 		Ref string `json:"ref"`
@@ -220,39 +229,23 @@ func devPRStatusGraphQLFallback(repo RepoRef, issueNumber int, bindingPolicy dev
 	if err := json.Unmarshal(out, &prs); err != nil {
 		return DevPRStatusResult{}, fmt.Errorf("parse pr list JSON: %w", err)
 	}
-	result := DevPRStatusResult{Repo: repo.FullName(), Issue: issueNumber, Blockers: []string{}}
+	candidates := []prSummary{}
 	for _, pr := range prs {
 		if hasClosingKeyword(pr.Body, issueNumber) {
-			result.PRNumber = pr.Number
-			result.PRURL = pr.URL
-			result.State = pr.State
-			result.Mergeable = pr.MergeState
-			result.ReviewDecision = pr.ReviewDecision
-			result.IsDraft = pr.IsDraft
-			result.Binding = validateDevPRBinding(issueNumber, pr, bindingPolicy)
-			result.Blockers = append(result.Blockers, result.Binding.Blockers...)
-			if pr.IsDraft {
-				result.Blockers = append(result.Blockers, "draft")
-			}
-			if pr.ReviewDecision == "CHANGES_REQUESTED" || pr.ReviewDecision == "REVIEW_REQUIRED" {
-				result.Blockers = append(result.Blockers, "review")
-			}
-			for _, check := range pr.StatusRollup {
-				result.Checks = append(result.Checks, DevPRCheck{Name: check.Name, Workflow: check.Workflow, Status: check.Status, Conclusion: check.Conclusion, URL: check.URL, State: classifyDevPRCheck(check.Status, check.Conclusion)})
-				if strings.EqualFold(check.Conclusion, "failure") || strings.EqualFold(check.Conclusion, "cancelled") || strings.EqualFold(check.Conclusion, "timed_out") {
-					result.Blockers = append(result.Blockers, "checks")
-					break
-				}
-				if strings.EqualFold(check.Status, "in_progress") || strings.EqualFold(check.Status, "queued") || strings.EqualFold(check.Status, "pending") {
-					result.Blockers = append(result.Blockers, "checks_pending")
-					break
-				}
-			}
-			break
+			candidates = append(candidates, pr)
 		}
 	}
-	if result.PRNumber == 0 {
-		result.Blockers = append(result.Blockers, "missing_linked_pr")
+	selected, ambiguity := selectClosingPRSummary(issueNumber, candidates, bindingPolicy)
+	if selected.Number == 0 {
+		if ambiguity != nil {
+			return ambiguousDevPRStatus(repo, issueNumber, candidates[0], *ambiguity), nil
+		}
+		return DevPRStatusResult{Repo: repo.FullName(), Issue: issueNumber, Blockers: []string{"missing_linked_pr"}}, nil
+	}
+	result := devPRStatusFromSummary(repo, issueNumber, selected, bindingPolicy)
+	if ambiguity != nil {
+		result.Binding = *ambiguity
+		result.Blockers = appendUniqueStrings(result.Blockers, ambiguity.Blockers...)
 	}
 	result.Ready = len(result.Blockers) == 0
 	return result, nil
@@ -269,14 +262,15 @@ func devPRStatusRESTFirst(repo RepoRef, issueNumber int, bindingPolicy devPRBind
 		result.Ready = false
 		return result, true
 	}
+	candidates := []restPull{}
 	for _, prNumber := range prNumbers {
 		pr, ok := fetchRESTPull(repo, prNumber, runner)
 		if !ok || !hasClosingKeyword(pr.Body, issueNumber) {
 			continue
 		}
-		return devPRStatusFromRESTPull(repo, issueNumber, pr, bindingPolicy, runner), true
+		candidates = append(candidates, pr)
 	}
-	return DevPRStatusResult{}, false
+	return devPRStatusFromRESTCandidates(repo, issueNumber, candidates, bindingPolicy, runner), true
 }
 
 func devPRStatusRESTSearchFallback(repo RepoRef, issueNumber int, bindingPolicy devPRBindingPolicy, runner CommandRunner) (DevPRStatusResult, bool) {
@@ -288,6 +282,7 @@ func devPRStatusRESTSearchFallback(repo RepoRef, issueNumber int, bindingPolicy 
 	if err := json.Unmarshal(out, &pulls); err != nil {
 		return DevPRStatusResult{}, false
 	}
+	candidates := []restPull{}
 	for _, item := range pulls {
 		if item.Number <= 0 {
 			continue
@@ -296,9 +291,36 @@ func devPRStatusRESTSearchFallback(repo RepoRef, issueNumber int, bindingPolicy 
 		if !ok || !hasClosingKeyword(pr.Body, issueNumber) {
 			continue
 		}
-		return devPRStatusFromRESTPull(repo, issueNumber, pr, bindingPolicy, runner), true
+		candidates = append(candidates, pr)
 	}
-	return DevPRStatusResult{}, false
+	if len(candidates) == 0 {
+		return DevPRStatusResult{}, false
+	}
+	return devPRStatusFromRESTCandidates(repo, issueNumber, candidates, bindingPolicy, runner), true
+}
+
+func devPRStatusFromRESTCandidates(repo RepoRef, issueNumber int, candidates []restPull, bindingPolicy devPRBindingPolicy, runner CommandRunner) DevPRStatusResult {
+	if len(candidates) == 0 {
+		return DevPRStatusResult{Repo: repo.FullName(), Issue: issueNumber, Blockers: []string{"missing_linked_pr"}}
+	}
+	summaries := make([]prSummary, 0, len(candidates))
+	byNumber := map[int]restPull{}
+	for _, pr := range candidates {
+		summary := restPullSummary(pr)
+		summaries = append(summaries, summary)
+		byNumber[pr.Number] = pr
+	}
+	selected, ambiguity := selectClosingPRSummary(issueNumber, summaries, bindingPolicy)
+	if selected.Number == 0 {
+		return ambiguousDevPRStatus(repo, issueNumber, summaries[0], *ambiguity)
+	}
+	result := devPRStatusFromRESTPull(repo, issueNumber, byNumber[selected.Number], bindingPolicy, runner)
+	if ambiguity != nil {
+		result.Binding = *ambiguity
+		result.Blockers = appendUniqueStrings(result.Blockers, ambiguity.Blockers...)
+		result.Ready = false
+	}
+	return result
 }
 
 func devPRStatusFromRESTPull(repo RepoRef, issueNumber int, pr restPull, bindingPolicy devPRBindingPolicy, runner CommandRunner) DevPRStatusResult {
@@ -309,18 +331,12 @@ func devPRStatusFromRESTPull(repo RepoRef, issueNumber int, pr restPull, binding
 	result.Mergeable = strings.ToUpper(strings.TrimSpace(pr.MergeableState))
 	result.ReviewDecision = restPRReviewDecision(repo, pr.Number, pr.Base.Ref, runner)
 	result.IsDraft = pr.Draft
-	summary := prSummary{
-		Number:         pr.Number,
-		Title:          pr.Title,
-		Body:           pr.Body,
-		State:          result.State,
-		URL:            pr.HTMLURL,
-		ReviewDecision: result.ReviewDecision,
-		IsDraft:        pr.Draft,
-		MergeState:     result.Mergeable,
-		HeadRefName:    pr.Head.Ref,
-		BaseRefName:    pr.Base.Ref,
-	}
+	result.HeadSHA = strings.TrimSpace(pr.Head.SHA)
+	result.MergeCommitSHA = strings.TrimSpace(pr.MergeCommitSHA)
+	result.ClosingReference = hasClosingKeyword(pr.Body, issueNumber)
+	summary := restPullSummary(pr)
+	summary.ReviewDecision = result.ReviewDecision
+	summary.MergeState = result.Mergeable
 	result.Binding = validateDevPRBinding(issueNumber, summary, bindingPolicy)
 	result.Blockers = append(result.Blockers, result.Binding.Blockers...)
 	if pr.Draft {
@@ -332,6 +348,108 @@ func devPRStatusFromRESTPull(repo RepoRef, issueNumber int, pr restPull, binding
 	result.Checks = restPRChecks(repo, pr.Head.SHA, runner)
 	result.Blockers = append(result.Blockers, devPRCheckBlockers(result.Checks)...)
 	result.Ready = len(result.Blockers) == 0
+	return result
+}
+
+func restPullSummary(pr restPull) prSummary {
+	summary := prSummary{Number: pr.Number, Title: pr.Title, Body: pr.Body, State: restPRState(pr), URL: pr.HTMLURL, IsDraft: pr.Draft, HeadRefName: pr.Head.Ref, BaseRefName: pr.Base.Ref, HeadRefOID: pr.Head.SHA}
+	if strings.TrimSpace(pr.MergeCommitSHA) != "" {
+		summary.MergeCommit = &struct {
+			OID string `json:"oid"`
+		}{OID: strings.TrimSpace(pr.MergeCommitSHA)}
+	}
+	return summary
+}
+
+func devPRStatusFromSummary(repo RepoRef, issueNumber int, pr prSummary, bindingPolicy devPRBindingPolicy) DevPRStatusResult {
+	result := DevPRStatusResult{
+		Repo:             repo.FullName(),
+		Issue:            issueNumber,
+		PRNumber:         pr.Number,
+		PRURL:            pr.URL,
+		State:            pr.State,
+		Mergeable:        pr.MergeState,
+		ReviewDecision:   pr.ReviewDecision,
+		IsDraft:          pr.IsDraft,
+		Binding:          validateDevPRBinding(issueNumber, pr, bindingPolicy),
+		Blockers:         []string{},
+		HeadSHA:          strings.TrimSpace(pr.HeadRefOID),
+		ClosingReference: hasClosingKeyword(pr.Body, issueNumber),
+	}
+	if pr.MergeCommit != nil {
+		result.MergeCommitSHA = strings.TrimSpace(pr.MergeCommit.OID)
+	}
+	result.Blockers = append(result.Blockers, result.Binding.Blockers...)
+	if pr.IsDraft {
+		result.Blockers = append(result.Blockers, "draft")
+	}
+	if pr.ReviewDecision == "CHANGES_REQUESTED" || pr.ReviewDecision == "REVIEW_REQUIRED" {
+		result.Blockers = append(result.Blockers, "review")
+	}
+	for _, check := range pr.StatusRollup {
+		result.Checks = append(result.Checks, DevPRCheck{Name: check.Name, Workflow: check.Workflow, Status: check.Status, Conclusion: check.Conclusion, URL: check.URL, State: classifyDevPRCheck(check.Status, check.Conclusion)})
+	}
+	result.Blockers = appendUniqueStrings(result.Blockers, devPRCheckBlockers(result.Checks)...)
+	result.Ready = len(result.Blockers) == 0
+	return result
+}
+
+func selectClosingPRSummary(issueNumber int, candidates []prSummary, bindingPolicy devPRBindingPolicy) (prSummary, *DevPRBinding) {
+	if len(candidates) == 0 {
+		return prSummary{}, nil
+	}
+	merged := []prSummary{}
+	trustedOpen := []prSummary{}
+	for _, candidate := range candidates {
+		if strings.EqualFold(candidate.State, "MERGED") {
+			merged = append(merged, candidate)
+			continue
+		}
+		binding := validateDevPRBinding(issueNumber, candidate, bindingPolicy)
+		if strings.EqualFold(candidate.State, "OPEN") && binding.Trusted {
+			trustedOpen = append(trustedOpen, candidate)
+		}
+	}
+	if len(merged) == 1 {
+		return merged[0], nil
+	}
+	if len(merged) > 1 {
+		return prSummary{}, ambiguousPRBinding(issueNumber, candidates, bindingPolicy, "ambiguous_multiple_merged_prs")
+	}
+	if len(trustedOpen) == 1 {
+		return trustedOpen[0], nil
+	}
+	if len(trustedOpen) > 1 {
+		return prSummary{}, ambiguousPRBinding(issueNumber, candidates, bindingPolicy, "ambiguous_multiple_trusted_open_prs")
+	}
+	if len(candidates) == 1 {
+		candidate := candidates[0]
+		if strings.EqualFold(candidate.State, "CLOSED") {
+			return candidate, ambiguousPRBinding(issueNumber, candidates, bindingPolicy, "closed_unmerged_pr")
+		}
+		return candidate, nil
+	}
+	return prSummary{}, ambiguousPRBinding(issueNumber, candidates, bindingPolicy, "ambiguous_closing_prs")
+}
+
+func ambiguousPRBinding(issueNumber int, candidates []prSummary, bindingPolicy devPRBindingPolicy, source string) *DevPRBinding {
+	binding := validateDevPRBinding(issueNumber, candidates[0], bindingPolicy)
+	binding.Trusted = false
+	binding.Source = source
+	binding.Blockers = []string{"pr_binding"}
+	binding.CandidatePRs = make([]int, 0, len(candidates))
+	for _, candidate := range candidates {
+		binding.CandidatePRs = append(binding.CandidatePRs, candidate.Number)
+	}
+	sort.Ints(binding.CandidatePRs)
+	return &binding
+}
+
+func ambiguousDevPRStatus(repo RepoRef, issueNumber int, representative prSummary, binding DevPRBinding) DevPRStatusResult {
+	result := devPRStatusFromSummary(repo, issueNumber, representative, devPRBindingPolicy{})
+	result.Binding = binding
+	result.Blockers = appendUniqueStrings(removeString(result.Blockers, "pr_binding"), "pr_binding")
+	result.Ready = false
 	return result
 }
 
@@ -369,6 +487,30 @@ func fetchRESTPull(repo RepoRef, prNumber int, runner CommandRunner) (restPull, 
 		pr.Number = prNumber
 	}
 	return pr, true
+}
+
+func verifyMergedDevPR(repo RepoRef, issueNumber int, prNumber int, previous DevPRStatusResult, runner CommandRunner) (DevPRStatusResult, error) {
+	pr, ok := fetchRESTPull(repo, prNumber, runner)
+	if !ok {
+		return previous, fmt.Errorf("verify merged PR #%d: current GitHub PR state is unavailable", prNumber)
+	}
+	if pr.Number != prNumber || !hasClosingKeyword(pr.Body, issueNumber) {
+		return previous, fmt.Errorf("verify merged PR #%d: PR number or closing relationship does not match ticket #%d", prNumber, issueNumber)
+	}
+	if !strings.EqualFold(restPRState(pr), "MERGED") || strings.TrimSpace(pr.MergeCommitSHA) == "" || strings.TrimSpace(pr.Head.SHA) == "" {
+		return previous, fmt.Errorf("verify merged PR #%d: merged state, merge commit SHA, and head SHA are required", prNumber)
+	}
+	verified := previous
+	verified.PRNumber = pr.Number
+	verified.PRURL = pr.HTMLURL
+	verified.State = "MERGED"
+	verified.HeadSHA = strings.TrimSpace(pr.Head.SHA)
+	verified.MergeCommitSHA = strings.TrimSpace(pr.MergeCommitSHA)
+	verified.ClosingReference = true
+	verified.Binding = validateDevPRBinding(issueNumber, restPullSummary(pr), devPRBindingPolicy{})
+	verified.Blockers = nil
+	verified.Ready = true
+	return verified, nil
 }
 
 func restPRState(pr restPull) string {
@@ -590,6 +732,11 @@ func applyDevPRBindingPolicy(status *DevPRStatusResult, issueNumber int, policy 
 	if status == nil || status.PRNumber == 0 {
 		return
 	}
+	if strings.HasPrefix(status.Binding.Source, "ambiguous_") || status.Binding.Source == "closed_unmerged_pr" {
+		status.Blockers = appendUniqueStrings(status.Blockers, "pr_binding")
+		status.Ready = false
+		return
+	}
 	status.Blockers = removeString(status.Blockers, "pr_binding")
 	status.Binding = validateDevPRBinding(issueNumber, prSummary{
 		State:       status.State,
@@ -627,6 +774,7 @@ func validateDevPRBinding(issueNumber int, pr prSummary, policy devPRBindingPoli
 	}
 	if strings.EqualFold(pr.State, "MERGED") {
 		binding.Trusted = true
+		binding.Source = "merged_delivery"
 		return binding
 	}
 	if binding.HeadRef == "" {

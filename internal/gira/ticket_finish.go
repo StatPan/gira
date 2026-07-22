@@ -52,15 +52,18 @@ type WorkFinishReadinessIssue struct {
 }
 
 type WorkFinishReadinessPullRequest struct {
-	Available      bool   `json:"available"`
-	Number         int    `json:"number,omitempty"`
-	URL            string `json:"url,omitempty"`
-	State          string `json:"state,omitempty"`
-	Mergeable      string `json:"mergeable,omitempty"`
-	ReviewDecision string `json:"review_decision,omitempty"`
-	IsDraft        bool   `json:"is_draft,omitempty"`
-	HeadRefName    string `json:"head_ref_name,omitempty"`
-	BaseRefName    string `json:"base_ref_name,omitempty"`
+	Available        bool   `json:"available"`
+	Number           int    `json:"number,omitempty"`
+	URL              string `json:"url,omitempty"`
+	State            string `json:"state,omitempty"`
+	Mergeable        string `json:"mergeable,omitempty"`
+	ReviewDecision   string `json:"review_decision,omitempty"`
+	IsDraft          bool   `json:"is_draft,omitempty"`
+	HeadRefName      string `json:"head_ref_name,omitempty"`
+	BaseRefName      string `json:"base_ref_name,omitempty"`
+	HeadSHA          string `json:"head_sha,omitempty"`
+	MergeCommitSHA   string `json:"merge_commit_sha,omitempty"`
+	ClosingReference bool   `json:"closing_reference"`
 }
 
 type WorkFinishReadinessChecks struct {
@@ -113,10 +116,13 @@ type WorkFinishReceipt struct {
 }
 
 type WorkFinishReceiptPR struct {
-	Number int    `json:"number,omitempty"`
-	URL    string `json:"url,omitempty"`
-	State  string `json:"state,omitempty"`
-	Merged bool   `json:"merged"`
+	Number           int    `json:"number,omitempty"`
+	URL              string `json:"url,omitempty"`
+	State            string `json:"state,omitempty"`
+	Merged           bool   `json:"merged"`
+	HeadSHA          string `json:"head_sha,omitempty"`
+	MergeCommitSHA   string `json:"merge_commit_sha,omitempty"`
+	ClosingReference bool   `json:"closing_reference"`
 }
 
 type WorkFinishReceiptFinalState struct {
@@ -230,6 +236,11 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		return finishWithStatus(repo, issueNumber, runner, result, &status, nil)
 	}
 	if strings.EqualFold(status.State, "MERGED") {
+		status, err = verifyMergedDevPR(repo, issueNumber, status.PRNumber, status, runner)
+		if err != nil {
+			result.Blockers = appendUniqueStrings(result.Blockers, "pr_binding")
+			return finishWithStatus(repo, issueNumber, runner, result, &status, err)
+		}
 		result.AlreadyDone = true
 		result.Merged = true
 		result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "skipped", Detail: "PR is already merged"})
@@ -335,6 +346,13 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		return result, err
 	}
 	result.Merged = true
+	verifiedStatus, err := verifyMergedDevPR(repo, issueNumber, status.PRNumber, status, runner)
+	if err != nil {
+		result.Blockers = appendUniqueStrings(result.Blockers, "pr_binding")
+		return finishWithStatus(repo, issueNumber, runner, result, &status, err)
+	}
+	status = verifiedStatus
+	result.PRState = status.State
 	jiraDone, err = planJiraDoneTransition(repo, dryRun, jiraDone)
 	if err != nil {
 		return result, err
@@ -354,7 +372,7 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		jiraDone.Transition.Applied = true
 		result.Actions = append(result.Actions, plannedOrAppliedAction("jira:done", false, jiraDone.ApplyDetail()))
 	}
-	return finishWithLocalSync(repo, issueNumber, runner, result, true, nil, &status, options)
+	return finishWithLocalSync(repo, issueNumber, runner, result, true, &status, &status, options)
 }
 
 func finishMergePR(repo RepoRef, status DevPRStatusResult, runner CommandRunner, result *WorkFinishResult) error {
@@ -718,15 +736,18 @@ func buildWorkFinishReadiness(result WorkFinishResult) WorkFinishReadinessReport
 	}
 	if status.PullRequest != nil {
 		report.PullRequest = WorkFinishReadinessPullRequest{
-			Available:      status.PullRequest.Available,
-			Number:         status.PullRequest.Number,
-			URL:            status.PullRequest.URL,
-			State:          status.PullRequest.State,
-			Mergeable:      status.PullRequest.Mergeable,
-			ReviewDecision: status.PullRequest.ReviewDecision,
-			IsDraft:        status.PullRequest.IsDraft,
-			HeadRefName:    status.PullRequest.HeadRefName,
-			BaseRefName:    status.PullRequest.BaseRefName,
+			Available:        status.PullRequest.Available,
+			Number:           status.PullRequest.Number,
+			URL:              status.PullRequest.URL,
+			State:            status.PullRequest.State,
+			Mergeable:        status.PullRequest.Mergeable,
+			ReviewDecision:   status.PullRequest.ReviewDecision,
+			IsDraft:          status.PullRequest.IsDraft,
+			HeadRefName:      status.PullRequest.HeadRefName,
+			BaseRefName:      status.PullRequest.BaseRefName,
+			HeadSHA:          status.PullRequest.HeadSHA,
+			MergeCommitSHA:   status.PullRequest.MergeCommitSHA,
+			ClosingReference: status.PullRequest.ClosingReference,
 		}
 	} else if result.PRNumber > 0 {
 		report.PullRequest = WorkFinishReadinessPullRequest{
@@ -835,7 +856,7 @@ func buildWorkFinishReceipt(result WorkFinishResult) WorkFinishReceipt {
 		FinishedAt:       finishReceiptNow().Format(time.RFC3339),
 		Repository:       readiness.Repository,
 		Issue:            readiness.Issue,
-		PullRequest:      WorkFinishReceiptPR{Number: readiness.PullRequest.Number, URL: readiness.PullRequest.URL, State: readiness.PullRequest.State, Merged: result.Merged || result.AlreadyDone || strings.EqualFold(readiness.PullRequest.State, "MERGED")},
+		PullRequest:      WorkFinishReceiptPR{Number: readiness.PullRequest.Number, URL: readiness.PullRequest.URL, State: readiness.PullRequest.State, Merged: result.Merged || result.AlreadyDone || strings.EqualFold(readiness.PullRequest.State, "MERGED"), HeadSHA: readiness.PullRequest.HeadSHA, MergeCommitSHA: readiness.PullRequest.MergeCommitSHA, ClosingReference: readiness.PullRequest.ClosingReference},
 		ChecksSummary:    readiness.Checks,
 		ReviewSummary:    readiness.Review,
 		EvidenceSummary:  readiness.Evidence,
@@ -896,7 +917,7 @@ func renderWorkFinishReceipt(receipt WorkFinishReceipt) string {
 	b.WriteString("## Finish Receipt\n\n")
 	fmt.Fprintf(&b, "- Finished at: %s\n", receipt.FinishedAt)
 	fmt.Fprintf(&b, "- Ticket: #%d status=%s state=%s\n", receipt.Issue.Number, valueOrUnknown(receipt.Issue.Status), valueOrUnknown(receipt.Issue.State))
-	fmt.Fprintf(&b, "- Linked PR: %s state=%s merged=%t\n", pr, valueOrUnknown(receipt.PullRequest.State), receipt.PullRequest.Merged)
+	fmt.Fprintf(&b, "- Linked PR: %s state=%s merged=%t head=%s merge_commit=%s closing_reference=%t\n", pr, valueOrUnknown(receipt.PullRequest.State), receipt.PullRequest.Merged, valueOrUnknown(receipt.PullRequest.HeadSHA), valueOrUnknown(receipt.PullRequest.MergeCommitSHA), receipt.PullRequest.ClosingReference)
 	fmt.Fprintf(&b, "- Checks: %s total=%d passing=%d pending=%d failing=%d\n", valueOrUnknown(receipt.ChecksSummary.Status), receipt.ChecksSummary.Total, receipt.ChecksSummary.Passing, receipt.ChecksSummary.Pending, receipt.ChecksSummary.Failing)
 	fmt.Fprintf(&b, "- Review: %s\n", valueOrUnknown(receipt.ReviewSummary.Status))
 	fmt.Fprintf(&b, "- Evidence: %s\n", evidence)

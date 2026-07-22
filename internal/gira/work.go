@@ -116,15 +116,18 @@ type TicketStatusBranchPolicy struct {
 }
 
 type TicketStatusPullRequest struct {
-	Available      bool   `json:"available"`
-	Number         int    `json:"number"`
-	URL            string `json:"url"`
-	State          string `json:"state"`
-	Mergeable      string `json:"mergeable"`
-	HeadRefName    string `json:"head_ref_name"`
-	BaseRefName    string `json:"base_ref_name"`
-	ReviewDecision string `json:"review_decision"`
-	IsDraft        bool   `json:"is_draft"`
+	Available        bool   `json:"available"`
+	Number           int    `json:"number"`
+	URL              string `json:"url"`
+	State            string `json:"state"`
+	Mergeable        string `json:"mergeable"`
+	HeadRefName      string `json:"head_ref_name"`
+	BaseRefName      string `json:"base_ref_name"`
+	ReviewDecision   string `json:"review_decision"`
+	IsDraft          bool   `json:"is_draft"`
+	HeadSHA          string `json:"head_sha,omitempty"`
+	MergeCommitSHA   string `json:"merge_commit_sha,omitempty"`
+	ClosingReference bool   `json:"closing_reference"`
 }
 
 type TicketStatusEvidence struct {
@@ -609,15 +612,18 @@ func ticketStatusPullRequest(pr DevPRStatusResult) *TicketStatusPullRequest {
 		return &TicketStatusPullRequest{Available: false, State: "missing", Mergeable: "unknown", ReviewDecision: "unknown", HeadRefName: "unknown", BaseRefName: "unknown"}
 	}
 	return &TicketStatusPullRequest{
-		Available:      true,
-		Number:         pr.PRNumber,
-		URL:            pr.PRURL,
-		State:          valueOrUnknown(pr.State),
-		Mergeable:      valueOrUnknown(pr.Mergeable),
-		HeadRefName:    valueOrUnknown(pr.Binding.HeadRef),
-		BaseRefName:    valueOrUnknown(pr.Binding.BaseRef),
-		ReviewDecision: valueOrUnknown(pr.ReviewDecision),
-		IsDraft:        pr.IsDraft,
+		Available:        true,
+		Number:           pr.PRNumber,
+		URL:              pr.PRURL,
+		State:            valueOrUnknown(pr.State),
+		Mergeable:        valueOrUnknown(pr.Mergeable),
+		HeadRefName:      valueOrUnknown(pr.Binding.HeadRef),
+		BaseRefName:      valueOrUnknown(pr.Binding.BaseRef),
+		ReviewDecision:   valueOrUnknown(pr.ReviewDecision),
+		IsDraft:          pr.IsDraft,
+		HeadSHA:          pr.HeadSHA,
+		MergeCommitSHA:   pr.MergeCommitSHA,
+		ClosingReference: pr.ClosingReference,
 	}
 }
 

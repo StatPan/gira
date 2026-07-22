@@ -773,6 +773,13 @@ The dashboard signal projection strategy is documented in [docs/dashboard-signal
 
 The first local workspace report bundle can be generated with `gira export dashboard --config .gira/config.yaml --output out/dashboard --dry-run`, then applied by dropping `--dry-run`.
 
+For an opt-in visual overview across selected repositories and milestones, run
+`gira report portfolio --repo OWNER/app --milestone TITLE --since 2026-07-01 --until 2026-09-30 --output out/portfolio.html`.
+The self-contained HTML shows milestone progress, dated gates, and
+blocked/review-waiting queues. It writes only the explicit local output path and
+never publishes, serves, or opens the artifact. See
+[Visual Portfolio Report](docs/visual-portfolio-report.md).
+
 WBS parent inference diagnostics and the structural-vs-execution report split for `gira report wbs` and `gira report schedule` are documented in [docs/wbs-report-diagnostics.md](docs/wbs-report-diagnostics.md).
 
 This repository dogfoods Gira for its own work. The active operating loop, sprint commands, and maintainer handoff are documented in [docs/dogfood.md](docs/dogfood.md).

@@ -62,6 +62,64 @@ func TestHelpOutput(t *testing.T) {
 	}
 }
 
+func TestReportPortfolioWritesOnlyExplicitLocalHTML(t *testing.T) {
+	restoreDashboard := newDashboardExportClient
+	restoreReview := newReviewGateClient
+	restoreNow := reportNow
+	t.Cleanup(func() {
+		newDashboardExportClient = restoreDashboard
+		newReviewGateClient = restoreReview
+		reportNow = restoreNow
+	})
+	reportNow = func() time.Time { return time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC) }
+	due := "2026-08-15T00:00:00Z"
+	newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient {
+		return &cliFakeDashboardExportClient{repo: repo, issues: []gira.DashboardRawIssue{{IssueNumber: 9, Title: "Blocked", State: "open", Labels: []string{"status:blocked"}, Milestone: "V3", UpdatedAt: "2026-07-20T00:00:00Z", URL: "https://example/issues/9"}}, milestones: []gira.DashboardRawMilestone{{MilestoneNumber: 3, Title: "V3", State: "open", DueOn: &due, OpenIssues: 1, ClosedIssues: 3}}}
+	}
+	newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient {
+		return weeklyReviewClient{repo: repo, prs: []gira.ReviewPR{{Number: 10, Title: "Review", URL: "https://example/pull/10", UpdatedAt: "2026-07-21T00:00:00Z"}}}
+	}
+	output := filepath.Join(t.TempDir(), "reports", "portfolio.html")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"report", "portfolio", "--repo", "StatPan/gira", "--milestone", "V3", "--since", "2026-07-01", "--until", "2026-08-31", "--output", output}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, stderr.String())
+	}
+	content, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Gira portfolio overview", "Milestone delivery", "Timeline and named gates", "Work queues", "Static local artifact"} {
+		if !strings.Contains(string(content), want) {
+			t.Fatalf("portfolio HTML missing %q", want)
+		}
+	}
+	if !strings.Contains(stdout.String(), "portfolio html written to "+output) {
+		t.Fatalf("unexpected stdout: %s", stdout.String())
+	}
+}
+
+func TestReportPortfolioRequiresOutputAndValidWindow(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"report", "portfolio", "--repo", "StatPan/gira"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--output is required") {
+		t.Fatalf("missing output was not rejected: code=%d stderr=%s", code, stderr.String())
+	}
+
+	restoreDashboard := newDashboardExportClient
+	restoreReview := newReviewGateClient
+	t.Cleanup(func() {
+		newDashboardExportClient = restoreDashboard
+		newReviewGateClient = restoreReview
+	})
+	newDashboardExportClient = func(repo gira.RepoRef) gira.DashboardExportClient { return &cliFakeDashboardExportClient{repo: repo} }
+	newReviewGateClient = func(repo gira.RepoRef) gira.ReviewGateClient { return weeklyReviewClient{repo: repo} }
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"report", "portfolio", "--repo", "StatPan/gira", "--since", "2026-08-01", "--until", "2026-07-01", "--output", filepath.Join(t.TempDir(), "portfolio.html")}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--since must be on or before --until") {
+		t.Fatalf("invalid window was not rejected: code=%d stderr=%s", code, stderr.String())
+	}
+}
+
 func TestConfigGlobalCommandJSON(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("default_owner: StatPan\n"), 0o644); err != nil {

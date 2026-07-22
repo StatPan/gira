@@ -163,6 +163,82 @@ func TestValidateDevPRBindingKeepsStrategiesDistinct(t *testing.T) {
 	}
 }
 
+func TestDevPRStatusPreservesReplacementPRBeforeAndAfterMerge(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	body := RenderTicketLifecycleBlock(TicketLifecycleState{WorkBranch: "issue-597-replacement"})
+	runner := devPRRunner{
+		outputs: map[string][]byte{
+			"gh issue view 597 --repo StatPan/gira --json number,title,body": []byte(`{"number":597,"title":"Replacement delivery","body":` + strconv.Quote(body) + `}`),
+			"gh api repos/StatPan/gira/issues/597/timeline --paginate": []byte(`[
+				{"source":{"issue":{"number":599,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/599"}}}},
+				{"source":{"issue":{"number":634,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/634"}}}}
+			]`),
+			"gh api repos/StatPan/gira/pulls/634/reviews --paginate":                      []byte(`[{"state":"APPROVED","submitted_at":"2026-07-18T09:00:00Z"}]`),
+			"gh api repos/StatPan/gira/commits/head634/check-runs -X GET -f per_page=100": []byte(`{"check_runs":[{"status":"completed","conclusion":"success"}]}`),
+			"gh api repos/StatPan/gira/commits/head634/status":                            []byte(`{"statuses":[]}`),
+		},
+		queues: map[string][]devPRRunResult{
+			"gh api repos/StatPan/gira/pulls/599": {
+				{out: []byte(`{"number":599,"body":"Closes #597","state":"closed","html_url":"old","head":{"ref":"issue-597-old","sha":"head599"},"base":{"ref":"main"}}`)},
+				{out: []byte(`{"number":599,"body":"Closes #597","state":"closed","html_url":"old","head":{"ref":"issue-597-old","sha":"head599"},"base":{"ref":"main"}}`)},
+			},
+			"gh api repos/StatPan/gira/pulls/634": {
+				{out: []byte(`{"number":634,"body":"Closes #597","state":"open","html_url":"replacement","mergeable_state":"clean","head":{"ref":"issue-597-replacement","sha":"head634"},"base":{"ref":"main"}}`)},
+				{out: []byte(`{"number":634,"body":"Closes #597","state":"closed","merged_at":"2026-07-18T10:00:00Z","merge_commit_sha":"merge634","html_url":"replacement","head":{"ref":"issue-597-replacement","sha":"head634"},"base":{"ref":"main"}}`)},
+			},
+		},
+	}
+
+	before, err := DevPRStatus(repo, 597, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := DevPRStatus(repo, 597, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.PRNumber != 634 || before.State != "OPEN" || !before.Binding.Trusted {
+		t.Fatalf("pre-finish replacement binding regressed: %+v", before)
+	}
+	if after.PRNumber != 634 || after.State != "MERGED" || after.HeadSHA != "head634" || after.MergeCommitSHA != "merge634" || !after.ClosingReference {
+		t.Fatalf("post-finish replacement binding regressed: %+v", after)
+	}
+}
+
+func TestSelectClosingPRSummaryFailsClosedOnAmbiguityAndClosedUnmerged(t *testing.T) {
+	policy := devPRBindingPolicy{RecordedWorkBranch: "issue-597-replacement"}
+	tests := []struct {
+		name       string
+		candidates []prSummary
+		wantSource string
+	}{
+		{name: "multiple merged", candidates: []prSummary{{Number: 599, State: "MERGED"}, {Number: 634, State: "MERGED"}}, wantSource: "ambiguous_multiple_merged_prs"},
+		{name: "multiple trusted open", candidates: []prSummary{{Number: 633, State: "OPEN", HeadRefName: "issue-597-replacement"}, {Number: 634, State: "OPEN", HeadRefName: "issue-597-replacement"}}, wantSource: "ambiguous_multiple_trusted_open_prs"},
+		{name: "closed unmerged", candidates: []prSummary{{Number: 599, State: "CLOSED", HeadRefName: "issue-597-old"}}, wantSource: "closed_unmerged_pr"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, binding := selectClosingPRSummary(597, tt.candidates, policy)
+			if binding == nil || binding.Trusted || binding.Source != tt.wantSource || !containsString(binding.Blockers, "pr_binding") {
+				t.Fatalf("ambiguity did not fail closed: %+v", binding)
+			}
+		})
+	}
+}
+
+func TestApplyDevPRBindingPolicyDoesNotEraseAmbiguity(t *testing.T) {
+	status := DevPRStatusResult{
+		PRNumber: 634,
+		State:    "MERGED",
+		Binding:  DevPRBinding{Source: "ambiguous_multiple_merged_prs", CandidatePRs: []int{599, 634}, Blockers: []string{"pr_binding"}},
+		Blockers: []string{"pr_binding"},
+	}
+	applyDevPRBindingPolicy(&status, 597, devPRBindingPolicy{RecordedWorkBranch: "issue-597-replacement"})
+	if status.Binding.Trusted || status.Binding.Source != "ambiguous_multiple_merged_prs" || !containsString(status.Blockers, "pr_binding") || status.Ready {
+		t.Fatalf("binding revalidation erased ambiguity: %+v", status)
+	}
+}
+
 func TestDevPRStatusRESTFirstMapsPendingChecks(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := devPRRunner{outputs: map[string][]byte{

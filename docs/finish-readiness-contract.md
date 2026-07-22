@@ -99,6 +99,9 @@ Important nested fields:
 | `pull_request.is_draft` | Whether the PR is draft. |
 | `pull_request.head_ref_name` | PR head branch. |
 | `pull_request.base_ref_name` | PR base branch. |
+| `pull_request.head_sha` | Exact head commit when GitHub exposes it. |
+| `pull_request.merge_commit_sha` | Exact merge commit for a verified merged PR. |
+| `pull_request.closing_reference` | Whether the selected PR closes the ticket. |
 | `checks.status` | `passed`, `pending`, `failed`, `missing`, or equivalent normalized status. |
 | `checks.total` | Total check count. |
 | `checks.passing` | Passing check count. |
@@ -124,6 +127,7 @@ The blocker list is intentionally compact and stable.
 | `checks_pending` | One or more checks are still running or queued. |
 | `draft` | The linked PR is still a draft. |
 | `review` | Review state blocks finish. |
+| `pr_binding` | Multiple plausible closing PRs are ambiguous, or the only candidate is closed without merge evidence. |
 | `final_status_unavailable` | Gira could not compute the final ticket status. |
 
 Additional blockers may be added when they are evidence-backed and actionable.
@@ -145,6 +149,18 @@ taxonomy.
 Already-finished tickets may be reported ready when GitHub evidence already
 proves convergence.
 
+When several PRs contain a closing reference, Gira resolves them conservatively:
+
+1. one merged PR wins over closed-unmerged or open candidates;
+2. otherwise, one open PR with a trusted branch binding wins;
+3. multiple merged or multiple trusted-open candidates fail closed with
+   `pr_binding`;
+4. a closed-unmerged PR never counts as merged delivery evidence.
+
+Finish preserves the selected PR number across merge and final status
+resolution. Before writing a successful receipt, Gira fetches that exact PR and
+requires its merged state, closing relationship, head SHA, and merge commit SHA.
+
 ## `finish-receipt/v1`
 
 `finish-receipt/v1` is durable audit evidence written after an accepted finish.
@@ -159,6 +175,10 @@ Required fields:
 | `repository` | Target repository. |
 | `issue` | Ticket issue summary at finish time. |
 | `pull_request` | Linked PR summary and merged state. |
+| `pull_request.number` | Exact PR selected and verified by finish. |
+| `pull_request.head_sha` | Verified delivered head commit. |
+| `pull_request.merge_commit_sha` | Verified GitHub merge commit. |
+| `pull_request.closing_reference` | Verified closing relationship to the ticket. |
 | `checks_summary` | Check aggregate at finish time. |
 | `review_summary` | Review aggregate at finish time. |
 | `evidence_summary` | Evidence used to accept finish. |

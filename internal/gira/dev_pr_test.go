@@ -2,6 +2,7 @@ package gira
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -125,6 +126,40 @@ func TestDevPRStatusUsesRESTFirstLinkedPRSnapshot(t *testing.T) {
 		if strings.HasPrefix(call, "gh pr list ") {
 			t.Fatalf("REST-first path should not call GraphQL-heavy gh pr list: %v", calls)
 		}
+	}
+}
+
+func TestDevPRStatusTrustsExactRecordedWorkBranch(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	body := RenderTicketLifecycleBlock(TicketLifecycleState{WorkBranch: "feat/i60-a2a-unary-adapter"})
+	runner := devPRRunner{outputs: map[string][]byte{
+		"gh issue view 60 --repo StatPan/gira --json number,title,body":              []byte(`{"number":60,"title":"A2A unary adapter","body":` + strconv.Quote(body) + `}`),
+		"gh api repos/StatPan/gira/issues/60/timeline --paginate":                    []byte(`[{"source":{"issue":{"number":99,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/99"}}}}]`),
+		"gh api repos/StatPan/gira/pulls/99":                                         []byte(`{"number":99,"body":"Closes #60","state":"open","html_url":"u","mergeable_state":"clean","head":{"ref":"feat/i60-a2a-unary-adapter","sha":"abc123"},"base":{"ref":"dev"}}`),
+		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                      []byte(`[]`),
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100": []byte(`{"check_runs":[]}`),
+		"gh api repos/StatPan/gira/commits/abc123/status":                            []byte(`{"statuses":[]}`),
+	}}
+
+	result, err := DevPRStatus(repo, 60, runner)
+	if err != nil {
+		t.Fatalf("DevPRStatus error: %v", err)
+	}
+	if !result.Binding.Trusted || result.Binding.Source != "recorded_work_branch" || containsString(result.Blockers, "pr_binding") {
+		t.Fatalf("recorded branch was not trusted: %+v", result)
+	}
+}
+
+func TestValidateDevPRBindingKeepsStrategiesDistinct(t *testing.T) {
+	recorded := validateDevPRBinding(60, prSummary{State: "OPEN", HeadRefName: "feat/i60-adapter"}, devPRBindingPolicy{RecordedWorkBranch: "feat/i60-adapter", ResolvedWorkBranch: "work/60-adapter"})
+	resolved := validateDevPRBinding(60, prSummary{State: "OPEN", HeadRefName: "work/60-adapter"}, devPRBindingPolicy{RecordedWorkBranch: "feat/i60-adapter", ResolvedWorkBranch: "work/60-adapter"})
+	legacy := validateDevPRBinding(60, prSummary{State: "OPEN", HeadRefName: "issue-60-adapter"}, devPRBindingPolicy{})
+	mismatch := validateDevPRBinding(60, prSummary{State: "OPEN", HeadRefName: "feat/i61-unrelated"}, devPRBindingPolicy{RecordedWorkBranch: "feat/i60-adapter"})
+	if recorded.Source != "recorded_work_branch" || resolved.Source != "branch_policy.feature_branch_pattern" || legacy.Source != "legacy_issue_branch" {
+		t.Fatalf("unexpected strategy sources: recorded=%+v resolved=%+v legacy=%+v", recorded, resolved, legacy)
+	}
+	if !recorded.Trusted || !resolved.Trusted || !legacy.Trusted || mismatch.Trusted || !containsString(mismatch.Blockers, "pr_binding") {
+		t.Fatalf("unexpected strategy trust: recorded=%+v resolved=%+v legacy=%+v mismatch=%+v", recorded, resolved, legacy, mismatch)
 	}
 }
 

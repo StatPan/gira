@@ -51,6 +51,11 @@ type DevPRBinding struct {
 	Blockers             []string `json:"blockers,omitempty"`
 }
 
+type devPRBindingPolicy struct {
+	RecordedWorkBranch string
+	ResolvedWorkBranch string
+}
+
 type DevPRCheck struct {
 	Name       string `json:"name,omitempty"`
 	Workflow   string `json:"workflow,omitempty"`
@@ -184,14 +189,15 @@ func DevPRStatus(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStat
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
-	if status, ok := devPRStatusRESTFirst(repo, issueNumber, runner); ok {
+	bindingPolicy := resolveDevPRBindingPolicy(repo, issueNumber, runner)
+	if status, ok := devPRStatusRESTFirst(repo, issueNumber, bindingPolicy, runner); ok {
 		return status, nil
 	}
-	if status, ok := devPRStatusRESTSearchFallback(repo, issueNumber, runner); ok {
+	if status, ok := devPRStatusRESTSearchFallback(repo, issueNumber, bindingPolicy, runner); ok {
 		return status, nil
 	}
 	if devPRGraphQLFallbackEnabled() {
-		return devPRStatusGraphQLFallback(repo, issueNumber, runner)
+		return devPRStatusGraphQLFallback(repo, issueNumber, bindingPolicy, runner)
 	}
 	result := DevPRStatusResult{Repo: repo.FullName(), Issue: issueNumber, Blockers: []string{}}
 	result.Blockers = append(result.Blockers, "missing_linked_pr")
@@ -204,7 +210,7 @@ func devPRGraphQLFallbackEnabled() bool {
 	return value == "1" || strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
 }
 
-func devPRStatusGraphQLFallback(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStatusResult, error) {
+func devPRStatusGraphQLFallback(repo RepoRef, issueNumber int, bindingPolicy devPRBindingPolicy, runner CommandRunner) (DevPRStatusResult, error) {
 	search := fmt.Sprintf("repo:%s is:pr %d", repo.FullName(), issueNumber)
 	out, err := runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--state", "all", "--search", search, "--json", "number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName", "--limit", "20")
 	if err != nil {
@@ -223,7 +229,7 @@ func devPRStatusGraphQLFallback(repo RepoRef, issueNumber int, runner CommandRun
 			result.Mergeable = pr.MergeState
 			result.ReviewDecision = pr.ReviewDecision
 			result.IsDraft = pr.IsDraft
-			result.Binding = validateDevPRBinding(issueNumber, pr)
+			result.Binding = validateDevPRBinding(issueNumber, pr, bindingPolicy)
 			result.Blockers = append(result.Blockers, result.Binding.Blockers...)
 			if pr.IsDraft {
 				result.Blockers = append(result.Blockers, "draft")
@@ -252,7 +258,7 @@ func devPRStatusGraphQLFallback(repo RepoRef, issueNumber int, runner CommandRun
 	return result, nil
 }
 
-func devPRStatusRESTFirst(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStatusResult, bool) {
+func devPRStatusRESTFirst(repo RepoRef, issueNumber int, bindingPolicy devPRBindingPolicy, runner CommandRunner) (DevPRStatusResult, bool) {
 	prNumbers, ok := linkedPRNumbersFromIssueTimeline(repo, issueNumber, runner)
 	if !ok {
 		return DevPRStatusResult{}, false
@@ -268,12 +274,12 @@ func devPRStatusRESTFirst(repo RepoRef, issueNumber int, runner CommandRunner) (
 		if !ok || !hasClosingKeyword(pr.Body, issueNumber) {
 			continue
 		}
-		return devPRStatusFromRESTPull(repo, issueNumber, pr, runner), true
+		return devPRStatusFromRESTPull(repo, issueNumber, pr, bindingPolicy, runner), true
 	}
 	return DevPRStatusResult{}, false
 }
 
-func devPRStatusRESTSearchFallback(repo RepoRef, issueNumber int, runner CommandRunner) (DevPRStatusResult, bool) {
+func devPRStatusRESTSearchFallback(repo RepoRef, issueNumber int, bindingPolicy devPRBindingPolicy, runner CommandRunner) (DevPRStatusResult, bool) {
 	out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/pulls", repo.FullName()), "-X", "GET", "-f", "state=all", "-f", "sort=updated", "-f", "direction=desc", "-f", "per_page=100")
 	if err != nil {
 		return DevPRStatusResult{}, false
@@ -290,12 +296,12 @@ func devPRStatusRESTSearchFallback(repo RepoRef, issueNumber int, runner Command
 		if !ok || !hasClosingKeyword(pr.Body, issueNumber) {
 			continue
 		}
-		return devPRStatusFromRESTPull(repo, issueNumber, pr, runner), true
+		return devPRStatusFromRESTPull(repo, issueNumber, pr, bindingPolicy, runner), true
 	}
 	return DevPRStatusResult{}, false
 }
 
-func devPRStatusFromRESTPull(repo RepoRef, issueNumber int, pr restPull, runner CommandRunner) DevPRStatusResult {
+func devPRStatusFromRESTPull(repo RepoRef, issueNumber int, pr restPull, bindingPolicy devPRBindingPolicy, runner CommandRunner) DevPRStatusResult {
 	result := DevPRStatusResult{Repo: repo.FullName(), Issue: issueNumber, Blockers: []string{}}
 	result.PRNumber = pr.Number
 	result.PRURL = pr.HTMLURL
@@ -315,7 +321,7 @@ func devPRStatusFromRESTPull(repo RepoRef, issueNumber int, pr restPull, runner 
 		HeadRefName:    pr.Head.Ref,
 		BaseRefName:    pr.Base.Ref,
 	}
-	result.Binding = validateDevPRBinding(issueNumber, summary)
+	result.Binding = validateDevPRBinding(issueNumber, summary, bindingPolicy)
 	result.Blockers = append(result.Blockers, result.Binding.Blockers...)
 	if pr.Draft {
 		result.Blockers = append(result.Blockers, "draft")
@@ -549,10 +555,72 @@ func retryDevPRStatusAfterMissing(repo RepoRef, issueNumber int, runner CommandR
 	return status, nil
 }
 
-func validateDevPRBinding(issueNumber int, pr prSummary) DevPRBinding {
-	expected := []string{fmt.Sprintf("issue-%d-", issueNumber), fmt.Sprintf("issue-%d", issueNumber)}
+func resolveDevPRBindingPolicy(repo RepoRef, issueNumber int, runner CommandRunner) devPRBindingPolicy {
+	policy := devPRBindingPolicy{}
+	out, err := runner.Run("gh", "issue", "view", strconv.Itoa(issueNumber), "--repo", repo.FullName(), "--json", "number,title,body")
+	if err != nil {
+		return policy
+	}
+	var raw struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		Body   string `json:"body"`
+	}
+	if json.Unmarshal(out, &raw) != nil || raw.Number != issueNumber {
+		return policy
+	}
+	issue := devStartIssue{Number: raw.Number, Title: raw.Title, Body: raw.Body}
+	return devPRBindingPolicyFromIssue(issue, runner, repo)
+}
+
+func devPRBindingPolicyFromIssue(issue devStartIssue, runner CommandRunner, repo RepoRef) devPRBindingPolicy {
+	state := ParseTicketLifecycleState(issue.Body)
+	policy := devPRBindingPolicy{RecordedWorkBranch: strings.TrimSpace(state.WorkBranch)}
+	if runner == nil {
+		return policy
+	}
+	resolved, err := resolveRepoBranchPolicy(repo, runner)
+	if err == nil && resolved.Source == "config" && strings.TrimSpace(resolved.FeatureBranchPattern) != "" {
+		policy.ResolvedWorkBranch = formatDevBranch(resolved.FeatureBranchPattern, issue.Number, issue.Title)
+	}
+	return policy
+}
+
+func applyDevPRBindingPolicy(status *DevPRStatusResult, issueNumber int, policy devPRBindingPolicy) {
+	if status == nil || status.PRNumber == 0 {
+		return
+	}
+	status.Blockers = removeString(status.Blockers, "pr_binding")
+	status.Binding = validateDevPRBinding(issueNumber, prSummary{
+		State:       status.State,
+		HeadRefName: status.Binding.HeadRef,
+		BaseRefName: status.Binding.BaseRef,
+	}, policy)
+	status.Blockers = appendUniqueStrings(status.Blockers, status.Binding.Blockers...)
+	status.Ready = len(status.Blockers) == 0
+}
+
+func removeString(values []string, target string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != target {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func validateDevPRBinding(issueNumber int, pr prSummary, policy devPRBindingPolicy) DevPRBinding {
+	legacyExact := fmt.Sprintf("issue-%d", issueNumber)
+	legacyPrefix := legacyExact + "-"
+	expected := []string{}
+	for _, branch := range []string{strings.TrimSpace(policy.RecordedWorkBranch), strings.TrimSpace(policy.ResolvedWorkBranch), legacyPrefix, legacyExact} {
+		if branch != "" && !containsString(expected, branch) {
+			expected = append(expected, branch)
+		}
+	}
 	binding := DevPRBinding{
-		Source:               "closing_keyword_and_branch",
+		Source:               "untrusted_branch",
 		HeadRef:              strings.TrimSpace(pr.HeadRefName),
 		BaseRef:              strings.TrimSpace(pr.BaseRefName),
 		ExpectedHeadPrefixes: expected,
@@ -564,11 +632,20 @@ func validateDevPRBinding(issueNumber int, pr prSummary) DevPRBinding {
 	if binding.HeadRef == "" {
 		return binding
 	}
-	for _, prefix := range expected {
-		if binding.HeadRef == prefix || strings.HasPrefix(binding.HeadRef, prefix) {
-			binding.Trusted = true
-			return binding
-		}
+	if policy.RecordedWorkBranch != "" && binding.HeadRef == strings.TrimSpace(policy.RecordedWorkBranch) {
+		binding.Trusted = true
+		binding.Source = "recorded_work_branch"
+		return binding
+	}
+	if policy.ResolvedWorkBranch != "" && binding.HeadRef == strings.TrimSpace(policy.ResolvedWorkBranch) {
+		binding.Trusted = true
+		binding.Source = "branch_policy.feature_branch_pattern"
+		return binding
+	}
+	if binding.HeadRef == legacyExact || strings.HasPrefix(binding.HeadRef, legacyPrefix) {
+		binding.Trusted = true
+		binding.Source = "legacy_issue_branch"
+		return binding
 	}
 	binding.Blockers = append(binding.Blockers, "pr_binding")
 	return binding

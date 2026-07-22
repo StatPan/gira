@@ -5219,8 +5219,8 @@ func TestFormatTicketFinishCoversBlockersActionsAndFallbacks(t *testing.T) {
 		},
 		{
 			name:   "done without blockers or actions",
-			result: gira.WorkFinishResult{Issue: 23, PRNumber: 24, Merged: true, Readiness: gira.WorkFinishReadinessReport{SchemaVersion: "finish-readiness/v1", Ready: true}, NextStep: "ticket is done"},
-			wants:  []string{"merged=true", "readiness=ready", "blockers=none", "actions=none", "next step: ticket is done"},
+			result: gira.WorkFinishResult{Issue: 23, PRNumber: 24, Merged: true, Readiness: gira.WorkFinishReadinessReport{SchemaVersion: "finish-readiness/v1", Ready: true}, Warnings: []string{"IRREVERSIBLE: merge and remote branch deletion"}, NextStep: "ticket is done"},
+			wants:  []string{"WARNING: IRREVERSIBLE", "merged=true", "readiness=ready", "blockers=none", "actions=none", "next step: ticket is done"},
 		},
 	}
 

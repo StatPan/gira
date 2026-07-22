@@ -1912,7 +1912,7 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
 ## `ticket finish`
 
-Merge the linked PR when policy allows and close the ticket loop without local checkout sync by default.
+Merge the linked PR when policy allows; Draft PRs stop after ready transition and require a new finish preview.
 
 Usage:
 

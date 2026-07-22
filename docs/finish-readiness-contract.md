@@ -21,6 +21,19 @@ Apply an approved finish:
 gira ticket finish TICKET --repo OWNER/REPO --apply --json
 ```
 
+`ticket finish` always expresses terminal merge intent; it is not a ready-only
+command. When the linked PR is still Draft, however, one invocation is bounded
+to the safe transition it previewed:
+
+1. `--dry-run` previews `pr:ready` and reports all other observed blockers.
+2. The matching `--apply` marks the PR ready and stops without merging.
+3. The operator must run a new `--dry-run` against the ready PR before a later
+   apply may merge or delete the remote branch.
+
+A merge-capable preview emits an `IRREVERSIBLE` warning in human output and in
+the JSON/approval warnings, and its approval action set explicitly includes the
+merge and remote-branch deletion detail.
+
 The dry-run output includes `work-finish-result/v1`, the embedded
 `finish-readiness/v1` report, and `gira-approval-plan/v1` approval evidence.
 The apply output includes `work-finish-result/v1` and an embedded
@@ -172,6 +185,8 @@ The approval does not authorize:
 - additional flags not present in the approved argv;
 - raw `gh` merge or issue-close commands;
 - bypassing failed checks, pending checks, draft state, or review blockers.
+- actions that appear only after an intermediate mutation; Draft-to-ready and
+  ready-to-merge require separate preview/apply cycles.
 
 ## Current Gap Assessment
 

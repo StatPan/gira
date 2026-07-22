@@ -152,6 +152,7 @@ type WorkFinishResult struct {
 	JiraTransition   *WorkFinishJiraTransition `json:"jira_transition,omitempty"`
 	Actions          []WorkFinishAction        `json:"actions"`
 	Blockers         []string                  `json:"blockers"`
+	Warnings         []string                  `json:"warnings,omitempty"`
 	LocalSync        WorkFinishLocalSync       `json:"local_sync"`
 	FinalStatus      WorkStatusResult          `json:"final_status"`
 	Readiness        WorkFinishReadinessReport `json:"readiness"`
@@ -194,6 +195,7 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		SyncLocal:     options.SyncLocal,
 		Actions:       []WorkFinishAction{},
 		Blockers:      []string{},
+		Warnings:      []string{},
 		NextStep:      fmt.Sprintf("gira ticket status --repo %s --ticket %d", repo.FullName(), issueNumber),
 	}
 
@@ -259,12 +261,14 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 	}
 
 	if containsString(status.Blockers, "draft") {
+		result.Actions = append(result.Actions, WorkFinishAction{Action: "finish:intent", Status: "observed", Detail: "terminal finish requested while the current lifecycle recommendation is mark_pr_ready"})
 		result.Actions = append(result.Actions, plannedOrAppliedAction("pr:ready", dryRun, fmt.Sprintf("mark PR #%d ready for review", status.PRNumber)))
+		result.Warnings = append(result.Warnings, "terminal finish requested for a Draft PR; this invocation stops after marking it ready and requires a new dry-run before merge")
 		if dryRun {
-			result.Blockers = append(result.Blockers, "draft")
+			result.Blockers = mergeBlockers(status.Blockers)
 			result.Blockers = appendUniqueStrings(result.Blockers, jiraDone.Blockers...)
 			appendJiraDoneBlockedAction(&result, jiraDone)
-			result.NextStep = fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+			result.NextStep = fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply; then rerun --dry-run before merge", repo.FullName(), issueNumber)
 			return finishWithStatus(repo, issueNumber, runner, result, &status, nil)
 		}
 		if _, err := runner.Run("gh", "pr", "ready", fmt.Sprintf("%d", status.PRNumber), "--repo", repo.FullName()); err != nil {
@@ -275,6 +279,15 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 			return result, err
 		}
 		result.PRState = status.State
+		result.Blockers = mergeBlockers(status.Blockers)
+		result.LocalSync = WorkFinishLocalSync{Skipped: true, Reason: "ready_transition_only"}
+		nextStep := fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
+		result.NextStep = nextStep
+		report, reportErr := finishWithStatus(repo, issueNumber, runner, result, &status, nil)
+		report.NextStep = nextStep
+		report.Readiness.NextStep = nextStep
+		report.Receipt.FinalState.NextStep = nextStep
+		return report, reportErr
 	}
 
 	if containsString(status.Blockers, "checks_pending") && wait > 0 {
@@ -309,6 +322,7 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		result.Actions = append(result.Actions, WorkFinishAction{Action: "jira:done", Status: "skipped", Detail: jiraDone.ApplyDetail()})
 	}
 	result.Actions = append(result.Actions, plannedOrAppliedAction("pr:merge", dryRun, fmt.Sprintf("squash merge PR #%d and delete remote branch", status.PRNumber)))
+	result.Warnings = append(result.Warnings, fmt.Sprintf("IRREVERSIBLE: ticket finish --apply will squash merge PR #%d and delete its remote branch", status.PRNumber))
 	if dryRun {
 		if jiraDone.Enabled {
 			result.Blockers = appendUniqueStrings(result.Blockers, "unmerged_pr")
@@ -1047,7 +1061,7 @@ func FormatWorkFinish(result WorkFinishResult) string {
 	if len(actions) == 0 {
 		actions = append(actions, "none")
 	}
-	return fmt.Sprintf(
+	output := fmt.Sprintf(
 		"work finish: issue #%d pr=%d merged=%t readiness=%s blockers=%s actions=%s\nnext step: %s\n",
 		result.Issue,
 		result.PRNumber,
@@ -1057,4 +1071,8 @@ func FormatWorkFinish(result WorkFinishResult) string {
 		strings.Join(actions, ","),
 		result.NextStep,
 	)
+	for _, warning := range result.Warnings {
+		output = "WARNING: " + warning + "\n" + output
+	}
+	return output
 }

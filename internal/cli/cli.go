@@ -8027,7 +8027,7 @@ func formatTicketFinish(result gira.WorkFinishResult) string {
 	if len(actions) == 0 {
 		actions = append(actions, "none")
 	}
-	return fmt.Sprintf(
+	output := fmt.Sprintf(
 		"ticket finish: ticket #%d pr=%d merged=%t readiness=%s blockers=%s actions=%s\nnext step: %s\n",
 		result.Issue,
 		result.PRNumber,
@@ -8037,6 +8037,10 @@ func formatTicketFinish(result gira.WorkFinishResult) string {
 		strings.Join(actions, ","),
 		ticketFinishNextStep(result),
 	)
+	for _, warning := range result.Warnings {
+		output = "WARNING: " + warning + "\n" + output
+	}
+	return output
 }
 
 func ticketStatusNextStep(result gira.WorkStatusResult) string {

@@ -1355,7 +1355,7 @@ func CoreCommandSpecs() []CommandSpec {
 		},
 		{
 			Path:        []string{"ticket", "finish"},
-			Summary:     "Merge the linked PR when policy allows and close the ticket loop without local checkout sync by default.",
+			Summary:     "Merge the linked PR when policy allows; Draft PRs stop after ready transition and require a new finish preview.",
 			Usage:       "gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--sync-local]",
 			Since:       "v1.0.0",
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
@@ -1529,7 +1529,7 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 		case "ticket wait":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "ticket finish":
-			specs[i].Adapter = adapterApply("may merge the linked PR, post receipts, normalize labels, and close the issue; --dry-run previews readiness and actions", JSONSupportStable)
+			specs[i].Adapter = adapterApply("may merge the linked PR, post receipts, normalize labels, and close the issue; Draft PR apply stops after ready transition, and --dry-run warns before merge or remote branch deletion", JSONSupportStable)
 		case "ticket status":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		default:

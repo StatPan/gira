@@ -35,19 +35,16 @@ func (r *finishRunner) Run(name string, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-func TestFinishWorkApplyMarksDraftReadyThenMerges(t *testing.T) {
+func TestFinishWorkApplyMarksDraftReadyAndStopsBeforeMerge(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
 			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"https://github.com/StatPan/gira/pull/220","reviewDecision":"APPROVED","isDraft":true,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"https://github.com/StatPan/gira/pull/220","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
-			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"https://github.com/StatPan/gira/pull/220","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 		},
-		"gh pr ready 220 --repo StatPan/gira":                          {nil},
-		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch": {nil},
+		"gh pr ready 220 --repo StatPan/gira": {nil},
 		"gh api repos/StatPan/gira/issues/219": {
-			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
-			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`),
 		},
 	}, errs: map[string]error{}}
 
@@ -55,16 +52,23 @@ func TestFinishWorkApplyMarksDraftReadyThenMerges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FinishWork error: %v", err)
 	}
-	if !result.Merged || result.PRNumber != 220 || len(result.Blockers) != 0 {
+	if result.Merged || result.PRNumber != 220 || len(result.Blockers) != 0 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
-	for _, want := range []string{
-		"gh pr ready 220 --repo StatPan/gira",
-		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch",
-	} {
-		if !containsCall(runner.calls, want) {
-			t.Fatalf("missing call %q in %v", want, runner.calls)
-		}
+	if !containsCall(runner.calls, "gh pr ready 220 --repo StatPan/gira") {
+		t.Fatalf("missing ready call in %v", runner.calls)
+	}
+	if containsCall(runner.calls, "gh pr merge 220 --repo StatPan/gira --squash --delete-branch") {
+		t.Fatalf("Draft finish apply expanded into merge: %v", runner.calls)
+	}
+	if result.NextStep != "gira ticket finish --repo StatPan/gira --ticket 219 --dry-run" {
+		t.Fatalf("next step = %q, want a new dry-run", result.NextStep)
+	}
+	if !finishActionStatus(result.Actions, "finish:intent", "observed") || !finishActionStatus(result.Actions, "pr:ready", "applied") {
+		t.Fatalf("missing bounded Draft actions: %+v", result.Actions)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "requires a new dry-run") {
+		t.Fatalf("missing Draft terminal-intent warning: %+v", result.Warnings)
 	}
 	for _, unexpected := range []string{
 		"git remote get-url origin",
@@ -75,8 +79,67 @@ func TestFinishWorkApplyMarksDraftReadyThenMerges(t *testing.T) {
 			t.Fatalf("default finish should not sync local checkout; unexpected %q in %v", unexpected, runner.calls)
 		}
 	}
-	if !result.LocalSync.Skipped || result.LocalSync.Reason != "local_sync_disabled" {
-		t.Fatalf("expected local sync disabled by default, got %+v", result.LocalSync)
+	if !result.LocalSync.Skipped || result.LocalSync.Reason != "ready_transition_only" {
+		t.Fatalf("expected ready-only finish boundary, got %+v", result.LocalSync)
+	}
+}
+
+func TestFinishWorkDraftDryRunPreviewsOnlyReadyTransition(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
+			[]byte(`[{"number":220,"body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":true,"mergeStateStatus":"CLEAN","headRefName":"issue-219-finish","baseRefName":"main","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		},
+		"gh api repos/StatPan/gira/issues/219": {[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`)},
+	}, errs: map[string]error{}}
+
+	result, err := FinishWork(repo, 219, true, 0, runner)
+	if err != nil {
+		t.Fatalf("FinishWork error: %v", err)
+	}
+	if !finishActionStatus(result.Actions, "pr:ready", "planned") || finishActionStatus(result.Actions, "pr:merge", "planned") {
+		t.Fatalf("Draft dry-run action set expanded: %+v", result.Actions)
+	}
+	if result.Approval == nil || !approvalHasAction(result.Approval.PlannedActions, "pr:ready") || approvalHasAction(result.Approval.PlannedActions, "pr:merge") {
+		t.Fatalf("Draft approval action set is not bounded: %+v", result.Approval)
+	}
+	if len(result.Approval.Warnings) == 0 || !strings.Contains(strings.Join(result.Approval.Warnings, " "), "new dry-run") {
+		t.Fatalf("Draft approval missing terminal-intent warning: %+v", result.Approval.Warnings)
+	}
+}
+
+func TestFinishWorkDraftDryRunRetainsOtherBlockers(t *testing.T) {
+	tests := []struct {
+		name           string
+		reviewDecision string
+		checkStatus    string
+		conclusion     string
+		want           string
+	}{
+		{name: "pending checks", reviewDecision: "APPROVED", checkStatus: "IN_PROGRESS", want: "checks_pending"},
+		{name: "failed checks", reviewDecision: "APPROVED", checkStatus: "COMPLETED", conclusion: "FAILURE", want: "checks"},
+		{name: "review required", reviewDecision: "REVIEW_REQUIRED", checkStatus: "COMPLETED", conclusion: "SUCCESS", want: "review"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := RepoRef{Owner: "StatPan", Name: "gira"}
+			pr := fmt.Sprintf(`[{"number":220,"body":"Closes #219","state":"OPEN","url":"u","reviewDecision":%q,"isDraft":true,"mergeStateStatus":"BLOCKED","headRefName":"issue-219-finish","baseRefName":"main","statusCheckRollup":[{"conclusion":%q,"status":%q}]}]`, tt.reviewDecision, tt.conclusion, tt.checkStatus)
+			runner := &finishRunner{outputs: map[string][][]byte{
+				"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {[]byte(pr)},
+				"gh api repos/StatPan/gira/issues/219": {[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`)},
+			}, errs: map[string]error{}}
+
+			result, err := FinishWork(repo, 219, true, 0, runner)
+			if err != nil {
+				t.Fatalf("FinishWork error: %v", err)
+			}
+			if !containsString(result.Blockers, "draft") || !containsString(result.Blockers, tt.want) {
+				t.Fatalf("blockers = %+v, want draft and %s", result.Blockers, tt.want)
+			}
+			if finishActionStatus(result.Actions, "pr:merge", "planned") {
+				t.Fatalf("blocked Draft unexpectedly planned merge: %+v", result.Actions)
+			}
+		})
 	}
 }
 
@@ -401,6 +464,9 @@ func TestFinishWorkDryRunReadySuggestsFinishApply(t *testing.T) {
 	}
 	if result.Approval.Blockers == nil || result.Approval.Warnings == nil {
 		t.Fatalf("finish approval blockers and warnings must be stable arrays: %+v", result.Approval)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "IRREVERSIBLE") || !containsString(result.Approval.Warnings, result.Warnings[0]) {
+		t.Fatalf("missing irreversible merge warning: result=%+v approval=%+v", result.Warnings, result.Approval.Warnings)
 	}
 }
 

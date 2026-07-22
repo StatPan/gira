@@ -402,6 +402,7 @@ func workFinishApprovalActions(result WorkFinishResult) []ApprovalPlannedAction 
 
 func workFinishApprovalWarnings(result WorkFinishResult) []string {
 	warnings := []string{}
+	warnings = appendUniqueStrings(warnings, result.Warnings...)
 	warnings = appendUniqueStrings(warnings, result.Readiness.Warnings...)
 	warnings = appendUniqueStrings(warnings, result.Receipt.Warnings...)
 	return warnings

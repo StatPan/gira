@@ -24,6 +24,7 @@ type DevStartResult struct {
 
 type DevStartOptions struct {
 	Pattern              string
+	Branch               string
 	Base                 string
 	DryRun               bool
 	Force                bool
@@ -60,7 +61,13 @@ func StartDevBranchWithOptions(repo RepoRef, issueNumber int, options DevStartOp
 	if err != nil {
 		return DevStartResult{}, err
 	}
-	branch := formatDevBranch(pattern, issue.Number, issue.Title)
+	branch := strings.TrimSpace(options.Branch)
+	if branch == "" {
+		branch = formatDevBranch(pattern, issue.Number, issue.Title)
+	}
+	if err := validateGitBranchPushName(branch); err != nil {
+		return DevStartResult{}, fmt.Errorf("invalid work branch: %w", err)
+	}
 	result := DevStartResult{Repo: repo.FullName(), Issue: issue.Number, Title: issue.Title, Branch: branch, Base: base, DryRun: options.DryRun, Checked: map[string]bool{}, Failures: map[string]string{}}
 
 	result.Checked["issue_exists"] = true
@@ -194,6 +201,10 @@ func formatDevBranch(pattern string, issue int, title string) string {
 	title = strings.Trim(title, "-")
 	if title == "" {
 		title = "issue"
+	}
+	if strings.Contains(pattern, "{number}") || strings.Contains(pattern, "{slug}") {
+		formatted := strings.ReplaceAll(pattern, "{number}", strconv.Itoa(issue))
+		return strings.ReplaceAll(formatted, "{slug}", title)
 	}
 	return fmt.Sprintf(pattern, issue, title)
 }

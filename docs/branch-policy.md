@@ -81,6 +81,24 @@ Supported fields:
 | `finish_sync_local` | Whether finish may sync local checkout. Default is false. |
 | `targets` | Named target to base branch map, for example `dev: develop`. |
 
+`feature_branch_pattern` supports `{number}` and `{slug}` placeholders. Gira
+records the rendered branch as ticket lifecycle `work_branch`; later commands
+trust the recorded exact value instead of forcing one global prefix.
+
+## Work Branch Trust Order
+
+Gira keeps branch naming strategy separate from PR binding evidence. A linked
+PR head is trusted in this order:
+
+1. Exact match with the ticket's recorded lifecycle `work_branch`.
+2. Exact match with an explicitly configured repo `feature_branch_pattern`.
+3. Legacy `issue-N` or `issue-N-*` compatibility.
+
+An unrelated branch remains blocked with `pr_binding`, even when its PR body
+contains a closing keyword. Status diagnostics distinguish a missing recorded
+work branch from a recorded-branch mismatch, and expose the strategy that
+trusted the linked PR.
+
 Minimal `github-flow` shape:
 
 ```yaml
@@ -253,6 +271,7 @@ Required diagnostics:
 - Missing or inaccessible base branch.
 - Dirty worktree before branch mutation.
 - Recorded base vs actual PR base mismatch.
+- Missing recorded work branch vs recorded work branch/PR head mismatch.
 - Unsafe local checkout mutation configuration.
 - Current branch being used as an implicit base when policy forbids it.
 

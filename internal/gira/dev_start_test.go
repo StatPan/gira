@@ -44,6 +44,24 @@ func TestStartDevBranchDryRunReadyIssue(t *testing.T) {
 	}
 }
 
+func TestStartDevBranchSupportsConfiguredTemplatePattern(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &devStartRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/59": []byte(`{"number":59,"title":"Add API Adapter","state":"open","labels":[{"name":"status:ready"}]}`),
+	}, errs: map[string]error{
+		"git show-ref --verify --quiet refs/heads/feat/i59-add-api-adapter": fmt.Errorf("exit status 1"),
+		"git ls-remote --exit-code --heads origin feat/i59-add-api-adapter": fmt.Errorf("exit status 2"),
+	}}
+
+	result, err := StartDevBranchWithOptions(repo, 59, DevStartOptions{Pattern: "feat/i{number}-{slug}", DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("StartDevBranchWithOptions error: %v", err)
+	}
+	if result.Branch != "feat/i59-add-api-adapter" {
+		t.Fatalf("branch = %q", result.Branch)
+	}
+}
+
 func TestStartDevBranchFailsWhenNotReady(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	issueJSON := `{"number":59,"title":"Add API: start branch","state":"open","labels":[{"name":"type:task"}]}`

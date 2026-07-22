@@ -153,10 +153,12 @@ var workStatusMissingPRRetryAttempts = 3
 var workStatusMissingPRRetryDelay = time.Second
 
 type ticketStartBaseResolution struct {
-	BaseBranch string
-	BaseSource string
-	PolicyMode string
-	Target     string
+	BaseBranch           string
+	BaseSource           string
+	PolicyMode           string
+	Target               string
+	WorkBranch           string
+	FeatureBranchPattern string
 }
 
 func resolveTicketStartBase(repo RepoRef, issue devStartIssue, explicitBase string, runner CommandRunner) (ticketStartBaseResolution, error) {
@@ -169,7 +171,7 @@ func resolveTicketStartBase(repo RepoRef, issue devStartIssue, explicitBase stri
 		if source == "" {
 			source = "recorded_ticket_base"
 		}
-		return ticketStartBaseResolution{BaseBranch: strings.TrimSpace(recorded.BaseBranch), BaseSource: source, PolicyMode: recorded.BranchPolicyMode, Target: recorded.Target}, nil
+		return ticketStartBaseResolution{BaseBranch: strings.TrimSpace(recorded.BaseBranch), BaseSource: source, PolicyMode: recorded.BranchPolicyMode, Target: recorded.Target, WorkBranch: strings.TrimSpace(recorded.WorkBranch)}, nil
 	}
 	policy, err := resolveRepoBranchPolicy(repo, runner)
 	if err != nil {
@@ -181,10 +183,11 @@ func resolveTicketStartBase(repo RepoRef, issue devStartIssue, explicitBase stri
 		base = strings.TrimSpace(policy.DefaultBase)
 	}
 	return ticketStartBaseResolution{
-		BaseBranch: base,
-		BaseSource: "branch_policy." + target,
-		PolicyMode: policy.Mode,
-		Target:     target,
+		BaseBranch:           base,
+		BaseSource:           "branch_policy." + target,
+		PolicyMode:           policy.Mode,
+		Target:               target,
+		FeatureBranchPattern: configuredFeatureBranchPattern(policy),
 	}, nil
 }
 
@@ -195,7 +198,7 @@ func resolveTicketPRBase(repo RepoRef, issue devStartIssue, runner CommandRunner
 		if source == "" {
 			source = "recorded_ticket_base"
 		}
-		return ticketStartBaseResolution{BaseBranch: strings.TrimSpace(recorded.BaseBranch), BaseSource: source, PolicyMode: recorded.BranchPolicyMode, Target: recorded.Target}, nil
+		return ticketStartBaseResolution{BaseBranch: strings.TrimSpace(recorded.BaseBranch), BaseSource: source, PolicyMode: recorded.BranchPolicyMode, Target: recorded.Target, WorkBranch: strings.TrimSpace(recorded.WorkBranch)}, nil
 	}
 	policy, err := resolveRepoBranchPolicy(repo, runner)
 	if err != nil {
@@ -206,7 +209,14 @@ func resolveTicketPRBase(repo RepoRef, issue devStartIssue, runner CommandRunner
 	if base == "" {
 		base = strings.TrimSpace(policy.DefaultBase)
 	}
-	return ticketStartBaseResolution{BaseBranch: base, BaseSource: "branch_policy." + target, PolicyMode: policy.Mode, Target: target}, nil
+	return ticketStartBaseResolution{BaseBranch: base, BaseSource: "branch_policy." + target, PolicyMode: policy.Mode, Target: target, FeatureBranchPattern: configuredFeatureBranchPattern(policy)}, nil
+}
+
+func configuredFeatureBranchPattern(policy ResolvedBranchPolicy) string {
+	if policy.Source != "config" {
+		return ""
+	}
+	return strings.TrimSpace(policy.FeatureBranchPattern)
 }
 
 func applyPRBaseMismatch(result *WorkPRResult, expectedBase string, actualBase string) {
@@ -226,14 +236,14 @@ func resolveRepoBranchPolicy(repo RepoRef, runner CommandRunner) (ResolvedBranch
 	} else if err != nil {
 		return ResolvedBranchPolicy{}, fmt.Errorf("resolve GitHub default branch: %w", err)
 	}
-	config, err := loadLocalBranchPolicyConfig(runner)
+	config, err := loadLocalBranchPolicyConfig(repo, runner)
 	if err != nil {
 		return ResolvedBranchPolicy{}, err
 	}
 	return ResolveBranchPolicy(config, defaultBranch)
 }
 
-func loadLocalBranchPolicyConfig(runner CommandRunner) (*BranchPolicyConfig, error) {
+func loadLocalBranchPolicyConfig(repo RepoRef, runner CommandRunner) (*BranchPolicyConfig, error) {
 	paths := []string{DefaultInitConfigPath("."), ".gira/config.toml"}
 	if output, err := runner.Run("git", "rev-parse", "--show-toplevel"); err == nil {
 		root := strings.TrimSpace(string(output))
@@ -254,6 +264,9 @@ func loadLocalBranchPolicyConfig(runner CommandRunner) (*BranchPolicyConfig, err
 		cfg, err := LoadInitConfig(clean)
 		if err != nil {
 			return nil, err
+		}
+		if configuredRepo := strings.TrimSpace(cfg.Repo); configuredRepo != "" && configuredRepo != repo.FullName() {
+			continue
 		}
 		if cfg.BranchPolicy != nil {
 			return cfg.BranchPolicy, nil
@@ -300,7 +313,11 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 	if err != nil {
 		return WorkStartResult{}, err
 	}
-	start, err := StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: DefaultDevBranchPattern, Base: base.BaseBranch, DryRun: options.DryRun, Force: alreadyStarted, RequireCleanWorktree: true}, runner)
+	pattern := strings.TrimSpace(base.FeatureBranchPattern)
+	if pattern == "" {
+		pattern = DefaultDevBranchPattern
+	}
+	start, err := StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: pattern, Branch: base.WorkBranch, Base: base.BaseBranch, DryRun: options.DryRun, Force: alreadyStarted, RequireCleanWorktree: true}, runner)
 	result := WorkStartResult{
 		SchemaVersion: WorkStartResultSchemaVersion,
 		Repo:          repo.FullName(),
@@ -374,6 +391,7 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 	if err != nil {
 		return result, err
 	}
+	applyDevPRBindingPolicy(&prStatus, issueNumber, devPRBindingPolicyFromIssue(issue, runner, repo))
 	if prStatus.PRNumber != 0 {
 		actualDraft := hasWorkBlocker(prStatus.Blockers, "draft")
 		targetStatus = "In review"
@@ -491,6 +509,7 @@ func GetWorkStatusWithPRStatus(repo RepoRef, issueNumber int, prStatus DevPRStat
 }
 
 func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult) WorkStatusResult {
+	applyDevPRBindingPolicy(&prStatus, issueNumber, devPRBindingPolicyFromIssue(issue, nil, repo))
 	status := displayStatus(managedStatusFromLabels(issue.Labels))
 	nextAction := nextWorkAction(issue.State, status, prStatus)
 	if nextAction == "done" {
@@ -538,7 +557,11 @@ func shouldRetryWorkStatusMissingPR(issue devStartIssue, prStatus DevPRStatusRes
 }
 
 func ticketStatusBranch(issue devStartIssue, pr DevPRStatusResult) *TicketStatusBranch {
-	expected := formatDevBranch(DefaultDevBranchPattern, issue.Number, issue.Title)
+	state := ParseTicketLifecycleState(issue.Body)
+	expected := strings.TrimSpace(state.WorkBranch)
+	if expected == "" {
+		expected = formatDevBranch(DefaultDevBranchPattern, issue.Number, issue.Title)
+	}
 	current := "unknown"
 	source := "expected_from_issue_title"
 	trusted := false
@@ -565,6 +588,11 @@ func ticketStatusBranchPolicy(issue devStartIssue, pr DevPRStatusResult) *Ticket
 	}
 	if report.PolicyMode == "" {
 		report.Diagnostics = append(report.Diagnostics, "missing_branch_policy_mode")
+	}
+	if report.WorkBranch == "" {
+		report.Diagnostics = append(report.Diagnostics, "missing_recorded_work_branch")
+	} else if pr.Binding.HeadRef != "" && report.WorkBranch != pr.Binding.HeadRef {
+		report.Diagnostics = append(report.Diagnostics, "recorded_work_branch_actual_pr_head_mismatch")
 	}
 	if report.RecordedBase != "" && report.ActualPRBase != "" && report.RecordedBase != report.ActualPRBase {
 		report.BaseMismatch = true
@@ -824,7 +852,11 @@ type workPRBranchPush struct {
 }
 
 func prepareWorkPRBranchPush(issue devStartIssue, issueNumber int, dryRun bool, runner CommandRunner) (workPRBranchPush, error) {
-	expectedBranch := formatDevBranch(DefaultDevBranchPattern, issue.Number, issue.Title)
+	state := ParseTicketLifecycleState(issue.Body)
+	expectedBranch := strings.TrimSpace(state.WorkBranch)
+	if expectedBranch == "" {
+		expectedBranch = formatDevBranch(DefaultDevBranchPattern, issue.Number, issue.Title)
+	}
 	currentOut, err := runner.Run("git", "branch", "--show-current")
 	if err != nil {
 		return workPRBranchPush{}, fmt.Errorf("read current branch before PR create: %w", err)

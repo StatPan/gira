@@ -2,6 +2,8 @@ package gira
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -101,6 +103,35 @@ func TestStartWorkApplyReadyIssueCreatesBranchAndMovesInProgress(t *testing.T) {
 	}
 	if !containsCallWith(runner.calls, "gh api repos/StatPan/gira/issues/126 -X PATCH -f body=", "base_branch: main") {
 		t.Fatalf("missing lifecycle base recording call: %v", runner.calls)
+	}
+}
+
+func TestStartWorkUsesExplicitRepositoryBranchPattern(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".gira"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := "repo: StatPan/gira\nprofiles:\n  default:\n    labels: []\n    milestones: []\n    issue_templates: []\nbranch_policy:\n  mode: custom\n  feature_branch_pattern: feat/i{number}-{slug}\n"
+	if err := os.WriteFile(filepath.Join(root, ".gira", "config.yaml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	issueJSON := []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`)
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": issueJSON,
+	}, errs: map[string]error{
+		"git show-ref --verify --quiet refs/heads/feat/i126-work-command": fmt.Errorf("exit status 1"),
+		"git ls-remote --exit-code --heads origin feat/i126-work-command": fmt.Errorf("exit status 2"),
+	}}
+
+	result, err := StartWork(repo, 126, true, runner)
+	if err != nil {
+		t.Fatalf("StartWork error: %v", err)
+	}
+	if result.Branch != "feat/i126-work-command" || result.PolicyMode != BranchPolicyModeCustom {
+		t.Fatalf("repository branch pattern was not resolved: %+v", result)
 	}
 }
 
@@ -458,6 +489,40 @@ func TestOpenWorkPRApplyPushesUnpushedTicketBranch(t *testing.T) {
 	createIndex := callIndex(runner.calls, "gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126 --base main --draft")
 	if pushIndex < 0 || createIndex < 0 || pushIndex > createIndex {
 		t.Fatalf("expected push before PR create, calls=%v", runner.calls)
+	}
+}
+
+func TestOpenWorkPRAcceptsRecordedCustomWorkBranch(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	body := RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", WorkBranch: "feat/i126-work-command"})
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","body":` + strconv.Quote(body) + `,"labels":[{"name":"status:in-progress"}]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": []byte(`[]`),
+		"git branch --show-current":                            []byte("feat/i126-work-command\n"),
+		"git rev-parse --abbrev-ref --symbolic-full-name @{u}": []byte("origin/feat/i126-work-command\n"),
+	}}
+
+	result, err := OpenWorkPR(repo, 126, true, false, runner)
+	if err != nil {
+		t.Fatalf("OpenWorkPR error: %v", err)
+	}
+	if result.Branch != "feat/i126-work-command" || result.BranchPush != "skipped" {
+		t.Fatalf("custom recorded branch was not accepted: %+v", result)
+	}
+}
+
+func TestWorkStatusUsesRecordedWorkBranchAndReportsMismatch(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	body := RenderTicketLifecycleBlock(TicketLifecycleState{WorkBranch: "feat/i126-work-command"})
+	issue := devStartIssue{Number: 126, Title: "Work command", State: "open", Body: body, Labels: []string{"type:bug", "status:in-review"}}
+	pr := DevPRStatusResult{PRNumber: 201, State: "OPEN", Binding: DevPRBinding{HeadRef: "feat/i126-other", BaseRef: "main"}, Blockers: []string{"pr_binding"}}
+
+	result := workStatusFromIssueAndPR(repo, 126, issue, pr)
+	if result.Branch == nil || result.Branch.Expected != "feat/i126-work-command" || result.Branch.Trusted {
+		t.Fatalf("unexpected status branch: %+v", result.Branch)
+	}
+	if result.BranchPolicy == nil || !containsString(result.BranchPolicy.Diagnostics, "recorded_work_branch_actual_pr_head_mismatch") {
+		t.Fatalf("missing recorded branch mismatch diagnostic: %+v", result.BranchPolicy)
 	}
 }
 

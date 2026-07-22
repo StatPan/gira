@@ -52,6 +52,7 @@ Schema version: `gira-command-capabilities/v1`
 | `gira report changelog` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
 | `gira report delivery-status` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
 | `gira report milestone` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
+| `gira report portfolio` | none | `read` | `none` | none | README.md, docs/visual-portfolio-report.md, docs-site/command-reference.md |
 | `gira report qa-checklist` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
 | `gira report release-notes` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |
 | `gira report schedule` | none | `read` | `stable_json` | none | README.md, docs-site/command-reference.md |

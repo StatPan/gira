@@ -1134,6 +1134,7 @@ const reportHelp = `Human-readable project reports.
 
 Usage:
   gira report weekly [--repo OWNER/REPO] [--format text|md|json|csv|html|bundle] [--output PATH]
+  gira report portfolio [--repo OWNER/REPO ...] [--milestone TITLE ...] [--since YYYY-MM-DD] [--until YYYY-MM-DD] --output PATH
   gira report release-notes --repo OWNER/REPO --milestone TITLE [--format text|md|json|csv|html|bundle] [--output PATH]
   gira report changelog --repo OWNER/REPO --milestone TITLE [--format text|md|json|csv|html|bundle] [--output PATH]
   gira report milestone --repo OWNER/REPO --milestone TITLE [--format text|md|json|csv|html|bundle] [--output PATH]
@@ -1145,6 +1146,7 @@ Usage:
 
 Commands:
   weekly          Weekly PM cockpit report with deterministic KPIs and top exceptions
+  portfolio       Self-contained local HTML overview of milestones, dates, and work queues
   release-notes   Release notes from milestone issues and merged PR evidence
   changelog       Changelog document using release-note evidence
   milestone       Milestone progress report from issue and milestone evidence
@@ -11751,6 +11753,8 @@ func runReport(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "weekly":
 		return runReportWeekly(args[1:], stdout, stderr)
+	case "portfolio":
+		return runReportPortfolio(args[1:], stdout, stderr)
 	case "release-notes":
 		return runReportReleaseNotes(args[1:], stdout, stderr)
 	case "changelog":
@@ -11766,6 +11770,68 @@ func runReport(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stderr, reportHelp)
 		return 2
 	}
+}
+
+func runReportPortfolio(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprint(stdout, reportHelp)
+		return 0
+	}
+	fs := flag.NewFlagSet("report portfolio", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var repoValues repeatedStringFlag
+	var milestoneValues repeatedStringFlag
+	fs.Var(&repoValues, "repo", "Target GitHub repo in OWNER/REPO form; repeat to include more than one")
+	fs.Var(&milestoneValues, "milestone", "Exact milestone title; repeat to include more than one")
+	since := fs.String("since", "", "Inclusive timeline and queue window start in YYYY-MM-DD")
+	until := fs.String("until", "", "Inclusive timeline and queue window end in YYYY-MM-DD")
+	output := fs.String("output", "", "Required local HTML output path")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, reportHelp)
+		return 2
+	}
+	if strings.TrimSpace(*output) == "" {
+		fmt.Fprintln(stderr, "--output is required; portfolio reports are written only to an explicit local HTML path")
+		return 2
+	}
+	repos := make([]gira.RepoRef, 0, len(repoValues))
+	if len(repoValues) == 0 {
+		repo, ok := resolveRepoContext("", stderr, reportHelp)
+		if !ok {
+			return 2
+		}
+		repos = append(repos, repo)
+	} else {
+		seen := map[string]bool{}
+		for _, raw := range repoValues {
+			repo, err := gira.ParseRepoRef(strings.TrimSpace(raw))
+			if err != nil {
+				fmt.Fprintf(stderr, "invalid --repo %q: %v\n", raw, err)
+				return 2
+			}
+			if !seen[repo.FullName()] {
+				seen[repo.FullName()] = true
+				repos = append(repos, repo)
+			}
+		}
+	}
+	report, err := gira.BuildVisualPortfolioReport(gira.VisualPortfolioReportOptions{Repos: repos, Milestones: milestoneValues, Since: *since, Until: *until, Now: reportNow()}, newDashboardExportClient, newReviewGateClient)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	if err := gira.WriteVisualPortfolioHTML(*output, report); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	fmt.Fprintf(stdout, "portfolio html written to %s (repos=%d milestones=%d blocked=%d review_waiting=%d)\n", *output, report.Summary.Repositories, report.Summary.Milestones, report.Summary.BlockedItems, report.Summary.ReviewWaitingItems)
+	return 0
 }
 
 func runReportWeekly(args []string, stdout io.Writer, stderr io.Writer) int {

@@ -695,6 +695,24 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"report", "portfolio"},
+			Summary: "Render a self-contained local HTML overview of milestone progress, dated gates, and blocked or review-waiting queues.",
+			Usage:   "gira report portfolio [--repo OWNER/REPO ...] [--milestone TITLE ...] [--since YYYY-MM-DD] [--until YYYY-MM-DD] --output PATH",
+			Since:   "v2.6.0",
+			Flags: []FlagSpec{
+				{Name: "--repo", Summary: "Repository filter; repeat to include multiple repositories."},
+				{Name: "--milestone", Summary: "Exact milestone-title filter; repeat to include multiple milestones."},
+				{Name: "--since", Summary: "Inclusive timeline and queue window start in YYYY-MM-DD."},
+				{Name: "--until", Summary: "Inclusive timeline and queue window end in YYYY-MM-DD."},
+				{Name: "--output", Summary: "Required local HTML output path; generation never publishes, serves, or opens it."},
+			},
+			Adapter: AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportNone, Notes: "Reads stable GitHub/Gira contracts and writes only the explicitly selected local HTML path; never publishes or opens the artifact."},
+			Docs:    []string{"README.md", "docs/visual-portfolio-report.md", "docs-site/command-reference.md"},
+			Examples: []CommandExample{
+				{Summary: "Render a bounded local portfolio view", Command: "gira report portfolio --repo OWNER/app --milestone v2.1.0 --since 2026-07-01 --until 2026-09-30 --output out/portfolio.html"},
+			},
+		},
+		{
 			Path:    []string{"report", "wbs"},
 			Summary: "Build structural or execution-focused WBS reports from GitHub epics, issues, milestones, and roadmap dates.",
 			Usage:   "gira report wbs [--repo OWNER/REPO] [--state open|closed|all] [--mode structural|execution] [--scenario current|one-month] [--format text|json|csv|html|bundle] [--output PATH]",
@@ -1464,6 +1482,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterApply("posts an idempotent goal finish receipt; explicit --terminal done may normalize labels and close the goal, while explicit --terminal human_review preserves blocker handoff", JSONSupportStable)
 		case "report weekly":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and PR inspection; optional output writes local report artifacts only."}
+		case "report portfolio":
+			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportNone, Notes: "Reads stable GitHub/Gira contracts and writes only the explicitly selected local HTML path; never publishes or opens the artifact."}
 		case "report wbs":
 			specs[i].Adapter = AdapterCommandCapability{Class: AdapterCapabilityRead, JSONSupport: JSONSupportStable, Notes: "Read-only GitHub issue, milestone, and roadmap inspection; optional output writes local report artifacts only."}
 		case "report schedule":

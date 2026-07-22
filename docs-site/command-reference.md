@@ -1580,6 +1580,36 @@ gira report milestone --repo OWNER/app --milestone v2.1.0 --format md
 
 Documented in: `README.md`, `docs-site/command-reference.md`
 
+## `report portfolio`
+
+Render a self-contained local HTML overview of milestone progress, dated gates, and blocked or review-waiting queues.
+
+Usage:
+
+```bash
+gira report portfolio [--repo OWNER/REPO ...] [--milestone TITLE ...] [--since YYYY-MM-DD] [--until YYYY-MM-DD] --output PATH
+```
+
+Since: `v2.6.0`
+
+Flags:
+
+- `--repo`: Repository filter; repeat to include multiple repositories.
+- `--milestone`: Exact milestone-title filter; repeat to include multiple milestones.
+- `--since`: Inclusive timeline and queue window start in YYYY-MM-DD.
+- `--until`: Inclusive timeline and queue window end in YYYY-MM-DD.
+- `--output`: Required local HTML output path; generation never publishes, serves, or opens it.
+
+Examples:
+
+- Render a bounded local portfolio view
+
+```bash
+gira report portfolio --repo OWNER/app --milestone v2.1.0 --since 2026-07-01 --until 2026-09-30 --output out/portfolio.html
+```
+
+Documented in: `README.md`, `docs/visual-portfolio-report.md`, `docs-site/command-reference.md`
+
 ## `report qa-checklist`
 
 Build a QA checklist report from issue labels, open PR checks, review state, and closure-link evidence.

@@ -6,6 +6,37 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v3.0.0 - 2026-07-22
+
+- Added the V3 Active PM operating system for human and AI operators: typed PM
+  intent diagnostics, durable evidence/assumption/decision records, compact
+  profile-aware task packets, discovery and learning graphs, outcome-aware
+  measurement plans, typed Goal work graphs, fingerprint-guarded replanning,
+  persisted acceptance/outcome verdicts, and canonical operator, stakeholder,
+  audit, and handoff views.
+- Added a model-independent PM harness with shared CLI/MCP contracts, bootstrap
+  receipts, conformance fixtures for one human and two AI-host configurations,
+  and Doctor checks that keep protocol compliance separate from semantic
+  quality.
+- Added the local visual portfolio report while preserving GitHub as the source
+  of truth and keeping hosted dashboards outside the CLI-first product path.
+- Fixed branch reuse so recorded work-branch bindings are honored across
+  configured branch strategies, bounded Draft PR finish mutations to the
+  declared approval plan, and preserved delivery evidence for merged PRs with
+  multiple closing references.
+- Compatibility: the V3 schemas and focused MCP tools are additive; existing PM,
+  Goal, ticket, and generic `gira_cli` contracts remain valid. Goal-only compile
+  now uses the Goal body as intent when explicit intent is absent.
+- Rollback: stop using the new PM bootstrap and focused tools, then continue with
+  the prior CLI lifecycle. V3 introduces no session database, credential store,
+  transcript store, or duplicate canonical report state that requires data
+  migration or rollback.
+- Known limitations: automatic natural-language-to-IR projection, integrated
+  decision option comparison and Goal routing, portfolio-wide automatic
+  measurement/replanning, and hosted presentation remain follow-up work. V3
+  does not embed an LLM provider or grant implicit authority for external or
+  irreversible actions.
+
 ## v2.8.0 - 2026-07-14
 
 - Added compact Goal Plan exchange for agent workflows with

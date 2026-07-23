@@ -63,6 +63,7 @@ type WorkPRResult struct {
 	BaseMismatch       bool   `json:"base_mismatch,omitempty"`
 
 	Blockers    []string          `json:"blockers"`
+	Warnings    []string          `json:"warnings,omitempty"`
 	ClosingBody string            `json:"closing_body"`
 	Approval    *ApprovalEvidence `json:"approval,omitempty"`
 }
@@ -431,6 +432,7 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 		result.BranchPush = push.Status
 		result.PushRemote = push.Remote
 		result.LocalGit = push.LocalGit
+		result.Warnings = appendUniqueStrings(result.Warnings, push.Warnings...)
 		if push.Status == "planned" {
 			result.Blockers = appendMissingWorkBlocker(result.Blockers, "branch_push_required")
 		}
@@ -446,6 +448,7 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 	result.BranchPush = push.Status
 	result.PushRemote = push.Remote
 	result.LocalGit = push.LocalGit
+	result.Warnings = appendUniqueStrings(result.Warnings, push.Warnings...)
 
 	opened, err := OpenDevPRWithCreateOptions(repo, issueNumber, DevPRCreateOptions{Draft: draft, Base: base.BaseBranch}, runner)
 	if err != nil {
@@ -595,7 +598,7 @@ func ticketStatusBranchPolicy(issue devStartIssue, pr DevPRStatusResult) *Ticket
 	if report.WorkBranch == "" {
 		report.Diagnostics = append(report.Diagnostics, "missing_recorded_work_branch")
 	} else if pr.Binding.HeadRef != "" && report.WorkBranch != pr.Binding.HeadRef {
-		report.Diagnostics = append(report.Diagnostics, "recorded_work_branch_actual_pr_head_mismatch")
+		report.Diagnostics = append(report.Diagnostics, "branch_name_differs_from_suggestion")
 	}
 	if report.RecordedBase != "" && report.ActualPRBase != "" && report.RecordedBase != report.ActualPRBase {
 		report.BaseMismatch = true
@@ -780,6 +783,7 @@ func ticketStatusWarnings(issue devStartIssue, pr DevPRStatusResult) []string {
 	if containsString(pr.Blockers, "pr_binding") {
 		warnings = append(warnings, "untrusted_pr_branch_binding")
 	}
+	warnings = appendUniqueStrings(warnings, pr.Binding.Warnings...)
 	if branchPolicy := ticketStatusBranchPolicy(issue, pr); branchPolicy.BaseMismatch {
 		warnings = append(warnings, "recorded_base_actual_pr_base_mismatch")
 	}
@@ -855,6 +859,7 @@ type workPRBranchPush struct {
 	Remote   string
 	Status   string
 	LocalGit string
+	Warnings []string
 }
 
 func prepareWorkPRBranchPush(issue devStartIssue, issueNumber int, dryRun bool, runner CommandRunner) (workPRBranchPush, error) {
@@ -874,34 +879,28 @@ func prepareWorkPRBranchPush(issue devStartIssue, issueNumber int, dryRun bool, 
 	if currentBranch == "main" || currentBranch == "master" {
 		return workPRBranchPush{}, fmt.Errorf("refusing to create ticket PR from %s; run `gira ticket start %d --apply` first", currentBranch, issueNumber)
 	}
-	if !isTicketBranchForIssue(currentBranch, issueNumber, expectedBranch) {
-		return workPRBranchPush{}, fmt.Errorf("current branch %q is not the ticket branch for #%d; run `gira ticket start %d --apply` first", currentBranch, issueNumber, issueNumber)
-	}
 	const remote = "origin"
 	if err := validateGitPushTarget(remote, currentBranch); err != nil {
 		return workPRBranchPush{}, err
+	}
+	warnings := []string{}
+	if currentBranch != expectedBranch && !strings.HasPrefix(currentBranch, fmt.Sprintf("issue-%d-", issueNumber)) {
+		warnings = append(warnings, "branch_name_differs_from_suggestion")
 	}
 	localGit := fmt.Sprintf("git push -u %s <validated-ticket-branch>", remote)
 	if upstreamOut, err := runner.Run("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err == nil {
 		upstream := strings.TrimSpace(string(upstreamOut))
 		if upstream == remote+"/"+currentBranch {
-			return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "skipped", LocalGit: localGit}, nil
+			return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "skipped", LocalGit: localGit, Warnings: warnings}, nil
 		}
 	}
 	if dryRun {
-		return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "planned", LocalGit: localGit}, nil
+		return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "planned", LocalGit: localGit, Warnings: warnings}, nil
 	}
 	if _, err := runner.Run("git", "push", "-u", remote, currentBranch); err != nil {
-		return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "failed", LocalGit: localGit}, fmt.Errorf("push ticket branch before PR create failed; inspect local git output and credentials outside Gira logs")
+		return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "failed", LocalGit: localGit, Warnings: warnings}, fmt.Errorf("push ticket branch before PR create failed; inspect local git output and credentials outside Gira logs")
 	}
-	return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "applied", LocalGit: localGit}, nil
-}
-
-func isTicketBranchForIssue(branch string, issueNumber int, expectedBranch string) bool {
-	if branch == expectedBranch {
-		return true
-	}
-	return strings.HasPrefix(branch, fmt.Sprintf("issue-%d-", issueNumber))
+	return workPRBranchPush{Branch: currentBranch, Remote: remote, Status: "applied", LocalGit: localGit, Warnings: warnings}, nil
 }
 
 func validateGitPushTarget(remote string, branch string) error {

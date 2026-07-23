@@ -515,14 +515,14 @@ func TestWorkStatusUsesRecordedWorkBranchAndReportsMismatch(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	body := RenderTicketLifecycleBlock(TicketLifecycleState{WorkBranch: "feat/i126-work-command"})
 	issue := devStartIssue{Number: 126, Title: "Work command", State: "open", Body: body, Labels: []string{"type:bug", "status:in-review"}}
-	pr := DevPRStatusResult{PRNumber: 201, State: "OPEN", Binding: DevPRBinding{HeadRef: "feat/i126-other", BaseRef: "main"}, Blockers: []string{"pr_binding"}}
+	pr := DevPRStatusResult{PRNumber: 201, State: "OPEN", Binding: DevPRBinding{Trusted: true, Source: "closing_reference", HeadRef: "feat/i126-other", BaseRef: "main", Warnings: []string{"branch_name_differs_from_suggestion"}}}
 
 	result := workStatusFromIssueAndPR(repo, 126, issue, pr)
-	if result.Branch == nil || result.Branch.Expected != "feat/i126-work-command" || result.Branch.Trusted {
+	if result.Branch == nil || result.Branch.Expected != "feat/i126-work-command" || !result.Branch.Trusted || result.Branch.Source != "closing_reference" {
 		t.Fatalf("unexpected status branch: %+v", result.Branch)
 	}
-	if result.BranchPolicy == nil || !containsString(result.BranchPolicy.Diagnostics, "recorded_work_branch_actual_pr_head_mismatch") {
-		t.Fatalf("missing recorded branch mismatch diagnostic: %+v", result.BranchPolicy)
+	if result.BranchPolicy == nil || !containsString(result.BranchPolicy.Diagnostics, "branch_name_differs_from_suggestion") || !containsString(result.Warnings, "branch_name_differs_from_suggestion") {
+		t.Fatalf("missing naming advisory: branch_policy=%+v warnings=%+v", result.BranchPolicy, result.Warnings)
 	}
 }
 
@@ -598,20 +598,29 @@ func TestValidateGitPushTargetRejectsRemoteURLWithoutEchoingCredentials(t *testi
 	}
 }
 
-func TestOpenWorkPRApplyRejectsWrongBranch(t *testing.T) {
+func TestOpenWorkPRApplyAcceptsValidCustomBranchWithAdvisory(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": []byte(`[]`),
-		"git branch --show-current": []byte("feature/other\n"),
+		"git branch --show-current":            []byte("team/work-command\n"),
+		"git push -u origin team/work-command": nil,
+		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126 --base main": []byte("https://github.com/StatPan/gira/pull/204\n"),
+		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                   nil,
+		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":           nil,
+	}, errs: map[string]error{
+		"git rev-parse --abbrev-ref --symbolic-full-name @{u}": fmt.Errorf("fatal: no upstream configured: exit status 128"),
 	}}
 
-	_, err := OpenWorkPR(repo, 126, false, false, runner)
-	if err == nil || !strings.Contains(err.Error(), "not the ticket branch") {
-		t.Fatalf("expected wrong branch error, got %v", err)
+	result, err := OpenWorkPR(repo, 126, false, false, runner)
+	if err != nil {
+		t.Fatalf("OpenWorkPR error: %v", err)
 	}
-	if containsCall(runner.calls, "git push -u origin feature/other") {
-		t.Fatalf("wrong branch should not be pushed, calls=%v", runner.calls)
+	if result.Branch != "team/work-command" || result.BranchPush != "applied" || !result.Created || !containsString(result.Warnings, "branch_name_differs_from_suggestion") {
+		t.Fatalf("expected custom branch to be created with advisory, got %+v", result)
+	}
+	if !containsCall(runner.calls, "git push -u origin team/work-command") {
+		t.Fatalf("custom branch should be pushed, calls=%v", runner.calls)
 	}
 }
 

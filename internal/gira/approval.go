@@ -178,7 +178,7 @@ func WorkPRApprovalEvidence(result WorkPRResult, canonicalCommand string) *Appro
 		OutputSchema:          WorkPRResultSchemaVersion,
 		PlannedActions:        workPRApprovalActions(result),
 		Blockers:              stableStringSlice(result.Blockers),
-		Warnings:              []string{},
+		Warnings:              stableStringSlice(result.Warnings),
 		PostApplyVerification: fmt.Sprintf("gira ticket status %d --repo %s --json", result.Issue, result.Repo),
 	}
 }

@@ -158,7 +158,7 @@ func TestValidateDevPRBindingKeepsStrategiesDistinct(t *testing.T) {
 	if recorded.Source != "recorded_work_branch" || resolved.Source != "branch_policy.feature_branch_pattern" || legacy.Source != "legacy_issue_branch" {
 		t.Fatalf("unexpected strategy sources: recorded=%+v resolved=%+v legacy=%+v", recorded, resolved, legacy)
 	}
-	if !recorded.Trusted || !resolved.Trusted || !legacy.Trusted || mismatch.Trusted || !containsString(mismatch.Blockers, "pr_binding") {
+	if !recorded.Trusted || !resolved.Trusted || !legacy.Trusted || !mismatch.Trusted || mismatch.Source != "closing_reference" || !containsString(mismatch.Warnings, "branch_name_differs_from_suggestion") || containsString(mismatch.Blockers, "pr_binding") {
 		t.Fatalf("unexpected strategy trust: recorded=%+v resolved=%+v legacy=%+v mismatch=%+v", recorded, resolved, legacy, mismatch)
 	}
 }

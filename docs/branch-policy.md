@@ -81,23 +81,27 @@ Supported fields:
 | `finish_sync_local` | Whether finish may sync local checkout. Default is false. |
 | `targets` | Named target to base branch map, for example `dev: develop`. |
 
-`feature_branch_pattern` supports `{number}` and `{slug}` placeholders. Gira
-records the rendered branch as ticket lifecycle `work_branch`; later commands
-trust the recorded exact value instead of forcing one global prefix.
+`feature_branch_pattern` supports `{number}` and `{slug}` placeholders. It is
+a branch-name suggestion used by `ticket start`, not an enforcement mechanism.
+Gira records the rendered branch as ticket lifecycle `work_branch` for context,
+but a valid non-default branch may still open or back an unambiguous PR with a
+closing reference. Naming differences are reported as advisories.
 
 ## Work Branch Trust Order
 
 Gira keeps branch naming strategy separate from PR binding evidence. A linked
-PR head is trusted in this order:
+PR head is described in this order:
 
 1. Exact match with the ticket's recorded lifecycle `work_branch`.
 2. Exact match with an explicitly configured repo `feature_branch_pattern`.
 3. Legacy `issue-N` or `issue-N-*` compatibility.
+4. A single PR with a valid closing reference, reported as a naming advisory
+   when it differs from the suggestion.
 
-An unrelated branch remains blocked with `pr_binding`, even when its PR body
-contains a closing keyword. Status diagnostics distinguish a missing recorded
-work branch from a recorded-branch mismatch, and expose the strategy that
-trusted the linked PR.
+Branch names do not prove ownership. Ambiguous multiple closing PRs remain
+blocked with `pr_binding`; base-branch, review, check, and git-ref safety gates
+are unchanged. Status diagnostics distinguish a missing recorded work branch
+from a naming advisory and expose the source that linked the PR.
 
 Minimal `github-flow` shape:
 

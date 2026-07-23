@@ -52,6 +52,7 @@ type DevPRBinding struct {
 	BaseRef              string   `json:"base_ref,omitempty"`
 	ExpectedHeadPrefixes []string `json:"expected_head_prefixes,omitempty"`
 	Blockers             []string `json:"blockers,omitempty"`
+	Warnings             []string `json:"warnings,omitempty"`
 	CandidatePRs         []int    `json:"candidate_prs,omitempty"`
 }
 
@@ -795,7 +796,13 @@ func validateDevPRBinding(issueNumber int, pr prSummary, policy devPRBindingPoli
 		binding.Source = "legacy_issue_branch"
 		return binding
 	}
-	binding.Blockers = append(binding.Blockers, "pr_binding")
+	// A branch name is useful context, not ticket ownership proof. A single PR
+	// with a closing reference is already linked by GitHub; keep the naming
+	// difference visible without blocking repositories that use another naming
+	// convention.
+	binding.Trusted = true
+	binding.Source = "closing_reference"
+	binding.Warnings = append(binding.Warnings, "branch_name_differs_from_suggestion")
 	return binding
 }
 

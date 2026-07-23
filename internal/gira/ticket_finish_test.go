@@ -543,28 +543,29 @@ func TestFinishWorkApplyReviewRequiredBlocksMerge(t *testing.T) {
 	}
 }
 
-func TestFinishWorkBlocksUnexpectedPRHeadBinding(t *testing.T) {
+func TestFinishWorkAllowsCustomPRHeadBindingWithAdvisory(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	issueJSON := []byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`)
 	runner := &finishRunner{outputs: map[string][][]byte{
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
 			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"feature/unrelated","baseRefName":"main","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"feature/unrelated","baseRefName":"main","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 		},
-		"gh api repos/StatPan/gira/issues/219": {[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`)},
+		"gh api repos/StatPan/gira/issues/219": {issueJSON, issueJSON},
 	}, errs: map[string]error{}}
 
-	result, err := FinishWork(repo, 219, false, 0, runner)
-	if err == nil || !strings.Contains(err.Error(), "pr_binding") {
-		t.Fatalf("expected PR binding blocker, got result=%+v err=%v", result, err)
+	result, err := FinishWork(repo, 219, true, 0, runner)
+	if err != nil {
+		t.Fatalf("expected custom branch to remain finish-ready, got result=%+v err=%v", result, err)
 	}
-	if !containsString(result.Blockers, "pr_binding") {
-		t.Fatalf("expected pr_binding blocker: %+v", result.Blockers)
+	if containsString(result.Blockers, "pr_binding") || !result.Readiness.Ready {
+		t.Fatalf("unexpected binding blocker: %+v", result)
 	}
-	if result.FinalStatus.PRNumber != 220 || result.FinalStatus.Blockers == nil {
+	if result.FinalStatus.PRNumber != 220 || !containsString(result.FinalStatus.Warnings, "branch_name_differs_from_suggestion") {
 		t.Fatalf("expected final status to retain linked PR context: %+v", result.FinalStatus)
 	}
 	if containsCall(runner.calls, "gh pr merge 220 --repo StatPan/gira --squash --delete-branch") {
-		t.Fatalf("unexpectedly merged untrusted PR binding: %v", runner.calls)
+		t.Fatalf("dry-run should not merge: %v", runner.calls)
 	}
 }
 

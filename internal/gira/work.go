@@ -815,6 +815,9 @@ func statusLabelForDraft(draft bool) string {
 
 func nextWorkAction(issueState string, status string, pr DevPRStatusResult) string {
 	if strings.EqualFold(pr.State, "MERGED") {
+		if !strings.EqualFold(issueState, "closed") {
+			return "converge_completion_state"
+		}
 		return "done"
 	}
 	if strings.EqualFold(issueState, "closed") {
@@ -1071,6 +1074,8 @@ func workStatusNextStep(result WorkStatusResult) string {
 		return "merge when policy checks pass"
 	case "done":
 		return "ticket is done"
+	case "converge_completion_state":
+		return fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", result.Repo, result.Issue)
 	case "closed":
 		return "ticket is closed; inspect GitHub history if more evidence is needed"
 	default:

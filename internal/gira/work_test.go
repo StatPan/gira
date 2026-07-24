@@ -886,6 +886,25 @@ func TestGetWorkStatusClosedIssueWithMergedPRReportsDone(t *testing.T) {
 	}
 }
 
+func TestGetWorkStatusOpenIssueWithMergedPRRequiresCompletionConvergence(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/184": []byte(`{"number":184,"title":"Workspace backlog","state":"open","labels":[{"name":"status:in-review"},{"name":"type:story"}]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 184 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": []byte(`[{"number":185,"title":"x","body":"Closes #184","state":"MERGED","url":"https://github.com/StatPan/gira/pull/185","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+	}}
+
+	result, err := GetWorkStatus(repo, 184, runner)
+	if err != nil {
+		t.Fatalf("GetWorkStatus error: %v", err)
+	}
+	if result.NextAction != "converge_completion_state" || result.Status == "Done" {
+		t.Fatalf("open GitHub issue must not be reported as done: %+v", result)
+	}
+	if got := workStatusNextStep(result); got != "gira ticket finish --repo StatPan/gira --ticket 184 --dry-run" {
+		t.Fatalf("next step = %q", got)
+	}
+}
+
 func TestGetWorkStatusClosedIssueWithoutPRDoesNotSuggestStart(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{

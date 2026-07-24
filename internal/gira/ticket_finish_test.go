@@ -248,6 +248,75 @@ func TestFinishWorkAlreadyMergedSelectsReplacementAndVerifiesReceipt(t *testing.
 	}
 }
 
+func TestFinishWorkApplyConvergesOpenIssueAfterMergedNonDefaultDelivery(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","headRefName":"issue-219-finish","baseRefName":"dev","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[{"name":"status:in-review"}]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[{"name":"status:done"}]}`),
+		},
+		"gh issue close 219 --repo StatPan/gira --reason completed":                                     {nil},
+		"gh label list --repo StatPan/gira --json name --limit 1000":                                    {[]byte(`[{"name":"status:done"}]`)},
+		"gh issue edit 219 --repo StatPan/gira --add-label status:done --remove-label status:in-review": {nil},
+	}, errs: map[string]error{}}
+
+	result, err := FinishWork(repo, 219, false, 0, runner)
+	if err != nil {
+		t.Fatalf("FinishWork error: %v; calls=%v", err, runner.calls)
+	}
+	for _, want := range []string{
+		"gh issue close 219 --repo StatPan/gira --reason completed",
+		"gh issue edit 219 --repo StatPan/gira --add-label status:done --remove-label status:in-review",
+	} {
+		if !containsCall(runner.calls, want) {
+			t.Fatalf("missing convergence call %q in %v", want, runner.calls)
+		}
+	}
+	if !finishActionStatus(result.Actions, "ticket:close", "applied") || !finishActionStatus(result.Actions, "ticket:normalize-status", "applied") {
+		t.Fatalf("missing completion convergence actions: %+v", result.Actions)
+	}
+	if result.Receipt.FinalState.GitHubIssueState != "closed" || result.Receipt.FinalState.GiraStatus != "Done" {
+		t.Fatalf("receipt did not report converged GitHub and Gira state: %+v", result.Receipt.FinalState)
+	}
+	if !strings.Contains(result.Receipt.RenderedBody, "gira_status=Done github_issue_state=closed") {
+		t.Fatalf("receipt did not render explicit completion state:\n%s", result.Receipt.RenderedBody)
+	}
+}
+
+func TestFinishWorkDryRunOffersCompletionConvergenceForAlreadyMergedOpenIssue(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","headRefName":"issue-219-finish","baseRefName":"dev","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`),
+		},
+	}, errs: map[string]error{}}
+
+	result, err := FinishWork(repo, 219, true, 0, runner)
+	if err != nil {
+		t.Fatalf("FinishWork dry-run error: %v; calls=%v", err, runner.calls)
+	}
+	if !result.AlreadyDone || !finishActionStatus(result.Actions, "ticket:close", "planned") {
+		t.Fatalf("missing planned closure repair: %+v", result)
+	}
+	if result.NextStep != "gira ticket finish --repo StatPan/gira --ticket 219 --apply" || result.FinalStatus.NextAction != "converge_completion_state" {
+		t.Fatalf("dry-run did not offer completion convergence: %+v", result)
+	}
+	if containsCall(runner.calls, "gh issue close 219 --repo StatPan/gira --reason completed") {
+		t.Fatalf("dry-run must not close the issue: %v", runner.calls)
+	}
+	if result.Receipt.FinalState.GitHubIssueState != "open" || result.Receipt.FinalState.GiraStatus != "In review" {
+		t.Fatalf("receipt must expose the unresolved state mismatch: %+v", result.Receipt.FinalState)
+	}
+}
+
 func TestFinishWorkApplySyncLocalOptInTargetsPRBase(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{

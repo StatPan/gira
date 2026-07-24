@@ -126,10 +126,12 @@ type WorkFinishReceiptPR struct {
 }
 
 type WorkFinishReceiptFinalState struct {
-	IssueState string `json:"issue_state,omitempty"`
-	Status     string `json:"status,omitempty"`
-	NextAction string `json:"next_action,omitempty"`
-	NextStep   string `json:"next_step,omitempty"`
+	IssueState       string `json:"issue_state,omitempty"`
+	Status           string `json:"status,omitempty"`
+	GitHubIssueState string `json:"github_issue_state,omitempty"`
+	GiraStatus       string `json:"gira_status,omitempty"`
+	NextAction       string `json:"next_action,omitempty"`
+	NextStep         string `json:"next_step,omitempty"`
 }
 
 type WorkFinishJiraTransition struct {
@@ -599,13 +601,11 @@ func finishWithLocalSync(repo RepoRef, issueNumber int, runner CommandRunner, re
 		}
 	}
 	if mergePlanned && len(result.Blockers) == 0 {
-		action, err := normalizeFinishedIssueStatus(repo, issueNumber, result.DryRun, runner)
+		actions, err := convergeFinishedIssue(repo, issueNumber, result.Merged || result.AlreadyDone, result.DryRun, runner)
 		if err != nil {
 			return result, err
 		}
-		if strings.TrimSpace(action.Action) != "" {
-			result.Actions = append(result.Actions, action)
-		}
+		result.Actions = append(result.Actions, actions...)
 	}
 	report, err := finishWithStatus(repo, issueNumber, runner, result, knownPRStatus, nil)
 	if report.DryRun && mergePlanned && !report.AlreadyDone && len(report.Blockers) == 0 {
@@ -614,11 +614,59 @@ func finishWithLocalSync(repo RepoRef, issueNumber int, runner CommandRunner, re
 	return report, err
 }
 
+// convergeFinishedIssue makes the GitHub issue state match verified delivery
+// evidence. GitHub only auto-closes closing references for default-branch
+// merges, so finish owns the equivalent convergence for eligible deliveries to
+// any base branch. It intentionally runs only after the PR is known merged.
+func convergeFinishedIssue(repo RepoRef, issueNumber int, merged bool, dryRun bool, runner CommandRunner) ([]WorkFinishAction, error) {
+	if !merged {
+		return nil, nil
+	}
+	issue, err := fetchDevIssue(repo, issueNumber, runner)
+	if err != nil {
+		return nil, fmt.Errorf("converge finished issue: %w", err)
+	}
+	actions := []WorkFinishAction{}
+	if !strings.EqualFold(issue.State, "closed") {
+		action := WorkFinishAction{
+			Action: "ticket:close",
+			Status: plannedOrAppliedStatus(dryRun),
+			Detail: "close open GitHub issue after verified merged linked PR",
+		}
+		actions = append(actions, action)
+		if dryRun {
+			return actions, nil
+		}
+		if _, err := runner.Run("gh", "issue", "close", fmt.Sprintf("%d", issueNumber), "--repo", repo.FullName(), "--reason", "completed"); err != nil {
+			return actions, fmt.Errorf("close finished issue: %w", err)
+		}
+		issue, err = fetchDevIssue(repo, issueNumber, runner)
+		if err != nil {
+			return actions, fmt.Errorf("verify finished issue closure: %w", err)
+		}
+		if !strings.EqualFold(issue.State, "closed") {
+			return actions, fmt.Errorf("verify finished issue closure: issue #%d is still %s", issueNumber, issue.State)
+		}
+	}
+	normalize, err := normalizeFinishedIssueStatusForIssue(repo, issueNumber, issue, dryRun, runner)
+	if err != nil {
+		return actions, err
+	}
+	if strings.TrimSpace(normalize.Action) != "" {
+		actions = append(actions, normalize)
+	}
+	return actions, nil
+}
+
 func normalizeFinishedIssueStatus(repo RepoRef, issueNumber int, dryRun bool, runner CommandRunner) (WorkFinishAction, error) {
 	issue, err := fetchDevIssue(repo, issueNumber, runner)
 	if err != nil {
 		return WorkFinishAction{}, fmt.Errorf("normalize finished issue status: %w", err)
 	}
+	return normalizeFinishedIssueStatusForIssue(repo, issueNumber, issue, dryRun, runner)
+}
+
+func normalizeFinishedIssueStatusForIssue(repo RepoRef, issueNumber int, issue devStartIssue, dryRun bool, runner CommandRunner) (WorkFinishAction, error) {
 	if !strings.EqualFold(issue.State, "closed") {
 		return WorkFinishAction{}, nil
 	}
@@ -682,7 +730,13 @@ func finishWithStatus(repo RepoRef, issueNumber int, runner CommandRunner, resul
 	if statusErr == nil {
 		result.FinalStatus = status
 		if len(result.Blockers) == 0 {
-			result.NextStep = status.NextStep
+			if hasWorkFinishAction(result.Actions, "ticket:close", "planned") {
+				result.FinalStatus.NextAction = "converge_completion_state"
+				result.NextStep = fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+				result.FinalStatus.NextStep = result.NextStep
+			} else {
+				result.NextStep = status.NextStep
+			}
 		}
 	} else if len(result.Blockers) == 0 {
 		result.Blockers = append(result.Blockers, "final_status_unavailable")
@@ -702,6 +756,15 @@ func finishWithStatus(repo RepoRef, issueNumber int, runner CommandRunner, resul
 		result.Approval = WorkFinishApprovalEvidence(result)
 	}
 	return result, err
+}
+
+func hasWorkFinishAction(actions []WorkFinishAction, action string, status string) bool {
+	for _, candidate := range actions {
+		if candidate.Action == action && candidate.Status == status {
+			return true
+		}
+	}
+	return false
 }
 
 func buildWorkFinishReadiness(result WorkFinishResult) WorkFinishReadinessReport {
@@ -816,7 +879,7 @@ func finishReadinessBlockers(result WorkFinishResult, report WorkFinishReadiness
 
 func finishEvidenceReady(report WorkFinishReadinessReport, nextAction string, result WorkFinishResult) bool {
 	if result.AlreadyDone {
-		return true
+		return strings.EqualFold(report.Issue.State, "closed")
 	}
 	if nextAction == "done" || nextAction == "merge_when_policy_allows" {
 		return report.ClosingReference.Present && report.PullRequest.Available
@@ -863,10 +926,12 @@ func buildWorkFinishReceipt(result WorkFinishResult) WorkFinishReceipt {
 		TelemetrySummary: result.FinalStatus.Telemetry,
 		LabelChanges:     finishReceiptLabelChanges(result.Actions),
 		FinalState: WorkFinishReceiptFinalState{
-			IssueState: readiness.Issue.State,
-			Status:     readiness.Issue.Status,
-			NextAction: readiness.NextAction,
-			NextStep:   readiness.NextStep,
+			IssueState:       readiness.Issue.State,
+			Status:           readiness.Issue.Status,
+			GitHubIssueState: readiness.Issue.State,
+			GiraStatus:       readiness.Issue.Status,
+			NextAction:       readiness.NextAction,
+			NextStep:         readiness.NextStep,
 		},
 		Warnings: append([]string(nil), readiness.Warnings...),
 		Target:   fmt.Sprintf("issue#%d", result.Issue),
@@ -916,7 +981,7 @@ func renderWorkFinishReceipt(receipt WorkFinishReceipt) string {
 	var b strings.Builder
 	b.WriteString("## Finish Receipt\n\n")
 	fmt.Fprintf(&b, "- Finished at: %s\n", receipt.FinishedAt)
-	fmt.Fprintf(&b, "- Ticket: #%d status=%s state=%s\n", receipt.Issue.Number, valueOrUnknown(receipt.Issue.Status), valueOrUnknown(receipt.Issue.State))
+	fmt.Fprintf(&b, "- Ticket: #%d gira_status=%s github_issue_state=%s\n", receipt.Issue.Number, valueOrUnknown(receipt.FinalState.GiraStatus), valueOrUnknown(receipt.FinalState.GitHubIssueState))
 	fmt.Fprintf(&b, "- Linked PR: %s state=%s merged=%t head=%s merge_commit=%s closing_reference=%t\n", pr, valueOrUnknown(receipt.PullRequest.State), receipt.PullRequest.Merged, valueOrUnknown(receipt.PullRequest.HeadSHA), valueOrUnknown(receipt.PullRequest.MergeCommitSHA), receipt.PullRequest.ClosingReference)
 	fmt.Fprintf(&b, "- Checks: %s total=%d passing=%d pending=%d failing=%d\n", valueOrUnknown(receipt.ChecksSummary.Status), receipt.ChecksSummary.Total, receipt.ChecksSummary.Passing, receipt.ChecksSummary.Pending, receipt.ChecksSummary.Failing)
 	fmt.Fprintf(&b, "- Review: %s\n", valueOrUnknown(receipt.ReviewSummary.Status))

@@ -36,6 +36,7 @@ type prReadinessInput struct {
 	Checks            []DevPRCheck
 	ReviewStatus      string
 	ReviewDecision    string
+	ReviewPolicy      *FinishReviewPolicy
 	FinishReady       bool
 	ChangedFiles      []string
 	ChangedFilesKnown bool
@@ -50,6 +51,7 @@ func EvaluatePRReadinessFromStatus(status WorkStatusResult) PRReadinessReport {
 		ChecksStatus: status.ChecksStatus,
 		Checks:       append([]DevPRCheck(nil), status.Checks...),
 		ReviewStatus: status.ReviewStatus,
+		ReviewPolicy: status.ReviewPolicy,
 		Telemetry:    status.Telemetry,
 		Acceptance:   status.Acceptance,
 	}
@@ -173,12 +175,13 @@ func evaluatePRReadiness(input prReadinessInput) PRReadinessReport {
 			"Address requested changes or review blockers before finish.",
 		))
 	} else if input.ReviewStatus == "missing" || input.ReviewStatus == "unknown" || strings.TrimSpace(input.ReviewDecision) == "" || strings.EqualFold(input.ReviewDecision, "REVIEW_REQUIRED") {
-		report.Findings = append(report.Findings, prReadinessFinding(
-			"info",
-			"missing_review",
-			"PR has no approving review decision yet.",
-			"Request review or capture reviewer judgment before finish if policy requires it.",
-		))
+		severity, kind, action := "info", "missing_review", "Request review or capture reviewer judgment before finish if policy requires it."
+		if input.ReviewPolicy != nil && input.ReviewPolicy.Value == FinishReviewPolicyMissing {
+			severity, kind, action = "error", "review_policy_not_configured", "Set finish_review_policy: required or none in .gira/config.yaml."
+		} else if input.ReviewPolicy != nil && input.ReviewPolicy.Value == FinishReviewPolicyRequired {
+			severity, kind, action = "error", "review_required_but_absent", "Request an approving review for the current PR head."
+		}
+		report.Findings = append(report.Findings, prReadinessFinding(severity, kind, "PR has no approving review decision yet.", action))
 	}
 
 	if input.Telemetry != nil && input.Telemetry.Required && !input.Telemetry.Present {

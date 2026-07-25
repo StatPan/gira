@@ -92,6 +92,7 @@ type WorkStatusResult struct {
 	ChecksStatus     string                    `json:"checks_status,omitempty"`
 	Checks           []DevPRCheck              `json:"checks,omitempty"`
 	ReviewStatus     string                    `json:"review_status,omitempty"`
+	ReviewPolicy     *FinishReviewPolicy       `json:"review_policy,omitempty"`
 	Evidence         *TicketStatusEvidence     `json:"evidence,omitempty"`
 	Acceptance       *TicketStatusAcceptance   `json:"acceptance_criteria,omitempty"`
 	Telemetry        *TicketStatusTelemetry    `json:"telemetry,omitempty"`
@@ -548,6 +549,7 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 		ChecksStatus:     ticketStatusChecksStatus(prStatus),
 		Checks:           append([]DevPRCheck(nil), prStatus.Checks...),
 		ReviewStatus:     ticketStatusReviewStatus(prStatus),
+		ReviewPolicy:     reviewPolicyPtr(loadFinishReviewPolicy(repo)),
 		Evidence:         ticketStatusEvidence(prStatus, nextAction),
 		Acceptance:       ticketStatusAcceptance(issue.Body),
 		Telemetry:        ticketStatusTelemetry(issue.Body, issue.Labels),
@@ -559,6 +561,8 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 	result.PRReadiness = &prReadiness
 	return result
 }
+
+func reviewPolicyPtr(policy FinishReviewPolicy) *FinishReviewPolicy { return &policy }
 
 func shouldRetryWorkStatusMissingPR(issue devStartIssue, prStatus DevPRStatusResult) bool {
 	return containsString(prStatus.Blockers, "missing_linked_pr") && strings.EqualFold(managedStatusFromLabels(issue.Labels), "In review")

@@ -113,6 +113,24 @@ func TestEvaluatePRReadinessDetectsMissingTelemetryWarning(t *testing.T) {
 	}
 }
 
+func TestEvaluatePRReadinessMakesRequiredReviewAnError(t *testing.T) {
+	report := evaluatePRReadiness(prReadinessInput{
+		Repo:             "StatPan/gira",
+		Issue:            42,
+		PullRequest:      43,
+		PRAvailable:      true,
+		ClosingReference: true,
+		ChecksStatus:     "passed",
+		ReviewStatus:     "unknown",
+		ReviewPolicy:     &FinishReviewPolicy{Value: FinishReviewPolicyRequired, Source: "repo_config"},
+		FinishReady:      true,
+		Acceptance:       &TicketStatusAcceptance{Status: "complete", Total: 1, Complete: 1},
+	})
+	if report.Readiness != "needs_revision" || !prReadinessHasFinding(report, "review_required_but_absent") {
+		t.Fatalf("required review must block finish readiness: %+v", report)
+	}
+}
+
 func prReadinessHasFinding(report PRReadinessReport, kind string) bool {
 	for _, finding := range report.Findings {
 		if finding.Kind == kind {

@@ -13,9 +13,22 @@ import (
 type InitConfig struct {
 	Repo         string                 `yaml:"repo" toml:"repo" json:"repo"`
 	BranchPolicy *BranchPolicyConfig    `yaml:"branch_policy" toml:"branch_policy" json:"branch_policy,omitempty"`
+	Review       ReviewConfig           `yaml:"review" toml:"review" json:"review,omitempty"`
 	Workspace    WorkspaceConfig        `yaml:"workspace" toml:"workspace" json:"workspace"`
 	Portfolio    PortfolioConfig        `yaml:"portfolio" toml:"portfolio" json:"portfolio"`
 	Profiles     map[string]InitProfile `yaml:"profiles" toml:"profiles" json:"profiles"`
+}
+
+// ReviewConfig keeps optional, checkout-local review commands. Commands are
+// argv arrays rather than shell strings so Gira can execute only the declared
+// program and arguments.
+type ReviewConfig struct {
+	LocalChecks []LocalReviewCheck `yaml:"local_checks" toml:"local_checks" json:"local_checks,omitempty"`
+}
+
+type LocalReviewCheck struct {
+	Name    string   `yaml:"name" toml:"name" json:"name"`
+	Command []string `yaml:"command" toml:"command" json:"command"`
 }
 
 type WorkspaceConfig struct {
@@ -80,6 +93,19 @@ func LoadInitConfig(path string) (InitConfig, error) {
 	}
 	if err := validateBranchPolicyConfig(path, "branch_policy", cfg.BranchPolicy); err != nil {
 		return InitConfig{}, err
+	}
+	for index, check := range cfg.Review.LocalChecks {
+		if strings.TrimSpace(check.Name) == "" {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: review.local_checks[%d].name is required", path, index)
+		}
+		if len(check.Command) == 0 || strings.TrimSpace(check.Command[0]) == "" {
+			return InitConfig{}, fmt.Errorf("invalid init config %q: review.local_checks[%d].command must include a program", path, index)
+		}
+		for argIndex, arg := range check.Command {
+			if strings.TrimSpace(arg) == "" {
+				return InitConfig{}, fmt.Errorf("invalid init config %q: review.local_checks[%d].command[%d] cannot be empty", path, index, argIndex)
+			}
+		}
 	}
 	if strings.TrimSpace(cfg.Workspace.InboxRepo) != "" {
 		if _, err := ParseRepoRef(cfg.Workspace.InboxRepo); err != nil {

@@ -24,6 +24,11 @@ func (r *ticketNewRunner) Run(name string, args ...string) ([]byte, error) {
 	if out, ok := defaultBranchPolicyTestOutput(key); ok {
 		return out, nil
 	}
+	if strings.HasPrefix(key, "gh api repos/StatPan/gira/issues/") {
+		parts := strings.SplitN(key, "/issues/", 2)
+		number := strings.Fields(parts[1])[0]
+		return []byte(fmt.Sprintf(`{"number":%s,"title":"Created","state":"open","labels":[{"name":"type:task"},{"name":"status:ready"}]}`, number)), nil
+	}
 	return nil, fmt.Errorf("unexpected call: %s", key)
 }
 
@@ -176,6 +181,27 @@ func TestTicketNewApplyCreatesIssue(t *testing.T) {
 	if report.Approval != nil {
 		t.Fatalf("apply output should not include dry-run approval evidence: %+v", report.Approval)
 	}
+	if report.LabelOutcome.Status != "applied" || !containsString(report.AppliedLabels, "status:ready") {
+		t.Fatalf("expected verified applied labels, got %+v", report)
+	}
+}
+
+func TestTicketNewApplyReportsUnappliedLabelsAndActualReadiness(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	body := defaultTicketNewBody("Label verification")
+	outputs := ticketNewLabelOutputs("type:task", "status:ready")
+	outputs["gh issue create --repo StatPan/gira --title Label verification --body "+body+" --label type:task --label status:ready"] = []byte("https://github.com/StatPan/gira/issues/224\n")
+	outputs["gh api repos/StatPan/gira/issues/224"] = []byte(`{"number":224,"title":"Label verification","state":"open","labels":[]}`)
+	report, err := BuildTicketNewReport(TicketNewInput{Repo: repo, Title: "Label verification", Type: "task"}, &ticketNewRunner{outputs: outputs})
+	if err != nil {
+		t.Fatalf("BuildTicketNewReport error: %v", err)
+	}
+	if report.LabelOutcome.Status != "warning" || len(report.LabelOutcome.MissingLabels) != 2 || report.TicketReadiness.Readiness != "needs_refinement" {
+		t.Fatalf("expected actual remote label warning and readiness, got %+v", report)
+	}
+	if !strings.Contains(report.NextStep, "issues:write") || !strings.Contains(report.NextStep, "gira adopt issues") {
+		t.Fatalf("expected least-privilege remediation, got %q", report.NextStep)
+	}
 }
 
 func TestTicketNewParentDryRunPlansNativeSubIssue(t *testing.T) {
@@ -274,7 +300,7 @@ func TestTicketNewApplyStartRunsStartWork(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	outputs := ticketNewLabelOutputs("type:task", "status:ready")
 	outputs["gh issue create --repo StatPan/gira --title Add retry --body "+defaultTicketNewBody("Add retry")+" --label type:task --label status:ready"] = []byte("https://github.com/StatPan/gira/issues/224\n")
-	outputs["gh api repos/StatPan/gira/issues/224"] = []byte(`{"number":224,"title":"Add retry","state":"open","labels":[{"name":"status:ready"}]}`)
+	outputs["gh api repos/StatPan/gira/issues/224"] = []byte(`{"number":224,"title":"Add retry","state":"open","labels":[{"name":"type:task"},{"name":"status:ready"}]}`)
 	outputs["git checkout -b issue-224-add-retry origin/main"] = nil
 	outputs["gh api repos/StatPan/gira/issues/224/labels/status:ready -X DELETE"] = nil
 	outputs["gh api repos/StatPan/gira/issues/224/labels -X POST -f labels[]=status:in-progress"] = nil

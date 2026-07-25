@@ -32,6 +32,15 @@ type TicketCreatedIssue struct {
 	URL    string `json:"url"`
 }
 
+type TicketLabelOutcome struct {
+	Status             string   `json:"status"`
+	RequestedLabels    []string `json:"requested_labels"`
+	AppliedLabels      []string `json:"applied_labels"`
+	MissingLabels      []string `json:"missing_labels,omitempty"`
+	RequiredCapability string   `json:"required_capability,omitempty"`
+	Remediation        string   `json:"remediation,omitempty"`
+}
+
 type TicketNewReport struct {
 	SchemaVersion   string                `json:"schema_version,omitempty"`
 	Repo            string                `json:"repo"`
@@ -42,6 +51,9 @@ type TicketNewReport struct {
 	Priority        string                `json:"priority,omitempty"`
 	Parent          int                   `json:"parent,omitempty"`
 	Labels          []string              `json:"labels"`
+	RequestedLabels []string              `json:"requested_labels"`
+	AppliedLabels   []string              `json:"applied_labels,omitempty"`
+	LabelOutcome    TicketLabelOutcome    `json:"label_outcome"`
 	Milestone       string                `json:"milestone,omitempty"`
 	Body            string                `json:"body"`
 	TicketReadiness TicketReadinessReport `json:"ticket_readiness"`
@@ -94,6 +106,12 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		Priority:        priority,
 		Parent:          input.Parent,
 		Labels:          labels,
+		RequestedLabels: append([]string(nil), labels...),
+		LabelOutcome: TicketLabelOutcome{
+			Status:          "planned",
+			RequestedLabels: append([]string(nil), labels...),
+			AppliedLabels:   []string{},
+		},
 		Milestone:       strings.TrimSpace(input.Milestone),
 		Body:            body,
 		TicketReadiness: EvaluateTicketReadiness(body, labels, "open"),
@@ -117,6 +135,16 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 	}
 	report.Created = created
 	report.NextStep = fmt.Sprintf("gira ticket start %d --apply", created.Number)
+	createdIssue, err := fetchDevIssue(input.Repo, created.Number, runner)
+	if err != nil {
+		return report, fmt.Errorf("verify created issue labels: %w", err)
+	}
+	report.AppliedLabels = append([]string(nil), createdIssue.Labels...)
+	report.LabelOutcome = ticketNewLabelOutcome(input.Repo, created.Number, report.RequestedLabels, report.AppliedLabels)
+	report.TicketReadiness = EvaluateTicketReadiness(body, report.AppliedLabels, createdIssue.State)
+	if report.LabelOutcome.Status == "warning" {
+		report.NextStep = report.LabelOutcome.Remediation
+	}
 	if input.Parent > 0 {
 		child, err := fetchGitHubIssue(input.Repo, created.Number, runner)
 		if err != nil {
@@ -126,7 +154,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 			return report, fmt.Errorf("link parent issue: %w", err)
 		}
 	}
-	if input.Start {
+	if input.Start && report.LabelOutcome.Status != "warning" {
 		start, err := StartWork(input.Repo, created.Number, false, runner)
 		report.StartResult = start
 		if err != nil {
@@ -135,6 +163,35 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		report.NextStep = "gira ticket pr --dry-run"
 	}
 	return report, nil
+}
+
+func ticketNewLabelOutcome(repo RepoRef, issueNumber int, requested []string, applied []string) TicketLabelOutcome {
+	outcome := TicketLabelOutcome{
+		Status:          "applied",
+		RequestedLabels: append([]string(nil), requested...),
+		AppliedLabels:   append([]string(nil), applied...),
+	}
+	missing := []string{}
+	for _, requestedLabel := range requested {
+		found := false
+		for _, appliedLabel := range applied {
+			if strings.EqualFold(strings.TrimSpace(requestedLabel), strings.TrimSpace(appliedLabel)) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, requestedLabel)
+		}
+	}
+	if len(missing) == 0 {
+		return outcome
+	}
+	outcome.Status = "warning"
+	outcome.MissingLabels = missing
+	outcome.RequiredCapability = "repository issues:write or triage permission"
+	outcome.Remediation = fmt.Sprintf("Grant %s, then run `gira adopt issues --repo %s --issues %d --label %s --dry-run`.", outcome.RequiredCapability, repo.FullName(), issueNumber, strings.Join(missing, " --label "))
+	return outcome
 }
 
 func ticketNewBody(input TicketNewInput) (string, error) {
@@ -361,5 +418,13 @@ func FormatTicketNew(report TicketNewReport) string {
 		fmt.Fprintf(&b, "body:\n%s\nnext step: %s\n", strings.TrimSpace(report.Body), report.NextStep)
 		return b.String()
 	}
-	return fmt.Sprintf("ticket new: ticket #%d %s\nnext step: %s\n", report.Created.Number, report.Title, report.NextStep)
+	var b strings.Builder
+	fmt.Fprintf(&b, "ticket new: ticket #%d %s\n", report.Created.Number, report.Title)
+	fmt.Fprintf(&b, "requested labels: %s\n", strings.Join(report.RequestedLabels, ","))
+	fmt.Fprintf(&b, "applied labels: %s\n", strings.Join(report.AppliedLabels, ","))
+	if report.LabelOutcome.Status == "warning" {
+		fmt.Fprintf(&b, "label warning: missing=%s capability=%s\n", strings.Join(report.LabelOutcome.MissingLabels, ","), report.LabelOutcome.RequiredCapability)
+	}
+	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
+	return b.String()
 }

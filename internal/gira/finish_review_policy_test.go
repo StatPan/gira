@@ -37,4 +37,7 @@ func TestFinishReviewEvidenceReportsPolicyAndMissingApprovalSeparately(t *testin
 	if evidence := finishReviewEvidence(repo, status, FinishReviewPolicy{Value: FinishReviewPolicyRequired}, &finishRunner{}); evidence.Blocker != "review_required_but_absent" {
 		t.Fatalf("missing approval should be distinct: %+v", evidence)
 	}
+	if evidence := finishReviewEvidence(repo, status, FinishReviewPolicy{Value: FinishReviewPolicyNone}, &finishRunner{}); evidence.Status != "not_required" || evidence.Blocker != "" {
+		t.Fatalf("explicit no-review policy should remain supported: %+v", evidence)
+	}
 }

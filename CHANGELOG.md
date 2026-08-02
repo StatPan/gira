@@ -6,6 +6,24 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v3.1.0 - 2026-08-02
+
+- Made branch naming advisory while preserving the recorded work-branch binding,
+  and block unsafe reuse of stale or squash-merged local ticket branches before
+  a ticket status changes. Ticket-start output now shows reuse diagnostics.
+- Hardened ticket completion and checks: finish converges GitHub closure before
+  optional local sync, safely skips an occupied base worktree, and recognizes a
+  cancelled GitHub Actions check as superseded only by a later matching success
+  on the same PR head.
+- Made ticket creation report verified remote labels rather than requested
+  labels after apply, with actionable permission remediation when labels are
+  absent.
+- Added repository-aware local review profiles for Go and Python projects,
+  review-only configuration fragments, and fail-closed configuration guidance
+  for ambiguous or invalid local-check configuration.
+- Added a repository-configurable required finish-review policy that accepts
+  only an approving GitHub review for the current PR head.
+
 ## v3.0.0 - 2026-07-22
 
 - Added the V3 Active PM operating system for human and AI operators: typed PM

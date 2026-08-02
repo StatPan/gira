@@ -3829,6 +3829,32 @@ func TestTicketNewApplyJSONOmitsApprovalEvidence(t *testing.T) {
 	}
 }
 
+func TestTicketNewApplyJSONUsesVerifiedLabelsOnLabelWarning(t *testing.T) {
+	restore := newTicketNewReport
+	t.Cleanup(func() { newTicketNewReport = restore })
+	newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
+		return gira.TicketNewReport{
+			Repo: input.Repo.FullName(), Title: input.Title, Created: gira.TicketCreatedIssue{Repo: input.Repo.FullName(), Number: 224},
+			Labels: []string{}, RequestedLabels: []string{"type:task", "status:ready"}, AppliedLabels: []string{},
+			LabelOutcome: gira.TicketLabelOutcome{Status: "warning", RequestedLabels: []string{"type:task", "status:ready"}, AppliedLabels: []string{}, MissingLabels: []string{"type:task", "status:ready"}},
+			NextStep:     "gira adopt issues --repo StatPan/gira --issues 224 --dry-run",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "new", "--repo", "StatPan/gira", "--title", "Add retry", "--apply", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.TicketNewReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket new apply JSON: %v\n%s", err, stdout.String())
+	}
+	if len(report.Labels) != 0 || len(report.AppliedLabels) != 0 || len(report.RequestedLabels) != 2 || report.LabelOutcome.Status != "warning" {
+		t.Fatalf("apply JSON must separate verified and requested labels, got %+v", report)
+	}
+}
+
 func TestTicketNewRequiresModeAndTitle(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"ticket", "new", "Add retry", "--repo", "StatPan/gira"}, &stdout, &stderr)

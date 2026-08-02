@@ -3435,6 +3435,50 @@ func TestTicketStartDryRunJSON(t *testing.T) {
 	}
 }
 
+func TestTicketStartTextShowsSafeBranchReuseDiagnostics(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		return gira.WorkStartResult{
+			Repo: repo.FullName(), Issue: issue, Branch: "issue-126-work-command", BaseBranch: "main", DryRun: dryRun, NextStatus: "In progress",
+			BranchReuse: &gira.DevStartBranchReuseCheck{Safe: true, BaseRef: "origin/main", MergeBase: "abc123", Ahead: 1, Behind: 0, Diagnostics: []string{"ahead_base=1", "safe_reuse"}},
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "--repo", "StatPan/gira", "--ticket", "126", "--dry-run"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"branch reuse: safe base=origin/main merge_base=abc123 ahead=1 behind=0 duplicate_patches=0",
+		"branch reuse diagnostics: ahead_base=1, safe_reuse",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("ticket start output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestTicketStartTextUnsafeReuseShowsDiagnosticsAndRecovery(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "issue-126-work-command", NextStatus: "In progress"}, fmt.Errorf("unsafe branch reuse for %q: behind_base=1; duplicate_patch_candidates=1; rebase the branch onto origin/main; recreate the work branch from origin/main", "issue-126-work-command")
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "--repo", "StatPan/gira", "--ticket", "126", "--dry-run"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"behind_base=1", "duplicate_patch_candidates=1", "rebase the branch onto origin/main", "recreate the work branch from origin/main"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("ticket start error missing %q:\n%s", want, stderr.String())
+		}
+	}
+}
+
 func TestTicketStartDryRunJSONPreservesApplyTicketNumber(t *testing.T) {
 	restore := newWorkStartResult
 	t.Cleanup(func() { newWorkStartResult = restore })

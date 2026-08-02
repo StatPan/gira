@@ -7952,6 +7952,16 @@ func formatTicketStart(result gira.WorkStartResult) string {
 		}
 		b.WriteString("\n")
 	}
+	if reuse := result.BranchReuse; reuse != nil {
+		state := "unsafe"
+		if reuse.Safe {
+			state = "safe"
+		}
+		fmt.Fprintf(&b, "branch reuse: %s base=%s merge_base=%s ahead=%d behind=%d duplicate_patches=%d\n", state, reuse.BaseRef, reuse.MergeBase, reuse.Ahead, reuse.Behind, len(reuse.DuplicatePatches))
+		if len(reuse.Diagnostics) > 0 {
+			fmt.Fprintf(&b, "branch reuse diagnostics: %s\n", strings.Join(reuse.Diagnostics, ", "))
+		}
+	}
 	if strings.TrimSpace(result.JiraKey) != "" {
 		fmt.Fprintf(&b, "jira key: %s\n", result.JiraKey)
 		fmt.Fprintf(&b, "mirror issue: #%d\n", result.MirrorIssue)

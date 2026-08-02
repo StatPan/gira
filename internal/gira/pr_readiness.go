@@ -169,7 +169,9 @@ func evaluatePRReadiness(input prReadinessInput) PRReadinessReport {
 		))
 	}
 
-	if input.ReviewEvidence != nil && input.ReviewEvidence.Blocker != "" {
+	if input.ReviewPolicy != nil && input.ReviewPolicy.Value == FinishReviewPolicyNone {
+		// The repository explicitly chose a non-blocking review policy.
+	} else if input.ReviewEvidence != nil && input.ReviewEvidence.Blocker != "" {
 		report.Findings = append(report.Findings, prReadinessFinding(
 			"error",
 			input.ReviewEvidence.Blocker,

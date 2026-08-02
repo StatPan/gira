@@ -244,6 +244,9 @@ func workspaceReviewNeededReasons(status WorkStatusResult) []string {
 	if !hasWorkspaceQueuePR(status) || workspaceQueuePRIsDraft(status) {
 		return nil
 	}
+	if status.ReviewPolicy != nil && status.ReviewPolicy.Value == FinishReviewPolicyNone {
+		return nil
+	}
 	if len(status.Blockers) > 0 || status.ChecksStatus == "failed" || status.ChecksStatus == "failing" || status.ReviewStatus == "approved" {
 		return nil
 	}
@@ -286,7 +289,7 @@ func workspaceFinishReadyReasons(status WorkStatusResult) []string {
 	if status.ChecksStatus != "" && status.ChecksStatus != "passed" {
 		return nil
 	}
-	if status.ReviewStatus != "" && status.ReviewStatus != "approved" {
+	if status.ReviewStatus != "" && status.ReviewStatus != "approved" && status.ReviewStatus != "not_required" {
 		return nil
 	}
 	return reasons

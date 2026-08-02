@@ -531,7 +531,10 @@ func workStatusFromIssueAndPRWithReviewEvidence(repo RepoRef, issueNumber int, i
 	if runner != nil && prStatus.PRNumber > 0 && strings.EqualFold(status, "In review") && (nextAction == "merge_when_policy_allows" || containsString(prStatus.Blockers, "review")) {
 		evidence := finishReviewEvidence(repo, prStatus, policy, runner)
 		review = &evidence
-		if evidence.Blocker != "" {
+		if policy.Value == FinishReviewPolicyNone {
+			prStatus.Blockers = removeString(prStatus.Blockers, "review")
+			nextAction = nextWorkAction(issue.State, status, prStatus)
+		} else if evidence.Blocker != "" {
 			prStatus.Blockers = removeString(prStatus.Blockers, "review")
 			prStatus.Blockers = appendUniqueStrings(prStatus.Blockers, evidence.Blocker)
 			nextAction = nextWorkAction(issue.State, status, prStatus)
@@ -673,6 +676,9 @@ func ticketStatusReviewStatus(pr DevPRStatusResult) string {
 func ticketStatusReviewStatusWithEvidence(pr DevPRStatusResult, review *FinishReviewEvidence) string {
 	if pr.PRNumber == 0 {
 		return "missing"
+	}
+	if review != nil && review.Status == "not_required" {
+		return "not_required"
 	}
 	if containsString(pr.Blockers, "review") || (review != nil && review.Blocker != "") {
 		return "blocked"

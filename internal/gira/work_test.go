@@ -479,6 +479,30 @@ func TestGetWorkStatusPropagatesStaleApprovalEvidenceAcrossReadinessAndQueues(t 
 	}
 }
 
+func TestGetWorkStatusKeepsNoneReviewPolicyNonBlockingAcrossQueues(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, ".gira", "config.yaml"), "repo: StatPan/gira\nfinish_review_policy: none\nprofiles:\n  default:\n    labels: []\n")
+	t.Chdir(root)
+
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"No review needed","state":"open","labels":[{"name":"status:in-review"}]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": []byte(`[{"number":201,"title":"x","body":"Closes #126","state":"OPEN","url":"u","reviewDecision":"CHANGES_REQUESTED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-126-none-review","baseRefName":"main","headRefOid":"current-head","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+	}}
+
+	status, err := GetWorkStatus(repo, 126, runner)
+	if err != nil {
+		t.Fatalf("GetWorkStatus error: %v", err)
+	}
+	if containsString(status.Blockers, "review") || status.ReviewStatus != "not_required" || status.NextAction != "merge_when_policy_allows" || status.PRReadiness == nil || status.PRReadiness.Readiness != "ready_for_finish" {
+		t.Fatalf("none policy must keep review evidence nonblocking: %+v", status)
+	}
+	queues := BuildWorkspaceQueues(WorkspaceSummary{}, []WorkStatusResult{status})
+	if queues.Counts.ReviewNeeded != 0 || queues.Counts.FinishReady != 1 {
+		t.Fatalf("none policy must remain finish-ready outside ticket finish: %+v", queues)
+	}
+}
+
 func TestGetWorkStatusReportsBranchBaseMismatchWarning(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	body := RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default", BranchPolicyMode: BranchPolicyModeGitHubFlow})

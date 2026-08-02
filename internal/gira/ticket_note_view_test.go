@@ -9,7 +9,7 @@ func TestBuildTicketViewReportUsesWorkStatus(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": []byte(`[{"number":127,"title":"feat: Work command","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/127","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": []byte(`[{"number":127,"title":"feat: Work command","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/127","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
 	}}
 
 	report, err := BuildTicketViewReport(repo, 126, runner)
@@ -51,7 +51,7 @@ func TestTicketNoteDryRunRendersContextWithoutComment(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": []byte(`[]`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": []byte(`[]`),
 	}}
 
 	report, err := BuildTicketNoteReport(TicketNoteInput{Repo: repo, Ticket: 126, Body: "Implemented parser path.", Kind: "progress", Target: "auto", DryRun: true}, runner)
@@ -90,7 +90,7 @@ func TestTicketNoteApplyPostsToLinkedPR(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-review"}]}`),
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20":             []byte(`[{"number":127,"title":"feat: Work command","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/127","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20":             []byte(`[{"number":127,"title":"feat: Work command","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/127","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
 		"gh pr comment 127 --repo StatPan/gira --body ## Decision\n\nUse ticket-level note templates.\n\nContext:\n- Ticket: #126\n- Status: In review\n- Linked PR: #127\n- Blockers: none\n- Next: merge when policy checks pass\n": []byte(""),
 	}}
 

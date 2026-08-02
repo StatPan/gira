@@ -319,8 +319,31 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		}
 	}
 
-	result.Blockers = mergeBlockers(status.Blockers)
+	policy := loadFinishReviewPolicy(repo)
+	review := finishReviewEvidence(repo, status, policy, runner)
+	result.ReviewPolicy = policy
+	result.ReviewEvidence = review
+	statusBlockers := mergeBlockers(status.Blockers)
+	if policy.Value == FinishReviewPolicyNone || review.Blocker != "" {
+		statusBlockers = removeString(statusBlockers, "review")
+	}
+	result.Blockers = appendUniqueStrings(result.Blockers, statusBlockers...)
 	result.Blockers = appendUniqueStrings(result.Blockers, jiraDone.Blockers...)
+	if review.Blocker != "" {
+		result.Blockers = appendUniqueStrings(result.Blockers, review.Blocker)
+		result.Actions = append(result.Actions, WorkFinishAction{Action: "review:verify", Status: "blocked", Detail: review.Blocker})
+		appendJiraDoneBlockedAction(&result, jiraDone)
+		result.NextStep = review.Remediation
+		report, reportErr := finishWithStatus(repo, issueNumber, runner, result, &status, nil)
+		if dryRun {
+			return report, reportErr
+		}
+		if reportErr != nil {
+			return report, reportErr
+		}
+		return report, fmt.Errorf("ticket finish blocked: %s", review.Blocker)
+	}
+	result.Actions = append(result.Actions, WorkFinishAction{Action: "review:verify", Status: "done", Detail: review.Status})
 	if len(result.Blockers) > 0 {
 		appendJiraDoneBlockedAction(&result, jiraDone)
 		result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: strings.Join(result.Blockers, ",")})
@@ -334,25 +357,6 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		}
 		return report, fmt.Errorf("ticket finish blocked: %s", strings.Join(result.Blockers, ", "))
 	}
-
-	policy := loadFinishReviewPolicy(repo)
-	review := finishReviewEvidence(repo, status, policy, runner)
-	result.ReviewPolicy = policy
-	result.ReviewEvidence = review
-	if review.Blocker != "" {
-		result.Blockers = appendUniqueStrings(result.Blockers, review.Blocker)
-		result.Actions = append(result.Actions, WorkFinishAction{Action: "review:verify", Status: "blocked", Detail: review.Blocker})
-		result.NextStep = review.Remediation
-		report, reportErr := finishWithStatus(repo, issueNumber, runner, result, &status, nil)
-		if dryRun {
-			return report, reportErr
-		}
-		if reportErr != nil {
-			return report, reportErr
-		}
-		return report, fmt.Errorf("ticket finish blocked: %s", review.Blocker)
-	}
-	result.Actions = append(result.Actions, WorkFinishAction{Action: "review:verify", Status: "done", Detail: review.Status})
 
 	if jiraDone.AlreadyDone() {
 		result.Actions = append(result.Actions, WorkFinishAction{Action: "jira:done", Status: "skipped", Detail: jiraDone.ApplyDetail()})
@@ -933,7 +937,7 @@ func finishReadinessBlockers(result WorkFinishResult, report WorkFinishReadiness
 	if report.PullRequest.IsDraft {
 		blockers = appendUniqueStrings(blockers, "draft")
 	}
-	if report.Review.Status == "blocked" {
+	if report.Review.Status == "blocked" && report.Review.Policy.Value != FinishReviewPolicyNone && report.Review.Evidence.Blocker == "" {
 		blockers = appendUniqueStrings(blockers, "review")
 	}
 	return blockers

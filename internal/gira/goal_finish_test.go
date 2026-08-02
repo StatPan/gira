@@ -278,7 +278,7 @@ func goalFinishRunnerWithGoalComments(goalComments string, childComments string,
 		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[{"number":101}]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": goalComments,
 		"gh api repos/StatPan/gira/issues/101":                  childIssue,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": childPRs,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": childPRs,
 		"gh issue view 101 --repo StatPan/gira --json comments":      childComments,
 		"gh label list --repo StatPan/gira --json name --limit 1000": `[{"name":"status:done"}]`,
 	}}
@@ -312,7 +312,7 @@ func goalFinishChildIssue(state string, statusLabel string) string {
 }
 
 func goalFinishMergedPR(conclusion string) string {
-	return `[{"number":202,"title":"Child PR","body":"Closes #101","state":"MERGED","url":"https://github.com/StatPan/gira/pull/202","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-101-child","baseRefName":"main","statusCheckRollup":[{"conclusion":"` + conclusion + `","status":"COMPLETED"}]}]`
+	return `[{"number":202,"title":"Child PR","body":"Closes #101","state":"MERGED","url":"https://github.com/StatPan/gira/pull/202","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-101-child","baseRefName":"main","headRefOid":"head220","statusCheckRollup":[{"conclusion":"` + conclusion + `","status":"COMPLETED"}]}]`
 }
 
 func goalFinishActionStatus(actions []GoalFinishAction, action string, status string) bool {

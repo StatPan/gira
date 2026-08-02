@@ -81,21 +81,20 @@ func finishReviewEvidence(repo RepoRef, status DevPRStatusResult, policy FinishR
 		return evidence
 	}
 	if evidence.HeadSHA == "" {
-		evidence.Status = "approved"
+		evidence.Status = "blocked"
+		evidence.Blocker = "review_evidence_unavailable"
+		evidence.Remediation = "Restore the current PR head SHA in GitHub metadata and rerun ticket finish."
 		return evidence
 	}
-	out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/pulls/%d/reviews", repo.FullName(), status.PRNumber), "--paginate")
+	out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/pulls/%d/reviews", repo.FullName(), status.PRNumber), "--paginate", "--slurp")
 	if err != nil {
 		evidence.Status = "blocked"
 		evidence.Blocker = "review_evidence_unavailable"
 		evidence.Remediation = "Restore GitHub review-read access and rerun ticket finish."
 		return evidence
 	}
-	var reviews []struct {
-		State    string `json:"state"`
-		CommitID string `json:"commit_id"`
-	}
-	if err := json.Unmarshal(out, &reviews); err != nil {
+	reviews, err := decodePaginatedReviews(out)
+	if err != nil {
 		evidence.Status = "blocked"
 		evidence.Blocker = "review_evidence_unavailable"
 		evidence.Remediation = "Restore readable GitHub review evidence and rerun ticket finish."
@@ -112,4 +111,25 @@ func finishReviewEvidence(repo RepoRef, status DevPRStatusResult, policy FinishR
 	evidence.Blocker = "review_approval_stale"
 	evidence.Remediation = "Request a new approving review after the current PR head change."
 	return evidence
+}
+
+type finishReview struct {
+	State    string `json:"state"`
+	CommitID string `json:"commit_id"`
+}
+
+func decodePaginatedReviews(out []byte) ([]finishReview, error) {
+	var pages [][]finishReview
+	if err := json.Unmarshal(out, &pages); err == nil {
+		reviews := make([]finishReview, 0)
+		for _, page := range pages {
+			reviews = append(reviews, page...)
+		}
+		return reviews, nil
+	}
+	var reviews []finishReview
+	if err := json.Unmarshal(out, &reviews); err != nil {
+		return nil, err
+	}
+	return reviews, nil
 }

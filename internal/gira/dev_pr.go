@@ -62,12 +62,16 @@ type devPRBindingPolicy struct {
 }
 
 type DevPRCheck struct {
-	Name       string `json:"name,omitempty"`
-	Workflow   string `json:"workflow,omitempty"`
-	Status     string `json:"status,omitempty"`
-	Conclusion string `json:"conclusion,omitempty"`
-	URL        string `json:"url,omitempty"`
-	State      string `json:"state"`
+	Name        string `json:"name,omitempty"`
+	Workflow    string `json:"workflow,omitempty"`
+	WorkflowID  int    `json:"workflow_id,omitempty"`
+	HeadSHA     string `json:"head_sha,omitempty"`
+	CompletedAt string `json:"completed_at,omitempty"`
+	Superseded  bool   `json:"superseded,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Conclusion  string `json:"conclusion,omitempty"`
+	URL         string `json:"url,omitempty"`
+	State       string `json:"state"`
 }
 
 type prSummary struct {
@@ -141,14 +145,20 @@ type restReview struct {
 
 type restCheckRuns struct {
 	CheckRuns []struct {
-		Name       string `json:"name"`
-		Status     string `json:"status"`
-		Conclusion string `json:"conclusion"`
-		HTMLURL    string `json:"html_url"`
-		App        *struct {
+		Name        string `json:"name"`
+		Status      string `json:"status"`
+		Conclusion  string `json:"conclusion"`
+		HTMLURL     string `json:"html_url"`
+		CompletedAt string `json:"completed_at"`
+		App         *struct {
 			Name string `json:"name"`
 		} `json:"app"`
 	} `json:"check_runs"`
+}
+
+type restWorkflowRun struct {
+	WorkflowID int    `json:"workflow_id"`
+	HeadSHA    string `json:"head_sha"`
 }
 
 type restCombinedStatus struct {
@@ -591,19 +601,89 @@ func restCheckRunsForCommit(repo RepoRef, headSHA string, runner CommandRunner) 
 		return nil
 	}
 	checks := []DevPRCheck{}
+	workflowRuns := map[int]restWorkflowRun{}
 	for _, check := range payload.CheckRuns {
 		workflow := ""
 		if check.App != nil {
 			workflow = check.App.Name
 		}
-		checks = append(checks, DevPRCheck{
-			Name:       check.Name,
-			Workflow:   workflow,
-			Status:     strings.ToUpper(check.Status),
-			Conclusion: strings.ToUpper(check.Conclusion),
-			URL:        check.HTMLURL,
-			State:      classifyDevPRCheck(check.Status, check.Conclusion),
-		})
+		result := DevPRCheck{
+			Name:        check.Name,
+			Workflow:    workflow,
+			Status:      strings.ToUpper(check.Status),
+			Conclusion:  strings.ToUpper(check.Conclusion),
+			URL:         check.HTMLURL,
+			CompletedAt: strings.TrimSpace(check.CompletedAt),
+			State:       classifyDevPRCheck(check.Status, check.Conclusion),
+		}
+		if runID := githubActionsRunID(check.HTMLURL); runID > 0 {
+			run, ok := workflowRuns[runID]
+			if !ok {
+				run, ok = fetchWorkflowRun(repo, runID, runner)
+				if ok {
+					workflowRuns[runID] = run
+				}
+			}
+			if ok {
+				result.WorkflowID = run.WorkflowID
+				result.HeadSHA = strings.TrimSpace(run.HeadSHA)
+			}
+		}
+		checks = append(checks, result)
+	}
+	return markSupersededCancelledChecks(checks, headSHA)
+}
+
+func githubActionsRunID(rawURL string) int {
+	parts := strings.Split(strings.TrimSpace(rawURL), "/")
+	for index := 0; index+2 < len(parts); index++ {
+		if parts[index] != "actions" || parts[index+1] != "runs" {
+			continue
+		}
+		runID, err := strconv.Atoi(parts[index+2])
+		if err == nil && runID > 0 {
+			return runID
+		}
+	}
+	return 0
+}
+
+func fetchWorkflowRun(repo RepoRef, runID int, runner CommandRunner) (restWorkflowRun, bool) {
+	out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/actions/runs/%d", repo.FullName(), runID))
+	if err != nil {
+		return restWorkflowRun{}, false
+	}
+	var run restWorkflowRun
+	if err := json.Unmarshal(out, &run); err != nil || run.WorkflowID <= 0 || strings.TrimSpace(run.HeadSHA) == "" {
+		return restWorkflowRun{}, false
+	}
+	return run, true
+}
+
+func markSupersededCancelledChecks(checks []DevPRCheck, headSHA string) []DevPRCheck {
+	headSHA = strings.TrimSpace(headSHA)
+	for index := range checks {
+		cancelled := &checks[index]
+		if !strings.EqualFold(cancelled.Conclusion, "CANCELLED") || cancelled.WorkflowID <= 0 || cancelled.Name == "" || !strings.EqualFold(strings.TrimSpace(cancelled.HeadSHA), headSHA) {
+			continue
+		}
+		cancelledAt, err := time.Parse(time.RFC3339, strings.TrimSpace(cancelled.CompletedAt))
+		if err != nil {
+			continue
+		}
+		for candidateIndex := range checks {
+			candidate := checks[candidateIndex]
+			if candidate.WorkflowID != cancelled.WorkflowID || candidate.Name != cancelled.Name || !strings.EqualFold(strings.TrimSpace(candidate.HeadSHA), headSHA) || !strings.EqualFold(candidate.Conclusion, "SUCCESS") {
+				continue
+			}
+			candidateAt, err := time.Parse(time.RFC3339, strings.TrimSpace(candidate.CompletedAt))
+			if err != nil || !candidateAt.After(cancelledAt) {
+				continue
+			}
+			cancelled.Superseded = true
+			cancelled.State = "passing"
+			break
+		}
 	}
 	return checks
 }

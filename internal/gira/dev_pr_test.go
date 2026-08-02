@@ -129,6 +129,60 @@ func TestDevPRStatusUsesRESTFirstLinkedPRSnapshot(t *testing.T) {
 	}
 }
 
+func TestRestCheckRunsOnlySupersedesCancelledChecksWithNewerSameWorkflowSuccess(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	checkRuns := func(replacementStatus string, replacementConclusion string, replacementHead string, includeReplacement bool) string {
+		rows := `[{
+"name":"Linked Issue","status":"completed","conclusion":"cancelled","completed_at":"2026-08-02T01:00:00Z","html_url":"https://github.com/StatPan/gira/actions/runs/100/job/1","app":{"name":"GitHub Actions"}
+}]`
+		if includeReplacement {
+			rows = `[{
+"name":"Linked Issue","status":"completed","conclusion":"cancelled","completed_at":"2026-08-02T01:00:00Z","html_url":"https://github.com/StatPan/gira/actions/runs/100/job/1","app":{"name":"GitHub Actions"}
+},{
+"name":"Linked Issue","status":"` + replacementStatus + `","conclusion":"` + replacementConclusion + `","completed_at":"2026-08-02T02:00:00Z","html_url":"https://github.com/StatPan/gira/actions/runs/101/job/2","app":{"name":"GitHub Actions"}
+}]`
+		}
+		return `{"check_runs":` + rows + `}`
+	}
+
+	tests := []struct {
+		name              string
+		replacement       bool
+		replacementStatus string
+		replacementResult string
+		replacementHead   string
+		wantSuperseded    bool
+		wantChecksBlocker bool
+	}{
+		{name: "newer equivalent success on same head", replacement: true, replacementStatus: "completed", replacementResult: "success", replacementHead: "head123", wantSuperseded: true},
+		{name: "cancelled without replacement", replacement: false, wantChecksBlocker: true},
+		{name: "newer equivalent failure remains blocking", replacement: true, replacementStatus: "completed", replacementResult: "failure", replacementHead: "head123", wantChecksBlocker: true},
+		{name: "newer equivalent pending remains blocking", replacement: true, replacementStatus: "in_progress", replacementHead: "head123", wantChecksBlocker: true},
+		{name: "success on another head is not a replacement", replacement: true, replacementStatus: "completed", replacementResult: "success", replacementHead: "other-head", wantChecksBlocker: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outputs := map[string][]byte{
+				"gh api repos/StatPan/gira/commits/head123/check-runs -X GET -f per_page=100": []byte(checkRuns(tt.replacementStatus, tt.replacementResult, tt.replacementHead, tt.replacement)),
+				"gh api repos/StatPan/gira/actions/runs/100":                                  []byte(`{"workflow_id":42,"head_sha":"head123"}`),
+			}
+			if tt.replacement {
+				outputs["gh api repos/StatPan/gira/actions/runs/101"] = []byte(`{"workflow_id":42,"head_sha":` + strconv.Quote(tt.replacementHead) + `}`)
+			}
+			checks := restCheckRunsForCommit(repo, "head123", devPRRunner{outputs: outputs})
+			if len(checks) == 0 {
+				t.Fatal("expected check runs")
+			}
+			if checks[0].Superseded != tt.wantSuperseded {
+				t.Fatalf("cancelled check superseded=%t, want %t: %+v", checks[0].Superseded, tt.wantSuperseded, checks)
+			}
+			if got := containsString(devPRCheckBlockers(checks), "checks"); got != tt.wantChecksBlocker {
+				t.Fatalf("checks blocker=%t, want %t: %+v", got, tt.wantChecksBlocker, checks)
+			}
+		})
+	}
+}
+
 func TestDevPRStatusTrustsExactRecordedWorkBranch(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	body := RenderTicketLifecycleBlock(TicketLifecycleState{WorkBranch: "feat/i60-a2a-unary-adapter"})

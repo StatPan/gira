@@ -94,18 +94,8 @@ func LoadInitConfig(path string) (InitConfig, error) {
 	if err := validateBranchPolicyConfig(path, "branch_policy", cfg.BranchPolicy); err != nil {
 		return InitConfig{}, err
 	}
-	for index, check := range cfg.Review.LocalChecks {
-		if strings.TrimSpace(check.Name) == "" {
-			return InitConfig{}, fmt.Errorf("invalid init config %q: review.local_checks[%d].name is required", path, index)
-		}
-		if len(check.Command) == 0 || strings.TrimSpace(check.Command[0]) == "" {
-			return InitConfig{}, fmt.Errorf("invalid init config %q: review.local_checks[%d].command must include a program", path, index)
-		}
-		for argIndex, arg := range check.Command {
-			if strings.TrimSpace(arg) == "" {
-				return InitConfig{}, fmt.Errorf("invalid init config %q: review.local_checks[%d].command[%d] cannot be empty", path, index, argIndex)
-			}
-		}
+	if err := validateLocalReviewChecks(path, cfg.Review.LocalChecks); err != nil {
+		return InitConfig{}, err
 	}
 	if strings.TrimSpace(cfg.Workspace.InboxRepo) != "" {
 		if _, err := ParseRepoRef(cfg.Workspace.InboxRepo); err != nil {
@@ -157,6 +147,49 @@ func LoadInitConfig(path string) (InitConfig, error) {
 		}
 	}
 	return cfg, nil
+}
+
+func validateLocalReviewChecks(path string, checks []LocalReviewCheck) error {
+	for index, check := range checks {
+		if strings.TrimSpace(check.Name) == "" {
+			return fmt.Errorf("invalid init config %q: review.local_checks[%d].name is required", path, index)
+		}
+		if len(check.Command) == 0 || strings.TrimSpace(check.Command[0]) == "" {
+			return fmt.Errorf("invalid init config %q: review.local_checks[%d].command must include a program", path, index)
+		}
+		for argIndex, arg := range check.Command {
+			if strings.TrimSpace(arg) == "" {
+				return fmt.Errorf("invalid init config %q: review.local_checks[%d].command[%d] cannot be empty", path, index, argIndex)
+			}
+		}
+	}
+	return nil
+}
+
+// LoadLocalReviewConfig accepts a review-only config fragment so a repository
+// can declare local checks without also adopting the bootstrap profiles schema.
+func LoadLocalReviewConfig(path string) (ReviewConfig, bool, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return ReviewConfig{}, false, fmt.Errorf("read local review config %q: %w", path, err)
+	}
+	var partial struct {
+		Review ReviewConfig `yaml:"review" toml:"review"`
+	}
+	if strings.EqualFold(filepath.Ext(path), ".toml") {
+		if err := toml.Unmarshal(content, &partial); err != nil {
+			return ReviewConfig{}, false, fmt.Errorf("parse local review config %q: %w", path, err)
+		}
+	} else if err := yaml.Unmarshal(content, &partial); err != nil {
+		return ReviewConfig{}, false, fmt.Errorf("parse local review config %q: %w", path, err)
+	}
+	if len(partial.Review.LocalChecks) == 0 {
+		return ReviewConfig{}, false, nil
+	}
+	if err := validateLocalReviewChecks(path, partial.Review.LocalChecks); err != nil {
+		return ReviewConfig{}, false, err
+	}
+	return partial.Review, true, nil
 }
 
 func DefaultInitConfigPath(basePath string) string {

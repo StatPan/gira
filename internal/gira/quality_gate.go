@@ -129,12 +129,15 @@ func configuredLocalQualityProfile(root string) (localQualityProfile, bool) {
 		if !qualityPathExists(path) {
 			continue
 		}
-		config, err := LoadInitConfig(path)
-		if err != nil || len(config.Review.LocalChecks) == 0 {
+		config, configured, err := LoadLocalReviewConfig(path)
+		if err != nil {
+			return localQualityProfile{configurationNeeded: true, source: "config:" + filepath.ToSlash(filepath.Join(".gira", name)), hint: "Local review configuration is invalid. Fix review.local_checks in " + filepath.ToSlash(filepath.Join(".gira", name)) + " before retrying."}, true
+		}
+		if !configured {
 			continue
 		}
-		checks := make([]localQualityCheck, 0, len(config.Review.LocalChecks))
-		for _, check := range config.Review.LocalChecks {
+		checks := make([]localQualityCheck, 0, len(config.LocalChecks))
+		for _, check := range config.LocalChecks {
 			checks = append(checks, localQualityCheck{name: check.Name, command: append([]string(nil), check.Command...), hint: fmt.Sprintf("Fix %s or update review.local_checks in %s.", check.Name, filepath.ToSlash(filepath.Join(".gira", name)))})
 		}
 		return localQualityProfile{name: "configured", source: "config:" + filepath.ToSlash(filepath.Join(".gira", name)), checks: checks}, true

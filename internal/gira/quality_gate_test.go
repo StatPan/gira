@@ -146,13 +146,26 @@ func TestRunQualityGateUsesExplicitProfileForMixedRepository(t *testing.T) {
 	root := t.TempDir()
 	writeQualityFile(t, filepath.Join(root, "go.mod"), "module example.com/checks\n\ngo 1.24\n")
 	writeQualityFile(t, filepath.Join(root, "pyproject.toml"), "[tool.ruff]\n")
-	writeQualityFile(t, filepath.Join(root, ".gira", "config.yaml"), "profiles:\n  default:\n    labels: []\nreview:\n  local_checks:\n    - name: custom-python\n      command: [\"python\", \"-m\", \"pytest\"]\n")
+	writeQualityFile(t, filepath.Join(root, ".gira", "config.yaml"), "review:\n  local_checks:\n    - name: custom-python\n      command: [\"python\", \"-m\", \"pytest\"]\n")
 	report := RunQualityGateAt(root, qualityRunner{errors: map[string]error{}})
 	if !report.Ready || report.Profile != "configured" || report.ProfileSource != "config:.gira/config.yaml" {
 		t.Fatalf("expected explicit configured profile, got %+v", report)
 	}
 	if len(report.Checks) != 1 || report.Checks[0].Name != "custom-python" || report.Checks[0].Command != "python -m pytest" {
 		t.Fatalf("expected only explicit override check, got %+v", report.Checks)
+	}
+}
+
+func TestRunQualityGateInvalidExplicitProfileDoesNotFallBackToMetadata(t *testing.T) {
+	root := t.TempDir()
+	writeQualityFile(t, filepath.Join(root, "go.mod"), "module example.com/checks\n\ngo 1.24\n")
+	writeQualityFile(t, filepath.Join(root, ".gira", "config.yaml"), "review:\n  local_checks:\n    - name: invalid\n      command: []\n")
+	report := RunQualityGateAt(root, qualityRunner{})
+	if report.Ready || report.Profile != "configuration_needed" || report.ProfileSource != "config:.gira/config.yaml" {
+		t.Fatalf("invalid explicit profile must fail closed, got %+v", report)
+	}
+	if len(report.Checks) != 1 || report.Checks[0].Status != "configuration_needed" || !strings.Contains(report.Checks[0].Hint, "invalid") {
+		t.Fatalf("expected configuration-needed result without metadata fallback, got %+v", report)
 	}
 }
 

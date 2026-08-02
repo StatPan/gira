@@ -225,7 +225,7 @@ func TestFinishWorkAlreadyMergedSelectsReplacementAndVerifiesReceipt(t *testing.
 		"gh api repos/StatPan/gira/pulls/634/reviews --paginate": {
 			[]byte(`[{"state":"APPROVED","submitted_at":"2026-07-18T09:00:00Z"}]`),
 		},
-		"gh api repos/StatPan/gira/commits/head634/check-runs -X GET -f per_page=100": {
+		"gh api repos/StatPan/gira/commits/head634/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": {
 			[]byte(`{"check_runs":[{"status":"completed","conclusion":"success"}]}`),
 		},
 		"gh api repos/StatPan/gira/commits/head634/status": {[]byte(`{"statuses":[]}`)},

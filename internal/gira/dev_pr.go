@@ -64,6 +64,8 @@ type devPRBindingPolicy struct {
 type DevPRCheck struct {
 	Name        string `json:"name,omitempty"`
 	Workflow    string `json:"workflow,omitempty"`
+	AppID       int    `json:"app_id,omitempty"`
+	AppSlug     string `json:"app_slug,omitempty"`
 	WorkflowID  int    `json:"workflow_id,omitempty"`
 	HeadSHA     string `json:"head_sha,omitempty"`
 	CompletedAt string `json:"completed_at,omitempty"`
@@ -151,7 +153,9 @@ type restCheckRuns struct {
 		HTMLURL     string `json:"html_url"`
 		CompletedAt string `json:"completed_at"`
 		App         *struct {
+			ID   int    `json:"id"`
 			Name string `json:"name"`
+			Slug string `json:"slug"`
 		} `json:"app"`
 	} `json:"check_runs"`
 }
@@ -592,46 +596,60 @@ func restPRChecks(repo RepoRef, headSHA string, runner CommandRunner) []DevPRChe
 }
 
 func restCheckRunsForCommit(repo RepoRef, headSHA string, runner CommandRunner) []DevPRCheck {
-	out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/commits/%s/check-runs", repo.FullName(), headSHA), "-X", "GET", "-f", "per_page=100")
+	out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/commits/%s/check-runs", repo.FullName(), headSHA), "-X", "GET", "-f", "per_page=100", "-f", "filter=all", "--paginate", "--slurp")
 	if err != nil {
 		return nil
 	}
-	var payload restCheckRuns
-	if err := json.Unmarshal(out, &payload); err != nil {
-		return nil
+	payloads := []restCheckRuns{}
+	if err := json.Unmarshal(out, &payloads); err != nil {
+		var payload restCheckRuns
+		if err := json.Unmarshal(out, &payload); err != nil {
+			return nil
+		}
+		payloads = append(payloads, payload)
 	}
 	checks := []DevPRCheck{}
 	workflowRuns := map[int]restWorkflowRun{}
-	for _, check := range payload.CheckRuns {
-		workflow := ""
-		if check.App != nil {
-			workflow = check.App.Name
-		}
-		result := DevPRCheck{
-			Name:        check.Name,
-			Workflow:    workflow,
-			Status:      strings.ToUpper(check.Status),
-			Conclusion:  strings.ToUpper(check.Conclusion),
-			URL:         check.HTMLURL,
-			CompletedAt: strings.TrimSpace(check.CompletedAt),
-			State:       classifyDevPRCheck(check.Status, check.Conclusion),
-		}
-		if runID := githubActionsRunID(check.HTMLURL); runID > 0 {
-			run, ok := workflowRuns[runID]
-			if !ok {
-				run, ok = fetchWorkflowRun(repo, runID, runner)
+	for _, payload := range payloads {
+		for _, check := range payload.CheckRuns {
+			workflow := ""
+			if check.App != nil {
+				workflow = check.App.Name
+			}
+			result := DevPRCheck{
+				Name:        check.Name,
+				Workflow:    workflow,
+				Status:      strings.ToUpper(check.Status),
+				Conclusion:  strings.ToUpper(check.Conclusion),
+				URL:         check.HTMLURL,
+				CompletedAt: strings.TrimSpace(check.CompletedAt),
+				State:       classifyDevPRCheck(check.Status, check.Conclusion),
+			}
+			if check.App != nil {
+				result.AppID = check.App.ID
+				result.AppSlug = strings.TrimSpace(check.App.Slug)
+			}
+			if runID := githubActionsRunID(check.HTMLURL); isGitHubActionsCheck(result) && runID > 0 {
+				run, ok := workflowRuns[runID]
+				if !ok {
+					run, ok = fetchWorkflowRun(repo, runID, runner)
+					if ok {
+						workflowRuns[runID] = run
+					}
+				}
 				if ok {
-					workflowRuns[runID] = run
+					result.WorkflowID = run.WorkflowID
+					result.HeadSHA = strings.TrimSpace(run.HeadSHA)
 				}
 			}
-			if ok {
-				result.WorkflowID = run.WorkflowID
-				result.HeadSHA = strings.TrimSpace(run.HeadSHA)
-			}
+			checks = append(checks, result)
 		}
-		checks = append(checks, result)
 	}
 	return markSupersededCancelledChecks(checks, headSHA)
+}
+
+func isGitHubActionsCheck(check DevPRCheck) bool {
+	return check.AppID > 0 && strings.EqualFold(strings.TrimSpace(check.AppSlug), "github-actions")
 }
 
 func githubActionsRunID(rawURL string) int {
@@ -673,7 +691,7 @@ func markSupersededCancelledChecks(checks []DevPRCheck, headSHA string) []DevPRC
 		}
 		for candidateIndex := range checks {
 			candidate := checks[candidateIndex]
-			if candidate.WorkflowID != cancelled.WorkflowID || candidate.Name != cancelled.Name || !strings.EqualFold(strings.TrimSpace(candidate.HeadSHA), headSHA) || !strings.EqualFold(candidate.Conclusion, "SUCCESS") {
+			if !isGitHubActionsCheck(*cancelled) || !isGitHubActionsCheck(candidate) || candidate.AppID != cancelled.AppID || candidate.WorkflowID != cancelled.WorkflowID || candidate.Name != cancelled.Name || !strings.EqualFold(strings.TrimSpace(candidate.HeadSHA), headSHA) || !strings.EqualFold(candidate.Conclusion, "SUCCESS") {
 				continue
 			}
 			candidateAt, err := time.Parse(time.RFC3339, strings.TrimSpace(candidate.CompletedAt))

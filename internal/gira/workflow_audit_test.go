@@ -91,9 +91,9 @@ func TestBuildWorkflowAuditReportDetectsChecksTelemetryAndEvidenceDrift(t *testi
 				{"number":11,"title":"Fail","body":"Closes #6","state":"closed","merged_at":"2026-05-18T00:00:00Z","head":{"sha":"sha11"}},
 				{"number":12,"title":"Pending","body":"Closes #7","state":"open","merged_at":null,"head":{"sha":"sha12"}}
 			]]`,
-			"gh api repos/StatPan/gira/commits/sha11/check-runs -X GET -f per_page=100":  `{"check_runs":[{"name":"test","status":"completed","conclusion":"failure","html_url":"https://ci.example","app":{"name":"GitHub Actions"}}]}`,
-			"gh api repos/StatPan/gira/commits/sha12/check-runs -X GET -f per_page=100":  `{"check_runs":[{"name":"test","status":"in_progress","conclusion":"","html_url":"https://ci.example","app":{"name":"GitHub Actions"}}]}`,
-			"gh api repos/StatPan/gira/labels --paginate --slurp -X GET -f per_page=100": `[[{"name":"status:done"}]]`,
+			"gh api repos/StatPan/gira/commits/sha11/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": `{"check_runs":[{"name":"test","status":"completed","conclusion":"failure","html_url":"https://ci.example","app":{"name":"GitHub Actions"}}]}`,
+			"gh api repos/StatPan/gira/commits/sha12/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": `{"check_runs":[{"name":"test","status":"in_progress","conclusion":"","html_url":"https://ci.example","app":{"name":"GitHub Actions"}}]}`,
+			"gh api repos/StatPan/gira/labels --paginate --slurp -X GET -f per_page=100":                                 `[[{"name":"status:done"}]]`,
 		},
 		errors: map[string]error{},
 	}

@@ -380,9 +380,13 @@ func TestFinishWorkApplySyncLocalSkipsBranchCheckedOutInAnotherWorktree(t *testi
 		"git status --porcelain":                                       {[]byte("")},
 		"git worktree list --porcelain":                                {[]byte("worktree /workspace/gira\nHEAD abc\nbranch refs/heads/issue-219-finish\n\nworktree /workspace/gira-dev\nHEAD def\nbranch refs/heads/release/2.0\n\n")},
 		"gh api repos/StatPan/gira/issues/219": {
-			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
-			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[{"name":"status:in-review"}]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[{"name":"status:done"}]}`),
 		},
+		"gh issue close 219 --repo StatPan/gira --reason completed":                                     {nil},
+		"gh label list --repo StatPan/gira --json name --limit 1000":                                    {[]byte(`[{"name":"status:done"}]`)},
+		"gh issue edit 219 --repo StatPan/gira --add-label status:done --remove-label status:in-review": {nil},
 	}, errs: map[string]error{}}
 
 	result, err := FinishWorkWithOptions(repo, 219, false, 0, WorkFinishOptions{SyncLocal: true}, runner)
@@ -397,6 +401,41 @@ func TestFinishWorkApplySyncLocalSkipsBranchCheckedOutInAnotherWorktree(t *testi
 	}
 	if !finishActionStatus(result.Actions, "local:sync_base", "skipped") {
 		t.Fatalf("expected skipped local sync action: %+v", result.Actions)
+	}
+	if !finishActionStatus(result.Actions, "ticket:close", "applied") || !finishActionStatus(result.Actions, "ticket:normalize-status", "applied") || result.Receipt.FinalState.GitHubIssueState != "closed" || result.Receipt.FinalState.GiraStatus != "Done" {
+		t.Fatalf("merge, completion convergence, and safe local skip must be independently visible: %+v", result)
+	}
+}
+
+func TestFinishWorkApplySyncLocalCheckoutFailureDoesNotUndoConvergence(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","headRefName":"issue-219-finish","baseRefName":"release/2.0","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		},
+		"git remote get-url origin":     {[]byte("git@github.com:StatPan/gira.git\n")},
+		"git branch --show-current":     {[]byte("issue-219-finish\n")},
+		"git status --porcelain":        {[]byte("")},
+		"git worktree list --porcelain": {[]byte("worktree /workspace/gira\nHEAD abc\nbranch refs/heads/issue-219-finish\n\n")},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"open","labels":[]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+		},
+		"gh issue close 219 --repo StatPan/gira --reason completed": {nil},
+	}, errs: map[string]error{
+		"git checkout release/2.0": fmt.Errorf("release/2.0 is already checked out at /workspace/gira-dev"),
+	}}
+
+	result, err := FinishWorkWithOptions(repo, 219, false, 0, WorkFinishOptions{SyncLocal: true}, runner)
+	if err != nil {
+		t.Fatalf("local checkout failure must not discard a completed delivery: %v; calls=%v", err, runner.calls)
+	}
+	if !result.AlreadyDone || !finishActionStatus(result.Actions, "ticket:close", "applied") || !finishActionStatus(result.Actions, "local:sync_base", "failed") || result.LocalSync.Reason != "checkout_failed" {
+		t.Fatalf("expected independent convergence and local failure results, got %+v", result)
+	}
+	if result.Receipt.FinalState.GitHubIssueState != "closed" || !containsFinishCallPrefix(runner.calls, "gh issue comment 219 --repo StatPan/gira --body ## Finish Receipt") {
+		t.Fatalf("expected a converged receipt despite local sync failure: %+v calls=%v", result.Receipt, runner.calls)
 	}
 }
 

@@ -592,26 +592,43 @@ func finishWithLocalSync(repo RepoRef, issueNumber int, runner CommandRunner, re
 	local, actions := planLocalBaseSync(repo, runner, result.DryRun, localSyncPRStatus, options.SyncLocal)
 	result.LocalSync = local
 	result.Actions = append(result.Actions, actions...)
-	if !result.DryRun && mergePlanned && local.Attempted && !local.Skipped {
-		if _, err := runner.Run("git", "checkout", local.TargetBranch); err != nil {
-			return result, fmt.Errorf("checkout %s: %w", local.TargetBranch, err)
-		}
-		if _, err := runner.Run("git", "pull", "--ff-only", "origin", local.TargetBranch); err != nil {
-			return result, fmt.Errorf("pull %s: %w", local.TargetBranch, err)
-		}
-	}
 	if mergePlanned && len(result.Blockers) == 0 {
 		actions, err := convergeFinishedIssue(repo, issueNumber, result.Merged || result.AlreadyDone, result.DryRun, runner)
 		if err != nil {
-			return result, err
+			result.Blockers = appendUniqueStrings(result.Blockers, "issue_closure_failed")
+			result.Actions = append(result.Actions, WorkFinishAction{Action: "ticket:converge", Status: "failed", Detail: err.Error()})
+			return finishWithStatus(repo, issueNumber, runner, result, knownPRStatus, nil)
 		}
 		result.Actions = append(result.Actions, actions...)
+	}
+	if !result.DryRun && mergePlanned && local.Attempted && !local.Skipped {
+		if _, err := runner.Run("git", "checkout", local.TargetBranch); err != nil {
+			result.LocalSync.Reason = "checkout_failed"
+			result.Warnings = append(result.Warnings, fmt.Sprintf("local sync skipped after merge: checkout %s: %v", local.TargetBranch, err))
+			setWorkFinishAction(result.Actions, "local:sync_base", "failed", result.LocalSync.Reason)
+		} else if _, err := runner.Run("git", "pull", "--ff-only", "origin", local.TargetBranch); err != nil {
+			result.LocalSync.Reason = "pull_failed"
+			result.Warnings = append(result.Warnings, fmt.Sprintf("local sync skipped after merge: pull %s: %v", local.TargetBranch, err))
+			setWorkFinishAction(result.Actions, "local:sync_base", "failed", result.LocalSync.Reason)
+		} else {
+			setWorkFinishAction(result.Actions, "local:sync_base", "applied", "checkout "+local.TargetBranch+" and pull --ff-only")
+		}
 	}
 	report, err := finishWithStatus(repo, issueNumber, runner, result, knownPRStatus, nil)
 	if report.DryRun && mergePlanned && !report.AlreadyDone && len(report.Blockers) == 0 {
 		report.NextStep = fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
 	}
 	return report, err
+}
+
+func setWorkFinishAction(actions []WorkFinishAction, action string, status string, detail string) {
+	for index := len(actions) - 1; index >= 0; index-- {
+		if actions[index].Action == action {
+			actions[index].Status = status
+			actions[index].Detail = detail
+			return
+		}
+	}
 }
 
 // convergeFinishedIssue makes the GitHub issue state match verified delivery
@@ -1087,7 +1104,7 @@ func planLocalBaseSync(repo RepoRef, runner CommandRunner, dryRun bool, knownPRS
 		}
 	}
 	local.Attempted = true
-	actions = append(actions, plannedOrAppliedAction("local:sync_base", dryRun, "checkout "+targetBranch+" and pull --ff-only"))
+	actions = append(actions, WorkFinishAction{Action: "local:sync_base", Status: "planned", Detail: "checkout " + targetBranch + " and pull --ff-only"})
 	return local, actions
 }
 

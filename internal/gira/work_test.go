@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,6 +49,9 @@ func (r *workRunner) Run(name string, args ...string) ([]byte, error) {
 		return nil, err
 	}
 	if hasOut {
+		if strings.HasPrefix(key, "gh pr list ") {
+			out = workRunnerPRListWithHeadSHA(out)
+		}
 		return out, nil
 	}
 	if out, ok := defaultBranchPolicyTestOutput(key); ok {
@@ -57,6 +61,9 @@ func (r *workRunner) Run(name string, args ...string) ([]byte, error) {
 }
 
 func defaultBranchPolicyTestOutput(key string) ([]byte, bool) {
+	if strings.HasPrefix(key, "gh api repos/") && strings.HasSuffix(key, "/reviews --paginate --slurp") {
+		return []byte(`[[{"state":"APPROVED","commit_id":"head220"}]]`), true
+	}
 	if strings.HasPrefix(key, "gh repo view ") && strings.HasSuffix(key, " --json nameWithOwner,viewerPermission,defaultBranchRef") {
 		return []byte(`{"nameWithOwner":"StatPan/gira","viewerPermission":"WRITE","defaultBranchRef":{"name":"main"}}`), true
 	}
@@ -70,6 +77,23 @@ func defaultBranchPolicyTestOutput(key string) ([]byte, bool) {
 		return nil, true
 	}
 	return nil, false
+}
+
+func workRunnerPRListWithHeadSHA(out []byte) []byte {
+	var prs []map[string]any
+	if err := json.Unmarshal(out, &prs); err != nil {
+		return out
+	}
+	for _, pr := range prs {
+		if _, ok := pr["headRefOid"]; !ok {
+			pr["headRefOid"] = "head220"
+		}
+	}
+	normalized, err := json.Marshal(prs)
+	if err != nil {
+		return out
+	}
+	return normalized
 }
 
 func TestStartWorkApplyReadyIssueCreatesBranchAndMovesInProgress(t *testing.T) {
@@ -428,6 +452,30 @@ func TestGetWorkStatusIncludesDeterministicJSONContractFields(t *testing.T) {
 	}
 	if result.PRReadiness == nil || result.PRReadiness.SchemaVersion != PRReadinessSchemaVersion || result.PRReadiness.PullRequest != 201 {
 		t.Fatalf("missing PR readiness contract: %+v", result.PRReadiness)
+	}
+}
+
+func TestGetWorkStatusPropagatesStaleApprovalEvidenceAcrossReadinessAndQueues(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Stale review","state":"open","labels":[{"name":"status:in-review"}]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": []byte(`[{"number":201,"title":"x","body":"Closes #126","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-126-stale-review","baseRefName":"main","headRefOid":"current-head","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		"gh api repos/StatPan/gira/pulls/201/reviews --paginate --slurp": []byte(`[[{"state":"APPROVED","commit_id":"old-head"}]]`),
+	}}
+
+	status, err := GetWorkStatus(repo, 126, runner)
+	if err != nil {
+		t.Fatalf("GetWorkStatus error: %v", err)
+	}
+	if !containsString(status.Blockers, "review_approval_stale") || status.ReviewStatus != "blocked" || status.NextAction != "address_review" {
+		t.Fatalf("stale review must block ticket status: %+v", status)
+	}
+	if status.ReviewEvidence == nil || status.ReviewEvidence.Blocker != "review_approval_stale" || status.PRReadiness == nil || !hasPRReadinessFinding(status.PRReadiness.Findings, "review_approval_stale") {
+		t.Fatalf("stale review evidence was not propagated to PR readiness: %+v", status)
+	}
+	queues := BuildWorkspaceQueues(WorkspaceSummary{}, []WorkStatusResult{status})
+	if queues.Counts.FinishReady != 0 || queues.Counts.Blocked != 1 || queues.Queues.Blocked[0].Evidence.ReviewEvidence == nil || queues.Queues.Blocked[0].Evidence.ReviewEvidence.Blocker != "review_approval_stale" {
+		t.Fatalf("stale review must not enter finish-ready queue: %+v", queues)
 	}
 }
 
@@ -835,7 +883,7 @@ func TestGetWorkStatusRetriesTransientMissingLinkedPRForReviewStatus(t *testing.
 	if err != nil {
 		t.Fatalf("GetWorkStatus error: %v", err)
 	}
-	if result.PRNumber != 203 || result.PRLookupAttempts != 2 || result.NextAction != "merge_when_policy_allows" {
+	if result.PRNumber != 203 || result.PRLookupAttempts != 2 || result.NextAction != "address_review" || !containsString(result.Blockers, "review_required_but_absent") {
 		t.Fatalf("unexpected retry status: %+v", result)
 	}
 	if got := countWorkCall(runner.calls, prCall); got != 2 {

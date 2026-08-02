@@ -90,7 +90,8 @@ func TestTicketNoteApplyPostsToLinkedPR(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-review"}]}`),
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20":             []byte(`[{"number":127,"title":"feat: Work command","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/127","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": []byte(`[{"number":127,"title":"feat: Work command","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/127","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefOid":"head220","statusCheckRollup":[]}]`),
+		"gh api repos/StatPan/gira/pulls/127/reviews --paginate --slurp": []byte(`[[{"state":"APPROVED","commit_id":"head220"}]]`),
 		"gh pr comment 127 --repo StatPan/gira --body ## Decision\n\nUse ticket-level note templates.\n\nContext:\n- Ticket: #126\n- Status: In review\n- Linked PR: #127\n- Blockers: none\n- Next: merge when policy checks pass\n": []byte(""),
 	}}
 

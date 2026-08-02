@@ -37,6 +37,7 @@ type prReadinessInput struct {
 	ReviewStatus      string
 	ReviewDecision    string
 	ReviewPolicy      *FinishReviewPolicy
+	ReviewEvidence    *FinishReviewEvidence
 	FinishReady       bool
 	ChangedFiles      []string
 	ChangedFilesKnown bool
@@ -46,14 +47,15 @@ type prReadinessInput struct {
 
 func EvaluatePRReadinessFromStatus(status WorkStatusResult) PRReadinessReport {
 	input := prReadinessInput{
-		Repo:         status.Repo,
-		Issue:        status.Issue,
-		ChecksStatus: status.ChecksStatus,
-		Checks:       append([]DevPRCheck(nil), status.Checks...),
-		ReviewStatus: status.ReviewStatus,
-		ReviewPolicy: status.ReviewPolicy,
-		Telemetry:    status.Telemetry,
-		Acceptance:   status.Acceptance,
+		Repo:           status.Repo,
+		Issue:          status.Issue,
+		ChecksStatus:   status.ChecksStatus,
+		Checks:         append([]DevPRCheck(nil), status.Checks...),
+		ReviewStatus:   status.ReviewStatus,
+		ReviewPolicy:   status.ReviewPolicy,
+		ReviewEvidence: status.ReviewEvidence,
+		Telemetry:      status.Telemetry,
+		Acceptance:     status.Acceptance,
 	}
 	if status.PullRequest != nil {
 		input.PRAvailable = status.PullRequest.Available
@@ -167,7 +169,14 @@ func evaluatePRReadiness(input prReadinessInput) PRReadinessReport {
 		))
 	}
 
-	if input.ReviewStatus == "blocked" {
+	if input.ReviewEvidence != nil && input.ReviewEvidence.Blocker != "" {
+		report.Findings = append(report.Findings, prReadinessFinding(
+			"error",
+			input.ReviewEvidence.Blocker,
+			"Review evidence does not satisfy the configured finish policy.",
+			input.ReviewEvidence.Remediation,
+		))
+	} else if input.ReviewStatus == "blocked" {
 		report.Findings = append(report.Findings, prReadinessFinding(
 			"error",
 			"review_blocked",

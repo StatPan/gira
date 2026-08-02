@@ -62,12 +62,18 @@ type devPRBindingPolicy struct {
 }
 
 type DevPRCheck struct {
-	Name       string `json:"name,omitempty"`
-	Workflow   string `json:"workflow,omitempty"`
-	Status     string `json:"status,omitempty"`
-	Conclusion string `json:"conclusion,omitempty"`
-	URL        string `json:"url,omitempty"`
-	State      string `json:"state"`
+	Name        string `json:"name,omitempty"`
+	Workflow    string `json:"workflow,omitempty"`
+	AppID       int    `json:"app_id,omitempty"`
+	AppSlug     string `json:"app_slug,omitempty"`
+	WorkflowID  int    `json:"workflow_id,omitempty"`
+	HeadSHA     string `json:"head_sha,omitempty"`
+	CompletedAt string `json:"completed_at,omitempty"`
+	Superseded  bool   `json:"superseded,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Conclusion  string `json:"conclusion,omitempty"`
+	URL         string `json:"url,omitempty"`
+	State       string `json:"state"`
 }
 
 type prSummary struct {
@@ -141,14 +147,22 @@ type restReview struct {
 
 type restCheckRuns struct {
 	CheckRuns []struct {
-		Name       string `json:"name"`
-		Status     string `json:"status"`
-		Conclusion string `json:"conclusion"`
-		HTMLURL    string `json:"html_url"`
-		App        *struct {
+		Name        string `json:"name"`
+		Status      string `json:"status"`
+		Conclusion  string `json:"conclusion"`
+		HTMLURL     string `json:"html_url"`
+		CompletedAt string `json:"completed_at"`
+		App         *struct {
+			ID   int    `json:"id"`
 			Name string `json:"name"`
+			Slug string `json:"slug"`
 		} `json:"app"`
 	} `json:"check_runs"`
+}
+
+type restWorkflowRun struct {
+	WorkflowID int    `json:"workflow_id"`
+	HeadSHA    string `json:"head_sha"`
 }
 
 type restCombinedStatus struct {
@@ -582,28 +596,112 @@ func restPRChecks(repo RepoRef, headSHA string, runner CommandRunner) []DevPRChe
 }
 
 func restCheckRunsForCommit(repo RepoRef, headSHA string, runner CommandRunner) []DevPRCheck {
-	out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/commits/%s/check-runs", repo.FullName(), headSHA), "-X", "GET", "-f", "per_page=100")
+	out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/commits/%s/check-runs", repo.FullName(), headSHA), "-X", "GET", "-f", "per_page=100", "-f", "filter=all", "--paginate", "--slurp")
 	if err != nil {
 		return nil
 	}
-	var payload restCheckRuns
-	if err := json.Unmarshal(out, &payload); err != nil {
-		return nil
+	payloads := []restCheckRuns{}
+	if err := json.Unmarshal(out, &payloads); err != nil {
+		var payload restCheckRuns
+		if err := json.Unmarshal(out, &payload); err != nil {
+			return nil
+		}
+		payloads = append(payloads, payload)
 	}
 	checks := []DevPRCheck{}
-	for _, check := range payload.CheckRuns {
-		workflow := ""
-		if check.App != nil {
-			workflow = check.App.Name
+	workflowRuns := map[int]restWorkflowRun{}
+	for _, payload := range payloads {
+		for _, check := range payload.CheckRuns {
+			workflow := ""
+			if check.App != nil {
+				workflow = check.App.Name
+			}
+			result := DevPRCheck{
+				Name:        check.Name,
+				Workflow:    workflow,
+				Status:      strings.ToUpper(check.Status),
+				Conclusion:  strings.ToUpper(check.Conclusion),
+				URL:         check.HTMLURL,
+				CompletedAt: strings.TrimSpace(check.CompletedAt),
+				State:       classifyDevPRCheck(check.Status, check.Conclusion),
+			}
+			if check.App != nil {
+				result.AppID = check.App.ID
+				result.AppSlug = strings.TrimSpace(check.App.Slug)
+			}
+			if runID := githubActionsRunID(check.HTMLURL); isGitHubActionsCheck(result) && runID > 0 {
+				run, ok := workflowRuns[runID]
+				if !ok {
+					run, ok = fetchWorkflowRun(repo, runID, runner)
+					if ok {
+						workflowRuns[runID] = run
+					}
+				}
+				if ok {
+					result.WorkflowID = run.WorkflowID
+					result.HeadSHA = strings.TrimSpace(run.HeadSHA)
+				}
+			}
+			checks = append(checks, result)
 		}
-		checks = append(checks, DevPRCheck{
-			Name:       check.Name,
-			Workflow:   workflow,
-			Status:     strings.ToUpper(check.Status),
-			Conclusion: strings.ToUpper(check.Conclusion),
-			URL:        check.HTMLURL,
-			State:      classifyDevPRCheck(check.Status, check.Conclusion),
-		})
+	}
+	return markSupersededCancelledChecks(checks, headSHA)
+}
+
+func isGitHubActionsCheck(check DevPRCheck) bool {
+	return check.AppID > 0 && strings.EqualFold(strings.TrimSpace(check.AppSlug), "github-actions")
+}
+
+func githubActionsRunID(rawURL string) int {
+	parts := strings.Split(strings.TrimSpace(rawURL), "/")
+	for index := 0; index+2 < len(parts); index++ {
+		if parts[index] != "actions" || parts[index+1] != "runs" {
+			continue
+		}
+		runID, err := strconv.Atoi(parts[index+2])
+		if err == nil && runID > 0 {
+			return runID
+		}
+	}
+	return 0
+}
+
+func fetchWorkflowRun(repo RepoRef, runID int, runner CommandRunner) (restWorkflowRun, bool) {
+	out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/actions/runs/%d", repo.FullName(), runID))
+	if err != nil {
+		return restWorkflowRun{}, false
+	}
+	var run restWorkflowRun
+	if err := json.Unmarshal(out, &run); err != nil || run.WorkflowID <= 0 || strings.TrimSpace(run.HeadSHA) == "" {
+		return restWorkflowRun{}, false
+	}
+	return run, true
+}
+
+func markSupersededCancelledChecks(checks []DevPRCheck, headSHA string) []DevPRCheck {
+	headSHA = strings.TrimSpace(headSHA)
+	for index := range checks {
+		cancelled := &checks[index]
+		if !strings.EqualFold(cancelled.Conclusion, "CANCELLED") || cancelled.WorkflowID <= 0 || cancelled.Name == "" || !strings.EqualFold(strings.TrimSpace(cancelled.HeadSHA), headSHA) {
+			continue
+		}
+		cancelledAt, err := time.Parse(time.RFC3339, strings.TrimSpace(cancelled.CompletedAt))
+		if err != nil {
+			continue
+		}
+		for candidateIndex := range checks {
+			candidate := checks[candidateIndex]
+			if !isGitHubActionsCheck(*cancelled) || !isGitHubActionsCheck(candidate) || candidate.AppID != cancelled.AppID || candidate.WorkflowID != cancelled.WorkflowID || candidate.Name != cancelled.Name || !strings.EqualFold(strings.TrimSpace(candidate.HeadSHA), headSHA) || !strings.EqualFold(candidate.Conclusion, "SUCCESS") {
+				continue
+			}
+			candidateAt, err := time.Parse(time.RFC3339, strings.TrimSpace(candidate.CompletedAt))
+			if err != nil || !candidateAt.After(cancelledAt) {
+				continue
+			}
+			cancelled.Superseded = true
+			cancelled.State = "passing"
+			break
+		}
 	}
 	return checks
 }

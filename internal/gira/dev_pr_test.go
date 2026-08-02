@@ -73,10 +73,10 @@ func TestDevPRStatusBlocked(t *testing.T) {
 			"head":{"ref":"issue-60-blocked","sha":"abc123"},
 			"base":{"ref":"main"}
 		}`),
-		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                            []byte(`[]`),
-		"gh api repos/StatPan/gira/branches/main/protection/required_pull_request_reviews": []byte(`{"required_approving_review_count":1}`),
-		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100":       []byte(`{"check_runs":[{"conclusion":"success","status":"completed"}]}`),
-		"gh api repos/StatPan/gira/commits/abc123/status":                                  []byte(`{"statuses":[]}`),
+		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                                                       []byte(`[]`),
+		"gh api repos/StatPan/gira/branches/main/protection/required_pull_request_reviews":                            []byte(`{"required_approving_review_count":1}`),
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": []byte(`{"check_runs":[{"conclusion":"success","status":"completed"}]}`),
+		"gh api repos/StatPan/gira/commits/abc123/status":                                                             []byte(`{"statuses":[]}`),
 	}}
 	result, err := DevPRStatus(repo, 60, runner)
 	if err != nil {
@@ -108,9 +108,9 @@ func TestDevPRStatusUsesRESTFirstLinkedPRSnapshot(t *testing.T) {
 			"head":{"ref":"issue-60-rest-first","sha":"abc123"},
 			"base":{"ref":"main"}
 		}`),
-		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                      []byte(`[{"state":"APPROVED","submitted_at":"2026-06-18T09:00:00Z"}]`),
-		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100": []byte(`{"check_runs":[{"name":"test","status":"completed","conclusion":"success","html_url":"https://ci.example","app":{"name":"GitHub Actions"}}]}`),
-		"gh api repos/StatPan/gira/commits/abc123/status":                            []byte(`{"statuses":[]}`),
+		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                                                       []byte(`[{"state":"APPROVED","submitted_at":"2026-06-18T09:00:00Z"}]`),
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": []byte(`{"check_runs":[{"name":"test","status":"completed","conclusion":"success","html_url":"https://ci.example","app":{"name":"GitHub Actions"}}]}`),
+		"gh api repos/StatPan/gira/commits/abc123/status":                                                             []byte(`{"statuses":[]}`),
 	}, calls: &calls}
 	result, err := DevPRStatus(repo, 60, runner)
 	if err != nil {
@@ -129,16 +129,95 @@ func TestDevPRStatusUsesRESTFirstLinkedPRSnapshot(t *testing.T) {
 	}
 }
 
+func TestRestCheckRunsOnlySupersedesCancelledChecksWithNewerSameWorkflowSuccess(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	checkRuns := func(replacementStatus string, replacementConclusion string, replacementHead string, includeReplacement bool) string {
+		rows := `[{
+"name":"Linked Issue","status":"completed","conclusion":"cancelled","completed_at":"2026-08-02T01:00:00Z","html_url":"https://github.com/StatPan/gira/actions/runs/100/job/1","app":{"id":15368,"name":"GitHub Actions","slug":"github-actions"}
+}]`
+		if includeReplacement {
+			rows = `[{
+"name":"Linked Issue","status":"completed","conclusion":"cancelled","completed_at":"2026-08-02T01:00:00Z","html_url":"https://github.com/StatPan/gira/actions/runs/100/job/1","app":{"id":15368,"name":"GitHub Actions","slug":"github-actions"}
+},{
+"name":"Linked Issue","status":"` + replacementStatus + `","conclusion":"` + replacementConclusion + `","completed_at":"2026-08-02T02:00:00Z","html_url":"https://github.com/StatPan/gira/actions/runs/101/job/2","app":{"id":15368,"name":"GitHub Actions","slug":"github-actions"}
+}]`
+		}
+		return `{"check_runs":` + rows + `}`
+	}
+
+	tests := []struct {
+		name              string
+		replacement       bool
+		replacementStatus string
+		replacementResult string
+		replacementHead   string
+		wantSuperseded    bool
+		wantChecksBlocker bool
+	}{
+		{name: "newer equivalent success on same head", replacement: true, replacementStatus: "completed", replacementResult: "success", replacementHead: "head123", wantSuperseded: true},
+		{name: "cancelled without replacement", replacement: false, wantChecksBlocker: true},
+		{name: "newer equivalent failure remains blocking", replacement: true, replacementStatus: "completed", replacementResult: "failure", replacementHead: "head123", wantChecksBlocker: true},
+		{name: "newer equivalent pending remains blocking", replacement: true, replacementStatus: "in_progress", replacementHead: "head123", wantChecksBlocker: true},
+		{name: "success on another head is not a replacement", replacement: true, replacementStatus: "completed", replacementResult: "success", replacementHead: "other-head", wantChecksBlocker: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outputs := map[string][]byte{
+				"gh api repos/StatPan/gira/commits/head123/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": []byte(checkRuns(tt.replacementStatus, tt.replacementResult, tt.replacementHead, tt.replacement)),
+				"gh api repos/StatPan/gira/actions/runs/100": []byte(`{"workflow_id":42,"head_sha":"head123"}`),
+			}
+			if tt.replacement {
+				outputs["gh api repos/StatPan/gira/actions/runs/101"] = []byte(`{"workflow_id":42,"head_sha":` + strconv.Quote(tt.replacementHead) + `}`)
+			}
+			checks := restCheckRunsForCommit(repo, "head123", devPRRunner{outputs: outputs})
+			if len(checks) == 0 {
+				t.Fatal("expected check runs")
+			}
+			if checks[0].Superseded != tt.wantSuperseded {
+				t.Fatalf("cancelled check superseded=%t, want %t: %+v", checks[0].Superseded, tt.wantSuperseded, checks)
+			}
+			if got := containsString(devPRCheckBlockers(checks), "checks"); got != tt.wantChecksBlocker {
+				t.Fatalf("checks blocker=%t, want %t: %+v", got, tt.wantChecksBlocker, checks)
+			}
+		})
+	}
+}
+
+func TestMarkSupersededCancelledChecksRequiresStableProviderAndWorkflowIdentity(t *testing.T) {
+	base := []DevPRCheck{
+		{Name: "Linked Issue", AppID: 15368, AppSlug: "github-actions", WorkflowID: 42, HeadSHA: "head123", CompletedAt: "2026-08-02T01:00:00Z", Conclusion: "CANCELLED", State: "failing"},
+		{Name: "Linked Issue", AppID: 15368, AppSlug: "github-actions", WorkflowID: 42, HeadSHA: "head123", CompletedAt: "2026-08-02T02:00:00Z", Conclusion: "SUCCESS", State: "passing"},
+	}
+	tests := []struct {
+		name   string
+		mutate func([]DevPRCheck)
+	}{
+		{name: "different provider", mutate: func(checks []DevPRCheck) { checks[1].AppID = 999; checks[1].AppSlug = "external-checks" }},
+		{name: "different workflow", mutate: func(checks []DevPRCheck) { checks[1].WorkflowID = 99 }},
+		{name: "missing provider identity", mutate: func(checks []DevPRCheck) { checks[0].AppID = 0; checks[0].AppSlug = "" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checks := append([]DevPRCheck(nil), base...)
+			tt.mutate(checks)
+			checks = markSupersededCancelledChecks(checks, "head123")
+			if checks[0].Superseded || !containsString(devPRCheckBlockers(checks), "checks") {
+				t.Fatalf("unstable provenance must remain blocking: %+v", checks)
+			}
+		})
+	}
+}
+
 func TestDevPRStatusTrustsExactRecordedWorkBranch(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	body := RenderTicketLifecycleBlock(TicketLifecycleState{WorkBranch: "feat/i60-a2a-unary-adapter"})
 	runner := devPRRunner{outputs: map[string][]byte{
-		"gh issue view 60 --repo StatPan/gira --json number,title,body":              []byte(`{"number":60,"title":"A2A unary adapter","body":` + strconv.Quote(body) + `}`),
-		"gh api repos/StatPan/gira/issues/60/timeline --paginate":                    []byte(`[{"source":{"issue":{"number":99,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/99"}}}}]`),
-		"gh api repos/StatPan/gira/pulls/99":                                         []byte(`{"number":99,"body":"Closes #60","state":"open","html_url":"u","mergeable_state":"clean","head":{"ref":"feat/i60-a2a-unary-adapter","sha":"abc123"},"base":{"ref":"dev"}}`),
-		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                      []byte(`[]`),
-		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100": []byte(`{"check_runs":[]}`),
-		"gh api repos/StatPan/gira/commits/abc123/status":                            []byte(`{"statuses":[]}`),
+		"gh issue view 60 --repo StatPan/gira --json number,title,body":                                               []byte(`{"number":60,"title":"A2A unary adapter","body":` + strconv.Quote(body) + `}`),
+		"gh api repos/StatPan/gira/issues/60/timeline --paginate":                                                     []byte(`[{"source":{"issue":{"number":99,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/99"}}}}]`),
+		"gh api repos/StatPan/gira/pulls/99":                                                                          []byte(`{"number":99,"body":"Closes #60","state":"open","html_url":"u","mergeable_state":"clean","head":{"ref":"feat/i60-a2a-unary-adapter","sha":"abc123"},"base":{"ref":"dev"}}`),
+		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                                                       []byte(`[]`),
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": []byte(`{"check_runs":[]}`),
+		"gh api repos/StatPan/gira/commits/abc123/status":                                                             []byte(`{"statuses":[]}`),
 	}}
 
 	result, err := DevPRStatus(repo, 60, runner)
@@ -173,9 +252,9 @@ func TestDevPRStatusPreservesReplacementPRBeforeAndAfterMerge(t *testing.T) {
 				{"source":{"issue":{"number":599,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/599"}}}},
 				{"source":{"issue":{"number":634,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/634"}}}}
 			]`),
-			"gh api repos/StatPan/gira/pulls/634/reviews --paginate":                      []byte(`[{"state":"APPROVED","submitted_at":"2026-07-18T09:00:00Z"}]`),
-			"gh api repos/StatPan/gira/commits/head634/check-runs -X GET -f per_page=100": []byte(`{"check_runs":[{"status":"completed","conclusion":"success"}]}`),
-			"gh api repos/StatPan/gira/commits/head634/status":                            []byte(`{"statuses":[]}`),
+			"gh api repos/StatPan/gira/pulls/634/reviews --paginate":                                                       []byte(`[{"state":"APPROVED","submitted_at":"2026-07-18T09:00:00Z"}]`),
+			"gh api repos/StatPan/gira/commits/head634/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": []byte(`{"check_runs":[{"status":"completed","conclusion":"success"}]}`),
+			"gh api repos/StatPan/gira/commits/head634/status":                                                             []byte(`{"statuses":[]}`),
 		},
 		queues: map[string][]devPRRunResult{
 			"gh api repos/StatPan/gira/pulls/599": {
@@ -254,9 +333,9 @@ func TestDevPRStatusRESTFirstMapsPendingChecks(t *testing.T) {
 			"head":{"ref":"issue-60-rest-first","sha":"abc123"},
 			"base":{"ref":"main"}
 		}`),
-		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                      []byte(`[]`),
-		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100": []byte(`{"check_runs":[{"name":"test","status":"queued","conclusion":""}]}`),
-		"gh api repos/StatPan/gira/commits/abc123/status":                            []byte(`{"statuses":[]}`),
+		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                                                       []byte(`[]`),
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": []byte(`{"check_runs":[{"name":"test","status":"queued","conclusion":""}]}`),
+		"gh api repos/StatPan/gira/commits/abc123/status":                                                             []byte(`{"statuses":[]}`),
 	}}
 	result, err := DevPRStatus(repo, 60, runner)
 	if err != nil {
@@ -302,9 +381,9 @@ func TestDevPRStatusUsesRESTSearchFallbackWhenTimelineUnavailable(t *testing.T) 
 			"head":{"ref":"issue-60-rest-fallback","sha":"abc123"},
 			"base":{"ref":"main"}
 		}`),
-		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                      []byte(`[{"state":"APPROVED","submitted_at":"2026-06-18T09:00:00Z"}]`),
-		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100": []byte(`{"check_runs":[{"name":"test","status":"completed","conclusion":"success"}]}`),
-		"gh api repos/StatPan/gira/commits/abc123/status":                            []byte(`{"statuses":[]}`),
+		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                                                       []byte(`[{"state":"APPROVED","submitted_at":"2026-06-18T09:00:00Z"}]`),
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": []byte(`{"check_runs":[{"name":"test","status":"completed","conclusion":"success"}]}`),
+		"gh api repos/StatPan/gira/commits/abc123/status":                                                             []byte(`{"statuses":[]}`),
 	}, errs: map[string]error{
 		"gh api repos/StatPan/gira/issues/60/timeline --paginate": fmt.Errorf("timeline unavailable"),
 	}, calls: &calls}

@@ -21,9 +21,6 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 - Added repository-aware local review profiles for Go and Python projects,
   review-only configuration fragments, and fail-closed configuration guidance
   for ambiguous or invalid local-check configuration.
-- Added a repository-configurable required finish-review policy that accepts
-  only an approving GitHub review for the current PR head.
-
 ## v3.0.0 - 2026-07-22
 
 - Added the V3 Active PM operating system for human and AI operators: typed PM

@@ -248,6 +248,9 @@ func TestStartWorkApplyReusesExistingBranch(t *testing.T) {
 		"gh api repos/StatPan/gira/issues/126":                                               issueJSON,
 		"git show-ref --verify --quiet refs/heads/issue-126-work-command":                    nil,
 		"git ls-remote --exit-code --heads origin issue-126-work-command":                    nil,
+		"git merge-base issue-126-work-command origin/main":                                  []byte("base126\n"),
+		"git rev-list --left-right --count issue-126-work-command...origin/main":             []byte("1\t0\n"),
+		"git cherry -v origin/main issue-126-work-command":                                   []byte("+ local126 retained change\n"),
 		"git checkout issue-126-work-command":                                                nil,
 		"gh api repos/StatPan/gira/issues/126/labels/status:ready -X DELETE":                 nil,
 		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-progress": nil,
@@ -263,16 +266,48 @@ func TestStartWorkApplyReusesExistingBranch(t *testing.T) {
 	if !containsCall(runner.calls, "git checkout issue-126-work-command") {
 		t.Fatalf("expected checkout existing branch, calls=%v", runner.calls)
 	}
+	if result.BranchReuse == nil || !result.BranchReuse.Safe || result.BranchReuse.Ahead != 1 || result.BranchReuse.Behind != 0 {
+		t.Fatalf("expected clean reuse diagnostics, got %+v", result.BranchReuse)
+	}
+}
+
+func TestStartWorkBlocksStaleDuplicateBranchBeforeStatusMutation(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	issueJSON := []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`)
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126":                                   issueJSON,
+		"git show-ref --verify --quiet refs/heads/issue-126-work-command":        nil,
+		"git ls-remote --exit-code --heads origin issue-126-work-command":        nil,
+		"git merge-base issue-126-work-command origin/main":                      []byte("base126\n"),
+		"git rev-list --left-right --count issue-126-work-command...origin/main": []byte("1\t1\n"),
+		"git cherry -v origin/main issue-126-work-command":                       []byte("- local126 already delivered by squash merge\n"),
+	}}
+
+	result, err := StartWork(repo, 126, false, runner)
+	if err == nil || !strings.Contains(err.Error(), "behind_base=1") || !strings.Contains(err.Error(), "duplicate_patch_candidates=1") {
+		t.Fatalf("expected stale duplicate branch rejection, got result=%+v err=%v", result, err)
+	}
+	if result.BranchReuse == nil || result.BranchReuse.Safe || result.BranchReuse.Ahead != 1 || result.BranchReuse.Behind != 1 || len(result.BranchReuse.DuplicatePatches) != 1 {
+		t.Fatalf("missing deterministic reuse diagnostics: %+v", result.BranchReuse)
+	}
+	for _, call := range runner.calls {
+		if strings.HasPrefix(call, "git checkout") || strings.Contains(call, "/labels") || strings.Contains(call, " -X PATCH -f body=") {
+			t.Fatalf("unsafe branch reuse must not checkout or mutate ticket state, calls=%v", runner.calls)
+		}
+	}
 }
 
 func TestStartWorkApplyRerunReusesInProgressBranch(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	issueJSON := []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`)
 	runner := &workRunner{outputs: map[string][]byte{
-		"gh api repos/StatPan/gira/issues/126":                            issueJSON,
-		"git show-ref --verify --quiet refs/heads/issue-126-work-command": nil,
-		"git ls-remote --exit-code --heads origin issue-126-work-command": nil,
-		"git checkout issue-126-work-command":                             nil,
+		"gh api repos/StatPan/gira/issues/126":                                   issueJSON,
+		"git show-ref --verify --quiet refs/heads/issue-126-work-command":        nil,
+		"git ls-remote --exit-code --heads origin issue-126-work-command":        nil,
+		"git merge-base issue-126-work-command origin/main":                      []byte("base126\n"),
+		"git rev-list --left-right --count issue-126-work-command...origin/main": []byte("0\t0\n"),
+		"git cherry -v origin/main issue-126-work-command":                       []byte(""),
+		"git checkout issue-126-work-command":                                    nil,
 	}}
 
 	result, err := StartWork(repo, 126, false, runner)

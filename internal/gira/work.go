@@ -13,23 +13,24 @@ const WorkStartResultSchemaVersion = "work-start-result/v1"
 const WorkPRResultSchemaVersion = "work-pr-result/v1"
 
 type WorkStartResult struct {
-	SchemaVersion string            `json:"schema_version"`
-	Repo          string            `json:"repo"`
-	Issue         int               `json:"issue"`
-	JiraKey       string            `json:"jira_key,omitempty"`
-	MirrorIssue   int               `json:"mirror_issue,omitempty"`
-	Title         string            `json:"title"`
-	Branch        string            `json:"branch"`
-	BaseBranch    string            `json:"base_branch,omitempty"`
-	BaseSource    string            `json:"base_source,omitempty"`
-	PolicyMode    string            `json:"branch_policy_mode,omitempty"`
-	DryRun        bool              `json:"dry_run"`
-	CreatedBranch bool              `json:"created_branch"`
-	Status        string            `json:"status"`
-	NextStatus    string            `json:"next_status"`
-	NextStep      string            `json:"next_step,omitempty"`
-	Checks        map[string]bool   `json:"checks"`
-	Approval      *ApprovalEvidence `json:"approval,omitempty"`
+	SchemaVersion string                    `json:"schema_version"`
+	Repo          string                    `json:"repo"`
+	Issue         int                       `json:"issue"`
+	JiraKey       string                    `json:"jira_key,omitempty"`
+	MirrorIssue   int                       `json:"mirror_issue,omitempty"`
+	Title         string                    `json:"title"`
+	Branch        string                    `json:"branch"`
+	BaseBranch    string                    `json:"base_branch,omitempty"`
+	BaseSource    string                    `json:"base_source,omitempty"`
+	PolicyMode    string                    `json:"branch_policy_mode,omitempty"`
+	DryRun        bool                      `json:"dry_run"`
+	CreatedBranch bool                      `json:"created_branch"`
+	Status        string                    `json:"status"`
+	NextStatus    string                    `json:"next_status"`
+	NextStep      string                    `json:"next_step,omitempty"`
+	Checks        map[string]bool           `json:"checks"`
+	BranchReuse   *DevStartBranchReuseCheck `json:"branch_reuse,omitempty"`
+	Approval      *ApprovalEvidence         `json:"approval,omitempty"`
 }
 
 func EnsureWorkStartResultSchema(result *WorkStartResult) {
@@ -337,6 +338,7 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 		NextStatus:    "In progress",
 		NextStep:      workStartNextStep(repo.FullName(), issueNumber, issue.State, status, options.DryRun),
 		Checks:        start.Checked,
+		BranchReuse:   start.BranchReuse,
 	}
 	if err != nil {
 		return result, err

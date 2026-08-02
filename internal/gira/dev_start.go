@@ -11,15 +11,31 @@ import (
 const DefaultDevBranchPattern = "issue-%d-%s"
 
 type DevStartResult struct {
-	Repo     string            `json:"repo"`
-	Issue    int               `json:"issue"`
-	Title    string            `json:"title"`
-	Branch   string            `json:"branch"`
-	Base     string            `json:"base,omitempty"`
-	DryRun   bool              `json:"dry_run"`
-	Created  bool              `json:"created"`
-	Checked  map[string]bool   `json:"checks"`
-	Failures map[string]string `json:"failures,omitempty"`
+	Repo        string                    `json:"repo"`
+	Issue       int                       `json:"issue"`
+	Title       string                    `json:"title"`
+	Branch      string                    `json:"branch"`
+	Base        string                    `json:"base,omitempty"`
+	DryRun      bool                      `json:"dry_run"`
+	Created     bool                      `json:"created"`
+	Checked     map[string]bool           `json:"checks"`
+	Failures    map[string]string         `json:"failures,omitempty"`
+	BranchReuse *DevStartBranchReuseCheck `json:"branch_reuse,omitempty"`
+}
+
+// DevStartBranchReuseCheck describes whether an existing local work branch is
+// safe to reuse against the requested base. It is returned for dry-runs too so
+// agents can repair stale history before ticket status is changed.
+type DevStartBranchReuseCheck struct {
+	ExistingLocalBranch bool     `json:"existing_local_branch"`
+	BaseRef             string   `json:"base_ref"`
+	MergeBase           string   `json:"merge_base,omitempty"`
+	Ahead               int      `json:"ahead"`
+	Behind              int      `json:"behind"`
+	DuplicatePatches    []string `json:"duplicate_patches"`
+	Safe                bool     `json:"safe"`
+	Diagnostics         []string `json:"diagnostics"`
+	Recovery            []string `json:"recovery"`
 }
 
 type DevStartOptions struct {
@@ -103,6 +119,20 @@ func StartDevBranchWithOptions(repo RepoRef, issueNumber int, options DevStartOp
 		return result, err
 	}
 	result.Checked["local_branch_absent_or_reusable"] = true
+	if localExists && base != "" {
+		reuse, reuseErr := inspectExistingBranchReuse(branch, base, runner)
+		result.BranchReuse = &reuse
+		result.Checked["branch_reuse_preflight"] = reuseErr == nil && reuse.Safe
+		if reuseErr != nil {
+			result.Failures["branch_reuse"] = "preflight_unavailable"
+			return result, reuseErr
+		}
+		if !reuse.Safe {
+			result.Checked["local_branch_absent_or_reusable"] = false
+			result.Failures["branch_reuse"] = strings.Join(reuse.Diagnostics, ",")
+			return result, fmt.Errorf("unsafe branch reuse for %q: %s; %s", branch, strings.Join(reuse.Diagnostics, "; "), strings.Join(reuse.Recovery, "; "))
+		}
+	}
 
 	remoteExists, err := gitRemoteBranchExists(branch, runner)
 	if err != nil {
@@ -140,6 +170,53 @@ func StartDevBranchWithOptions(repo RepoRef, issueNumber int, options DevStartOp
 	}
 	result.Created = true
 	return result, nil
+}
+
+func inspectExistingBranchReuse(branch string, base string, runner CommandRunner) (DevStartBranchReuseCheck, error) {
+	baseRef := "origin/" + strings.TrimSpace(base)
+	report := DevStartBranchReuseCheck{
+		ExistingLocalBranch: true,
+		BaseRef:             baseRef,
+		DuplicatePatches:    []string{},
+		Diagnostics:         []string{},
+		Recovery:            []string{"rebase the branch onto " + baseRef, "recreate the work branch from " + baseRef},
+	}
+	mergeBase, err := runner.Run("git", "merge-base", branch, baseRef)
+	if err != nil {
+		return report, fmt.Errorf("inspect branch reuse for %q: merge base against %s is unavailable; fetch the requested base before retrying: %w", branch, baseRef, err)
+	}
+	report.MergeBase = strings.TrimSpace(string(mergeBase))
+	counts, err := runner.Run("git", "rev-list", "--left-right", "--count", branch+"..."+baseRef)
+	if err != nil {
+		return report, fmt.Errorf("inspect branch reuse for %q: compare against %s: %w", branch, baseRef, err)
+	}
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(counts)), "%d\t%d", &report.Ahead, &report.Behind); err != nil {
+		return report, fmt.Errorf("inspect branch reuse for %q: parse ahead/behind %q: %w", branch, strings.TrimSpace(string(counts)), err)
+	}
+	cherry, err := runner.Run("git", "cherry", "-v", baseRef, branch)
+	if err != nil {
+		return report, fmt.Errorf("inspect branch reuse for %q: detect duplicate patches against %s: %w", branch, baseRef, err)
+	}
+	for _, line := range strings.Split(string(cherry), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "-" {
+			report.DuplicatePatches = append(report.DuplicatePatches, fields[1])
+		}
+	}
+	if report.Behind > 0 {
+		report.Diagnostics = append(report.Diagnostics, fmt.Sprintf("behind_base=%d", report.Behind))
+	}
+	if report.Ahead > 0 {
+		report.Diagnostics = append(report.Diagnostics, fmt.Sprintf("ahead_base=%d", report.Ahead))
+	}
+	if len(report.DuplicatePatches) > 0 {
+		report.Diagnostics = append(report.Diagnostics, fmt.Sprintf("duplicate_patch_candidates=%d", len(report.DuplicatePatches)))
+	}
+	report.Safe = report.Behind == 0 && len(report.DuplicatePatches) == 0
+	if report.Safe {
+		report.Diagnostics = append(report.Diagnostics, "safe_reuse")
+	}
+	return report, nil
 }
 
 func fetchDevIssue(repo RepoRef, issueNumber int, runner CommandRunner) (devStartIssue, error) {

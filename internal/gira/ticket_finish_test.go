@@ -329,6 +329,7 @@ func TestFinishWorkApplySyncLocalOptInTargetsPRBase(t *testing.T) {
 		"git remote get-url origin":                                    {[]byte("git@github.com:StatPan/gira.git\n")},
 		"git branch --show-current":                                    {[]byte("issue-219-finish\n")},
 		"git status --porcelain":                                       {[]byte("")},
+		"git worktree list --porcelain":                                {[]byte("worktree /workspace/gira\nHEAD abc\nbranch refs/heads/issue-219-finish\n\n")},
 		"git checkout release/2.0":                                     {nil},
 		"git pull --ff-only origin release/2.0":                        {nil},
 		"gh api repos/StatPan/gira/issues/219": {
@@ -362,6 +363,40 @@ func TestFinishWorkApplySyncLocalOptInTargetsPRBase(t *testing.T) {
 	}
 	if !finishActionStatus(result.Actions, "local:sync_base", "applied") {
 		t.Fatalf("missing applied local sync action: %+v", result.Actions)
+	}
+}
+
+func TestFinishWorkApplySyncLocalSkipsBranchCheckedOutInAnotherWorktree(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": {
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-219-finish","baseRefName":"release/2.0","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+			[]byte(`[{"number":220,"title":"x","body":"Closes #219","state":"MERGED","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"UNKNOWN","headRefName":"issue-219-finish","baseRefName":"release/2.0","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		},
+		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch": {nil},
+		"gh api repos/StatPan/gira/pulls/220":                          {[]byte(`{"number":220,"body":"Closes #219","state":"closed","merged_at":"2026-07-22T00:00:00Z","merge_commit_sha":"merge220","html_url":"u","head":{"ref":"issue-219-finish","sha":"head220"},"base":{"ref":"release/2.0"}}`)},
+		"git remote get-url origin":                                    {[]byte("git@github.com:StatPan/gira.git\n")},
+		"git branch --show-current":                                    {[]byte("issue-219-finish\n")},
+		"git status --porcelain":                                       {[]byte("")},
+		"git worktree list --porcelain":                                {[]byte("worktree /workspace/gira\nHEAD abc\nbranch refs/heads/issue-219-finish\n\nworktree /workspace/gira-dev\nHEAD def\nbranch refs/heads/release/2.0\n\n")},
+		"gh api repos/StatPan/gira/issues/219": {
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+			[]byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`),
+		},
+	}, errs: map[string]error{}}
+
+	result, err := FinishWorkWithOptions(repo, 219, false, 0, WorkFinishOptions{SyncLocal: true}, runner)
+	if err != nil {
+		t.Fatalf("FinishWorkWithOptions error: %v", err)
+	}
+	if !result.Merged || !result.LocalSync.Skipped || result.LocalSync.Reason != "branch_checked_out_elsewhere" {
+		t.Fatalf("expected merge with a safe local-sync skip, got %+v", result)
+	}
+	if containsCall(runner.calls, "git checkout release/2.0") || containsCall(runner.calls, "git pull --ff-only origin release/2.0") {
+		t.Fatalf("must not touch a branch owned by another worktree: %v", runner.calls)
+	}
+	if !finishActionStatus(result.Actions, "local:sync_base", "skipped") {
+		t.Fatalf("expected skipped local sync action: %+v", result.Actions)
 	}
 }
 

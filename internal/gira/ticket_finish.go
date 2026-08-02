@@ -1071,9 +1071,34 @@ func planLocalBaseSync(repo RepoRef, runner CommandRunner, dryRun bool, knownPRS
 		actions = append(actions, WorkFinishAction{Action: "local:sync_base", Status: "skipped", Detail: local.Reason})
 		return local, actions
 	}
+	if local.Branch != targetBranch {
+		worktreesOut, err := runner.Run("git", "worktree", "list", "--porcelain")
+		if err != nil {
+			local.Skipped = true
+			local.Reason = "worktree_list_unavailable"
+			actions = append(actions, WorkFinishAction{Action: "local:sync_base", Status: "skipped", Detail: local.Reason})
+			return local, actions
+		}
+		if branchCheckedOutInWorktree(string(worktreesOut), targetBranch) {
+			local.Skipped = true
+			local.Reason = "branch_checked_out_elsewhere"
+			actions = append(actions, WorkFinishAction{Action: "local:sync_base", Status: "skipped", Detail: local.Reason})
+			return local, actions
+		}
+	}
 	local.Attempted = true
 	actions = append(actions, plannedOrAppliedAction("local:sync_base", dryRun, "checkout "+targetBranch+" and pull --ff-only"))
 	return local, actions
+}
+
+func branchCheckedOutInWorktree(output string, branch string) bool {
+	want := "branch refs/heads/" + strings.TrimSpace(branch)
+	for _, line := range strings.Split(output, "\n") {
+		if strings.TrimSpace(line) == want {
+			return true
+		}
+	}
+	return false
 }
 
 func mergeBlockers(blockers []string) []string {

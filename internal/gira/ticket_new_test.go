@@ -184,6 +184,9 @@ func TestTicketNewApplyCreatesIssue(t *testing.T) {
 	if report.LabelOutcome.Status != "applied" || !containsString(report.AppliedLabels, "status:ready") {
 		t.Fatalf("expected verified applied labels, got %+v", report)
 	}
+	if !containsString(report.Labels, "status:ready") || !containsString(report.RequestedLabels, "status:ready") {
+		t.Fatalf("apply report must preserve requested labels and expose verified labels, got %+v", report)
+	}
 }
 
 func TestTicketNewApplyReportsUnappliedLabelsAndActualReadiness(t *testing.T) {
@@ -201,6 +204,9 @@ func TestTicketNewApplyReportsUnappliedLabelsAndActualReadiness(t *testing.T) {
 	}
 	if !strings.Contains(report.NextStep, "issues:write") || !strings.Contains(report.NextStep, "gira adopt issues") {
 		t.Fatalf("expected least-privilege remediation, got %q", report.NextStep)
+	}
+	if len(report.Labels) != 0 || len(report.AppliedLabels) != 0 || len(report.RequestedLabels) != 2 {
+		t.Fatalf("apply report must not expose requested labels as actual labels, got %+v", report)
 	}
 }
 

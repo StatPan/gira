@@ -140,6 +140,10 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		return report, fmt.Errorf("verify created issue labels: %w", err)
 	}
 	report.AppliedLabels = append([]string(nil), createdIssue.Labels...)
+	// The legacy labels field is the effective label state after an apply. Keep
+	// RequestedLabels as the immutable request so JSON consumers cannot mistake
+	// an unverified request for labels that GitHub actually applied.
+	report.Labels = append([]string(nil), report.AppliedLabels...)
 	report.LabelOutcome = ticketNewLabelOutcome(input.Repo, created.Number, report.RequestedLabels, report.AppliedLabels)
 	report.TicketReadiness = EvaluateTicketReadiness(body, report.AppliedLabels, createdIssue.State)
 	if report.LabelOutcome.Status == "warning" {

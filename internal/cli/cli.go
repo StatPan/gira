@@ -6624,11 +6624,13 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 		result.MirrorIssue = ticketNumber
 	}
 	if err != nil {
+		gira.EnsureWorkStartResultSchema(&result)
+		result.NextStep = ticketWorkStartNextStep(result)
 		if *jsonOutput {
-			gira.EnsureWorkStartResultSchema(&result)
-			result.NextStep = ticketWorkStartNextStep(result)
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
+		} else if result.Issue > 0 {
+			fmt.Fprint(stderr, formatTicketStart(result))
 		}
 		fmt.Fprintf(stderr, "%v\n", err)
 		if next := ticketWorkStartNextStep(result); next != "" {
@@ -7115,8 +7117,11 @@ func runWorkStart(args []string, stdout io.Writer, stderr io.Writer) int {
 	result, err := newWorkStartResult(repo, *issue, *dryRun)
 	if err != nil {
 		if *jsonOutput {
+			gira.EnsureWorkStartResultSchema(&result)
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
+		} else if result.Issue > 0 {
+			fmt.Fprint(stderr, gira.FormatWorkStart(result))
 		}
 		fmt.Fprintf(stderr, "%v\n", err)
 		if next := strings.TrimSpace(result.NextStep); next != "" {
@@ -7944,7 +7949,7 @@ func formatTicketStart(result gira.WorkStartResult) string {
 		}
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "ticket start: ticket #%d branch=%s status=%s\n", result.Issue, result.Branch, result.NextStatus)
+	fmt.Fprintf(&b, "ticket start: ticket #%d branch=%s status=%s execution_state=%s started=%t\n", result.Issue, result.Branch, result.NextStatus, result.ExecutionState, result.Started)
 	if strings.TrimSpace(result.BaseBranch) != "" {
 		fmt.Fprintf(&b, "base: %s", result.BaseBranch)
 		if strings.TrimSpace(result.BaseSource) != "" {
@@ -7960,6 +7965,12 @@ func formatTicketStart(result gira.WorkStartResult) string {
 		fmt.Fprintf(&b, "branch reuse: %s base=%s merge_base=%s ahead=%d behind=%d duplicate_patches=%d\n", state, reuse.BaseRef, reuse.MergeBase, reuse.Ahead, reuse.Behind, len(reuse.DuplicatePatches))
 		if len(reuse.Diagnostics) > 0 {
 			fmt.Fprintf(&b, "branch reuse diagnostics: %s\n", strings.Join(reuse.Diagnostics, ", "))
+		}
+	}
+	if preflight := result.Preflight; preflight != nil {
+		fmt.Fprintf(&b, "worktree preflight: path=%s dirty=%t expected_branch=%s reusable_branch=%t\n", preflight.CurrentWorktree, preflight.Dirty, preflight.ExpectedBranch, preflight.ReusableBranch)
+		if preflight.SuggestedWorktree != "" {
+			fmt.Fprintf(&b, "suggested worktree: %s\n", preflight.SuggestedWorktree)
 		}
 	}
 	if strings.TrimSpace(result.JiraKey) != "" {

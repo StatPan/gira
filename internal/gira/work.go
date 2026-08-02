@@ -12,30 +12,52 @@ import (
 const WorkStartResultSchemaVersion = "work-start-result/v1"
 const WorkPRResultSchemaVersion = "work-pr-result/v1"
 
+const (
+	WorkStartExecutionPlanned               = "planned"
+	WorkStartExecutionBlockedBeforeMutation = "blocked_before_mutation"
+	WorkStartExecutionPartiallyApplied      = "partially_applied"
+	WorkStartExecutionApplied               = "applied"
+)
+
 type WorkStartResult struct {
-	SchemaVersion string                    `json:"schema_version"`
-	Repo          string                    `json:"repo"`
-	Issue         int                       `json:"issue"`
-	JiraKey       string                    `json:"jira_key,omitempty"`
-	MirrorIssue   int                       `json:"mirror_issue,omitempty"`
-	Title         string                    `json:"title"`
-	Branch        string                    `json:"branch"`
-	BaseBranch    string                    `json:"base_branch,omitempty"`
-	BaseSource    string                    `json:"base_source,omitempty"`
-	PolicyMode    string                    `json:"branch_policy_mode,omitempty"`
-	DryRun        bool                      `json:"dry_run"`
-	CreatedBranch bool                      `json:"created_branch"`
-	Status        string                    `json:"status"`
-	NextStatus    string                    `json:"next_status"`
-	NextStep      string                    `json:"next_step,omitempty"`
-	Checks        map[string]bool           `json:"checks"`
-	BranchReuse   *DevStartBranchReuseCheck `json:"branch_reuse,omitempty"`
-	Approval      *ApprovalEvidence         `json:"approval,omitempty"`
+	SchemaVersion  string                     `json:"schema_version"`
+	Repo           string                     `json:"repo"`
+	Issue          int                        `json:"issue"`
+	JiraKey        string                     `json:"jira_key,omitempty"`
+	MirrorIssue    int                        `json:"mirror_issue,omitempty"`
+	Title          string                     `json:"title"`
+	Branch         string                     `json:"branch"`
+	BaseBranch     string                     `json:"base_branch,omitempty"`
+	BaseSource     string                     `json:"base_source,omitempty"`
+	PolicyMode     string                     `json:"branch_policy_mode,omitempty"`
+	DryRun         bool                       `json:"dry_run"`
+	Started        bool                       `json:"started"`
+	ExecutionState string                     `json:"execution_state"`
+	CreatedBranch  bool                       `json:"created_branch"`
+	Status         string                     `json:"status"`
+	NextStatus     string                     `json:"next_status"`
+	NextStep       string                     `json:"next_step,omitempty"`
+	Checks         map[string]bool            `json:"checks"`
+	BranchReuse    *DevStartBranchReuseCheck  `json:"branch_reuse,omitempty"`
+	Preflight      *DevStartWorktreePreflight `json:"preflight,omitempty"`
+	Approval       *ApprovalEvidence          `json:"approval,omitempty"`
 }
 
 func EnsureWorkStartResultSchema(result *WorkStartResult) {
-	if result != nil && strings.TrimSpace(result.SchemaVersion) == "" {
+	if result == nil {
+		return
+	}
+	if strings.TrimSpace(result.SchemaVersion) == "" {
 		result.SchemaVersion = WorkStartResultSchemaVersion
+	}
+	if strings.TrimSpace(result.ExecutionState) == "" {
+		if result.DryRun {
+			result.ExecutionState = WorkStartExecutionPlanned
+		} else if result.Started {
+			result.ExecutionState = WorkStartExecutionApplied
+		} else {
+			result.ExecutionState = WorkStartExecutionBlockedBeforeMutation
+		}
 	}
 }
 
@@ -302,16 +324,24 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 	if !alreadyStarted && (!strings.EqualFold(issue.State, "open") || !hasReadyLabel(issue.Labels)) {
 		start, err := StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: DefaultDevBranchPattern, DryRun: options.DryRun}, runner)
 		result := WorkStartResult{
-			SchemaVersion: WorkStartResultSchemaVersion,
-			Repo:          repo.FullName(),
-			Issue:         issueNumber,
-			Title:         start.Title,
-			Branch:        start.Branch,
-			DryRun:        options.DryRun,
-			Status:        status,
-			NextStatus:    "In progress",
-			NextStep:      workStartNextStep(repo.FullName(), issueNumber, issue.State, status, options.DryRun),
-			Checks:        start.Checked,
+			SchemaVersion:  WorkStartResultSchemaVersion,
+			Repo:           repo.FullName(),
+			Issue:          issueNumber,
+			Title:          start.Title,
+			Branch:         start.Branch,
+			DryRun:         options.DryRun,
+			Status:         status,
+			NextStatus:     status,
+			NextStep:       workStartNextStep(repo.FullName(), issueNumber, issue.State, status, options.DryRun),
+			Checks:         start.Checked,
+			Preflight:      start.Preflight,
+			ExecutionState: WorkStartExecutionBlockedBeforeMutation,
+		}
+		if options.DryRun && err == nil {
+			result.ExecutionState = WorkStartExecutionPlanned
+		}
+		if err != nil && !strings.HasPrefix(strings.TrimSpace(result.NextStep), "gira adopt issues ") {
+			result.NextStep = retryWorkStartNextStep(repo.FullName(), issueNumber)
 		}
 		return result, err
 	}
@@ -326,26 +356,35 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 	}
 	start, err := StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: pattern, Branch: base.WorkBranch, Base: base.BaseBranch, DryRun: options.DryRun, Force: alreadyStarted, RequireCleanWorktree: true}, runner)
 	result := WorkStartResult{
-		SchemaVersion: WorkStartResultSchemaVersion,
-		Repo:          repo.FullName(),
-		Issue:         issueNumber,
-		Title:         start.Title,
-		Branch:        start.Branch,
-		BaseBranch:    base.BaseBranch,
-		BaseSource:    base.BaseSource,
-		PolicyMode:    base.PolicyMode,
-		DryRun:        options.DryRun,
-		CreatedBranch: start.Created,
-		Status:        status,
-		NextStatus:    "In progress",
-		NextStep:      workStartNextStep(repo.FullName(), issueNumber, issue.State, status, options.DryRun),
-		Checks:        start.Checked,
-		BranchReuse:   start.BranchReuse,
+		SchemaVersion:  WorkStartResultSchemaVersion,
+		Repo:           repo.FullName(),
+		Issue:          issueNumber,
+		Title:          start.Title,
+		Branch:         start.Branch,
+		BaseBranch:     base.BaseBranch,
+		BaseSource:     base.BaseSource,
+		PolicyMode:     base.PolicyMode,
+		DryRun:         options.DryRun,
+		CreatedBranch:  start.Created,
+		Status:         status,
+		NextStatus:     status,
+		NextStep:       workStartNextStep(repo.FullName(), issueNumber, issue.State, status, options.DryRun),
+		Checks:         start.Checked,
+		BranchReuse:    start.BranchReuse,
+		Preflight:      start.Preflight,
+		ExecutionState: WorkStartExecutionBlockedBeforeMutation,
 	}
 	if err != nil {
+		if result.Preflight != nil && result.Preflight.Dirty {
+			result.NextStep = blockedWorkStartNextStep(repo.FullName(), issueNumber, result.Preflight)
+		} else {
+			result.NextStep = retryWorkStartNextStep(repo.FullName(), issueNumber)
+		}
 		return result, err
 	}
 	if options.DryRun {
+		result.ExecutionState = WorkStartExecutionPlanned
+		result.NextStatus = "In progress"
 		result.Approval = WorkStartApprovalEvidence(result, "gira work start")
 		return result, nil
 	}
@@ -356,13 +395,36 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 		Target:           base.Target,
 		WorkBranch:       start.Branch,
 	}, runner); err != nil {
+		result.ExecutionState = WorkStartExecutionPartiallyApplied
+		result.NextStep = partialWorkStartNextStep(repo.FullName(), issueNumber)
 		return result, err
 	}
 	if err := setIssueStatus(repo, issueNumber, issue.Labels, "status:in-progress", runner); err != nil {
+		result.ExecutionState = WorkStartExecutionPartiallyApplied
+		result.NextStep = partialWorkStartNextStep(repo.FullName(), issueNumber)
 		return result, err
 	}
 	result.Status = "In progress"
+	result.NextStatus = "In progress"
+	result.NextStep = workStartNextStep(repo.FullName(), issueNumber, issue.State, result.Status, false)
+	result.Started = true
+	result.ExecutionState = WorkStartExecutionApplied
 	return result, nil
+}
+
+func blockedWorkStartNextStep(repo string, issue int, preflight *DevStartWorktreePreflight) string {
+	if preflight != nil && strings.TrimSpace(preflight.SuggestedWorktree) != "" {
+		return fmt.Sprintf("cd %s && gira work start --repo %s --issue %d --apply", QuoteShellArg(preflight.SuggestedWorktree), repo, issue)
+	}
+	return fmt.Sprintf("clean the current worktree, then gira work start --repo %s --issue %d --apply", repo, issue)
+}
+
+func retryWorkStartNextStep(repo string, issue int) string {
+	return fmt.Sprintf("resolve ticket start preflight failures, then gira work start --repo %s --issue %d --apply", repo, issue)
+}
+
+func partialWorkStartNextStep(repo string, issue int) string {
+	return fmt.Sprintf("gira work status --repo %s --issue %d --json", repo, issue)
 }
 
 func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner CommandRunner) (WorkPRResult, error) {
@@ -1006,13 +1068,16 @@ func FormatWorkStart(result WorkStartResult) string {
 	if next == "" {
 		next = fmt.Sprintf("gira work pr --repo %s --issue %d --dry-run", result.Repo, result.Issue)
 	}
-	return fmt.Sprintf(
-		"work start: issue #%d branch=%s status=%s\nnext step: %s\n",
-		result.Issue,
-		result.Branch,
-		result.NextStatus,
-		next,
-	)
+	var b strings.Builder
+	fmt.Fprintf(&b, "work start: issue #%d branch=%s status=%s execution_state=%s started=%t\n", result.Issue, result.Branch, result.NextStatus, result.ExecutionState, result.Started)
+	if preflight := result.Preflight; preflight != nil {
+		fmt.Fprintf(&b, "worktree preflight: path=%s dirty=%t expected_branch=%s reusable_branch=%t\n", preflight.CurrentWorktree, preflight.Dirty, preflight.ExpectedBranch, preflight.ReusableBranch)
+		if preflight.SuggestedWorktree != "" {
+			fmt.Fprintf(&b, "suggested worktree: %s\n", preflight.SuggestedWorktree)
+		}
+	}
+	fmt.Fprintf(&b, "next step: %s\n", next)
+	return b.String()
 }
 
 func FormatWorkPR(result WorkPRResult) string {

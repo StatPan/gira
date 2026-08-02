@@ -3479,6 +3479,44 @@ func TestTicketStartTextUnsafeReuseShowsDiagnosticsAndRecovery(t *testing.T) {
 	}
 }
 
+func TestTicketStartDirtyWorktreeJSONAndTextAreBlocked(t *testing.T) {
+	restore := newWorkStartResult
+	t.Cleanup(func() { newWorkStartResult = restore })
+	newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.WorkStartResult, error) {
+		return gira.WorkStartResult{
+			Repo: repo.FullName(), Issue: issue, Branch: "issue-126-work-command", DryRun: dryRun,
+			Status: "Ready", NextStatus: "Ready", Started: false, ExecutionState: "blocked_before_mutation",
+			NextStep:  "cd /workspace/ticket-126 && gira work start --repo StatPan/gira --issue 126 --apply",
+			Preflight: &gira.DevStartWorktreePreflight{CurrentWorktree: "/workspace/current", Dirty: true, ExpectedBranch: "issue-126-work-command", ReusableBranch: true, SuggestedWorktree: "/workspace/ticket-126"},
+		}, fmt.Errorf("dirty worktree before branch mutation")
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "start", "126", "--repo", "StatPan/gira", "--apply", "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	var report gira.WorkStartResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode blocked ticket start JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Started || report.ExecutionState != "blocked_before_mutation" || report.NextStatus != "Ready" || report.Preflight == nil || report.Preflight.SuggestedWorktree != "/workspace/ticket-126" {
+		t.Fatalf("blocked JSON must not look successful: %+v", report)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"ticket", "start", "126", "--repo", "StatPan/gira", "--apply"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("text exit code = %d, want 1; stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{"status=Ready", "execution_state=blocked_before_mutation", "started=false", "dirty=true", "suggested worktree: /workspace/ticket-126"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("blocked ticket start text missing %q:\n%s", want, stderr.String())
+		}
+	}
+}
+
 func TestTicketStartDryRunJSONPreservesApplyTicketNumber(t *testing.T) {
 	restore := newWorkStartResult
 	t.Cleanup(func() { newWorkStartResult = restore })

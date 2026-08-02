@@ -3,7 +3,6 @@ package gira
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,22 +40,23 @@ type GoalStatusIssue struct {
 }
 
 type GoalStatusChild struct {
-	Repo         string   `json:"repo,omitempty"`
-	Number       int      `json:"number"`
-	Title        string   `json:"title"`
-	State        string   `json:"state"`
-	Status       string   `json:"status"`
-	Category     string   `json:"category"`
-	Labels       []string `json:"labels,omitempty"`
-	PRNumber     int      `json:"pr_number,omitempty"`
-	PRURL        string   `json:"pr_url,omitempty"`
-	PRState      string   `json:"pr_state,omitempty"`
-	ChecksStatus string   `json:"checks_status,omitempty"`
-	ReviewStatus string   `json:"review_status,omitempty"`
-	Blockers     []string `json:"blockers,omitempty"`
-	NextAction   string   `json:"next_action"`
-	NextStep     string   `json:"next_step"`
-	URL          string   `json:"url,omitempty"`
+	Repo           string   `json:"repo,omitempty"`
+	Number         int      `json:"number"`
+	Title          string   `json:"title"`
+	State          string   `json:"state"`
+	Status         string   `json:"status"`
+	Category       string   `json:"category"`
+	RelationSource string   `json:"relation_source"`
+	Labels         []string `json:"labels,omitempty"`
+	PRNumber       int      `json:"pr_number,omitempty"`
+	PRURL          string   `json:"pr_url,omitempty"`
+	PRState        string   `json:"pr_state,omitempty"`
+	ChecksStatus   string   `json:"checks_status,omitempty"`
+	ReviewStatus   string   `json:"review_status,omitempty"`
+	Blockers       []string `json:"blockers,omitempty"`
+	NextAction     string   `json:"next_action"`
+	NextStep       string   `json:"next_step"`
+	URL            string   `json:"url,omitempty"`
 }
 
 func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalStatusReport, error) {
@@ -102,7 +102,7 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 			report.Blockers = appendUniqueStrings(report.Blockers, childBlockerKey+"_status_unavailable")
 			continue
 		}
-		child := goalStatusChildFromWorkStatus(childRef.Repo, childStatus)
+		child := goalStatusChildFromWorkStatus(childRef.Repo, childRef.RelationSource, childStatus)
 		report.Children = append(report.Children, child)
 		report.Counts[child.Category]++
 		if child.Category == "blocked" && len(child.Blockers) == 0 {
@@ -124,9 +124,15 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 }
 
 type goalChildRef struct {
-	Repo   RepoRef
-	Number int
+	Repo           RepoRef
+	Number         int
+	RelationSource string
 }
+
+const (
+	GoalChildRelationSourceGitHubSubIssue    = "github_sub_issue"
+	GoalChildRelationSourceGiraGoalChildLink = "gira_goal_child_link"
+)
 
 func discoverGoalChildRefs(repo RepoRef, goal devStartIssue, runner CommandRunner) ([]goalChildRef, error) {
 	refs := map[string]goalChildRef{}
@@ -135,35 +141,17 @@ func discoverGoalChildRefs(repo RepoRef, goal devStartIssue, runner CommandRunne
 			if child.Number <= 0 || child.Number == goal.Number || child.PullRequest != nil {
 				continue
 			}
-			ref := goalChildRef{Repo: repo, Number: child.Number}
-			refs[goalChildRefKey(ref)] = ref
+			goalChildRefAdd(refs, goalChildRef{Repo: repo, Number: child.Number, RelationSource: GoalChildRelationSourceGitHubSubIssue})
 		}
 	}
-	search := fmt.Sprintf("repo:%s is:issue \"Parent: #%d\"", repo.FullName(), goal.Number)
-	out, err := runner.Run("gh", "issue", "list", "--repo", repo.FullName(), "--state", "all", "--search", search, "--json", "number,title,state,url", "--limit", "100")
-	if err != nil {
-		return nil, fmt.Errorf("discover goal children: %w", err)
-	}
-	var rows []struct {
-		Number int `json:"number"`
-	}
-	if err := json.Unmarshal(out, &rows); err != nil {
-		return nil, fmt.Errorf("parse goal child search JSON: %w", err)
-	}
-	for _, row := range rows {
-		if row.Number > 0 && row.Number != goal.Number {
-			ref := goalChildRef{Repo: repo, Number: row.Number}
-			refs[goalChildRefKey(ref)] = ref
-		}
-	}
-	for _, ref := range goalChildRefsFromGoalText(repo, goal.Body) {
-		if ref.Number > 0 && !(ref.Repo.FullName() == repo.FullName() && ref.Number == goal.Number) {
-			refs[goalChildRefKey(ref)] = ref
+	for _, ref := range goalChildRefsFromTypedLinks(goal.Body) {
+		if ref.Repo.FullName() != repo.FullName() || ref.Number != goal.Number {
+			goalChildRefAdd(refs, ref)
 		}
 	}
 	for _, ref := range goalChildRefsFromComments(repo, goal.Number, runner) {
-		if ref.Number > 0 && !(ref.Repo.FullName() == repo.FullName() && ref.Number == goal.Number) {
-			refs[goalChildRefKey(ref)] = ref
+		if ref.Repo.FullName() != repo.FullName() || ref.Number != goal.Number {
+			goalChildRefAdd(refs, ref)
 		}
 	}
 	outRefs := make([]goalChildRef, 0, len(refs))
@@ -177,6 +165,17 @@ func discoverGoalChildRefs(repo RepoRef, goal devStartIssue, runner CommandRunne
 		return outRefs[i].Number < outRefs[j].Number
 	})
 	return outRefs, nil
+}
+
+func goalChildRefAdd(refs map[string]goalChildRef, ref goalChildRef) {
+	if ref.Number <= 0 || strings.TrimSpace(ref.RelationSource) == "" {
+		return
+	}
+	key := goalChildRefKey(ref)
+	existing, found := refs[key]
+	if !found || (ref.RelationSource == GoalChildRelationSourceGitHubSubIssue && existing.RelationSource != GoalChildRelationSourceGitHubSubIssue) {
+		refs[key] = ref
+	}
 }
 
 func goalChildRefKey(ref goalChildRef) string {
@@ -222,148 +221,61 @@ func goalChildRefsFromComments(repo RepoRef, goal int, runner CommandRunner) []g
 	}
 	refs := []goalChildRef{}
 	for _, comment := range raw.Comments {
-		refs = append(refs, goalChildRefsFromGoalText(repo, comment.Body)...)
+		refs = append(refs, goalChildRefsFromTypedLinks(comment.Body)...)
 	}
 	return refs
 }
 
-var goalIssueRefPattern = regexp.MustCompile(`#([0-9]+)`)
-var goalQualifiedIssueRefPattern = regexp.MustCompile(`([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)`)
-
-func goalChildRefsFromGoalText(defaultRepo RepoRef, value string) []goalChildRef {
+func goalChildRefsFromTypedLinks(value string) []goalChildRef {
 	refs := []goalChildRef{}
-	inChildSection := false
-	for _, line := range strings.Split(value, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "#") {
-			inChildSection = goalChildHeading(trimmed)
+	for _, match := range strings.Split(value, "<!--") {
+		marker, _, found := strings.Cut(match, "-->")
+		if !found {
 			continue
 		}
-		if goalChildListIntro(trimmed) {
-			inChildSection = true
-		}
-		if !inChildSection && !goalChildReferenceLine(trimmed) {
+		fields := strings.Fields(marker)
+		if len(fields) != 3 || fields[0] != "gira:goal-child-link/v1" {
 			continue
 		}
-		refs = append(refs, qualifiedIssueRefsFromText(trimmed)...)
-		for _, number := range issueRefsFromText(trimmed) {
-			refs = append(refs, goalChildRef{Repo: defaultRepo, Number: number})
-		}
-	}
-	return refs
-}
-
-func goalChildHeading(line string) bool {
-	lower := strings.ToLower(line)
-	return strings.Contains(lower, "child") && (strings.Contains(lower, "ticket") || strings.Contains(lower, "issue"))
-}
-
-func goalChildReferenceLine(line string) bool {
-	lower := strings.ToLower(line)
-	if strings.Contains(lower, "parent goal") || strings.HasPrefix(lower, "parent:") {
-		return false
-	}
-	if strings.Contains(lower, "goal planning") || strings.Contains(lower, "goal plan") {
-		return true
-	}
-	return strings.Contains(lower, "child") && (strings.Contains(lower, "ticket") || strings.Contains(lower, "issue"))
-}
-
-func goalChildListIntro(line string) bool {
-	lower := strings.ToLower(strings.TrimSpace(line))
-	return strings.HasSuffix(lower, ":") && strings.Contains(lower, "child") && (strings.Contains(lower, "ticket") || strings.Contains(lower, "issue"))
-}
-
-func issueRefsFromText(value string) []int {
-	matches := goalIssueRefPattern.FindAllStringSubmatchIndex(value, -1)
-	out := []int{}
-	for _, match := range matches {
-		if len(match) < 4 {
+		repoText, repoFound := strings.CutPrefix(fields[1], "repo=")
+		issueText, issueFound := strings.CutPrefix(fields[2], "issue=")
+		if !repoFound || !issueFound {
 			continue
 		}
-		if goalIssueRefHasPRPrefix(value, match[0]) || goalIssueRefHasQualifiedPrefix(value, match[0]) {
-			continue
-		}
-		number, err := strconv.Atoi(value[match[2]:match[3]])
-		if err == nil && number > 0 {
-			out = append(out, number)
-		}
-	}
-	return out
-}
-
-func qualifiedIssueRefsFromText(value string) []goalChildRef {
-	matches := goalQualifiedIssueRefPattern.FindAllStringSubmatchIndex(value, -1)
-	out := []goalChildRef{}
-	for _, match := range matches {
-		if len(match) < 6 {
-			continue
-		}
-		if goalIssueRefHasPRPrefix(value, match[0]) {
-			continue
-		}
-		repo, err := ParseRepoRef(value[match[2]:match[3]])
+		repo, err := ParseRepoRef(repoText)
 		if err != nil {
 			continue
 		}
-		number, err := strconv.Atoi(value[match[4]:match[5]])
-		if err == nil && number > 0 {
-			out = append(out, goalChildRef{Repo: repo, Number: number})
+		number, err := strconv.Atoi(issueText)
+		if err != nil || number <= 0 {
+			continue
 		}
+		refs = append(refs, goalChildRef{Repo: repo, Number: number, RelationSource: GoalChildRelationSourceGiraGoalChildLink})
 	}
-	return out
+	return refs
 }
 
-func goalIssueRefHasQualifiedPrefix(value string, hashStart int) bool {
-	start := hashStart - 80
-	if start < 0 {
-		start = 0
-	}
-	prefix := strings.TrimSpace(value[start:hashStart])
-	if prefix == "" {
-		return false
-	}
-	fields := strings.Fields(prefix)
-	if len(fields) == 0 {
-		return false
-	}
-	return strings.Contains(fields[len(fields)-1], "/")
-}
-
-func goalIssueRefHasPRPrefix(value string, hashStart int) bool {
-	start := hashStart - 24
-	if start < 0 {
-		start = 0
-	}
-	prefix := strings.ToLower(strings.TrimSpace(value[start:hashStart]))
-	for _, candidate := range []string{"pr", "pr:", "pull request", "pull-request", "pull_request"} {
-		if strings.HasSuffix(prefix, candidate) {
-			return true
-		}
-	}
-	return false
-}
-
-func goalStatusChildFromWorkStatus(repo RepoRef, status WorkStatusResult) GoalStatusChild {
+func goalStatusChildFromWorkStatus(repo RepoRef, relationSource string, status WorkStatusResult) GoalStatusChild {
 	category := goalChildCategory(status)
 	blockers := goalRelevantChildBlockers(category, status)
 	return GoalStatusChild{
-		Repo:         repo.FullName(),
-		Number:       status.Issue,
-		Title:        status.Title,
-		State:        status.State,
-		Status:       status.Status,
-		Category:     category,
-		Labels:       append([]string(nil), status.Labels...),
-		PRNumber:     status.PRNumber,
-		PRURL:        status.PRURL,
-		PRState:      status.PRState,
-		ChecksStatus: status.ChecksStatus,
-		ReviewStatus: status.ReviewStatus,
-		Blockers:     blockers,
-		NextAction:   status.NextAction,
-		NextStep:     status.NextStep,
-		URL:          githubIssueURL(repo, status.Issue),
+		Repo:           repo.FullName(),
+		Number:         status.Issue,
+		Title:          status.Title,
+		State:          status.State,
+		Status:         status.Status,
+		Category:       category,
+		RelationSource: relationSource,
+		Labels:         append([]string(nil), status.Labels...),
+		PRNumber:       status.PRNumber,
+		PRURL:          status.PRURL,
+		PRState:        status.PRState,
+		ChecksStatus:   status.ChecksStatus,
+		ReviewStatus:   status.ReviewStatus,
+		Blockers:       blockers,
+		NextAction:     status.NextAction,
+		NextStep:       status.NextStep,
+		URL:            githubIssueURL(repo, status.Issue),
 	}
 }
 

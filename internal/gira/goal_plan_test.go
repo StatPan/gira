@@ -34,8 +34,7 @@ func TestBuildGoalPlanReportValidPlan(t *testing.T) {
 func TestBuildGoalPlanReportCrossRepoTargets(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "backlog"}
 	runner := onboardFakeRunner{responses: map[string]string{
-		"gh api repos/StatPan/backlog/issues/100": goalPlanGoalJSONForRepo(100, "StatPan/backlog", goalPlanBody("## Goal\nShip cross repo goal\n\n## Scope\nCoordinate child work across repos\n\n## Goal Plan\n- StatPan/gira: Add goal status routing\n- target_repo: StatPan/agentree - Render worker run cards\n- Add same repo inbox docs\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
-		`gh issue list --repo StatPan/backlog --state all --search repo:StatPan/backlog is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
+		"gh api repos/StatPan/backlog/issues/100":                  goalPlanGoalJSONForRepo(100, "StatPan/backlog", goalPlanBody("## Goal\nShip cross repo goal\n\n## Scope\nCoordinate child work across repos\n\n## Goal Plan\n- StatPan/gira: Add goal status routing\n- target_repo: StatPan/agentree - Render worker run cards\n- Add same repo inbox docs\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
 		"gh issue view 100 --repo StatPan/backlog --json comments": `{"comments":[]}`,
 	}}
 
@@ -172,8 +171,7 @@ func TestBuildGoalPlanReportApplyCreatesChildren(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &goalPlanApplyRunner{
 		responses: map[string]string{
-			"gh api repos/StatPan/gira/issues/100": goalPlanGoalJSON(100, goalPlanBody("## Goal\nShip goal mode\n\n## Scope\nCLI goal planning\n\n## Goal Plan\n- Add goal plan JSON\n- Add goal plan text\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
-			`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
+			"gh api repos/StatPan/gira/issues/100":                       goalPlanGoalJSON(100, goalPlanBody("## Goal\nShip goal mode\n\n## Scope\nCLI goal planning\n\n## Goal Plan\n- Add goal plan JSON\n- Add goal plan text\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
 			"gh issue view 100 --repo StatPan/gira --json comments":      `{"comments":[]}`,
 			"gh label list --repo StatPan/gira --json name --limit 1000": goalPlanLabelListJSON("type:task", "status:ready", "priority:p1", "area:backend"),
 		},
@@ -207,8 +205,7 @@ func TestBuildGoalPlanReportApplyCreatesCrossRepoChildrenAndLinksParent(t *testi
 	repo := RepoRef{Owner: "StatPan", Name: "backlog"}
 	runner := &goalPlanApplyRunner{
 		responses: map[string]string{
-			"gh api repos/StatPan/backlog/issues/100": goalPlanGoalJSONForRepo(100, "StatPan/backlog", goalPlanBody("## Goal\nShip cross repo goal\n\n## Scope\nCoordinate repos\n\n## Goal Plan\n- StatPan/gira: Add goal status routing\n- Add inbox docs\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
-			`gh issue list --repo StatPan/backlog --state all --search repo:StatPan/backlog is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
+			"gh api repos/StatPan/backlog/issues/100":                       goalPlanGoalJSONForRepo(100, "StatPan/backlog", goalPlanBody("## Goal\nShip cross repo goal\n\n## Scope\nCoordinate repos\n\n## Goal Plan\n- StatPan/gira: Add goal status routing\n- Add inbox docs\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
 			"gh issue view 100 --repo StatPan/backlog --json comments":      `{"comments":[]}`,
 			"gh label list --repo StatPan/gira --json name --limit 1000":    goalPlanLabelListJSON("type:task", "status:ready", "priority:p1", "area:backend"),
 			"gh label list --repo StatPan/backlog --json name --limit 1000": goalPlanLabelListJSON("type:task", "status:ready", "priority:p1", "area:backend"),
@@ -240,14 +237,18 @@ func TestBuildGoalPlanReportApplyCreatesCrossRepoChildrenAndLinksParent(t *testi
 	if !strings.Contains(comment, "StatPan/gira#700") || !strings.Contains(comment, "#701") {
 		t.Fatalf("parent comment missing child refs: %q", comment)
 	}
+	for _, want := range []string{"<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=700 -->", "<!-- gira:goal-child-link/v1 repo=StatPan/backlog issue=701 -->"} {
+		if !strings.Contains(comment, want) {
+			t.Fatalf("parent comment missing typed child link %q:\n%s", want, comment)
+		}
+	}
 }
 
 func TestBuildGoalPlanReportApplyStopsWithoutMutation(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &goalPlanApplyRunner{
 		responses: map[string]string{
-			"gh api repos/StatPan/gira/issues/100": goalPlanGoalJSON(100, "## Goal\nShip goal mode\n", []string{"type:epic", "status:ready"}),
-			`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
+			"gh api repos/StatPan/gira/issues/100":                  goalPlanGoalJSON(100, "## Goal\nShip goal mode\n", []string{"type:epic", "status:ready"}),
 			"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
 		},
 	}
@@ -266,7 +267,8 @@ func TestBuildGoalPlanReportApplySkipsDuplicateChildren(t *testing.T) {
 	runner := &goalPlanApplyRunner{
 		responses: map[string]string{
 			"gh api repos/StatPan/gira/issues/100": goalPlanGoalJSON(100, goalPlanBody("## Goal\nShip goal mode\n\n## Scope\nCLI goal planning\n\n## Goal Plan\n- Add API\n- Add CLI\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
-			`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[{"number":101}]`,
+			"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{
+"number":101}]`,
 			"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
 			"gh api repos/StatPan/gira/issues/101":                  `{"number":101,"title":"[Task] Add API","state":"open","body":"## Goal\nAdd API\n\n## Scope\nAPI\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:ready"}]}`,
 			"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
@@ -292,7 +294,7 @@ func TestBuildGoalPlanReportApplySkipsDuplicateChildren(t *testing.T) {
 func goalPlanRunner(goalJSON string, childrenJSON string, commentsJSON string, extra map[string]string) onboardFakeRunner {
 	responses := map[string]string{
 		"gh api repos/StatPan/gira/issues/100": goalJSON,
-		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: childrenJSON,
+		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": childrenJSON,
 		"gh issue view 100 --repo StatPan/gira --json comments": commentsJSON,
 	}
 	for key, value := range extra {

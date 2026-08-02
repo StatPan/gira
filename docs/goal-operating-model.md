@@ -321,13 +321,18 @@ Minimum viable GitHub mapping:
 
 - Goal: GitHub issue with `type:epic` or future `type:goal`. In a workspace,
   this may be an inbox/backlog issue that coordinates children in other repos.
-- Child tickets: normal GitHub issues linked from the goal body or comments.
+- Child tickets: normal GitHub issues linked through GitHub native sub-issues or
+  Gira's explicit typed child-link marker.
 - Target repo: same-repo children are the default; a goal plan item can route
   work with `OWNER/REPO: title` or `target_repo: OWNER/REPO - title`.
-- Parent link: same-repo child issue body contains `Parent: #N`; cross-repo
-  child issue body contains `Parent: OWNER/REPO#N` or an equivalent structured
-  link. Goal plan apply also writes created child links back to the parent goal
-  comment stream so status can discover cross-repo children.
+- Parent link: same-repo children should use `gira ticket parent CHILD --set
+  GOAL --apply` (GitHub native sub-issues). For cross-repo children, add the
+  exact marker to the parent Goal body or comment:
+  `<!-- gira:goal-child-link/v1 repo=OWNER/REPO issue=N -->`.
+  `gira goal plan --apply` records this marker for every created child in its
+  parent-goal comment. `goal status` and `goal next` ignore free-form issue
+  references, headings, comments, and historical `Parent: #N` text; migrate
+  those links to a native relationship or typed marker before relying on them.
 - Status: existing `status:*` labels.
 - Autonomy: `lane:*`, `requires-human-approval`, and `agent:*` labels.
 - Evidence: PR closing references, check runs, reviews, issue comments, and

@@ -22,7 +22,7 @@ func (r *workGraphRunner) Run(name string, args ...string) ([]byte, error) {
 	switch {
 	case call == "gh api repos/OWNER/repo/issues/100":
 		return []byte(fmt.Sprintf(`{"number":100,"title":"Typed goal","state":"open","body":%q,"labels":[{"name":"type:epic"},{"name":"status:ready"}]}`, r.body)), nil
-	case strings.HasPrefix(call, `gh issue list --repo OWNER/repo --state all --search repo:OWNER/repo is:issue "Parent: #100"`):
+	case call == "gh api repos/OWNER/repo/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100":
 		if r.child {
 			return []byte(`[{"number":101}]`), nil
 		}

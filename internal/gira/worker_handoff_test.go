@@ -12,7 +12,7 @@ func TestBuildTicketHandoffReportCompilesWorkerContract(t *testing.T) {
 	body := "## Goal\nShip worker handoff\n\n## Scope\nTicket CLI JSON\n\n## Acceptance Criteria\n- emits worker-handoff/v1\n- includes branch policy\n\n## Doctor Impact\nStatus JSON only.\n\n## Expected Evidence\n- go test ./internal/gira\n\n## Expected Delivery\nOpen a PR for review.\n\n" + RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default", BranchPolicyMode: BranchPolicyModeGitHubFlow, WorkBranch: "issue-566-worker-handoff"})
 	runner := onboardFakeRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/566": `{"number":566,"title":"Worker handoff","state":"open","body":` + strconv.Quote(body) + `,"labels":[{"name":"type:task"},{"name":"status:in-progress"},{"name":"area:ai"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 566 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 566 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
 	}}
 
 	report, err := BuildTicketHandoffReport(TicketHandoffInput{Repo: repo, Ticket: 566, Role: AgentPromptRoleImplementer, Profile: AgentPromptProfileDefault}, runner)
@@ -64,8 +64,8 @@ func TestBuildTicketHandoffReportIncludesRoleSpecificRunPromptContext(t *testing
 	body := "## Goal\nReduce manual context\n\n## Scope\nEnrich run prompts.\n\n## Acceptance Criteria\n- planner packet is useful\n- implementer packet is useful\n- reviewer packet is useful\n\n## Expected Delivery\nPR explains behavior and verification.\n\n## Review Guidance\nCheck prompt contents and storage semantics.\n"
 	runner := onboardFakeRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/690": `{"number":690,"title":"Run handoff context","state":"open","body":` + strconv.Quote(body) + `,"labels":[{"name":"type:task"},{"name":"status:in-progress"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 690 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[
-			{"number":71,"title":"Run context","body":"Closes #690","state":"OPEN","url":"https://github.com/StatPan/gira/pull/71","reviewDecision":"REVIEW_REQUIRED","isDraft":false,"mergeStateStatus":"UNKNOWN","headRefName":"issue-690-run-handoff-context","baseRefName":"main","statusCheckRollup":[]}
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 690 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[
+			{"number":71,"title":"Run context","body":"Closes #690","state":"OPEN","url":"https://github.com/StatPan/gira/pull/71","reviewDecision":"REVIEW_REQUIRED","isDraft":false,"mergeStateStatus":"UNKNOWN","headRefName":"issue-690-run-handoff-context","baseRefName":"main","headRefOid":"head220","statusCheckRollup":[]}
 		]`,
 		"git config --get branch.main.gira-base":            "",
 		"git config --get branch.main.gira-base-source":     "",

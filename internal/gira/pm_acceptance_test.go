@@ -26,7 +26,7 @@ func (r *pmAcceptanceRunner) Run(name string, args ...string) ([]byte, error) {
 		out, _ := json.Marshal(map[string]any{"number": 42, "title": "Acceptance target", "body": PMStateMarker, "url": "https://example/42", "comments": items})
 		return out, nil
 	case call == "gh pr view 99 --repo OWNER/repo --json number,title,body,state,url,headRefName,baseRefName,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup":
-		return []byte(`{"number":99,"title":"Acceptance PR","body":"Closes #42","state":"OPEN","url":"https://example/pr/99","headRefName":"issue-42","baseRefName":"main","isDraft":false,"statusCheckRollup":[]}`), nil
+		return []byte(`{"number":99,"title":"Acceptance PR","body":"Closes #42","state":"OPEN","url":"https://example/pr/99","headRefName":"issue-42","baseRefName":"main","headRefOid":"head220","isDraft":false,"statusCheckRollup":[]}`), nil
 	case call == "gh pr diff 99 --repo OWNER/repo --name-only":
 		return []byte("internal/gira/change.go\n"), nil
 	case strings.HasPrefix(call, "gh issue comment 42 --repo OWNER/repo --body "):

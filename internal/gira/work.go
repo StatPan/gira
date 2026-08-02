@@ -92,6 +92,8 @@ type WorkStatusResult struct {
 	ChecksStatus     string                    `json:"checks_status,omitempty"`
 	Checks           []DevPRCheck              `json:"checks,omitempty"`
 	ReviewStatus     string                    `json:"review_status,omitempty"`
+	ReviewPolicy     *FinishReviewPolicy       `json:"review_policy,omitempty"`
+	ReviewEvidence   *FinishReviewEvidence     `json:"review_evidence,omitempty"`
 	Evidence         *TicketStatusEvidence     `json:"evidence,omitempty"`
 	Acceptance       *TicketStatusAcceptance   `json:"acceptance_criteria,omitempty"`
 	Telemetry        *TicketStatusTelemetry    `json:"telemetry,omitempty"`
@@ -502,7 +504,7 @@ func GetWorkStatus(repo RepoRef, issueNumber int, runner CommandRunner) (WorkSta
 			return WorkStatusResult{}, prErr
 		}
 	}
-	return workStatusFromIssueAndPR(repo, issueNumber, issue, prStatus), nil
+	return workStatusFromIssueAndPRWithReviewEvidence(repo, issueNumber, issue, prStatus, runner), nil
 }
 
 func GetWorkStatusWithPRStatus(repo RepoRef, issueNumber int, prStatus DevPRStatusResult, runner CommandRunner) (WorkStatusResult, error) {
@@ -513,13 +515,31 @@ func GetWorkStatusWithPRStatus(repo RepoRef, issueNumber int, prStatus DevPRStat
 	if err != nil {
 		return WorkStatusResult{}, err
 	}
-	return workStatusFromIssueAndPR(repo, issueNumber, issue, prStatus), nil
+	return workStatusFromIssueAndPRWithReviewEvidence(repo, issueNumber, issue, prStatus, runner), nil
 }
 
 func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult) WorkStatusResult {
+	return workStatusFromIssueAndPRWithReviewEvidence(repo, issueNumber, issue, prStatus, nil)
+}
+
+func workStatusFromIssueAndPRWithReviewEvidence(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult, runner CommandRunner) WorkStatusResult {
 	applyDevPRBindingPolicy(&prStatus, issueNumber, devPRBindingPolicyFromIssue(issue, nil, repo))
+	policy := loadFinishReviewPolicy(repo)
+	var review *FinishReviewEvidence
 	status := displayStatus(managedStatusFromLabels(issue.Labels))
 	nextAction := nextWorkAction(issue.State, status, prStatus)
+	if runner != nil && prStatus.PRNumber > 0 && strings.EqualFold(status, "In review") && (nextAction == "merge_when_policy_allows" || containsString(prStatus.Blockers, "review")) {
+		evidence := finishReviewEvidence(repo, prStatus, policy, runner)
+		review = &evidence
+		if policy.Value == FinishReviewPolicyNone {
+			prStatus.Blockers = removeString(prStatus.Blockers, "review")
+			nextAction = nextWorkAction(issue.State, status, prStatus)
+		} else if evidence.Blocker != "" {
+			prStatus.Blockers = removeString(prStatus.Blockers, "review")
+			prStatus.Blockers = appendUniqueStrings(prStatus.Blockers, evidence.Blocker)
+			nextAction = nextWorkAction(issue.State, status, prStatus)
+		}
+	}
 	if nextAction == "done" {
 		status = "Done"
 	} else if nextAction == "closed" && (status == "" || status == "null") {
@@ -547,7 +567,9 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 		PullRequest:      ticketStatusPullRequest(prStatus),
 		ChecksStatus:     ticketStatusChecksStatus(prStatus),
 		Checks:           append([]DevPRCheck(nil), prStatus.Checks...),
-		ReviewStatus:     ticketStatusReviewStatus(prStatus),
+		ReviewStatus:     ticketStatusReviewStatusWithEvidence(prStatus, review),
+		ReviewPolicy:     reviewPolicyPtr(policy),
+		ReviewEvidence:   review,
 		Evidence:         ticketStatusEvidence(prStatus, nextAction),
 		Acceptance:       ticketStatusAcceptance(issue.Body),
 		Telemetry:        ticketStatusTelemetry(issue.Body, issue.Labels),
@@ -559,6 +581,8 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 	result.PRReadiness = &prReadiness
 	return result
 }
+
+func reviewPolicyPtr(policy FinishReviewPolicy) *FinishReviewPolicy { return &policy }
 
 func shouldRetryWorkStatusMissingPR(issue devStartIssue, prStatus DevPRStatusResult) bool {
 	return containsString(prStatus.Blockers, "missing_linked_pr") && strings.EqualFold(managedStatusFromLabels(issue.Labels), "In review")
@@ -646,10 +670,17 @@ func ticketStatusChecksStatus(pr DevPRStatusResult) string {
 }
 
 func ticketStatusReviewStatus(pr DevPRStatusResult) string {
+	return ticketStatusReviewStatusWithEvidence(pr, nil)
+}
+
+func ticketStatusReviewStatusWithEvidence(pr DevPRStatusResult, review *FinishReviewEvidence) string {
 	if pr.PRNumber == 0 {
 		return "missing"
 	}
-	if containsString(pr.Blockers, "review") {
+	if review != nil && review.Status == "not_required" {
+		return "not_required"
+	}
+	if containsString(pr.Blockers, "review") || (review != nil && review.Blocker != "") {
 		return "blocked"
 	}
 	if strings.EqualFold(pr.ReviewDecision, "APPROVED") {
@@ -841,7 +872,7 @@ func nextWorkAction(issueState string, status string, pr DevPRStatusResult) stri
 		switch blocker {
 		case "draft":
 			return "mark_pr_ready"
-		case "review":
+		case "review", "review_policy_not_configured", "review_required_but_absent", "review_evidence_unavailable", "review_approval_stale":
 			return "address_review"
 		case "checks", "checks_pending":
 			return "wait_for_checks"

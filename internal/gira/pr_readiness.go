@@ -36,6 +36,8 @@ type prReadinessInput struct {
 	Checks            []DevPRCheck
 	ReviewStatus      string
 	ReviewDecision    string
+	ReviewPolicy      *FinishReviewPolicy
+	ReviewEvidence    *FinishReviewEvidence
 	FinishReady       bool
 	ChangedFiles      []string
 	ChangedFilesKnown bool
@@ -45,13 +47,15 @@ type prReadinessInput struct {
 
 func EvaluatePRReadinessFromStatus(status WorkStatusResult) PRReadinessReport {
 	input := prReadinessInput{
-		Repo:         status.Repo,
-		Issue:        status.Issue,
-		ChecksStatus: status.ChecksStatus,
-		Checks:       append([]DevPRCheck(nil), status.Checks...),
-		ReviewStatus: status.ReviewStatus,
-		Telemetry:    status.Telemetry,
-		Acceptance:   status.Acceptance,
+		Repo:           status.Repo,
+		Issue:          status.Issue,
+		ChecksStatus:   status.ChecksStatus,
+		Checks:         append([]DevPRCheck(nil), status.Checks...),
+		ReviewStatus:   status.ReviewStatus,
+		ReviewPolicy:   status.ReviewPolicy,
+		ReviewEvidence: status.ReviewEvidence,
+		Telemetry:      status.Telemetry,
+		Acceptance:     status.Acceptance,
 	}
 	if status.PullRequest != nil {
 		input.PRAvailable = status.PullRequest.Available
@@ -165,7 +169,16 @@ func evaluatePRReadiness(input prReadinessInput) PRReadinessReport {
 		))
 	}
 
-	if input.ReviewStatus == "blocked" {
+	if input.ReviewPolicy != nil && input.ReviewPolicy.Value == FinishReviewPolicyNone {
+		// The repository explicitly chose a non-blocking review policy.
+	} else if input.ReviewEvidence != nil && input.ReviewEvidence.Blocker != "" {
+		report.Findings = append(report.Findings, prReadinessFinding(
+			"error",
+			input.ReviewEvidence.Blocker,
+			"Review evidence does not satisfy the configured finish policy.",
+			input.ReviewEvidence.Remediation,
+		))
+	} else if input.ReviewStatus == "blocked" {
 		report.Findings = append(report.Findings, prReadinessFinding(
 			"error",
 			"review_blocked",
@@ -173,12 +186,13 @@ func evaluatePRReadiness(input prReadinessInput) PRReadinessReport {
 			"Address requested changes or review blockers before finish.",
 		))
 	} else if input.ReviewStatus == "missing" || input.ReviewStatus == "unknown" || strings.TrimSpace(input.ReviewDecision) == "" || strings.EqualFold(input.ReviewDecision, "REVIEW_REQUIRED") {
-		report.Findings = append(report.Findings, prReadinessFinding(
-			"info",
-			"missing_review",
-			"PR has no approving review decision yet.",
-			"Request review or capture reviewer judgment before finish if policy requires it.",
-		))
+		severity, kind, action := "info", "missing_review", "Request review or capture reviewer judgment before finish if policy requires it."
+		if input.ReviewPolicy != nil && input.ReviewPolicy.Value == FinishReviewPolicyMissing {
+			severity, kind, action = "error", "review_policy_not_configured", "Set finish_review_policy: required or none in .gira/config.yaml."
+		} else if input.ReviewPolicy != nil && input.ReviewPolicy.Value == FinishReviewPolicyRequired {
+			severity, kind, action = "error", "review_required_but_absent", "Request an approving review for the current PR head."
+		}
+		report.Findings = append(report.Findings, prReadinessFinding(severity, kind, "PR has no approving review decision yet.", action))
 	}
 
 	if input.Telemetry != nil && input.Telemetry.Required && !input.Telemetry.Present {

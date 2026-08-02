@@ -406,7 +406,7 @@ func TestDevPRStatusDoesNotUseGraphQLFallbackWhenRESTUnavailable(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	calls := []string{}
 	restSearch := "gh api repos/StatPan/gira/pulls -X GET -f state=all -f sort=updated -f direction=desc -f per_page=100"
-	graphQLSearch := "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 60 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20"
+	graphQLSearch := "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 60 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20"
 	runner := devPRRunner{outputs: map[string][]byte{
 		graphQLSearch: []byte(`[{"number":99,"body":"Closes #60"}]`),
 	}, errs: map[string]error{

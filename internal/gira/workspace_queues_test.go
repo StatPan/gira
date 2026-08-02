@@ -159,6 +159,23 @@ func TestWorkspaceQueueResumeReadyReturnsToAgentQueue(t *testing.T) {
 	}
 }
 
+func TestWorkspaceQueueKeepsRequiredReviewPolicyWithItsBlocker(t *testing.T) {
+	report := BuildWorkspaceQueues(WorkspaceSummary{}, []WorkStatusResult{{
+		Repo: "StatPan/gira", Issue: 175, Title: "Approval required", State: "open", Status: "In review",
+		ReviewStatus: "missing",
+		ReviewPolicy: &FinishReviewPolicy{Value: FinishReviewPolicyRequired, Source: "repo_config:.gira/config.yaml"},
+		PullRequest:  &TicketStatusPullRequest{Available: true, Number: 175, State: "OPEN", ReviewDecision: "REVIEW_REQUIRED"},
+		PRReadiness:  &PRReadinessReport{SchemaVersion: PRReadinessSchemaVersion, PullRequest: 175, Readiness: "needs_revision", Findings: []PRReadinessFinding{{Severity: "error", Kind: "review_required_but_absent"}}, NextAction: "revise_pr"},
+	}})
+	if report.Counts.Blocked != 1 {
+		t.Fatalf("expected review-policy block, got %+v", report.Counts)
+	}
+	item := report.Queues.Blocked[0]
+	if !hasWorkspaceQueueReason(item, "pr_readiness_review_required_but_absent") || item.Evidence.ReviewPolicy == nil || item.Evidence.ReviewPolicy.Value != FinishReviewPolicyRequired {
+		t.Fatalf("expected policy and blocker evidence to agree, got %+v", item)
+	}
+}
+
 func TestWorkspaceQueueConflictingExplicitSignalsNeedDecomposition(t *testing.T) {
 	report := BuildWorkspaceQueues(WorkspaceSummary{}, []WorkStatusResult{{
 		Repo: "StatPan/gira", Issue: 200, Title: "Conflicting", State: "open", Status: "Ready",

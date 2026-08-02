@@ -76,8 +76,10 @@ type WorkFinishReadinessChecks struct {
 }
 
 type WorkFinishReadinessReview struct {
-	Status   string `json:"status"`
-	Decision string `json:"decision,omitempty"`
+	Status   string               `json:"status"`
+	Decision string               `json:"decision,omitempty"`
+	Policy   FinishReviewPolicy   `json:"policy"`
+	Evidence FinishReviewEvidence `json:"evidence"`
 }
 
 type WorkFinishReadinessEvidence struct {
@@ -161,6 +163,8 @@ type WorkFinishResult struct {
 	Actions          []WorkFinishAction        `json:"actions"`
 	Blockers         []string                  `json:"blockers"`
 	Warnings         []string                  `json:"warnings,omitempty"`
+	ReviewPolicy     FinishReviewPolicy        `json:"review_policy,omitempty"`
+	ReviewEvidence   FinishReviewEvidence      `json:"review_evidence,omitempty"`
 	LocalSync        WorkFinishLocalSync       `json:"local_sync"`
 	FinalStatus      WorkStatusResult          `json:"final_status"`
 	Readiness        WorkFinishReadinessReport `json:"readiness"`
@@ -315,8 +319,31 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		}
 	}
 
-	result.Blockers = mergeBlockers(status.Blockers)
+	policy := loadFinishReviewPolicy(repo)
+	review := finishReviewEvidence(repo, status, policy, runner)
+	result.ReviewPolicy = policy
+	result.ReviewEvidence = review
+	statusBlockers := mergeBlockers(status.Blockers)
+	if policy.Value == FinishReviewPolicyNone || review.Blocker != "" {
+		statusBlockers = removeString(statusBlockers, "review")
+	}
+	result.Blockers = appendUniqueStrings(result.Blockers, statusBlockers...)
 	result.Blockers = appendUniqueStrings(result.Blockers, jiraDone.Blockers...)
+	if review.Blocker != "" {
+		result.Blockers = appendUniqueStrings(result.Blockers, review.Blocker)
+		result.Actions = append(result.Actions, WorkFinishAction{Action: "review:verify", Status: "blocked", Detail: review.Blocker})
+		appendJiraDoneBlockedAction(&result, jiraDone)
+		result.NextStep = review.Remediation
+		report, reportErr := finishWithStatus(repo, issueNumber, runner, result, &status, nil)
+		if dryRun {
+			return report, reportErr
+		}
+		if reportErr != nil {
+			return report, reportErr
+		}
+		return report, fmt.Errorf("ticket finish blocked: %s", review.Blocker)
+	}
+	result.Actions = append(result.Actions, WorkFinishAction{Action: "review:verify", Status: "done", Detail: review.Status})
 	if len(result.Blockers) > 0 {
 		appendJiraDoneBlockedAction(&result, jiraDone)
 		result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: strings.Join(result.Blockers, ",")})
@@ -802,7 +829,9 @@ func buildWorkFinishReadiness(result WorkFinishResult) WorkFinishReadinessReport
 			Missing: len(status.Checks) == 0,
 		},
 		Review: WorkFinishReadinessReview{
-			Status: firstNonEmpty(status.ReviewStatus, "missing"),
+			Status:   firstNonEmpty(status.ReviewStatus, "missing"),
+			Policy:   finishReviewPolicyFromStatus(status.ReviewPolicy, result.ReviewPolicy),
+			Evidence: result.ReviewEvidence,
 		},
 		LabelState: WorkFinishReadinessLabelState{
 			Status:             status.Status,
@@ -851,12 +880,32 @@ func buildWorkFinishReadiness(result WorkFinishResult) WorkFinishReadinessReport
 	}
 	report.Checks.Passing, report.Checks.Pending, report.Checks.Failing = finishCheckCounts(status.Checks)
 	report.Review.Decision = report.PullRequest.ReviewDecision
+	if report.Review.Evidence.Status == "" {
+		report.Review.Evidence.Status = report.Review.Status
+		report.Review.Evidence.Decision = report.Review.Decision
+	}
 	report.Blockers = finishReadinessBlockers(result, report)
 	report.Ready = len(report.Blockers) == 0 && finishEvidenceReady(report, status.NextAction, result)
 	if !report.Ready && report.NextAction == "" {
 		report.NextAction = "resolve_finish_blockers"
 	}
 	return report
+}
+
+func firstFinishReviewPolicy(values ...FinishReviewPolicy) FinishReviewPolicy {
+	for _, value := range values {
+		if strings.TrimSpace(value.Value) != "" {
+			return value
+		}
+	}
+	return FinishReviewPolicy{Value: FinishReviewPolicyMissing, Source: "unavailable"}
+}
+
+func finishReviewPolicyFromStatus(status *FinishReviewPolicy, fallback FinishReviewPolicy) FinishReviewPolicy {
+	if status != nil {
+		return firstFinishReviewPolicy(*status, fallback)
+	}
+	return firstFinishReviewPolicy(fallback)
 }
 
 func finishCheckCounts(checks []DevPRCheck) (passing int, pending int, failing int) {
@@ -888,7 +937,7 @@ func finishReadinessBlockers(result WorkFinishResult, report WorkFinishReadiness
 	if report.PullRequest.IsDraft {
 		blockers = appendUniqueStrings(blockers, "draft")
 	}
-	if report.Review.Status == "blocked" {
+	if report.Review.Status == "blocked" && report.Review.Policy.Value != FinishReviewPolicyNone && report.Review.Evidence.Blocker == "" {
 		blockers = appendUniqueStrings(blockers, "review")
 	}
 	return blockers
@@ -1001,7 +1050,7 @@ func renderWorkFinishReceipt(receipt WorkFinishReceipt) string {
 	fmt.Fprintf(&b, "- Ticket: #%d gira_status=%s github_issue_state=%s\n", receipt.Issue.Number, valueOrUnknown(receipt.FinalState.GiraStatus), valueOrUnknown(receipt.FinalState.GitHubIssueState))
 	fmt.Fprintf(&b, "- Linked PR: %s state=%s merged=%t head=%s merge_commit=%s closing_reference=%t\n", pr, valueOrUnknown(receipt.PullRequest.State), receipt.PullRequest.Merged, valueOrUnknown(receipt.PullRequest.HeadSHA), valueOrUnknown(receipt.PullRequest.MergeCommitSHA), receipt.PullRequest.ClosingReference)
 	fmt.Fprintf(&b, "- Checks: %s total=%d passing=%d pending=%d failing=%d\n", valueOrUnknown(receipt.ChecksSummary.Status), receipt.ChecksSummary.Total, receipt.ChecksSummary.Passing, receipt.ChecksSummary.Pending, receipt.ChecksSummary.Failing)
-	fmt.Fprintf(&b, "- Review: %s\n", valueOrUnknown(receipt.ReviewSummary.Status))
+	fmt.Fprintf(&b, "- Review: %s policy=%s source=%s evidence=%s\n", valueOrUnknown(receipt.ReviewSummary.Status), valueOrUnknown(receipt.ReviewSummary.Policy.Value), valueOrUnknown(receipt.ReviewSummary.Policy.Source), valueOrUnknown(receipt.ReviewSummary.Evidence.Status))
 	fmt.Fprintf(&b, "- Evidence: %s\n", evidence)
 	fmt.Fprintf(&b, "- AI Delivery Telemetry: %s\n", telemetry)
 	fmt.Fprintf(&b, "- Label changes: %s\n", labels)

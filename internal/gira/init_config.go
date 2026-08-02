@@ -11,12 +11,13 @@ import (
 )
 
 type InitConfig struct {
-	Repo         string                 `yaml:"repo" toml:"repo" json:"repo"`
-	BranchPolicy *BranchPolicyConfig    `yaml:"branch_policy" toml:"branch_policy" json:"branch_policy,omitempty"`
-	Review       ReviewConfig           `yaml:"review" toml:"review" json:"review,omitempty"`
-	Workspace    WorkspaceConfig        `yaml:"workspace" toml:"workspace" json:"workspace"`
-	Portfolio    PortfolioConfig        `yaml:"portfolio" toml:"portfolio" json:"portfolio"`
-	Profiles     map[string]InitProfile `yaml:"profiles" toml:"profiles" json:"profiles"`
+	Repo               string                 `yaml:"repo" toml:"repo" json:"repo"`
+	BranchPolicy       *BranchPolicyConfig    `yaml:"branch_policy" toml:"branch_policy" json:"branch_policy,omitempty"`
+	FinishReviewPolicy string                 `yaml:"finish_review_policy" toml:"finish_review_policy" json:"finish_review_policy,omitempty"`
+	Review             ReviewConfig           `yaml:"review" toml:"review" json:"review,omitempty"`
+	Workspace          WorkspaceConfig        `yaml:"workspace" toml:"workspace" json:"workspace"`
+	Portfolio          PortfolioConfig        `yaml:"portfolio" toml:"portfolio" json:"portfolio"`
+	Profiles           map[string]InitProfile `yaml:"profiles" toml:"profiles" json:"profiles"`
 }
 
 // ReviewConfig keeps optional, checkout-local review commands. Commands are
@@ -96,6 +97,9 @@ func LoadInitConfig(path string) (InitConfig, error) {
 	}
 	if err := validateLocalReviewChecks(path, cfg.Review.LocalChecks); err != nil {
 		return InitConfig{}, err
+	}
+	if value := strings.TrimSpace(cfg.FinishReviewPolicy); value != "" && !strings.EqualFold(value, "required") && !strings.EqualFold(value, "none") {
+		return InitConfig{}, fmt.Errorf("invalid init config %q: finish_review_policy must be required or none", path)
 	}
 	if strings.TrimSpace(cfg.Workspace.InboxRepo) != "" {
 		if _, err := ParseRepoRef(cfg.Workspace.InboxRepo); err != nil {

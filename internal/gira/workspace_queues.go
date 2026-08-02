@@ -77,12 +77,14 @@ type WorkspaceQueuePR struct {
 }
 
 type WorkspaceQueueEvidence struct {
-	TicketReadiness string   `json:"ticket_readiness,omitempty"`
-	PRReadiness     string   `json:"pr_readiness,omitempty"`
-	ChecksStatus    string   `json:"checks_status,omitempty"`
-	ReviewStatus    string   `json:"review_status,omitempty"`
-	NextAction      string   `json:"next_action,omitempty"`
-	Blockers        []string `json:"blockers,omitempty"`
+	TicketReadiness string                `json:"ticket_readiness,omitempty"`
+	PRReadiness     string                `json:"pr_readiness,omitempty"`
+	ChecksStatus    string                `json:"checks_status,omitempty"`
+	ReviewStatus    string                `json:"review_status,omitempty"`
+	ReviewPolicy    *FinishReviewPolicy   `json:"review_policy,omitempty"`
+	ReviewEvidence  *FinishReviewEvidence `json:"review_evidence,omitempty"`
+	NextAction      string                `json:"next_action,omitempty"`
+	Blockers        []string              `json:"blockers,omitempty"`
 }
 
 type WorkspaceQueuePrivacy struct {
@@ -207,6 +209,14 @@ func workspaceQueueEvidence(status WorkStatusResult) WorkspaceQueueEvidence {
 	if status.PRReadiness != nil {
 		evidence.PRReadiness = status.PRReadiness.Readiness
 	}
+	if status.ReviewPolicy != nil {
+		policy := *status.ReviewPolicy
+		evidence.ReviewPolicy = &policy
+	}
+	if status.ReviewEvidence != nil {
+		review := *status.ReviewEvidence
+		evidence.ReviewEvidence = &review
+	}
 	return evidence
 }
 
@@ -232,6 +242,9 @@ func workspaceAgentReadyReasons(status WorkStatusResult) []string {
 
 func workspaceReviewNeededReasons(status WorkStatusResult) []string {
 	if !hasWorkspaceQueuePR(status) || workspaceQueuePRIsDraft(status) {
+		return nil
+	}
+	if status.ReviewPolicy != nil && status.ReviewPolicy.Value == FinishReviewPolicyNone {
 		return nil
 	}
 	if len(status.Blockers) > 0 || status.ChecksStatus == "failed" || status.ChecksStatus == "failing" || status.ReviewStatus == "approved" {
@@ -276,7 +289,7 @@ func workspaceFinishReadyReasons(status WorkStatusResult) []string {
 	if status.ChecksStatus != "" && status.ChecksStatus != "passed" {
 		return nil
 	}
-	if status.ReviewStatus != "" && status.ReviewStatus != "approved" {
+	if status.ReviewStatus != "" && status.ReviewStatus != "approved" && status.ReviewStatus != "not_required" {
 		return nil
 	}
 	return reasons

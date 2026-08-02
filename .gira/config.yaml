@@ -1,4 +1,5 @@
 repo: StatPan/gira
+finish_review_policy: required
 profiles:
   default:
     labels: []

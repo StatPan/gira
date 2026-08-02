@@ -36,7 +36,7 @@ func TestBuildGoalStatusReportIncludesNativeChildren(t *testing.T) {
 		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`:        `[]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
 		"gh api repos/StatPan/gira/issues/101":                  `{"number":101,"title":"Native child","state":"open","body":"## Goal\nReady\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:ready"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
 	}}
 
 	report, err := BuildGoalStatusReport(GoalStatusInput{Repo: repo, Goal: 100}, runner)
@@ -78,9 +78,9 @@ func TestBuildGoalStatusReportSummarizesMixedChildren(t *testing.T) {
 		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[{"number":101},{"number":102}]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
 		"gh api repos/StatPan/gira/issues/101":                  `{"number":101,"title":"Ready child","state":"open","body":"## Goal\nReady\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:ready"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
 		"gh api repos/StatPan/gira/issues/102": `{"number":102,"title":"Done child","state":"closed","body":"## Goal\nDone\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 102 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 102 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
 	}}
 
 	report, err := BuildGoalStatusReport(GoalStatusInput{Repo: repo, Goal: 100}, runner)
@@ -111,7 +111,7 @@ func TestBuildGoalStatusReportSummarizesBlockedChild(t *testing.T) {
 		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[{"number":103}]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
 		"gh api repos/StatPan/gira/issues/103":                  `{"number":103,"title":"Blocked child","state":"open","body":"## Goal\nBlocked\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:blocked"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 103 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 103 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
 	}}
 
 	report, err := BuildGoalStatusReport(GoalStatusInput{Repo: repo, Goal: 100}, runner)
@@ -130,9 +130,9 @@ func TestBuildGoalStatusReportAllDoneFromGoalBody(t *testing.T) {
 		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
 		"gh api repos/StatPan/gira/issues/201":                  `{"number":201,"title":"Done one","state":"closed","body":"## Goal\nDone\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
 		"gh api repos/StatPan/gira/issues/202": `{"number":202,"title":"Done two","state":"closed","body":"## Goal\nDone\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 202 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 202 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
 	}}
 
 	report, err := BuildGoalStatusReport(GoalStatusInput{Repo: repo, Goal: 100}, runner)
@@ -151,7 +151,7 @@ func TestBuildGoalStatusReportAllDoneWithHandoffStopsForHumanReview(t *testing.T
 		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"## Goal Finish Receipt\n\n- Schema: goal-finish-receipt/v1"}]}`,
 		"gh api repos/StatPan/gira/issues/201":                  `{"number":201,"title":"Done one","state":"closed","body":"## Goal\nDone\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
 	}}
 
 	report, err := BuildGoalStatusReport(GoalStatusInput{Repo: repo, Goal: 100}, runner)
@@ -173,7 +173,7 @@ func TestBuildGoalStatusReportClosedDoneGoalIsDone(t *testing.T) {
 		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"## Goal Finish Receipt\n\n- Schema: goal-finish-receipt/v1\n- Terminal recommendation: done"}]}`,
 		"gh api repos/StatPan/gira/issues/201":                  `{"number":201,"title":"Done one","state":"closed","body":"## Goal\nDone\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
 	}}
 
 	report, err := BuildGoalStatusReport(GoalStatusInput{Repo: repo, Goal: 100}, runner)
@@ -192,9 +192,9 @@ func TestBuildGoalStatusReportIncludesCrossRepoChildren(t *testing.T) {
 		`gh issue list --repo StatPan/backlog --state all --search repo:StatPan/backlog is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
 		"gh issue view 100 --repo StatPan/backlog --json comments": `{"comments":[{"body":"Created child tickets:\n- StatPan/agentree#202"}]}`,
 		"gh api repos/StatPan/gira/issues/201":                     `{"number":201,"title":"Gira child","state":"open","body":"## Goal\nGira\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:ready"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
 		"gh api repos/StatPan/agentree/issues/202": `{"number":202,"title":"Agentree child","state":"closed","body":"## Goal\nAgentree\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
-		"gh pr list --repo StatPan/agentree --state all --search repo:StatPan/agentree is:pr 202 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName --limit 20": `[]`,
+		"gh pr list --repo StatPan/agentree --state all --search repo:StatPan/agentree is:pr 202 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
 	}}
 
 	report, err := BuildGoalStatusReport(GoalStatusInput{Repo: repo, Goal: 100}, runner)

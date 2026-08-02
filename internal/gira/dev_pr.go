@@ -236,7 +236,7 @@ func devPRGraphQLFallbackEnabled() bool {
 
 func devPRStatusGraphQLFallback(repo RepoRef, issueNumber int, bindingPolicy devPRBindingPolicy, runner CommandRunner) (DevPRStatusResult, error) {
 	search := fmt.Sprintf("repo:%s is:pr %d", repo.FullName(), issueNumber)
-	out, err := runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--state", "all", "--search", search, "--json", "number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName", "--limit", "20")
+	out, err := runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--state", "all", "--search", search, "--json", "number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid", "--limit", "20")
 	if err != nil {
 		return DevPRStatusResult{}, err
 	}

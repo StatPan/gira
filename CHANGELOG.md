@@ -6,6 +6,8 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v3.1.1 - 2026-08-07
+
 - Fixed `gira ticket start` to report a dirty worktree as an explicit
   `blocked_before_mutation` preflight result instead of an ambiguous failure.
 - Fixed Goal child discovery to accept only native GitHub sub-issues or typed

@@ -1,4 +1,7 @@
-# Gira 2.0 Release Readiness
+# Historical: Gira 2.0 Release Readiness
+
+> Historical 2.0 stabilization record. For current 3.x product direction, see
+> [Current Product Direction](current-product-direction.md).
 
 Gira 2.0 is the point where the CLI-first product contract is stable enough to
 name publicly:

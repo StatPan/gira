@@ -28,18 +28,19 @@ type GoalNextReport struct {
 }
 
 type GoalNextCandidate struct {
-	Repo       string   `json:"repo,omitempty"`
-	Number     int      `json:"number"`
-	Title      string   `json:"title"`
-	State      string   `json:"state"`
-	Status     string   `json:"status"`
-	Category   string   `json:"category"`
-	Labels     []string `json:"labels,omitempty"`
-	Blockers   []string `json:"blockers,omitempty"`
-	Reason     string   `json:"reason"`
-	NextAction string   `json:"next_action"`
-	NextStep   string   `json:"next_step"`
-	URL        string   `json:"url,omitempty"`
+	Repo           string   `json:"repo,omitempty"`
+	Number         int      `json:"number"`
+	Title          string   `json:"title"`
+	State          string   `json:"state"`
+	Status         string   `json:"status"`
+	Category       string   `json:"category"`
+	RelationSource string   `json:"relation_source"`
+	Labels         []string `json:"labels,omitempty"`
+	Blockers       []string `json:"blockers,omitempty"`
+	Reason         string   `json:"reason"`
+	NextAction     string   `json:"next_action"`
+	NextStep       string   `json:"next_step"`
+	URL            string   `json:"url,omitempty"`
 }
 
 func BuildGoalNextReport(input GoalNextInput, runner CommandRunner) (GoalNextReport, error) {
@@ -212,18 +213,19 @@ func goalNextChildRepo(defaultRepo RepoRef, child GoalStatusChild) RepoRef {
 
 func goalNextCandidateFromChild(child GoalStatusChild, reason string, nextStep string) GoalNextCandidate {
 	return GoalNextCandidate{
-		Repo:       child.Repo,
-		Number:     child.Number,
-		Title:      child.Title,
-		State:      child.State,
-		Status:     child.Status,
-		Category:   child.Category,
-		Labels:     append([]string(nil), child.Labels...),
-		Blockers:   append([]string(nil), child.Blockers...),
-		Reason:     reason,
-		NextAction: child.NextAction,
-		NextStep:   normalizeGoalNextCommand(nextStep),
-		URL:        child.URL,
+		Repo:           child.Repo,
+		Number:         child.Number,
+		Title:          child.Title,
+		State:          child.State,
+		Status:         child.Status,
+		Category:       child.Category,
+		RelationSource: child.RelationSource,
+		Labels:         append([]string(nil), child.Labels...),
+		Blockers:       append([]string(nil), child.Blockers...),
+		Reason:         reason,
+		NextAction:     child.NextAction,
+		NextStep:       normalizeGoalNextCommand(nextStep),
+		URL:            child.URL,
 	}
 }
 

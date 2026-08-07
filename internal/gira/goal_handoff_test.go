@@ -8,11 +8,10 @@ import (
 
 func TestBuildGoalHandoffReportEmbedsSelectedWorkerHandoff(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	goalBody := "## Goal\nShip goal-level LLM delegation\n\n## Direction\nKeep execution ticket-bounded.\n\n## Scope\nGoal and handoff commands.\n\n## Autonomy\nlane:agent for child implementation only.\n\n## Stop Conditions\n- unclear child acceptance\n\n## Child tickets\n- #201\n"
+	goalBody := "## Goal\nShip goal-level LLM delegation\n\n## Direction\nKeep execution ticket-bounded.\n\n## Scope\nGoal and handoff commands.\n\n## Autonomy\nlane:agent for child implementation only.\n\n## Stop Conditions\n- unclear child acceptance\n\n## Child tickets\n- #201\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=201 -->\n"
 	childBody := "## Goal\nAdd goal handoff\n\nParent: #100\n\n## Scope\nCLI and JSON report.\n\n## Acceptance Criteria\n- emits goal-handoff/v1\n- embeds worker-handoff/v1\n\n## Expected Evidence\n- go test ./internal/gira\n\n## Expected Delivery\nOpen a PR for review.\n\n" + RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default", BranchPolicyMode: BranchPolicyModeGitHubFlow, WorkBranch: "issue-201-goal-handoff"})
 	runner := onboardFakeRunner{responses: map[string]string{
-		"gh api repos/StatPan/gira/issues/100": `{"number":100,"title":"LLM delegation goal","state":"open","body":` + strconv.Quote(goalBody) + `,"labels":[{"name":"type:epic"},{"name":"status:ready"},{"name":"lane:agent"}]}`,
-		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
+		"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"LLM delegation goal","state":"open","body":` + strconv.Quote(goalBody) + `,"labels":[{"name":"type:epic"},{"name":"status:ready"},{"name":"lane:agent"}]}`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
 		"gh api repos/StatPan/gira/issues/201":                  `{"number":201,"title":"Add goal handoff","state":"open","body":` + strconv.Quote(childBody) + `,"labels":[{"name":"type:task"},{"name":"status:ready"}]}`,
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
@@ -51,8 +50,7 @@ func TestBuildGoalHandoffReportEmbedsSelectedWorkerHandoff(t *testing.T) {
 func TestBuildGoalHandoffReportStopsWithoutSelectedChild(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := onboardFakeRunner{responses: map[string]string{
-		"gh api repos/StatPan/gira/issues/100": `{"number":100,"title":"Empty goal","state":"open","body":"## Goal\nEmpty","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
-		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
+		"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"Empty goal","state":"open","body":"## Goal\nEmpty","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
 	}}
 

@@ -36,6 +36,31 @@ func TestBuildGoalNextReportPreservesCrossRepoChild(t *testing.T) {
 	}
 }
 
+func TestBuildGoalNextReportSelectsOnlyTypedOrNativeChildrenWithProvenance(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := onboardFakeRunner{responses: map[string]string{
+		"gh api repos/StatPan/gira/issues/100": `{"number":100,"title":"Goal","state":"open","body":"## Goal\nShip\n\nGoal planning notes mention #203, but it is not a child.\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=202 -->","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
+		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{
+"number":201,"title":"Historical native child","state":"closed"}]`,
+		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"Grounding-gap parent: #203"}]}`,
+		"gh api repos/StatPan/gira/issues/201":                  `{"number":201,"title":"Historical native child","state":"closed","body":"## Goal\nDone","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
+		"gh api repos/StatPan/gira/issues/202": `{"number":202,"title":"Typed ready child","state":"open","body":"## Goal\nReady","labels":[{"name":"type:task"},{"name":"status:ready"}]}`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 202 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
+	}}
+
+	report, err := BuildGoalNextReport(GoalNextInput{Repo: repo, Goal: 100}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalNextReport error: %v", err)
+	}
+	if report.SelectedTicket == nil || report.SelectedTicket.Number != 202 || report.SelectedTicket.RelationSource != GoalChildRelationSourceGiraGoalChildLink {
+		t.Fatalf("expected typed ready child selection with provenance: %+v", report)
+	}
+	if len(report.SkippedCandidates) != 1 || report.SkippedCandidates[0].Number != 201 || report.SkippedCandidates[0].RelationSource != GoalChildRelationSourceGitHubSubIssue {
+		t.Fatalf("historical native child/provenance missing from skipped candidates: %+v", report.SkippedCandidates)
+	}
+}
+
 func TestBuildGoalNextReportStopsForBlockedChild(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	status := goalNextTestStatus([]GoalStatusChild{

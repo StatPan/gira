@@ -459,9 +459,14 @@ func postGoalPlanCreatedChildrenComment(repo RepoRef, goal int, children []GoalP
 			ref = fmt.Sprintf("%s#%d", child.Repo, child.Number)
 		}
 		fmt.Fprintf(&b, "- %s %s\n", ref, child.Title)
+		fmt.Fprintln(&b, goalChildLinkMarker(child.Repo, child.Number))
 	}
 	_, err := runner.Run("gh", "issue", "comment", fmt.Sprintf("%d", goal), "--repo", repo.FullName(), "--body", strings.TrimSpace(b.String()))
 	return err
+}
+
+func goalChildLinkMarker(repo string, issue int) string {
+	return fmt.Sprintf("<!-- gira:goal-child-link/v1 repo=%s issue=%d -->", strings.TrimSpace(repo), issue)
 }
 
 var goalPlanTitleNoise = regexp.MustCompile(`[^a-z0-9]+`)

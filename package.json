@@ -9,6 +9,7 @@
     "docs:preview": "vitepress preview docs-site"
   },
   "devDependencies": {
+    "postcss": "^8.5.26",
     "vitepress": "1.6.4"
   }
 }

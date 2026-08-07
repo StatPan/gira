@@ -6,6 +6,18 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+## v3.1.2 - 2026-08-07
+
+- New repo-local workspace contracts created by `gira workspace init --scope
+  repo` explicitly set `finish_review_policy: required`; existing merge and
+  global contracts remain unchanged.
+- Updated the public product direction for the 3.x GitHub-native Go CLI while
+  preserving 2.0 materials as historical records.
+- Updated the docs toolchain's explicit PostCSS dependency to 8.5.26 (and the
+  lockfile NanoID to 3.3.17), reducing known audit findings. Remaining
+  Vite/VitePress/esbuild docs development and build advisories have no
+  compatible upstream fix yet; see #922.
+
 ## v3.1.1 - 2026-08-07
 
 - Fixed `gira ticket start` to report a dirty worktree as an explicit

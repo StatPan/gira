@@ -1,4 +1,7 @@
-# Product OS Roadmap
+# Historical Product OS Roadmap
+
+> Historical 2.0 planning record. For current 3.x product direction, see
+> [Current Product Direction](current-product-direction.md).
 
 Gira's Product OS phase extends the current Go CLI from repository bootstrap/sync/status tooling into a GitHub-native planning and lifecycle layer.
 

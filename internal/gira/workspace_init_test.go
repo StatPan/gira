@@ -24,7 +24,7 @@ func TestBuildWorkspaceInitReportDryRunPersonalRepoBound(t *testing.T) {
 	if report.Project.Owner != "StatPan" || report.Project.Title != "gira" || report.Project.Number != 0 {
 		t.Fatalf("project = %+v, want workspace owner/name defaults", report.Project)
 	}
-	for _, want := range []string{"workspace:", "name: \"gira\"", "inbox_repo: StatPan/gira", "project:", "owner: StatPan", "title: \"gira\""} {
+	for _, want := range []string{"finish_review_policy: required", "workspace:", "name: \"gira\"", "inbox_repo: StatPan/gira", "project:", "owner: StatPan", "title: \"gira\""} {
 		if !strings.Contains(report.Content, want) {
 			t.Fatalf("content missing %q:\n%s", want, report.Content)
 		}
@@ -135,6 +135,13 @@ func TestBuildWorkspaceInitReportApplyWritesConfig(t *testing.T) {
 	if report.Project != resolved.Project {
 		t.Fatalf("report project = %+v, resolved project = %+v", report.Project, resolved.Project)
 	}
+	if got := readText(t, report.ConfigPath); !strings.Contains(got, "finish_review_policy: required") {
+		t.Fatalf("new repo contract missing required finish policy:\n%s", got)
+	}
+	t.Chdir(dir)
+	if policy := loadFinishReviewPolicy(RepoRef{Owner: "StatPan", Name: "backlog"}); policy.Value != FinishReviewPolicyRequired {
+		t.Fatalf("new repo contract policy = %+v, want required", policy)
+	}
 	if _, err := os.Stat(report.ConfigPath); err != nil {
 		t.Fatalf("config path not written: %v", err)
 	}
@@ -173,6 +180,9 @@ func TestBuildWorkspaceInitReportMergeDryRunShowsWorkspaceBlock(t *testing.T) {
 			t.Fatalf("merged content missing %q:\n%s", want, report.Content)
 		}
 	}
+	if strings.Contains(report.Content, "finish_review_policy:") {
+		t.Fatalf("merge should not inject a finish policy into an existing contract:\n%s", report.Content)
+	}
 	output := FormatWorkspaceInitReport(report)
 	if !strings.Contains(output, "workspace block:\nworkspace:") || !strings.Contains(output, "config:\nrepo: StatPan/gira") {
 		t.Fatalf("formatted merge dry-run missing block/config:\n%s", output)
@@ -205,6 +215,9 @@ func TestBuildWorkspaceInitReportMergeApplyPreservesRepoContract(t *testing.T) {
 		if !strings.Contains(config, want) {
 			t.Fatalf("merged config missing %q:\n%s", want, config)
 		}
+	}
+	if strings.Contains(config, "finish_review_policy:") {
+		t.Fatalf("merge should preserve an existing contract without adding a finish policy:\n%s", config)
 	}
 	resolved, err := ResolveWorkspaceConfig(configPath)
 	if err != nil {
@@ -252,7 +265,7 @@ func TestBuildWorkspaceInitReportGlobalDryRun(t *testing.T) {
 	if _, err := os.Stat(wantPath); !os.IsNotExist(err) {
 		t.Fatalf("dry-run wrote global workspace or stat failed: %v", err)
 	}
-	if strings.Contains(report.Content, "\nrepo:") || strings.Contains(report.Content, "profiles:") {
+	if strings.Contains(report.Content, "\nrepo:") || strings.Contains(report.Content, "profiles:") || strings.Contains(report.Content, "finish_review_policy:") {
 		t.Fatalf("global workspace content should not include repo contract fields:\n%s", report.Content)
 	}
 }

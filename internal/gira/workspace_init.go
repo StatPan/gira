@@ -222,7 +222,8 @@ func normalizeWorkspaceInitScope(value string) (string, error) {
 
 func renderWorkspaceInitConfig(name string, owner string, inboxRepo string, repos []string, project ProjectConfig) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "repo: %s\n\n", inboxRepo)
+	fmt.Fprintf(&b, "repo: %s\n", inboxRepo)
+	b.WriteString("finish_review_policy: required\n\n")
 	b.WriteString(renderWorkspaceInitWorkspaceBlock(name, owner, inboxRepo, repos, project))
 	b.WriteString("\nprofiles:\n")
 	b.WriteString("  default:\n")

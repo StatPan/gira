@@ -113,7 +113,7 @@ func TestStartWorkApplyReadyIssueCreatesBranchAndMovesInProgress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartWork error: %v", err)
 	}
-	if result.Status != "In progress" || !result.CreatedBranch {
+	if result.Status != "In progress" || !result.CreatedBranch || !result.Started || result.ExecutionState != "applied" {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	if result.SchemaVersion != WorkStartResultSchemaVersion {
@@ -201,6 +201,9 @@ func TestStartWorkDryRunIncludesApprovalEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartWork error: %v", err)
 	}
+	if result.Started || result.ExecutionState != "planned" || result.NextStatus != "In progress" {
+		t.Fatalf("dry run must be explicitly planned, got %+v", result)
+	}
 	approval := result.Approval
 	if approval == nil {
 		t.Fatalf("expected approval evidence: %+v", result)
@@ -235,12 +238,68 @@ func TestStartWorkApplyRejectsDirtyWorktreeBeforeBranchMutation(t *testing.T) {
 		"git ls-remote --exit-code --heads origin issue-126-work-command": fmt.Errorf("exit status 2"),
 	}}
 
-	_, err := StartWork(repo, 126, false, runner)
+	result, err := StartWork(repo, 126, false, runner)
 	if err == nil || !strings.Contains(err.Error(), "dirty worktree") {
 		t.Fatalf("expected dirty worktree error, got %v", err)
 	}
+	if result.Started || result.ExecutionState != "blocked_before_mutation" || result.Status != "Ready" || result.NextStatus != "Ready" {
+		t.Fatalf("dirty worktree must not look started: %+v", result)
+	}
+	if result.Preflight == nil || !result.Preflight.Dirty || result.Preflight.ExpectedBranch != "issue-126-work-command" {
+		t.Fatalf("missing dirty preflight diagnostics: %+v", result.Preflight)
+	}
 	if containsCall(runner.calls, "git checkout -b issue-126-work-command origin/main") {
 		t.Fatalf("dirty worktree should block checkout, calls=%v", runner.calls)
+	}
+	for _, call := range runner.calls {
+		if strings.Contains(call, "/labels") || strings.Contains(call, " -X PATCH -f body=") {
+			t.Fatalf("dirty worktree must not mutate ticket state, calls=%v", runner.calls)
+		}
+	}
+}
+
+func TestStartWorkDirtyCurrentWorktreeSuggestsCleanLinkedTarget(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126":            []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`),
+		"git rev-parse --show-toplevel":                   []byte("/workspace/current\n"),
+		"git status --porcelain":                          []byte(" M internal/gira/work.go\n"),
+		"git worktree list --porcelain":                   []byte("worktree /workspace/current\nHEAD abc\nbranch refs/heads/main\n\nworktree /workspace/ticket-126\nHEAD def\nbranch refs/heads/issue-126-work-command\n\n"),
+		"git -C /workspace/ticket-126 status --porcelain": nil,
+	}, errs: map[string]error{
+		"git show-ref --verify --quiet refs/heads/issue-126-work-command": fmt.Errorf("exit status 1"),
+		"git ls-remote --exit-code --heads origin issue-126-work-command": fmt.Errorf("exit status 2"),
+	}}
+
+	result, err := StartWork(repo, 126, false, runner)
+	if err == nil {
+		t.Fatal("expected dirty worktree error")
+	}
+	if result.Preflight == nil || result.Preflight.CurrentWorktree != "/workspace/current" || result.Preflight.SuggestedWorktree != "/workspace/ticket-126" {
+		t.Fatalf("missing linked worktree guidance: %+v", result.Preflight)
+	}
+	if !strings.Contains(result.NextStep, "cd /workspace/ticket-126") || !strings.Contains(result.NextStep, "gira work start") {
+		t.Fatalf("next step must direct the operator to the clean linked worktree: %q", result.NextStep)
+	}
+}
+
+func TestStartWorkLifecycleFailureIsExplicitlyPartial(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126":               []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`),
+		"git checkout -b issue-126-work-command origin/main": nil,
+	}, errs: map[string]error{
+		"git show-ref --verify --quiet refs/heads/issue-126-work-command": fmt.Errorf("exit status 1"),
+		"git ls-remote --exit-code --heads origin issue-126-work-command": fmt.Errorf("exit status 2"),
+		"gh api repos/StatPan/gira/issues/126 -X PATCH -f body=<!-- gira:lifecycle:start -->\nbase_branch: main\nbase_source: branch_policy.default\nbranch_policy_mode: github_flow\ntarget: default\nwork_branch: issue-126-work-command\n<!-- gira:lifecycle:end -->\n": fmt.Errorf("write failed"),
+	}}
+
+	result, err := StartWork(repo, 126, false, runner)
+	if err == nil {
+		t.Fatalf("expected lifecycle failure, got result=%+v err=%v", result, err)
+	}
+	if result.Started || result.ExecutionState != "partially_applied" || !result.CreatedBranch || result.NextStatus != "Ready" || result.NextStep != "gira work status --repo StatPan/gira --issue 126 --json" {
+		t.Fatalf("lifecycle failure must preserve explicit partial state: %+v", result)
 	}
 }
 

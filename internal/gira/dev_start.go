@@ -11,16 +11,28 @@ import (
 const DefaultDevBranchPattern = "issue-%d-%s"
 
 type DevStartResult struct {
-	Repo        string                    `json:"repo"`
-	Issue       int                       `json:"issue"`
-	Title       string                    `json:"title"`
-	Branch      string                    `json:"branch"`
-	Base        string                    `json:"base,omitempty"`
-	DryRun      bool                      `json:"dry_run"`
-	Created     bool                      `json:"created"`
-	Checked     map[string]bool           `json:"checks"`
-	Failures    map[string]string         `json:"failures,omitempty"`
-	BranchReuse *DevStartBranchReuseCheck `json:"branch_reuse,omitempty"`
+	Repo        string                     `json:"repo"`
+	Issue       int                        `json:"issue"`
+	Title       string                     `json:"title"`
+	Branch      string                     `json:"branch"`
+	Base        string                     `json:"base,omitempty"`
+	DryRun      bool                       `json:"dry_run"`
+	Created     bool                       `json:"created"`
+	Checked     map[string]bool            `json:"checks"`
+	Failures    map[string]string          `json:"failures,omitempty"`
+	BranchReuse *DevStartBranchReuseCheck  `json:"branch_reuse,omitempty"`
+	Preflight   *DevStartWorktreePreflight `json:"preflight,omitempty"`
+}
+
+// DevStartWorktreePreflight records the local context checked before a ticket
+// start mutates branches. SuggestedWorktree is populated only when the target
+// branch is already checked out in another clean linked worktree.
+type DevStartWorktreePreflight struct {
+	CurrentWorktree   string `json:"current_worktree,omitempty"`
+	Dirty             bool   `json:"dirty"`
+	ExpectedBranch    string `json:"expected_branch"`
+	ReusableBranch    bool   `json:"reusable_branch"`
+	SuggestedWorktree string `json:"suggested_worktree,omitempty"`
 }
 
 // DevStartBranchReuseCheck describes whether an existing local work branch is
@@ -149,8 +161,14 @@ func StartDevBranchWithOptions(repo RepoRef, issueNumber int, options DevStartOp
 	}
 
 	if options.RequireCleanWorktree {
-		if err := ensureCleanWorktreeBeforeBranchMutation(runner); err != nil {
-			result.Failures["worktree"] = "dirty"
+		preflight, err := inspectWorktreeBeforeBranchMutation(branch, localExists, result.BranchReuse, runner)
+		result.Preflight = &preflight
+		if err != nil {
+			if preflight.Dirty {
+				result.Failures["worktree"] = "dirty"
+			} else {
+				result.Failures["worktree"] = "preflight_unavailable"
+			}
 			return result, err
 		}
 	}
@@ -322,13 +340,48 @@ func validateRemoteBranchExists(remote string, branch string, runner CommandRunn
 	return nil
 }
 
-func ensureCleanWorktreeBeforeBranchMutation(runner CommandRunner) error {
+func inspectWorktreeBeforeBranchMutation(branch string, localExists bool, reuse *DevStartBranchReuseCheck, runner CommandRunner) (DevStartWorktreePreflight, error) {
+	preflight := DevStartWorktreePreflight{
+		ExpectedBranch: branch,
+		ReusableBranch: !localExists || (reuse != nil && reuse.Safe),
+	}
+	if out, err := runner.Run("git", "rev-parse", "--show-toplevel"); err == nil {
+		preflight.CurrentWorktree = strings.TrimSpace(string(out))
+	}
 	out, err := runner.Run("git", "status", "--porcelain")
 	if err != nil {
-		return fmt.Errorf("check worktree before branch mutation: %w", err)
+		return preflight, fmt.Errorf("check worktree before branch mutation: %w", err)
 	}
-	if strings.TrimSpace(string(out)) != "" {
-		return fmt.Errorf("dirty worktree before branch mutation; commit, stash, or intentionally clear local changes before running ticket start")
+	preflight.Dirty = strings.TrimSpace(string(out)) != ""
+	if preflight.Dirty {
+		preflight.SuggestedWorktree = findCleanLinkedWorktreeForBranch(branch, preflight.CurrentWorktree, runner)
+		return preflight, fmt.Errorf("dirty worktree before branch mutation; commit, stash, or intentionally clear local changes before running ticket start")
 	}
-	return nil
+	return preflight, nil
+}
+
+func findCleanLinkedWorktreeForBranch(branch string, currentWorktree string, runner CommandRunner) string {
+	out, err := runner.Run("git", "worktree", "list", "--porcelain")
+	if err != nil {
+		return ""
+	}
+	for _, record := range strings.Split(strings.TrimSpace(string(out)), "\n\n") {
+		var path, checkedOut string
+		for _, line := range strings.Split(record, "\n") {
+			if value, ok := strings.CutPrefix(line, "worktree "); ok {
+				path = strings.TrimSpace(value)
+			}
+			if value, ok := strings.CutPrefix(line, "branch refs/heads/"); ok {
+				checkedOut = strings.TrimSpace(value)
+			}
+		}
+		if path == "" || path == currentWorktree || checkedOut != branch {
+			continue
+		}
+		status, statusErr := runner.Run("git", "-C", path, "status", "--porcelain")
+		if statusErr == nil && strings.TrimSpace(string(status)) == "" {
+			return path
+		}
+	}
+	return ""
 }

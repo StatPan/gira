@@ -416,6 +416,7 @@ func TestOpenWorkPRApplyUsesRecordedLifecycleBase(t *testing.T) {
 }
 
 func TestGetWorkStatusIncludesDeterministicJSONContractFields(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyRequired)
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	body := "## Goal\nShip status contract\n\n## Scope\nTicket status JSON\n\n## Acceptance Criteria\n- exposes PR state\n\n## Doctor Impact\nUpdates status JSON only.\n\n## Expected Evidence\n- go test ./internal/gira\n\n" + RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default", BranchPolicyMode: BranchPolicyModeGitHubFlow, WorkBranch: "issue-126-work-command"})
 	runner := &workRunner{outputs: map[string][]byte{
@@ -456,6 +457,7 @@ func TestGetWorkStatusIncludesDeterministicJSONContractFields(t *testing.T) {
 }
 
 func TestGetWorkStatusPropagatesStaleApprovalEvidenceAcrossReadinessAndQueues(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyRequired)
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Stale review","state":"open","labels":[{"name":"status:in-review"}]}`),
@@ -884,6 +886,7 @@ func TestGetWorkStatusFetchesIssueAndPRConcurrently(t *testing.T) {
 }
 
 func TestGetWorkStatusRetriesTransientMissingLinkedPRForReviewStatus(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyRequired)
 	restoreDelay := workStatusMissingPRRetryDelay
 	workStatusMissingPRRetryDelay = 0
 	t.Cleanup(func() {

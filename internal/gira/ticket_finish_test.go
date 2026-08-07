@@ -624,6 +624,7 @@ func TestFinishWorkDryRunPendingChecksReportsBlockerWithoutWaiting(t *testing.T)
 }
 
 func TestFinishWorkDryRunReadySuggestsFinishApply(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyRequired)
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": {
@@ -685,6 +686,7 @@ func TestFinishWorkDryRunReadySuggestsFinishApply(t *testing.T) {
 }
 
 func TestFinishWorkApplyReviewRequiredBlocksMerge(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyRequired)
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &finishRunner{outputs: map[string][][]byte{
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": {
@@ -905,6 +907,7 @@ func TestFinishWorkJiraPrimaryDryRunBlocksDoneUntilPRMerged(t *testing.T) {
 }
 
 func TestFinishWorkJiraPrimaryBlocksDoneWhenGitHubEvidenceIncomplete(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyRequired)
 	cases := []struct {
 		name    string
 		prJSON  string

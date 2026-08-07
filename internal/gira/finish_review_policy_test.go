@@ -1,6 +1,16 @@
 package gira
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
+
+func useFinishReviewPolicy(t *testing.T, policy string) {
+	t.Helper()
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, ".gira", "config.yaml"), "repo: StatPan/gira\nfinish_review_policy: "+policy+"\nprofiles:\n  default:\n    labels: []\n")
+	t.Chdir(root)
+}
 
 func TestFinishReviewEvidenceRequiresApprovalForCurrentHead(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}

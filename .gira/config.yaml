@@ -1,5 +1,5 @@
 repo: StatPan/gira
-finish_review_policy: required
+finish_review_policy: none
 profiles:
   default:
     labels: []

@@ -113,9 +113,13 @@ gira workspace init --scope repo --inbox-repo OWNER/backlog --repo OWNER/app --p
 
 Repo scope writes `.gira/config.yaml` in the checkout. Global scope writes
 `~/.config/gira/workspaces/NAME.yaml` and leaves the repository untouched.
+New repo-scope contracts explicitly set `finish_review_policy: required`, so
+`ticket finish` has an auditable default. A solo-maintainer repository can
+explicitly change that field to `none`; global workspace records do not carry
+this repository policy.
 If `.gira/config.yaml` already exists as a repo-local contract without a
 `workspace:` block, use explicit merge mode to add only workspace fields while
-preserving the existing repo contract:
+preserving the existing repo contract and its review-policy choice:
 
 ```bash
 gira workspace init --scope repo --inbox-repo OWNER/backlog --repo OWNER/app --path . --merge --dry-run

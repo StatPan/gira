@@ -1293,7 +1293,7 @@ func TestWorkspaceInitProjectFlagsJSON(t *testing.T) {
 	if report.Project.Owner != "GiraOrg" || report.Project.Title != "Roadmap" || report.Project.Number != 12 {
 		t.Fatalf("project = %+v, want CLI overrides", report.Project)
 	}
-	for _, want := range []string{"owner: GiraOrg", "title: \"Roadmap\"", "number: 12"} {
+	for _, want := range []string{"finish_review_policy: required", "owner: GiraOrg", "title: \"Roadmap\"", "number: 12"} {
 		if !strings.Contains(report.Content, want) {
 			t.Fatalf("content missing %q:\n%s", want, report.Content)
 		}

@@ -6,6 +6,14 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Fixed `gira ticket start` to report a dirty worktree as an explicit
+  `blocked_before_mutation` preflight result instead of an ambiguous failure.
+- Fixed Goal child discovery to accept only native GitHub sub-issues or typed
+  Gira relationship markers, preventing prose references from becoming work
+  graph edges.
+- Maintenance: recorded this repository's explicit solo-maintainer finish
+  review policy without changing the default policy for new repositories.
+
 ## v3.1.0 - 2026-08-02
 
 - Made branch naming advisory while preserving the recorded work-branch binding,

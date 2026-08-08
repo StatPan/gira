@@ -10,6 +10,12 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
   User-facing stories now carry their release decision into CI, which requires
   their `CHANGELOG.md` entry in the same PR; internal work and documented
   exemptions remain supported.
+- Added an explicit, configurable ticket branch-start strategy: repositories can
+  keep legacy automatic branch creation or require an operator to create a
+  suggested branch, bind the current branch, or adopt an existing branch.
+  Branch names are now advisory rather than globally enforced, while Gira still
+  records the selected branch and rejects using the resolved base branch as a
+  pull request head.
 
 ## v3.1.2 - 2026-08-07
 

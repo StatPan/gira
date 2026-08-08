@@ -245,6 +245,7 @@ func TestRenderTemplateTreeIncludesWorkspaceConfig(t *testing.T) {
 	}
 	for _, want := range []string{
 		"repo: StatPan/example",
+		"start_mode: explicit",
 		"workspace:",
 		"inbox_repo: StatPan/example",
 		"- StatPan/example",

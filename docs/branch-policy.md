@@ -73,6 +73,7 @@ Supported fields:
 | `production_base` | Production branch, commonly `main`. |
 | `default_target` | Named target used when no explicit lifecycle target is provided. |
 | `feature_branch_pattern` | Pattern for feature branch names. |
+| `start_mode` | `legacy-create` preserves automatic creation; `explicit` requires a branch strategy. |
 | `release_branch_pattern` | Pattern for release branch names. |
 | `hotfix_branch_pattern` | Pattern for hotfix branch names. |
 | `preserve_start_base` | Whether `ticket start` should preserve the resolved base. |
@@ -86,6 +87,12 @@ a branch-name suggestion used by `ticket start`, not an enforcement mechanism.
 Gira records the rendered branch as ticket lifecycle `work_branch` for context,
 but a valid non-default branch may still open or back an unambiguous PR with a
 closing reference. Naming differences are reported as advisories.
+
+With `start_mode: explicit`, choose a strategy before applying: `--create`
+creates the suggested name, `--current` records the checked-out branch, and
+`--adopt BRANCH` records an existing local or origin branch. The bind paths do
+not checkout, rename, or push. Existing policies that omit `start_mode` retain
+`legacy-create` compatibility.
 
 ## Work Branch Trust Order
 

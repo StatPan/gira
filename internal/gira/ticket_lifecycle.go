@@ -16,6 +16,7 @@ type TicketLifecycleState struct {
 	BranchPolicyMode string `json:"branch_policy_mode,omitempty"`
 	Target           string `json:"target,omitempty"`
 	WorkBranch       string `json:"work_branch,omitempty"`
+	WorkBranchSource string `json:"work_branch_source,omitempty"`
 }
 
 func ParseTicketLifecycleState(text string) TicketLifecycleState {
@@ -41,6 +42,8 @@ func ParseTicketLifecycleState(text string) TicketLifecycleState {
 			state.Target = value
 		case "work_branch":
 			state.WorkBranch = value
+		case "work_branch_source":
+			state.WorkBranchSource = value
 		}
 	}
 	return state
@@ -55,6 +58,7 @@ func RenderTicketLifecycleBlock(state TicketLifecycleState) string {
 	writeLifecycleLine(&b, "branch_policy_mode", state.BranchPolicyMode)
 	writeLifecycleLine(&b, "target", state.Target)
 	writeLifecycleLine(&b, "work_branch", state.WorkBranch)
+	writeLifecycleLine(&b, "work_branch_source", state.WorkBranchSource)
 	b.WriteString(TicketLifecycleBlockEnd)
 	return b.String()
 }

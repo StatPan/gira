@@ -313,9 +313,15 @@ func BuildQueueTakeReport(handoff QueueHandoffReport, start *WorkStartResult, dr
 		start.Approval = WorkStartApprovalEvidence(*start, "gira ticket start")
 	}
 	report.StartResult = start
+	if start.SelectionRequired {
+		report.StopReasons = []string{"branch_strategy_required"}
+		report.NextAction = "choose_branch_strategy"
+		report.NextStep = start.NextStep
+		return report
+	}
 	if dryRun {
 		report.NextAction = "apply_ticket_start"
-		report.NextStep = QueueTakeCommand(handoff.Selected.WorkspaceQueueItem, handoff.Role, handoff.Profile, "--apply")
+		report.NextStep = queueTakeCommandForStart(handoff.Selected.WorkspaceQueueItem, handoff.Role, handoff.Profile, "--apply", start)
 		report.Approval = QueueTakeApprovalEvidence(report)
 		return report
 	}
@@ -344,8 +350,8 @@ func QueueTakeApprovalEvidence(report QueueTakeReport) *ApprovalEvidence {
 		SchemaVersion:         ApprovalPlanSchemaVersion,
 		Capability:            AdapterCapabilityApplyMutation,
 		CanonicalCommand:      "gira queue take",
-		DryRunCommand:         QueueTakeCommand(queueItem, report.Handoff.Role, report.Handoff.Profile, "--dry-run"),
-		ApplyCommand:          QueueTakeCommand(queueItem, report.Handoff.Role, report.Handoff.Profile, "--apply"),
+		DryRunCommand:         queueTakeCommandForStart(queueItem, report.Handoff.Role, report.Handoff.Profile, "--dry-run", report.StartResult),
+		ApplyCommand:          queueTakeCommandForStart(queueItem, report.Handoff.Role, report.Handoff.Profile, "--apply", report.StartResult),
 		Repo:                  item.Repo,
 		Issue:                 item.Issue,
 		OutputSchema:          QueueTakeSchemaVersion,
@@ -354,6 +360,17 @@ func QueueTakeApprovalEvidence(report QueueTakeReport) *ApprovalEvidence {
 		Warnings:              append([]string(nil), report.Warnings...),
 		PostApplyVerification: fmt.Sprintf("gira ticket status %d --repo %s --json", item.Issue, item.Repo),
 	}
+}
+
+func queueTakeCommandForStart(item WorkspaceQueueItem, role string, profile string, mode string, start *WorkStartResult) string {
+	command := QueueTakeCommand(item, role, profile, "")
+	if start != nil && start.BranchStrategy == "create" {
+		command += " --create"
+	}
+	if strings.TrimSpace(mode) != "" {
+		command += " " + strings.TrimSpace(mode)
+	}
+	return command
 }
 
 func QueueNextSelectionFromItem(item WorkspaceQueueItem, role string, profile string) QueueNextSelection {

@@ -143,14 +143,24 @@ func workStartApprovalCommand(result WorkStartResult, canonicalCommand string, m
 	if result.BaseSource == "explicit --base" && result.BaseBranch != "" {
 		args = append(args, "--base", QuoteShellArg(result.BaseBranch))
 	}
+	switch result.BranchStrategy {
+	case "create":
+		args = append(args, "--create")
+	case "current":
+		args = append(args, "--current")
+	case "adopt":
+		args = append(args, "--adopt", QuoteShellArg(result.Branch))
+	}
 	args = append(args, mode)
 	return strings.Join(args, " ")
 }
 
 func workStartApprovalActions(result WorkStartResult) []ApprovalPlannedAction {
-	actions := []ApprovalPlannedAction{
-		{Action: "branch:create_or_reuse", Target: result.Branch, Detail: "create or reuse ticket work branch"},
+	action := ApprovalPlannedAction{Action: "branch:create_or_reuse", Target: result.Branch, Detail: "create or reuse ticket work branch"}
+	if result.BranchStrategy == "current" || result.BranchStrategy == "adopt" {
+		action = ApprovalPlannedAction{Action: "branch:bind", Target: result.Branch, Detail: "record an existing work branch without checkout or push"}
 	}
+	actions := []ApprovalPlannedAction{action}
 	if result.BaseBranch != "" {
 		actions = append(actions, ApprovalPlannedAction{Action: "branch_policy:record", Target: result.BaseBranch, Detail: "record lifecycle base branch evidence"})
 	}

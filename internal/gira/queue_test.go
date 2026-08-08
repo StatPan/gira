@@ -237,6 +237,15 @@ func TestBuildQueueTakeReportStopsBeforeTicketStart(t *testing.T) {
 	}
 }
 
+func TestBuildQueueTakeReportStopsForExplicitBranchSelection(t *testing.T) {
+	handoff := QueueHandoffReport{Selected: &QueueNextSelection{WorkspaceQueueItem: WorkspaceQueueItem{Repo: "StatPan/app", Issue: 42}}, WorkerHandoff: &TicketHandoffReport{}}
+	start := WorkStartResult{SchemaVersion: WorkStartResultSchemaVersion, Branch: "issue/42-work", SuggestedBranch: "issue/42-work", SelectionRequired: true, NextStep: "gira ticket start 42 --create --apply"}
+	report := BuildQueueTakeReport(handoff, &start, true, false)
+	if report.NextAction != "choose_branch_strategy" || !containsString(report.StopReasons, "branch_strategy_required") || report.NextStep != start.NextStep {
+		t.Fatalf("unexpected explicit queue stop: %+v", report)
+	}
+}
+
 func TestQueueHandoffStopReasonsForBlockedItem(t *testing.T) {
 	item := WorkspaceQueueItem{Queue: "blocked", ReasonCodes: []string{"status_blocked"}}
 	reasons := QueueHandoffStopReasonsForItem(item)

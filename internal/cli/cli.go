@@ -97,8 +97,9 @@ const guideQuickstart = `Gira quickstart: first ticket to merged PR
    gira adopt repo --repo OWNER/REPO --path . --dry-run
    gira status
 
-3. Create and start a ticket.
-   gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --apply --start
+3. Create a ticket, then choose its branch strategy.
+   gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --apply
+   gira ticket start TICKET --create --apply
 
 4. Implement the bounded scope and verify locally.
    go test ./...
@@ -123,7 +124,8 @@ const guideQuickstart = `Gira quickstart: first ticket to merged PR
 const guideTicketIntro = `Gira ticket guide
 
 Daily loop:
-  gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply --start
+  gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply
+  gira ticket start TICKET --create --apply
   gira ticket pr --apply --draft
   gira ticket review --diff-summary
   gira ticket self-review --diff-summary --dry-run
@@ -132,7 +134,7 @@ Daily loop:
   gira ticket finish --apply
 
 Existing GitHub issue:
-  gira ticket start 42 --apply
+  gira ticket start 42 --create --apply
   gira ticket pr --apply --draft
   gira ticket review --diff-summary
   gira ticket finish --apply
@@ -350,7 +352,7 @@ Usage:
   gira queue list [--config .gira/config.yaml] [--repo OWNER/REPO] [--queue ready|review|finish|blocked|failed|human] [--limit N] [--compact] [--cache-ttl 5m] [--refresh] [--json]
   gira queue next [--config .gira/config.yaml] [--repo OWNER/REPO] [--role implementer] [--profile default] [--compact] [--cache-ttl 5m] [--refresh] [--json]
   gira queue handoff [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] [--cache-ttl 5m] [--refresh] [--json]
-  gira queue take [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] [--cache-ttl 5m] [--refresh] --dry-run|--apply [--json]
+  gira queue take [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--create] [--compact] [--cache-ttl 5m] [--refresh] --dry-run|--apply [--json]
 
 Commands:
   list     Show queue items derived from workspace-queues/v1
@@ -367,6 +369,8 @@ Flags:
   --issue int           Compatibility alias for --ticket on handoff
   --role string         Handoff role: planner, implementer, or reviewer. Default: implementer
   --profile string      Handoff profile: default or python. Default: default
+
+  --create              Create the policy-suggested work branch when required
   --compact             Print compact text output
   --max-concurrency int Maximum concurrent repo status fetches (default 4)
   --cache-ttl duration  Reuse recent per-repo status cache (default 5m)
@@ -918,7 +922,7 @@ Usage:
   gira ticket handoff [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--json]
   gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] [--include-diff] [--json|--html --output PATH]
   gira ticket self-review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] --dry-run|--apply [--json]
-  gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--json]
+  gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--create|--current|--adopt BRANCH] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
   gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both] [--body TEXT|--body-file PATH|-] [--json]
   gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr] [--json]
@@ -1189,7 +1193,7 @@ Usage:
   gira work status --repo OWNER/REPO --issue N [--json]
 
 Commands:
-  start   Verify a ready issue, create/reuse its branch, and move to in-progress on apply. Alias: gira start
+  start   Verify a ready issue, then create or explicitly bind its branch and move to in-progress on apply. Alias: gira start
   pr      Validate or create a linked PR with Closes #N and update review status on apply
   status  Report issue status, linked PR blockers, and next action
 
@@ -1627,7 +1631,7 @@ var newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.W
 }
 
 var newWorkStartResultWithOptions = func(repo gira.RepoRef, issue int, options gira.WorkStartOptions) (gira.WorkStartResult, error) {
-	if strings.TrimSpace(options.BaseOverride) == "" {
+	if strings.TrimSpace(options.BaseOverride) == "" && !options.Create && !options.Current && strings.TrimSpace(options.AdoptBranch) == "" {
 		return newWorkStartResult(repo, issue, options.DryRun)
 	}
 	return gira.StartWorkWithOptions(repo, issue, options, devCommandRunner)
@@ -6580,6 +6584,9 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 	ticket := fs.Int("ticket", 0, "Ticket number")
 	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
 	base := fs.String("base", "", "Explicit base branch override for ticket start")
+	create := fs.Bool("create", false, "Create the policy-suggested work branch")
+	current := fs.Bool("current", false, "Bind the current work branch without checkout or push")
+	adopt := fs.String("adopt", "", "Bind an existing local or origin work branch without checkout or push")
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
 	apply := fs.Bool("apply", false, "Apply changes")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
@@ -6624,14 +6631,16 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 		ticketNumber = mirror.Number
 		jiraKey = strings.ToUpper(strings.TrimSpace(positionalIdentifier.JiraKey))
 	}
-	result, err := newWorkStartResultWithOptions(repo, ticketNumber, gira.WorkStartOptions{DryRun: *dryRun, BaseOverride: *base})
+	result, err := newWorkStartResultWithOptions(repo, ticketNumber, gira.WorkStartOptions{DryRun: *dryRun, BaseOverride: *base, Create: *create, Current: *current, AdoptBranch: *adopt})
 	if jiraKey != "" {
 		result.JiraKey = jiraKey
 		result.MirrorIssue = ticketNumber
 	}
 	if err != nil {
 		gira.EnsureWorkStartResultSchema(&result)
-		result.NextStep = ticketWorkStartNextStep(result)
+		if !result.SelectionRequired {
+			result.NextStep = ticketWorkStartNextStep(result)
+		}
 		if *jsonOutput {
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Fprintf(stdout, "%s\n", out)
@@ -6639,14 +6648,16 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 			fmt.Fprint(stderr, formatTicketStart(result))
 		}
 		fmt.Fprintf(stderr, "%v\n", err)
-		if next := ticketWorkStartNextStep(result); next != "" {
+		if next := result.NextStep; next != "" {
 			fmt.Fprintf(stderr, "next step: %s\n", next)
 		}
 		return 1
 	}
 	if *jsonOutput {
 		gira.EnsureWorkStartResultSchema(&result)
-		result.NextStep = ticketWorkStartNextStep(result)
+		if !result.SelectionRequired {
+			result.NextStep = ticketWorkStartNextStep(result)
+		}
 		if *dryRun {
 			result.Approval = gira.WorkStartApprovalEvidence(result, "gira ticket start")
 		}
@@ -7946,6 +7957,9 @@ func issueNumberFromRef(ref string) int {
 
 func formatTicketStart(result gira.WorkStartResult) string {
 	next := ticketWorkStartNextStep(result)
+	if result.SelectionRequired {
+		next = result.NextStep
+	}
 	if next == "" {
 		next = fmt.Sprintf("gira ticket pr --repo %s --ticket %d --dry-run", result.Repo, result.Issue)
 		if result.DryRun {
@@ -7956,6 +7970,11 @@ func formatTicketStart(result gira.WorkStartResult) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "ticket start: ticket #%d branch=%s status=%s execution_state=%s started=%t\n", result.Issue, result.Branch, result.NextStatus, result.ExecutionState, result.Started)
+	if result.SelectionRequired {
+		fmt.Fprintf(&b, "branch strategy: selection required (suggestion=%s)\n", result.SuggestedBranch)
+	} else if result.BranchStrategy != "" {
+		fmt.Fprintf(&b, "branch strategy: %s\n", result.BranchStrategy)
+	}
 	if strings.TrimSpace(result.BaseBranch) != "" {
 		fmt.Fprintf(&b, "base: %s", result.BaseBranch)
 		if strings.TrimSpace(result.BaseSource) != "" {
@@ -8708,6 +8727,7 @@ func runQueueTake(args []string, stdout io.Writer, stderr io.Writer) int {
 	profileValue := fs.String("profile", gira.AgentPromptProfileDefault, "Handoff profile: default|python")
 	dryRun := fs.Bool("dry-run", false, "Preview ticket start without mutation")
 	apply := fs.Bool("apply", false, "Apply ticket start for a handoff-safe queue item")
+	create := fs.Bool("create", false, "Create the policy-suggested work branch when required")
 	compact := fs.Bool("compact", false, "Print compact text output")
 	maxConcurrency := fs.Int("max-concurrency", 4, "Maximum concurrent repo status fetches")
 	cacheTTL := fs.Duration("cache-ttl", 5*time.Minute, "Reuse recent per-repo status cache for this duration. Use 0 to disable")
@@ -8796,7 +8816,7 @@ func runQueueTake(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	report, err := queueTakeReport(workspaceReport, repoFilters, *ticket, role, profile, *dryRun, *apply)
+	report, err := queueTakeReport(workspaceReport, repoFilters, *ticket, role, profile, *dryRun, *apply, *create)
 	if *jsonOutput {
 		out, encodeErr := json.MarshalIndent(report, "", "  ")
 		if encodeErr != nil {
@@ -11348,7 +11368,7 @@ func queueExplicitHandoffReport(workspaceReport gira.WorkspaceReport, repoFilter
 	return report, err
 }
 
-func queueTakeReport(workspaceReport gira.WorkspaceReport, repoFilters []string, ticket int, role string, profile string, dryRun bool, apply bool) (gira.QueueTakeReport, error) {
+func queueTakeReport(workspaceReport gira.WorkspaceReport, repoFilters []string, ticket int, role string, profile string, dryRun bool, apply bool, create bool) (gira.QueueTakeReport, error) {
 	handoff, err := queueHandoffReport(workspaceReport, repoFilters, ticket, role, profile)
 	if err != nil {
 		return gira.BuildQueueTakeReport(handoff, nil, dryRun, apply), err
@@ -11360,7 +11380,7 @@ func queueTakeReport(workspaceReport gira.WorkspaceReport, repoFilters []string,
 	if err != nil {
 		return gira.BuildQueueTakeReport(handoff, nil, dryRun, apply), err
 	}
-	start, err := newWorkStartResultWithOptions(repo, handoff.Selected.Issue, gira.WorkStartOptions{DryRun: dryRun})
+	start, err := newWorkStartResultWithOptions(repo, handoff.Selected.Issue, gira.WorkStartOptions{DryRun: dryRun, Create: create})
 	report := gira.BuildQueueTakeReport(handoff, &start, dryRun, apply)
 	return report, err
 }

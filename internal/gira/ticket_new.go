@@ -9,21 +9,23 @@ import (
 const TicketNewReportSchemaVersion = "ticket-new-report/v1"
 
 type TicketNewInput struct {
-	Repo       RepoRef  `json:"repo"`
-	Title      string   `json:"title"`
-	Parent     int      `json:"parent,omitempty"`
-	Goal       string   `json:"goal,omitempty"`
-	Scope      string   `json:"scope,omitempty"`
-	Acceptance []string `json:"acceptance,omitempty"`
-	Notes      string   `json:"notes,omitempty"`
-	Body       string   `json:"body,omitempty"`
-	Type       string   `json:"type"`
-	Priority   string   `json:"priority,omitempty"`
-	Milestone  string   `json:"milestone,omitempty"`
-	Labels     []string `json:"labels,omitempty"`
-	BodyFile   string   `json:"body_file,omitempty"`
-	Start      bool     `json:"start"`
-	DryRun     bool     `json:"dry_run"`
+	Repo                RepoRef  `json:"repo"`
+	Title               string   `json:"title"`
+	Parent              int      `json:"parent,omitempty"`
+	Goal                string   `json:"goal,omitempty"`
+	Scope               string   `json:"scope,omitempty"`
+	Acceptance          []string `json:"acceptance,omitempty"`
+	Notes               string   `json:"notes,omitempty"`
+	Body                string   `json:"body,omitempty"`
+	Type                string   `json:"type"`
+	Priority            string   `json:"priority,omitempty"`
+	Milestone           string   `json:"milestone,omitempty"`
+	Labels              []string `json:"labels,omitempty"`
+	ReleaseImpact       string   `json:"release_impact,omitempty"`
+	ReleaseImpactReason string   `json:"release_impact_reason,omitempty"`
+	BodyFile            string   `json:"body_file,omitempty"`
+	Start               bool     `json:"start"`
+	DryRun              bool     `json:"dry_run"`
 }
 
 type TicketCreatedIssue struct {
@@ -55,6 +57,7 @@ type TicketNewReport struct {
 	AppliedLabels   []string              `json:"applied_labels,omitempty"`
 	LabelOutcome    TicketLabelOutcome    `json:"label_outcome"`
 	Milestone       string                `json:"milestone,omitempty"`
+	ReleaseImpact   TicketReleaseImpact   `json:"release_impact"`
 	Body            string                `json:"body"`
 	TicketReadiness TicketReadinessReport `json:"ticket_readiness"`
 	Created         TicketCreatedIssue    `json:"created,omitempty"`
@@ -91,7 +94,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 	if input.Parent < 0 {
 		return TicketNewReport{}, fmt.Errorf("--parent must be > 0")
 	}
-	body, err := ticketNewBody(input)
+	body, releaseImpact, err := ticketNewBody(input, ticketType)
 	if err != nil {
 		return TicketNewReport{}, err
 	}
@@ -113,6 +116,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 			AppliedLabels:   []string{},
 		},
 		Milestone:       strings.TrimSpace(input.Milestone),
+		ReleaseImpact:   releaseImpact,
 		Body:            body,
 		TicketReadiness: EvaluateTicketReadiness(body, labels, "open"),
 		NextStep:        "gira ticket new --apply",
@@ -198,23 +202,27 @@ func ticketNewLabelOutcome(repo RepoRef, issueNumber int, requested []string, ap
 	return outcome
 }
 
-func ticketNewBody(input TicketNewInput) (string, error) {
+func ticketNewBody(input TicketNewInput, ticketType string) (string, TicketReleaseImpact, error) {
 	if strings.TrimSpace(input.Body) != "" && strings.TrimSpace(input.BodyFile) != "" {
-		return "", fmt.Errorf("use either --body or --body-file, not both")
+		return "", TicketReleaseImpact{}, fmt.Errorf("use either --body or --body-file, not both")
+	}
+	impact, block, err := ticketReleaseImpactForNewTicket(ticketType, input.ReleaseImpact, input.ReleaseImpactReason)
+	if err != nil {
+		return "", TicketReleaseImpact{}, err
 	}
 	if strings.TrimSpace(input.Body) != "" {
-		return strings.TrimSpace(input.Body), nil
+		return appendTicketReleaseImpact(input.Body, block), impact, nil
 	}
 	if strings.TrimSpace(input.BodyFile) != "" {
 		content, err := os.ReadFile(input.BodyFile)
 		if err != nil {
-			return "", fmt.Errorf("read --body-file: %w", err)
+			return "", TicketReleaseImpact{}, fmt.Errorf("read --body-file: %w", err)
 		}
 		body := strings.TrimSpace(string(content))
 		if body == "" {
-			return "", fmt.Errorf("--body-file is empty")
+			return "", TicketReleaseImpact{}, fmt.Errorf("--body-file is empty")
 		}
-		return body, nil
+		return appendTicketReleaseImpact(body, block), impact, nil
 	}
 	goal := strings.TrimSpace(input.Goal)
 	if goal == "" {
@@ -241,7 +249,7 @@ func ticketNewBody(input TicketNewInput) (string, error) {
 	fmt.Fprintf(&b, "## Notes\n%s\n\n", notes)
 	b.WriteString(DefaultProvenanceBlock())
 	b.WriteString("\n")
-	return b.String(), nil
+	return appendTicketReleaseImpact(b.String(), block), impact, nil
 }
 
 func createRepoTicket(repo RepoRef, title string, body string, labels []string, milestone string, runner CommandRunner) (TicketCreatedIssue, error) {

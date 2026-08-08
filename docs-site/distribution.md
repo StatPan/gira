@@ -2,6 +2,13 @@
 
 Gira ships tagged Go release archives. Package managers download or wrap that official binary. Normal release-binary users do not need Go installed.
 
+## Release Impact
+
+New `story` tickets default to `user-facing` release impact. Gira copies that
+decision to the linked PR, and CI requires an `Unreleased` entry in
+`CHANGELOG.md` in the same PR. Internal work can declare
+`--release-impact internal`; an exemption needs `--release-impact-reason`.
+
 | Channel | Command |
 | --- | --- |
 | install.sh | `curl -fsSL https://raw.githubusercontent.com/StatPan/gira/main/install.sh \| sh` |

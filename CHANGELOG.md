@@ -6,6 +6,11 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Added a release-impact contract for new tickets and linked pull requests.
+  User-facing stories now carry their release decision into CI, which requires
+  their `CHANGELOG.md` entry in the same PR; internal work and documented
+  exemptions remain supported.
+
 ## v3.1.2 - 2026-08-07
 
 - New repo-local workspace contracts created by `gira workspace init --scope

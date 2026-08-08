@@ -910,7 +910,7 @@ Usage:
 const ticketHelp = `Jira-style ticket lifecycle commands.
 
 Usage:
-  gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--start] [--json]
+  gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact user-facing|internal|exempt] [--start] [--json]
   gira ticket parent TICKET [--set PARENT|--clear] [--dry-run|--apply] [--repo OWNER/REPO] [--json]
   gira ticket list [--repo OWNER/REPO] [--state open|closed|all] [--label LABEL] [--assignee LOGIN] [--milestone TITLE] [--limit N] [--json]
   gira ticket view|show [TICKET|JIRA-KEY] [--repo OWNER/REPO] [--json]
@@ -975,6 +975,8 @@ Flags:
   --timeout duration  Pending-check wait timeout for ticket wait. Default: 5m
   --interval duration  Poll interval for ticket wait. Default: 5s
   --start          Start a newly created ticket after ticket new --apply
+  --release-impact string Release impact for ticket new: user-facing, internal, or exempt
+  --release-impact-reason string Required reason when ticket new release impact is exempt
   --json           Emit stable JSON output
   --html           Write a static local HTML report
   --output string  Output path for --html
@@ -6421,6 +6423,8 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 	priority := fs.String("priority", "", "Priority: p0|p1|p2|p3")
 	parent := fs.Int("parent", 0, "Native GitHub parent issue")
 	milestone := fs.String("milestone", "", "Milestone title")
+	releaseImpact := fs.String("release-impact", "", "Release impact: user-facing|internal|exempt")
+	releaseImpactReason := fs.String("release-impact-reason", "", "Reason when release impact is exempt")
 	bodyFile := fs.String("body-file", "", "Read issue body from file")
 	start := fs.Bool("start", false, "Start the created ticket")
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
@@ -6460,20 +6464,22 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 	report, err := newTicketNewReport(gira.TicketNewInput{
-		Repo:       repo,
-		Title:      resolvedTitle,
-		Parent:     *parent,
-		Goal:       *goal,
-		Scope:      *scope,
-		Acceptance: splitList(*acceptance),
-		Notes:      *notes,
-		Body:       resolvedBody,
-		Type:       *ticketType,
-		Priority:   *priority,
-		Milestone:  *milestone,
-		Labels:     labels,
-		Start:      *start,
-		DryRun:     *dryRun,
+		Repo:                repo,
+		Title:               resolvedTitle,
+		Parent:              *parent,
+		Goal:                *goal,
+		Scope:               *scope,
+		Acceptance:          splitList(*acceptance),
+		Notes:               *notes,
+		Body:                resolvedBody,
+		Type:                *ticketType,
+		Priority:            *priority,
+		Milestone:           *milestone,
+		Labels:              labels,
+		ReleaseImpact:       *releaseImpact,
+		ReleaseImpactReason: *releaseImpactReason,
+		Start:               *start,
+		DryRun:              *dryRun,
 	})
 	if err != nil {
 		if *jsonOutput {

@@ -79,7 +79,7 @@ start evidence, PRs are change units, and milestones are phase boundaries.
 
 This generated section contains command facts for the agent lifecycle. Update `internal/gira/command_registry.go` first, then refresh this block.
 
-- `gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--start]`: Create a repo-bound executable GitHub issue with structured or full Markdown body input.
+- `gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact MODE] [--start]`: Create a repo-bound executable GitHub issue with structured or full Markdown body input.
 - `gira ticket parent TICKET [--set PARENT|--clear] [--dry-run|--apply] [--repo OWNER/REPO] [--json]`: Show, set, or clear a native GitHub sub-issue parent without adding a separate link command family.
 - `gira ticket view|show [TICKET] [--repo OWNER/REPO] [--json]`: Show a Gira operating card for the ticket, linked PR, blockers, and next action. Alias: gira ticket show.
 - `gira ticket prompt [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]`: Render a stateless planner, implementer, or reviewer prompt from ticket context.

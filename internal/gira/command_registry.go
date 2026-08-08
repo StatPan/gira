@@ -1144,7 +1144,7 @@ func CoreCommandSpecs() []CommandSpec {
 		{
 			Path:    []string{"ticket", "new"},
 			Summary: "Create a repo-bound executable GitHub issue with structured or full Markdown body input.",
-			Usage:   "gira ticket new \"Title\" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--start]",
+			Usage:   "gira ticket new \"Title\" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact MODE] [--start]",
 			Since:   "v1.0.0",
 			Flags: []FlagSpec{
 				{Name: "--goal", Summary: "Structured issue goal."},
@@ -1155,6 +1155,8 @@ func CoreCommandSpecs() []CommandSpec {
 				{Name: "--label", Summary: "Additional repo label that must already exist."},
 				{Name: "--body", Summary: "Full issue body."},
 				{Name: "--body-file", Summary: "Read full issue body from file or stdin with -."},
+				{Name: "--release-impact", Summary: "Release impact: user-facing, internal, or exempt."},
+				{Name: "--release-impact-reason", Summary: "Reason required for exempt."},
 				{Name: "--start", Summary: "Start the created ticket after apply."},
 			},
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},

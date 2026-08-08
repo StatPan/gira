@@ -2003,7 +2003,7 @@ Create a repo-bound executable GitHub issue with structured or full Markdown bod
 Usage:
 
 ```bash
-gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--start]
+gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact MODE] [--start]
 ```
 
 Since: `v1.0.0`
@@ -2018,6 +2018,8 @@ Flags:
 - `--label`: Additional repo label that must already exist.
 - `--body`: Full issue body.
 - `--body-file`: Read full issue body from file or stdin with -.
+- `--release-impact`: Release impact: user-facing, internal, or exempt.
+- `--release-impact-reason`: Reason required for exempt.
 - `--start`: Start the created ticket after apply.
 
 Examples:

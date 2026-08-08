@@ -13,6 +13,24 @@ Gira ships as one Go-built binary. Package-manager channels are wrappers around 
 - During `v0.x`, user-facing feature work increments the minor version and fixes increment the patch version.
 - Every release should update `CHANGELOG.md` before the tag is pushed.
 
+## Release Impact In Ticket Delivery
+
+Release impact is decided with the ticket, not retrofitted during a tag. New
+`story` tickets default to `user-facing`; Gira records that declaration in the
+ticket and copies it to the linked PR. CI then requires that PR to update the
+`Unreleased` section of `CHANGELOG.md`.
+
+Use an explicit impact for work that is not a user-facing story:
+
+```bash
+gira ticket new "Internal cleanup" --type task --release-impact internal --dry-run
+gira ticket new "No public note" --release-impact exempt --release-impact-reason "Docs-only typo" --dry-run
+```
+
+`exempt` always needs a reason. Existing PRs without a declaration remain
+compatible; a legacy story is reported as `missing_release_impact` in ticket
+status, while new Gira-managed stories receive the declaration automatically.
+
 ## Release Flow
 
 1. Merge feature PRs into `main`.

@@ -159,6 +159,131 @@ func TestStartWorkUsesExplicitRepositoryBranchPattern(t *testing.T) {
 	}
 }
 
+func TestStartWorkExplicitModeRequiresBranchSelectionBeforeApply(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".gira"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := "repo: StatPan/gira\nprofiles:\n  default:\n    labels: []\n    milestones: []\n    issue_templates: []\nbranch_policy:\n  mode: github-flow\n  start_mode: explicit\n"
+	if err := os.WriteFile(filepath.Join(root, ".gira", "config.yaml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`),
+	}}
+	dry, err := StartWorkWithOptions(repo, 126, WorkStartOptions{DryRun: true}, runner)
+	if err != nil || !dry.SelectionRequired || dry.BranchStrategy != "selection-required" || dry.SuggestedBranch != "issue/126-work-command" {
+		t.Fatalf("unexpected explicit dry run: result=%+v err=%v", dry, err)
+	}
+	if containsCall(runner.calls, "git checkout -b issue-126-work-command origin/main") {
+		t.Fatalf("explicit dry-run must not plan an implicit branch creation: %v", runner.calls)
+	}
+	_, err = StartWorkWithOptions(repo, 126, WorkStartOptions{}, runner)
+	if err == nil || !strings.Contains(err.Error(), "branch strategy is required") {
+		t.Fatalf("apply without strategy error = %v", err)
+	}
+	if containsCall(runner.calls, "gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-progress") {
+		t.Fatalf("explicit selection failure must remain before mutation: %v", runner.calls)
+	}
+}
+
+func TestStartWorkExplicitModeBindsCurrentBranchWithoutCheckout(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".gira"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := "repo: StatPan/gira\nprofiles:\n  default:\n    labels: []\n    milestones: []\n    issue_templates: []\nbranch_policy:\n  mode: github-flow\n  start_mode: explicit\n"
+	if err := os.WriteFile(filepath.Join(root, ".gira", "config.yaml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126":                                               []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`),
+		"git branch --show-current":                                                          []byte("release/fix-queue\n"),
+		"gh api repos/StatPan/gira/issues/126/labels/status:ready -X DELETE":                 nil,
+		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-progress": nil,
+	}}
+	result, err := StartWorkWithOptions(repo, 126, WorkStartOptions{Current: true}, runner)
+	if err != nil || result.Branch != "release/fix-queue" || result.BranchStrategy != "current" || result.CreatedBranch {
+		t.Fatalf("unexpected current-branch bind: result=%+v err=%v", result, err)
+	}
+	if containsCall(runner.calls, "git checkout release/fix-queue") || containsCall(runner.calls, "git push -u origin release/fix-queue") {
+		t.Fatalf("current-branch bind must not checkout or push: %v", runner.calls)
+	}
+	if !containsCallWith(runner.calls, "gh api repos/StatPan/gira/issues/126 -X PATCH -f body=", "work_branch_source: current") {
+		t.Fatalf("missing current branch lifecycle source: %v", runner.calls)
+	}
+}
+
+func TestStartWorkExplicitModeAdoptsExistingBranchWithoutCheckout(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".gira"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := "repo: StatPan/gira\nprofiles:\n  default:\n    labels: []\n    milestones: []\n    issue_templates: []\nbranch_policy:\n  mode: github-flow\n  start_mode: explicit\n"
+	if err := os.WriteFile(filepath.Join(root, ".gira", "config.yaml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126":                                               []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`),
+		"git show-ref --verify --quiet refs/heads/team/release-fix":                          nil,
+		"gh api repos/StatPan/gira/issues/126/labels/status:ready -X DELETE":                 nil,
+		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-progress": nil,
+	}}
+	result, err := StartWorkWithOptions(repo, 126, WorkStartOptions{AdoptBranch: "team/release-fix"}, runner)
+	if err != nil || result.Branch != "team/release-fix" || result.BranchStrategy != "adopt" || result.CreatedBranch {
+		t.Fatalf("unexpected existing-branch adoption: result=%+v err=%v", result, err)
+	}
+	if containsCall(runner.calls, "git checkout team/release-fix") || containsCall(runner.calls, "git push -u origin team/release-fix") {
+		t.Fatalf("adoption must not checkout or push: %v", runner.calls)
+	}
+	if !containsCallWith(runner.calls, "gh api repos/StatPan/gira/issues/126 -X PATCH -f body=", "work_branch_source: adopted") {
+		t.Fatalf("missing adopted branch lifecycle source: %v", runner.calls)
+	}
+}
+
+func TestStartWorkExplicitModeRejectsMissingBaseBeforeBindingBranch(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".gira"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := "repo: StatPan/gira\nprofiles:\n  default:\n    labels: []\n    milestones: []\n    issue_templates: []\nbranch_policy:\n  mode: github-flow\n  start_mode: explicit\n"
+	if err := os.WriteFile(filepath.Join(root, ".gira", "config.yaml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:ready"}]}`),
+		"git branch --show-current":            []byte("release/fix-queue\n"),
+	}, errs: map[string]error{
+		"git ls-remote --exit-code --heads origin main": fmt.Errorf("exit status 2"),
+	}}
+
+	_, err := StartWorkWithOptions(repo, 126, WorkStartOptions{Current: true}, runner)
+	if err == nil || !strings.Contains(err.Error(), `base branch "main" does not exist`) {
+		t.Fatalf("expected missing base error, got %v", err)
+	}
+	if containsCall(runner.calls, "git branch --show-current") || containsCall(runner.calls, "gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-progress") {
+		t.Fatalf("missing base must fail before binding or mutation: %v", runner.calls)
+	}
+}
+
+func TestPrepareWorkPRBranchPushRejectsResolvedNonMainBase(t *testing.T) {
+	runner := &workRunner{outputs: map[string][]byte{
+		"git branch --show-current": []byte("develop\n"),
+	}}
+	_, err := prepareWorkPRBranchPush(devStartIssue{Number: 126, Title: "Work command"}, 126, "develop", true, runner)
+	if err == nil || !strings.Contains(err.Error(), "resolved base branch develop") {
+		t.Fatalf("expected resolved base branch guard, got %v", err)
+	}
+}
+
 func TestStartWorkDryRunAcceptsExplicitReleaseAndHotfixBase(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	for _, base := range []string{"release/2.0", "hotfix/urgent-fix"} {

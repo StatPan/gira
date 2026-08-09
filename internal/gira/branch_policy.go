@@ -14,6 +14,8 @@ const (
 	BranchPolicyModeCustom       = "custom"
 
 	BranchPolicyPRBaseRecordedTicketBase = "recorded_ticket_base"
+	BranchStartModeLegacyCreate          = "legacy-create"
+	BranchStartModeExplicit              = "explicit"
 )
 
 type BranchPolicyConfig struct {
@@ -23,6 +25,7 @@ type BranchPolicyConfig struct {
 	ProductionBase                  string            `yaml:"production_base,omitempty" toml:"production_base,omitempty" json:"production_base,omitempty"`
 	DefaultTarget                   string            `yaml:"default_target,omitempty" toml:"default_target,omitempty" json:"default_target,omitempty"`
 	FeatureBranchPattern            string            `yaml:"feature_branch_pattern,omitempty" toml:"feature_branch_pattern,omitempty" json:"feature_branch_pattern,omitempty"`
+	StartMode                       string            `yaml:"start_mode,omitempty" toml:"start_mode,omitempty" json:"start_mode,omitempty"`
 	ReleaseBranchPattern            string            `yaml:"release_branch_pattern,omitempty" toml:"release_branch_pattern,omitempty" json:"release_branch_pattern,omitempty"`
 	HotfixBranchPattern             string            `yaml:"hotfix_branch_pattern,omitempty" toml:"hotfix_branch_pattern,omitempty" json:"hotfix_branch_pattern,omitempty"`
 	PreserveStartBase               *bool             `yaml:"preserve_start_base,omitempty" toml:"preserve_start_base,omitempty" json:"preserve_start_base,omitempty"`
@@ -39,6 +42,7 @@ type ResolvedBranchPolicy struct {
 	ProductionBase                  string            `json:"production_base,omitempty"`
 	DefaultTarget                   string            `json:"default_target"`
 	FeatureBranchPattern            string            `json:"feature_branch_pattern,omitempty"`
+	StartMode                       string            `json:"start_mode"`
 	ReleaseBranchPattern            string            `json:"release_branch_pattern,omitempty"`
 	HotfixBranchPattern             string            `json:"hotfix_branch_pattern,omitempty"`
 	PreserveStartBase               bool              `json:"preserve_start_base"`
@@ -86,6 +90,7 @@ func branchPolicyPreset(mode string, defaultBranch string) (ResolvedBranchPolicy
 			ProductionBase:                  defaultBranch,
 			DefaultTarget:                   "default",
 			FeatureBranchPattern:            "issue/{number}-{slug}",
+			StartMode:                       BranchStartModeLegacyCreate,
 			PreserveStartBase:               true,
 			ForbidImplicitCurrentBranchBase: true,
 			PRBaseSource:                    BranchPolicyPRBaseRecordedTicketBase,
@@ -100,6 +105,7 @@ func branchPolicyPreset(mode string, defaultBranch string) (ResolvedBranchPolicy
 			ProductionBase:                  defaultBranch,
 			DefaultTarget:                   "dev",
 			FeatureBranchPattern:            "issue/{number}-{slug}",
+			StartMode:                       BranchStartModeLegacyCreate,
 			PreserveStartBase:               true,
 			ForbidImplicitCurrentBranchBase: true,
 			PRBaseSource:                    BranchPolicyPRBaseRecordedTicketBase,
@@ -114,6 +120,7 @@ func branchPolicyPreset(mode string, defaultBranch string) (ResolvedBranchPolicy
 			ProductionBase:                  "main",
 			DefaultTarget:                   "dev",
 			FeatureBranchPattern:            "feature/{number}-{slug}",
+			StartMode:                       BranchStartModeLegacyCreate,
 			ReleaseBranchPattern:            "release/*",
 			HotfixBranchPattern:             "hotfix/*",
 			PreserveStartBase:               true,
@@ -130,6 +137,7 @@ func branchPolicyPreset(mode string, defaultBranch string) (ResolvedBranchPolicy
 			ProductionBase:                  defaultBranch,
 			DefaultTarget:                   "dev",
 			FeatureBranchPattern:            "issue/{number}-{slug}",
+			StartMode:                       BranchStartModeLegacyCreate,
 			ReleaseBranchPattern:            "release/*",
 			PreserveStartBase:               true,
 			ForbidImplicitCurrentBranchBase: true,
@@ -145,6 +153,7 @@ func branchPolicyPreset(mode string, defaultBranch string) (ResolvedBranchPolicy
 			ProductionBase:                  defaultBranch,
 			DefaultTarget:                   "default",
 			FeatureBranchPattern:            "issue/{number}-{slug}",
+			StartMode:                       BranchStartModeLegacyCreate,
 			PreserveStartBase:               true,
 			ForbidImplicitCurrentBranchBase: true,
 			PRBaseSource:                    BranchPolicyPRBaseRecordedTicketBase,
@@ -171,6 +180,9 @@ func overlayBranchPolicy(policy *ResolvedBranchPolicy, raw BranchPolicyConfig) {
 	}
 	if strings.TrimSpace(raw.FeatureBranchPattern) != "" {
 		policy.FeatureBranchPattern = strings.TrimSpace(raw.FeatureBranchPattern)
+	}
+	if strings.TrimSpace(raw.StartMode) != "" {
+		policy.StartMode = strings.TrimSpace(raw.StartMode)
 	}
 	if strings.TrimSpace(raw.ReleaseBranchPattern) != "" {
 		policy.ReleaseBranchPattern = strings.TrimSpace(raw.ReleaseBranchPattern)
@@ -232,6 +244,9 @@ func validateResolvedBranchPolicy(policy ResolvedBranchPolicy) error {
 	if strings.TrimSpace(policy.PRBaseSource) != BranchPolicyPRBaseRecordedTicketBase {
 		return fmt.Errorf("branch_policy pr_base_source must be %q", BranchPolicyPRBaseRecordedTicketBase)
 	}
+	if policy.StartMode != BranchStartModeLegacyCreate && policy.StartMode != BranchStartModeExplicit {
+		return fmt.Errorf("branch_policy start_mode must be %q or %q", BranchStartModeLegacyCreate, BranchStartModeExplicit)
+	}
 	for key, value := range policy.Targets {
 		if strings.TrimSpace(key) == "" {
 			return fmt.Errorf("branch_policy targets must not contain an empty target name")
@@ -268,6 +283,7 @@ func renderBranchPolicyConfig(config *BranchPolicyConfig) string {
 	writeBranchPolicyString(&b, "production_base", config.ProductionBase)
 	writeBranchPolicyString(&b, "default_target", config.DefaultTarget)
 	writeBranchPolicyString(&b, "feature_branch_pattern", config.FeatureBranchPattern)
+	writeBranchPolicyString(&b, "start_mode", config.StartMode)
 	writeBranchPolicyString(&b, "release_branch_pattern", config.ReleaseBranchPattern)
 	writeBranchPolicyString(&b, "hotfix_branch_pattern", config.HotfixBranchPattern)
 	writeBranchPolicyBool(&b, "preserve_start_base", config.PreserveStartBase)

@@ -1280,18 +1280,21 @@ func CoreCommandSpecs() []CommandSpec {
 		},
 		{
 			Path:    []string{"ticket", "start"},
-			Summary: "Verify a ready issue, create or reuse its branch, and move it to in-progress.",
-			Usage:   "gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH]",
+			Summary: "Start a ready issue with an explicit branch strategy.",
+			Usage:   "gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--create|--current|--adopt BRANCH]",
 			Since:   "v1.0.0",
 			Flags: []FlagSpec{
 				{Name: "--base", Summary: "Explicit lifecycle base branch override recorded on the ticket."},
+				{Name: "--create", Summary: "Create the policy-suggested work branch."},
+				{Name: "--current", Summary: "Bind the current branch without checkout or push."},
+				{Name: "--adopt", Summary: "Bind an existing local or origin branch without checkout or push."},
 				{Name: "--json", Summary: "Emit the stable ticket-status/v1 JSON contract with issue, branch, PR, checks, review, evidence, blockers, warnings, and next action."},
 			},
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
 			GuideTopics: []string{"ticket", "agent"},
 			GuideOrder:  20,
 			Examples: []CommandExample{
-				{Summary: "Start an existing ready issue", Command: "gira ticket start 42 --apply"},
+				{Summary: "Create the suggested branch for a ready issue", Command: "gira ticket start 42 --create --apply"},
 			},
 		},
 		{
@@ -1539,7 +1542,7 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 		case "ticket self-review":
 			specs[i].Adapter = adapterApply("posts a self-review check note to the linked PR; --dry-run previews the rendered note and approval evidence", JSONSupportStable)
 		case "ticket start":
-			specs[i].Adapter = adapterApply("creates or reuses a branch, records lifecycle state, and moves the issue to in-progress; --dry-run previews readiness and branch plan", JSONSupportStable, "gira start")
+			specs[i].Adapter = adapterApply("applies a branch strategy, records lifecycle state, and moves the issue to in-progress; --dry-run previews readiness", JSONSupportStable, "gira start")
 		case "ticket pr":
 			specs[i].Adapter = adapterApply("creates or validates a linked PR; --dry-run previews PR body and branch binding", JSONSupportStable)
 		case "ticket note":

@@ -2248,12 +2248,12 @@ Documented in: `docs-site/ticket-workflow.md`, `docs-site/command-reference.md`,
 
 ## `ticket start`
 
-Verify a ready issue, create or reuse its branch, and move it to in-progress.
+Start a ready issue with an explicit branch strategy.
 
 Usage:
 
 ```bash
-gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH]
+gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--create|--current|--adopt BRANCH]
 ```
 
 Since: `v1.0.0`
@@ -2261,14 +2261,17 @@ Since: `v1.0.0`
 Flags:
 
 - `--base`: Explicit lifecycle base branch override recorded on the ticket.
+- `--create`: Create the policy-suggested work branch.
+- `--current`: Bind the current branch without checkout or push.
+- `--adopt`: Bind an existing local or origin branch without checkout or push.
 - `--json`: Emit the stable ticket-status/v1 JSON contract with issue, branch, PR, checks, review, evidence, blockers, warnings, and next action.
 
 Examples:
 
-- Start an existing ready issue
+- Create the suggested branch for a ready issue
 
 ```bash
-gira ticket start 42 --apply
+gira ticket start 42 --create --apply
 ```
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`

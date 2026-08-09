@@ -1,5 +1,8 @@
 repo: StatPan/gira
 finish_review_policy: none
+branch_policy:
+  mode: github-flow
+  start_mode: explicit
 profiles:
   default:
     labels: []

@@ -2,6 +2,8 @@ package gira
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -100,6 +102,25 @@ func TestTicketNewDryRunRendersStructuredBody(t *testing.T) {
 	}
 	if report.Approval.Blockers == nil || report.Approval.Warnings == nil || !approvalHasAction(report.Approval.PlannedActions, "issue:create") {
 		t.Fatalf("unexpected ticket new approval plan: %+v", report.Approval)
+	}
+}
+
+func TestTicketNewExplicitPolicyRejectsStartBeforeIssueCreation(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".gira"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".gira", "config.yaml"), []byte("repo: StatPan/gira\nprofiles:\n  default:\n    labels: []\n    milestones: []\n    issue_templates: []\nbranch_policy:\n  mode: github-flow\n  start_mode: explicit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	runner := &ticketNewRunner{outputs: ticketNewLabelOutputs("type:task", "status:ready")}
+	report, err := BuildTicketNewReport(TicketNewInput{Repo: RepoRef{Owner: "StatPan", Name: "gira"}, Title: "Add retry", Type: "task", Start: true}, runner)
+	if err == nil || !strings.Contains(err.Error(), "--start is not available") {
+		t.Fatalf("expected explicit start guard, report=%+v err=%v", report, err)
+	}
+	if containsCall(runner.calls, "gh issue create") {
+		t.Fatalf("explicit start guard must run before issue creation: %v", runner.calls)
 	}
 }
 

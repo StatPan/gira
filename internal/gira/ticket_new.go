@@ -129,6 +129,23 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 			return report, fmt.Errorf("preflight parent issue: %w", err)
 		}
 	}
+	policy := ResolvedBranchPolicy{StartMode: BranchStartModeLegacyCreate}
+	if input.Start || !input.DryRun {
+		resolved, err := resolveRepoBranchPolicy(input.Repo, runner)
+		if err != nil {
+			return report, err
+		}
+		policy = resolved
+	}
+	if input.Start {
+		if policy.StartMode == BranchStartModeExplicit {
+			report.NextStep = "create the ticket, then choose `gira ticket start <ticket> --create|--current|--adopt BRANCH --apply`"
+			if !input.DryRun {
+				return report, fmt.Errorf("--start is not available when branch_policy.start_mode is explicit; create the ticket first, then choose a ticket start branch strategy")
+			}
+			return report, nil
+		}
+	}
 	if input.DryRun {
 		report.Approval = TicketNewApprovalEvidence(report)
 		return report, nil
@@ -138,7 +155,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		return report, err
 	}
 	report.Created = created
-	report.NextStep = fmt.Sprintf("gira ticket start %d --apply", created.Number)
+	report.NextStep = ticketNewStartNextStep(created.Number, policy.StartMode)
 	createdIssue, err := fetchDevIssue(input.Repo, created.Number, runner)
 	if err != nil {
 		return report, fmt.Errorf("verify created issue labels: %w", err)
@@ -171,6 +188,13 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		report.NextStep = "gira ticket pr --dry-run"
 	}
 	return report, nil
+}
+
+func ticketNewStartNextStep(issue int, startMode string) string {
+	if startMode == BranchStartModeExplicit {
+		return fmt.Sprintf("gira ticket start %d --create --apply", issue)
+	}
+	return fmt.Sprintf("gira ticket start %d --apply", issue)
 }
 
 func ticketNewLabelOutcome(repo RepoRef, issueNumber int, requested []string, applied []string) TicketLabelOutcome {

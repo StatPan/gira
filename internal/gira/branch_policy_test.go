@@ -149,3 +149,17 @@ func TestResolveBranchPolicyRejectsUnknownPRBaseSource(t *testing.T) {
 		t.Fatalf("error = %v, want pr_base_source diagnostic", err)
 	}
 }
+
+func TestResolveBranchPolicyStartModeDefaultsAndValidates(t *testing.T) {
+	policy, err := ResolveBranchPolicy(nil, "main")
+	if err != nil || policy.StartMode != BranchStartModeLegacyCreate {
+		t.Fatalf("default start mode = %+v err=%v", policy, err)
+	}
+	policy, err = ResolveBranchPolicy(&BranchPolicyConfig{StartMode: BranchStartModeExplicit}, "main")
+	if err != nil || policy.StartMode != BranchStartModeExplicit {
+		t.Fatalf("explicit start mode = %+v err=%v", policy, err)
+	}
+	if _, err := ResolveBranchPolicy(&BranchPolicyConfig{StartMode: "guess"}, "main"); err == nil || !strings.Contains(err.Error(), "start_mode") {
+		t.Fatalf("invalid start mode error = %v", err)
+	}
+}

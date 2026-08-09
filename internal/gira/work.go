@@ -118,6 +118,7 @@ type WorkStatusResult struct {
 	ReviewEvidence   *FinishReviewEvidence     `json:"review_evidence,omitempty"`
 	Evidence         *TicketStatusEvidence     `json:"evidence,omitempty"`
 	Acceptance       *TicketStatusAcceptance   `json:"acceptance_criteria,omitempty"`
+	ReleaseImpact    *TicketReleaseImpact      `json:"release_impact,omitempty"`
 	Telemetry        *TicketStatusTelemetry    `json:"telemetry,omitempty"`
 	TicketReadiness  *TicketReadinessReport    `json:"ticket_readiness,omitempty"`
 	PRReadiness      *PRReadinessReport        `json:"pr_readiness,omitempty"`
@@ -454,7 +455,7 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 		RecordedBase:       base.BaseBranch,
 		RecordedBaseSource: base.BaseSource,
 		Blockers:           []string{},
-		ClosingBody:        fmt.Sprintf("Closes #%d", issueNumber),
+		ClosingBody:        releaseImpactPRBody(issueNumber, issue.Body),
 	}
 
 	prStatus, err := DevPRStatus(repo, issueNumber, runner)
@@ -634,6 +635,7 @@ func workStatusFromIssueAndPRWithReviewEvidence(repo RepoRef, issueNumber int, i
 		ReviewEvidence:   review,
 		Evidence:         ticketStatusEvidence(prStatus, nextAction),
 		Acceptance:       ticketStatusAcceptance(issue.Body),
+		ReleaseImpact:    ticketReleaseImpactPtr(ParseTicketReleaseImpact(issue.Body)),
 		Telemetry:        ticketStatusTelemetry(issue.Body, issue.Labels),
 		TicketReadiness:  ticketStatusReadiness(issue),
 		Warnings:         ticketStatusWarnings(issue, prStatus),
@@ -642,6 +644,10 @@ func workStatusFromIssueAndPRWithReviewEvidence(repo RepoRef, issueNumber int, i
 	prReadiness := EvaluatePRReadinessFromStatus(result)
 	result.PRReadiness = &prReadiness
 	return result
+}
+
+func ticketReleaseImpactPtr(impact TicketReleaseImpact) *TicketReleaseImpact {
+	return &impact
 }
 
 func reviewPolicyPtr(policy FinishReviewPolicy) *FinishReviewPolicy { return &policy }
@@ -872,6 +878,7 @@ func ticketStatusWarnings(issue devStartIssue, pr DevPRStatusResult) []string {
 	} else if acceptance.Status == "incomplete" {
 		warnings = append(warnings, "incomplete_acceptance_criteria")
 	}
+	warnings = appendUniqueStrings(warnings, ticketReleaseImpactWarnings(issue.Body, issue.Labels)...)
 	if telemetry := ticketStatusTelemetry(issue.Body, issue.Labels); len(telemetry.Warnings) > 0 {
 		warnings = appendUniqueStrings(warnings, telemetry.Warnings...)
 	}
@@ -886,6 +893,17 @@ func ticketStatusWarnings(issue devStartIssue, pr DevPRStatusResult) []string {
 		return []string{}
 	}
 	return warnings
+}
+
+func ticketReleaseImpactWarnings(body string, labels []string) []string {
+	impact := ParseTicketReleaseImpact(body)
+	if impact.Declared {
+		return []string{}
+	}
+	if containsString(labels, "type:story") {
+		return []string{"missing_release_impact"}
+	}
+	return []string{}
 }
 
 func ticketStatusReadiness(issue devStartIssue) *TicketReadinessReport {

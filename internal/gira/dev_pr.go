@@ -191,7 +191,7 @@ func OpenDevPRWithCreateOptions(repo RepoRef, issueNumber int, options DevPRCrea
 		return DevPROpenResult{}, err
 	}
 	title := fmt.Sprintf("feat: %s", issue.Title)
-	body := fmt.Sprintf("Closes #%d", issueNumber)
+	body := releaseImpactPRBody(issueNumber, issue.Body)
 	args := []string{"pr", "create", "--repo", repo.FullName(), "--title", title, "--body", body}
 	base := strings.TrimSpace(options.Base)
 	if base != "" {

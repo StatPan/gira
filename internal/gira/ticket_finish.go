@@ -35,6 +35,7 @@ type WorkFinishReadinessReport struct {
 	Evidence           WorkFinishReadinessEvidence    `json:"evidence"`
 	LabelState         WorkFinishReadinessLabelState  `json:"label_state"`
 	AcceptanceCriteria *TicketStatusAcceptance        `json:"acceptance_criteria,omitempty"`
+	ReleaseImpact      *TicketReleaseImpact           `json:"release_impact,omitempty"`
 	ClosingReference   WorkFinishClosingReference     `json:"closing_reference"`
 	Ready              bool                           `json:"ready"`
 	Blockers           []string                       `json:"blockers"`
@@ -839,6 +840,7 @@ func buildWorkFinishReadiness(result WorkFinishResult) WorkFinishReadinessReport
 			ActiveStatusLabels: activeStatusLabels(status.Labels),
 		},
 		AcceptanceCriteria: status.Acceptance,
+		ReleaseImpact:      status.ReleaseImpact,
 		NextAction:         status.NextAction,
 		NextStep:           firstNonEmpty(result.NextStep, status.NextStep),
 		Warnings:           append([]string(nil), status.Warnings...),

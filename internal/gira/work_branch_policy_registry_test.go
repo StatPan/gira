@@ -35,6 +35,45 @@ branch_policy:
 	if base.BaseBranch != "dev" || base.BaseSource != "branch_policy.global_repo_registry.dev" {
 		t.Fatalf("unexpected resolved base: %+v", base)
 	}
+	start, err := resolveTicketStartBase(ParseRepoRefMust("StatPan/gira"), devStartIssue{}, "", &workRunner{})
+	if err != nil {
+		t.Fatalf("resolveTicketStartBase returned error: %v", err)
+	}
+	if start.BaseBranch != "dev" || start.BaseSource != "branch_policy.global_repo_registry.dev" {
+		t.Fatalf("unexpected ticket start base: %+v", start)
+	}
+}
+
+func TestOpenWorkPRUsesRegisteredDevBase(t *testing.T) {
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Chdir(t.TempDir())
+	writeTestFile(t, filepath.Join(configHome, "gira", "repos", "StatPan", "gira.yaml"), `repo: StatPan/gira
+branch_policy:
+  mode: git-flow
+  default_target: dev
+  targets:
+    dev: dev
+    production: main
+`)
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": []byte(`[]`),
+		"git ls-remote --exit-code --heads origin dev":                                              []byte("abc\trefs/heads/dev"),
+		"git branch --show-current":                                                                 []byte("issue-126-work-command\n"),
+		"git rev-parse --abbrev-ref --symbolic-full-name @{u}":                                      []byte("origin/issue-126-work-command\n"),
+		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126 --base dev": []byte("https://github.com/StatPan/gira/pull/201\n"),
+		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                  nil,
+		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":          nil,
+	}}
+
+	result, err := OpenWorkPR(ParseRepoRefMust("StatPan/gira"), 126, false, false, runner)
+	if err != nil {
+		t.Fatalf("OpenWorkPR returned error: %v", err)
+	}
+	if result.RecordedBase != "dev" || result.RecordedBaseSource != "branch_policy.global_repo_registry.dev" || result.ActualBase != "dev" {
+		t.Fatalf("registered dev base was not preserved through PR create: %+v", result)
+	}
 }
 
 func TestResolveRepoBranchPolicyUsesWorkspaceThenLocalContractPrecedence(t *testing.T) {

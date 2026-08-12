@@ -144,3 +144,28 @@ func TestOpenWorkPRFailsBeforeMutationWhenRecordedBaseIsMissing(t *testing.T) {
 		}
 	}
 }
+
+func TestGetWorkStatusReportsRecordedDevActualMainWithoutRetargeting(t *testing.T) {
+	repo := ParseRepoRefMust("StatPan/gira")
+	body := RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "dev", BaseSource: "branch_policy.global_repo_registry.dev"})
+	runner := &workRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","body":` + strconv.Quote(body) + `,"labels":[{"name":"status:in-review"}]}`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": []byte(`[{"number":201,"title":"feat: work","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/201","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-126-work-command","baseRefName":"main","headRefOid":"head220","statusCheckRollup":[]}]`),
+	}}
+
+	result, err := GetWorkStatus(repo, 126, runner)
+	if err != nil {
+		t.Fatalf("GetWorkStatus returned error: %v", err)
+	}
+	if result.BranchPolicy == nil || !result.BranchPolicy.BaseMismatch || result.BranchPolicy.RecordedBase != "dev" || result.BranchPolicy.ActualPRBase != "main" {
+		t.Fatalf("expected recorded dev versus actual main mismatch: %+v", result.BranchPolicy)
+	}
+	if result.NextAction != "correct_pr_base" || result.NextStep != "gh pr edit 201 --repo StatPan/gira --base dev" {
+		t.Fatalf("expected explicit, non-automatic correction path: %+v", result)
+	}
+	for _, call := range runner.calls {
+		if strings.HasPrefix(call, "gh pr edit ") {
+			t.Fatalf("status must not retarget the PR, calls=%v", runner.calls)
+		}
+	}
+}

@@ -583,8 +583,9 @@ func TestOpenWorkPRApplyUsesRecordedLifecycleBase(t *testing.T) {
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","body":` + strconv.Quote(body) + `,"labels":[{"name":"status:in-progress"}]}`),
 		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": []byte(`[]`),
-		"git branch --show-current":                            []byte("issue-126-work-command\n"),
-		"git rev-parse --abbrev-ref --symbolic-full-name @{u}": []byte("origin/issue-126-work-command\n"),
+		"git ls-remote --exit-code --heads origin release/2.0":                                              []byte("abc\trefs/heads/release/2.0"),
+		"git branch --show-current":                                                                         []byte("issue-126-work-command\n"),
+		"git rev-parse --abbrev-ref --symbolic-full-name @{u}":                                              []byte("origin/issue-126-work-command\n"),
 		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126 --base release/2.0": []byte("https://github.com/StatPan/gira/pull/201\n"),
 		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                          nil,
 		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":                  nil,
@@ -706,6 +707,9 @@ func TestGetWorkStatusReportsBranchBaseMismatchWarning(t *testing.T) {
 	}
 	if !containsString(result.Warnings, "recorded_base_actual_pr_base_mismatch") {
 		t.Fatalf("expected mismatch warning: %+v", result.Warnings)
+	}
+	if !containsString(result.Blockers, "pr_base_mismatch") || result.NextAction != "correct_pr_base" || result.NextStep != "gh pr edit 201 --repo StatPan/gira --base main" {
+		t.Fatalf("expected safe base correction guidance: %+v", result)
 	}
 }
 
@@ -972,6 +976,9 @@ func TestOpenWorkPRRejectsExistingPRBaseMismatch(t *testing.T) {
 	}
 	if !result.BaseMismatch || result.RecordedBase != "main" || result.ActualBase != "develop" || !containsString(result.Blockers, "pr_base_mismatch") {
 		t.Fatalf("missing mismatch result details: %+v", result)
+	}
+	if result.NextStep != "gh pr edit 202 --repo StatPan/gira --base main" {
+		t.Fatalf("missing safe base correction next step: %+v", result)
 	}
 	for _, call := range runner.calls {
 		if strings.Contains(call, "/labels") {

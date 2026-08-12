@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -90,6 +91,7 @@ type WorkPRResult struct {
 	RecordedBaseSource string `json:"recorded_base_source,omitempty"`
 	ActualBase         string `json:"actual_base,omitempty"`
 	BaseMismatch       bool   `json:"base_mismatch,omitempty"`
+	NextStep           string `json:"next_step,omitempty"`
 
 	Blockers    []string          `json:"blockers"`
 	Warnings    []string          `json:"warnings,omitempty"`
@@ -225,7 +227,7 @@ func resolveTicketStartBase(repo RepoRef, issue devStartIssue, explicitBase stri
 	}
 	return ticketStartBaseResolution{
 		BaseBranch:           base,
-		BaseSource:           "branch_policy." + target,
+		BaseSource:           branchPolicyBaseSource(policy, target),
 		PolicyMode:           policy.Mode,
 		Target:               target,
 		FeatureBranchPattern: configuredFeatureBranchPattern(policy),
@@ -251,7 +253,15 @@ func resolveTicketPRBase(repo RepoRef, issue devStartIssue, runner CommandRunner
 	if base == "" {
 		base = strings.TrimSpace(policy.DefaultBase)
 	}
-	return ticketStartBaseResolution{BaseBranch: base, BaseSource: "branch_policy." + target, PolicyMode: policy.Mode, Target: target, FeatureBranchPattern: configuredFeatureBranchPattern(policy), StartMode: policy.StartMode}, nil
+	return ticketStartBaseResolution{BaseBranch: base, BaseSource: branchPolicyBaseSource(policy, target), PolicyMode: policy.Mode, Target: target, FeatureBranchPattern: configuredFeatureBranchPattern(policy), StartMode: policy.StartMode}, nil
+}
+
+func branchPolicyBaseSource(policy ResolvedBranchPolicy, target string) string {
+	parts := []string{"branch_policy"}
+	if source := strings.TrimSpace(policy.ConfigSource); source != "" {
+		parts = append(parts, source)
+	}
+	return strings.Join(append(parts, strings.TrimSpace(target)), ".")
 }
 
 func configuredFeatureBranchPattern(policy ResolvedBranchPolicy) string {
@@ -278,11 +288,24 @@ func resolveRepoBranchPolicy(repo RepoRef, runner CommandRunner) (ResolvedBranch
 	} else if err != nil {
 		return ResolvedBranchPolicy{}, fmt.Errorf("resolve GitHub default branch: %w", err)
 	}
-	config, err := loadLocalBranchPolicyConfig(repo, runner)
+	config, source, err := loadBranchPolicyConfig(repo, runner)
 	if err != nil {
 		return ResolvedBranchPolicy{}, err
 	}
-	return ResolveBranchPolicy(config, defaultBranch)
+	policy, err := ResolveBranchPolicy(config, defaultBranch)
+	if err != nil {
+		return ResolvedBranchPolicy{}, err
+	}
+	policy.ConfigSource = source
+	return policy, nil
+}
+
+func loadBranchPolicyConfig(repo RepoRef, runner CommandRunner) (*BranchPolicyConfig, string, error) {
+	config, err := loadLocalBranchPolicyConfig(repo, runner)
+	if err != nil || config != nil {
+		return config, "repo_local_contract", err
+	}
+	return loadRegisteredBranchPolicyConfig(repo)
 }
 
 func loadLocalBranchPolicyConfig(repo RepoRef, runner CommandRunner) (*BranchPolicyConfig, error) {
@@ -315,6 +338,68 @@ func loadLocalBranchPolicyConfig(repo RepoRef, runner CommandRunner) (*BranchPol
 		}
 	}
 	return nil, nil
+}
+
+func loadRegisteredBranchPolicyConfig(repo RepoRef) (*BranchPolicyConfig, string, error) {
+	root, err := globalConfigRoot("")
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve global branch policy registry: %w", err)
+	}
+
+	entry, err := LoadGlobalRepoRegistryEntry(root, repo)
+	if err == nil {
+		if entry.BranchPolicy != nil {
+			return entry.BranchPolicy, "global_repo_registry", nil
+		}
+		if workspace := strings.TrimSpace(entry.Workspace.Name); workspace != "" {
+			return loadWorkspaceBranchPolicyConfig(root, repo, workspace, true)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, "", fmt.Errorf("load global repo branch policy: %w", err)
+	}
+
+	global, err := LoadGlobalConfig(root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, "", nil
+		}
+		return nil, "", fmt.Errorf("load global branch policy config: %w", err)
+	}
+	workspace := strings.TrimSpace(global.DefaultWorkspace)
+	if workspace == "" {
+		return nil, "", nil
+	}
+	return loadWorkspaceBranchPolicyConfig(root, repo, workspace, false)
+}
+
+func loadWorkspaceBranchPolicyConfig(root string, repo RepoRef, workspace string, required bool) (*BranchPolicyConfig, string, error) {
+	entry, err := LoadGlobalWorkspaceRegistryEntry(root, workspace)
+	if err != nil {
+		if !required && errors.Is(err, os.ErrNotExist) {
+			return nil, "", nil
+		}
+		return nil, "", fmt.Errorf("load global workspace branch policy %q: %w", workspace, err)
+	}
+	if !workspaceConfigContainsRepo(entry.Workspace, repo) {
+		if required {
+			return nil, "", fmt.Errorf("global repo registry workspace %q does not contain %s", workspace, repo.FullName())
+		}
+		return nil, "", nil
+	}
+	if entry.BranchPolicy == nil {
+		return nil, "", nil
+	}
+	return entry.BranchPolicy, "global_workspace_registry", nil
+}
+
+func workspaceConfigContainsRepo(workspace WorkspaceConfig, repo RepoRef) bool {
+	for _, configured := range workspace.Repos {
+		parsed, err := ParseRepoRef(configured)
+		if err == nil && strings.EqualFold(parsed.FullName(), repo.FullName()) {
+			return true
+		}
+	}
+	return false
 }
 
 func StartWork(repo RepoRef, issueNumber int, dryRun bool, runner CommandRunner) (WorkStartResult, error) {
@@ -606,6 +691,7 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 		result.Blockers = prStatus.Blockers
 		applyPRBaseMismatch(&result, base.BaseBranch, prStatus.Binding.BaseRef)
 		if result.BaseMismatch {
+			result.NextStep = correctPRBaseNextStep(repo, result.PRNumber, result.RecordedBase)
 			return result, fmt.Errorf("existing PR base %q does not match recorded ticket base %q", result.ActualBase, result.RecordedBase)
 		}
 		if dryRun {
@@ -620,6 +706,9 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 	}
 
 	result.Blockers = prStatus.Blockers
+	if err := validateRemoteBranchExists("origin", base.BaseBranch, runner); err != nil {
+		return result, err
+	}
 	if dryRun {
 		push, err := prepareWorkPRBranchPush(issue, issueNumber, base.BaseBranch, dryRun, runner)
 		if err != nil {
@@ -733,6 +822,11 @@ func workStatusFromIssueAndPRWithReviewEvidence(repo RepoRef, issueNumber int, i
 			nextAction = nextWorkAction(issue.State, status, prStatus)
 		}
 	}
+	branchPolicy := ticketStatusBranchPolicy(issue, prStatus)
+	if branchPolicy.BaseMismatch {
+		prStatus.Blockers = appendMissingWorkBlocker(prStatus.Blockers, "pr_base_mismatch")
+		nextAction = nextWorkAction(issue.State, status, prStatus)
+	}
 	if nextAction == "done" {
 		status = "Done"
 	} else if nextAction == "closed" && (status == "" || status == "null") {
@@ -756,7 +850,7 @@ func workStatusFromIssueAndPRWithReviewEvidence(repo RepoRef, issueNumber int, i
 		Blockers:         prStatus.Blockers,
 		NextAction:       nextAction,
 		Branch:           ticketStatusBranch(issue, prStatus),
-		BranchPolicy:     ticketStatusBranchPolicy(issue, prStatus),
+		BranchPolicy:     branchPolicy,
 		PullRequest:      ticketStatusPullRequest(prStatus),
 		ChecksStatus:     ticketStatusChecksStatus(prStatus),
 		Checks:           append([]DevPRCheck(nil), prStatus.Checks...),
@@ -1067,6 +1161,9 @@ func nextWorkAction(issueState string, status string, pr DevPRStatusResult) stri
 		}
 		return "done"
 	}
+	if pr.PRNumber > 0 && hasWorkBlocker(pr.Blockers, "pr_base_mismatch") {
+		return "correct_pr_base"
+	}
 	if strings.EqualFold(issueState, "closed") {
 		return "closed"
 	}
@@ -1084,6 +1181,8 @@ func nextWorkAction(issueState string, status string, pr DevPRStatusResult) stri
 	}
 	for _, blocker := range pr.Blockers {
 		switch blocker {
+		case "pr_base_mismatch":
+			return "correct_pr_base"
 		case "draft":
 			return "mark_pr_ready"
 		case "review", "review_policy_not_configured", "review_required_but_absent", "review_evidence_unavailable", "review_approval_stale":
@@ -1318,6 +1417,11 @@ func workStatusNextStep(result WorkStatusResult) string {
 		return "mark the PR ready for review"
 	case "address_review":
 		return "address review blockers"
+	case "correct_pr_base":
+		if result.PRNumber > 0 && result.BranchPolicy != nil {
+			return correctPRBaseNextStepForRepoName(result.Repo, result.PRNumber, result.BranchPolicy.RecordedBase)
+		}
+		return "correct the linked PR base to the recorded ticket base, then rerun ticket status"
 	case "wait_for_checks":
 		return "wait for required checks to finish or fix failing checks"
 	case "merge_when_policy_allows":
@@ -1331,6 +1435,17 @@ func workStatusNextStep(result WorkStatusResult) string {
 	default:
 		return fmt.Sprintf("gira status --repo %s", result.Repo)
 	}
+}
+
+func correctPRBaseNextStep(repo RepoRef, prNumber int, base string) string {
+	return correctPRBaseNextStepForRepoName(repo.FullName(), prNumber, base)
+}
+
+func correctPRBaseNextStepForRepoName(repo string, prNumber int, base string) string {
+	if prNumber <= 0 || strings.TrimSpace(repo) == "" || strings.TrimSpace(base) == "" {
+		return "correct the linked PR base to the recorded ticket base, then rerun ticket status"
+	}
+	return fmt.Sprintf("gh pr edit %d --repo %s --base %s", prNumber, QuoteShellArg(repo), QuoteShellArg(base))
 }
 
 func readyStatusNextStep(repo string, issue int) string {

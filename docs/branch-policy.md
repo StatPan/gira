@@ -60,8 +60,18 @@ Explicit user-defined policy for repositories that do not fit a built-in mode.
 ## Config Shape
 
 `branch_policy` can be declared in repo-local config, global repo registry
-entries, or global workspace registry entries. When it is absent, Gira resolves
-the `github-flow` preset against the GitHub default branch.
+entries, or global workspace registry entries. Gira resolves one policy in this
+order: repo-local contract, registered global repo, the registered repo's
+workspace, then the global default workspace when it contains the selected
+repository. When it is absent at every layer, Gira resolves the `github-flow`
+preset against the GitHub default branch.
+
+The registry lookup uses the `--repo OWNER/REPO` target, not the current
+checkout. This means a detached or out-of-checkout operator still receives the
+registered repository's intended PR base. Lifecycle JSON records the selected
+branch and provenance in `base_branch` and `base_source` (for example,
+`branch_policy.global_repo_registry.dev`), then later commands preserve that
+recorded base.
 
 Supported fields:
 
@@ -93,6 +103,12 @@ creates the suggested name, `--current` records the checked-out branch, and
 `--adopt BRANCH` records an existing local or origin branch. The bind paths do
 not checkout, rename, or push. Existing policies that omit `start_mode` retain
 `legacy-create` compatibility.
+
+Before `ticket pr` pushes a branch or creates a PR, Gira verifies that the
+recorded base exists on `origin`; a missing configured base fails before any
+push, PR, or label mutation. If an existing linked PR targets a different base,
+Gira reports `pr_base_mismatch` and a `gh pr edit ... --base ...` remediation
+in status output. It never retargets an existing PR automatically.
 
 ## Work Branch Trust Order
 

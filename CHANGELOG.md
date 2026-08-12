@@ -6,6 +6,11 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Fixed ticket PR base selection to honor the target repository's registered
+  global repo or workspace branch policy even when Gira runs outside that
+  checkout. Gira now records the policy provenance, rejects a missing configured
+  remote base before mutating, and reports existing PR base mismatches with an
+  explicit non-automatic remediation.
 - Added a release-impact contract for new tickets and linked pull requests.
   User-facing stories now carry their release decision into CI, which requires
   their `CHANGELOG.md` entry in the same PR; internal work and documented

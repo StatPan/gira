@@ -19,46 +19,52 @@ import (
 
 var jiraKeyPositionalPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
 
-const rootHelp = `Gira: Jira-style project flow on GitHub.
+const rootHelp = `Gira: Jira-style project flow on GitHub, with GitHub-native evidence for humans and agents.
 
 Usage:
   gira <command> [flags]
 
-Daily commands:
+Assist (read GitHub state and get the next safe action):
   guide       Built-in quickstart and workflow guides
-  mcp         MCP server for Gira CLI parity and context tools
-  setup       Intention-based first-run and global registry setup
+  status      Show a compact read-only GitHub status summary
+  report      Human-readable project reports
+  stats       Read-only workflow closure statistics
+  release     Release readiness gate report
+  config      Inspect global and repo-local Gira config sources
+
+Managed delivery (one GitHub issue through branch, PR, and finish):
+  init        One-command onboarding with prerequisite checks and next-step plan
+  adopt       Plan or apply adoption for existing repositories and issues
+  ticket      Canonical ticket lifecycle commands; agent entry: ticket handoff
+  start       Compatibility shortcut for ticket start
   workspace   Personal workspace inbox and backlog overview
-  queue       Agent-ready workspace queue selection commands
   projects    Sync visible GitHub Projects board items
   repo        Manage global registry entries for repositories
-  pm          PM skill commands for task-local PM state and worker-ready specs
-  adopt       Plan or apply adoption for existing repositories and issues
-  ticket      Jira-style ticket lifecycle commands
-  run         Local Codex run manifests and execution state
-  dispatch    Build official AI work-order packets
   feature     Optional issue-backed feature map commands. Alias: feat
-  goal        Goal-mode planning, status, and visible report commands
-  epic        Numberless epic status and finish commands
   milestone   Milestone lifecycle and bulk ticket assignment
   sprint      Sprint iteration planning/start/close workflow
-  release     Release readiness gate report
-  report      Human-readable project reports
-  status      Show a compact read-only GitHub status summary
-  stats       Read-only workflow closure statistics
-  config      Inspect global and repo-local Gira config sources
+
+Advanced orchestration (explicit multi-ticket or workspace coordination):
+  dispatch    Canonical Goal-level agent entry: dispatch goal
+  goal        Goal planning, status, and visible report commands
+  queue       Workspace queue selection and handoff commands
+  pm          PM protocol, typed planning, and evidence commands
+
+Supporting commands:
+  mcp         MCP server for Gira CLI parity and context tools
+  setup       Intention-based first-run and global registry setup
+  run         Local Codex run manifests and execution state
+  epic        Numberless epic status and finish commands
   upgrade     Check latest release and print upgrade instructions
   cache       Manage local Gira caches
   completion  Generate static shell completion scripts
   version     Show Gira build version
-  start       Shortcut for ticket start
 
-Setup:
-  init        One-command onboarding with prerequisite checks and next-step plan
-
-Advanced:
+Advanced diagnostics:
   audit       Self-audit readiness and append-only ledger verification
   ops         Advanced setup, migration, policy, audit, and raw GitHub controls
+
+Compatibility paths (supported, but not the taught default):
   work        Compatibility alias for ticket lifecycle commands
   dev         Compatibility developer workflow helpers
 
@@ -89,6 +95,13 @@ Start here:
 
 const guideQuickstart = `Gira quickstart: first ticket to merged PR
 
+Choose the smallest path that matches the work:
+
+- Human or one issue: use the Managed delivery loop below.
+- Agent with one already-selected issue: gira ticket handoff TICKET --repo OWNER/REPO --json.
+- Agent working from a multi-ticket Goal: gira dispatch goal GOAL --repo OWNER/REPO --compact-json.
+- Goal, queue, and PM commands are Advanced orchestration. They are not required for a normal ticket.
+
 1. Authenticate GitHub.
    gh auth status
 
@@ -117,11 +130,16 @@ const guideQuickstart = `Gira quickstart: first ticket to merged PR
    gira ticket status
 
 8. Optional planning checks after the first loop works.
-   gira epic status
-   gira epic finish --dry-run
+   gira goal status
+   gira dispatch goal --compact-json
 `
 
 const guideTicketIntro = `Gira ticket guide
+
+This is the canonical single-issue path for both humans and agents. For an
+already selected issue, use gira ticket handoff as the agent entry point;
+queue handoff is an Advanced workspace selector, not a replacement ticket
+protocol. For multi-ticket Goal work, use gira dispatch goal.
 
 Daily loop:
   gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply

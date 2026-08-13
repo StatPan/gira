@@ -16,7 +16,7 @@ func TestBuildGoalStatusReportNoChildrenPlansChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildGoalStatusReport error: %v", err)
 	}
-	if report.SchemaVersion != GoalStatusSchemaVersion || report.Goal.Number != 100 {
+	if report.SchemaVersion != GoalStatusSchemaVersion || report.Goal.Number != 100 || report.PlanningEngine != "unconfigured" {
 		t.Fatalf("unexpected report metadata: %+v", report)
 	}
 	if len(report.Children) != 0 || report.NextAction != "plan_children" || report.RemainingAutonomousWork != 0 {
@@ -24,6 +24,28 @@ func TestBuildGoalStatusReportNoChildrenPlansChildren(t *testing.T) {
 	}
 	if !strings.Contains(FormatGoalStatus(report), "next=plan_children") {
 		t.Fatalf("formatted report missing next action:\n%s", FormatGoalStatus(report))
+	}
+}
+
+func TestGoalPlanningEngineMakesMixedSourcesVisible(t *testing.T) {
+	validGraph := "## Work Graph\n```json\n{\"schema_version\":\"pm-work-graph-source/v1\",\"nodes\":[{\"id\":\"delivery\",\"title\":\"Deliver\",\"purpose\":\"Ship the slice\",\"profile\":\"delivery\",\"parent_outcome\":\"goal:100\",\"verification\":[{\"method\":\"go test ./...\",\"evidence\":\"passing tests\"}]}]}\n```"
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "default placeholders", body: "## Decomposition\n_No response_\n\n## Work Graph\n_No response_", want: "unconfigured"},
+		{name: "placeholder list", body: "## Goal Plan\n- _No response_", want: "unconfigured"},
+		{name: "malformed graph", body: "## Work Graph\n```json\n{}\n```", want: "unconfigured"},
+		{name: "valid legacy", body: "## Goal Plan\n- Deliver the bounded slice", want: "legacy_goal_plan"},
+		{name: "valid typed", body: validGraph, want: "typed_work_graph"},
+		{name: "mixed", body: "## Goal Plan\n- Deliver the bounded slice\n\n" + validGraph, want: "mixed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := goalPlanningEngine(tc.body); got != tc.want {
+				t.Fatalf("planning engine = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

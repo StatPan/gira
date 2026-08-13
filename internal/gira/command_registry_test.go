@@ -83,6 +83,9 @@ func TestCommandCapabilitiesCoverAdapterClasses(t *testing.T) {
 		if command.JSONSupport == "" {
 			t.Fatalf("%s missing JSON support metadata", command.Canonical)
 		}
+		if command.Tier == "" {
+			t.Fatalf("%s missing discovery tier", command.Canonical)
+		}
 		if len(command.Docs) == 0 {
 			t.Fatalf("%s missing docs references", command.Canonical)
 		}
@@ -124,6 +127,23 @@ func TestCommandCapabilitiesCoverAdapterClasses(t *testing.T) {
 	if !containsString(byCanonical["gira ticket view"].Aliases, "gira ticket show") {
 		t.Fatalf("ticket view capability must expose ticket show alias: %+v", byCanonical["gira ticket view"])
 	}
+	if byCanonical["gira ticket handoff"].Tier != CommandTierManagedDelivery || byCanonical["gira ticket handoff"].WorkflowRole != "canonical_single_issue_agent_entry_point" {
+		t.Fatalf("ticket handoff must be the managed single-issue entry point: %+v", byCanonical["gira ticket handoff"])
+	}
+	if byCanonical["gira dispatch goal"].Tier != CommandTierAdvancedOrchestration || byCanonical["gira dispatch goal"].WorkflowRole != "canonical_goal_agent_entry_point" {
+		t.Fatalf("dispatch goal must be the advanced Goal entry point: %+v", byCanonical["gira dispatch goal"])
+	}
+	if byCanonical["gira config storage"].Tier != CommandTierAssist || byCanonical["gira workspace status"].Tier != CommandTierManagedDelivery || byCanonical["gira ops limit"].Tier != CommandTierSupporting {
+		t.Fatalf("key command tiers do not match help guidance: config=%q workspace=%q ops=%q", byCanonical["gira config storage"].Tier, byCanonical["gira workspace status"].Tier, byCanonical["gira ops limit"].Tier)
+	}
+}
+
+func TestCoreCommandSpecsAllHaveDiscoveryTiers(t *testing.T) {
+	for _, spec := range CoreCommandSpecs() {
+		if spec.Tier == "" {
+			t.Fatalf("%q has no discovery tier", strings.Join(spec.Path, " "))
+		}
+	}
 }
 
 func TestCommandCapabilitiesDocsSiteIsGeneratedFromRegistry(t *testing.T) {
@@ -160,6 +180,19 @@ func TestRenderGuideCommandSectionUsesRegistryExamples(t *testing.T) {
 	}
 	if strings.Contains(out, "setup global") {
 		t.Fatalf("guide section included wrong topic:\n%s", out)
+	}
+}
+
+func TestCommandReferenceLabelsTiersRolesAndCompatibility(t *testing.T) {
+	out := RenderCommandReferenceMarkdown([]CommandSpec{{
+		Path: []string{"ticket", "handoff"}, Summary: "Build a handoff.", Usage: "gira ticket handoff 1",
+		Tier: CommandTierManagedDelivery, WorkflowRole: "canonical_single_issue_agent_entry_point",
+		Adapter: adapterRead(JSONSupportStable, "gira ticket delegate"),
+	}})
+	for _, want := range []string{"Discovery tier: `managed_delivery`", "Workflow role: `canonical_single_issue_agent_entry_point`", "Compatibility aliases: `gira ticket delegate`"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("reference missing %q:\n%s", want, out)
+		}
 	}
 }
 

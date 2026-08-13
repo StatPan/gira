@@ -175,6 +175,16 @@ unchanged graph and posts a receipt. Repeating the approved apply returns the
 existing receipt without duplicating children. Full JSON retains PM IR digest,
 discovery outcome refs, graph semantics, diagnostics, and rendered action data.
 
+### Planning Engine Visibility
+
+`gira goal status` exposes `planning_engine` as `legacy_goal_plan`,
+`typed_work_graph`, `mixed`, or `unconfigured`. `mixed` means the Goal body has
+both legacy bullet-plan and typed work-graph sources. Gira intentionally does
+not choose or merge those sources automatically: run the intended engine
+explicitly, preserve the other source as migration evidence, then remove it in
+a reviewed follow-up. This prevents two planning engines from silently creating
+overlapping child tickets.
+
 ### Active Observe and Replan Loop
 
 `gira pm observe` reads the current Goal, typed ledger/discovery graph, work

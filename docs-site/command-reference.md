@@ -6,6 +6,8 @@ This page is generated from Gira's command metadata registry. Update `internal/g
 
 Generate shell completion scripts and cache-first dynamic candidates.
 
+Discovery tier: `supporting`.
+
 Usage:
 
 ```bash
@@ -47,6 +49,8 @@ Documented in: `README.md`, `docs-site/command-reference.md`
 
 Show local storage roots, durability, privacy, and rebuild boundaries.
 
+Discovery tier: `assist`.
+
 Usage:
 
 ```bash
@@ -74,6 +78,10 @@ Documented in: `docs/global-config-registry.md`, `docs/state-model.md`, `docs-si
 ## `dispatch goal`
 
 Build an official dispatch packet from a goal issue, goal handoff, and next safe child ticket worker handoff.
+
+Discovery tier: `advanced_orchestration`.
+
+Workflow role: `canonical_goal_agent_entry_point`.
 
 Usage:
 
@@ -114,6 +122,10 @@ Documented in: `docs/dispatch-operating-model.md`, `docs/dispatch-reflection.md`
 
 Validate optional feature map records and work links without mutating GitHub.
 
+Discovery tier: `managed_delivery`.
+
+Compatibility aliases: `gira feat check`.
+
 Usage:
 
 ```bash
@@ -141,6 +153,10 @@ Documented in: `docs/feature-map.md`, `docs-site/feature-map.md`, `docs-site/com
 ## `feature for`
 
 Show which feature or capability a work issue is linked to.
+
+Discovery tier: `managed_delivery`.
+
+Compatibility aliases: `gira feat for`.
 
 Usage:
 
@@ -171,6 +187,10 @@ Documented in: `docs/feature-map.md`, `docs-site/feature-map.md`, `docs-site/com
 
 List optional issue-backed feature or capability records.
 
+Discovery tier: `managed_delivery`.
+
+Compatibility aliases: `gira feat list`.
+
 Usage:
 
 ```bash
@@ -198,6 +218,8 @@ Documented in: `docs/feature-map.md`, `docs-site/feature-map.md`, `docs-site/com
 ## `goal finish`
 
 Preview goal finish readiness, then post receipts and close ready goals or preserve human-review handoffs.
+
+Discovery tier: `advanced_orchestration`.
 
 Usage:
 
@@ -229,6 +251,10 @@ Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
 ## `goal graph`
 
 Compile PM intent and discovery state into a typed, verifiable Goal work graph.
+
+Discovery tier: `advanced_orchestration`.
+
+Workflow role: `typed_work_graph_planning_engine`.
 
 Usage:
 
@@ -274,6 +300,10 @@ Documented in: `docs/goal-operating-model.md`, `docs/pm-operating-policy.md`, `d
 
 Build a goal-level LLM handoff that includes goal context and the next safe child ticket worker packet.
 
+Discovery tier: `advanced_orchestration`.
+
+Workflow role: `advanced_goal_context_builder`.
+
 Usage:
 
 ```bash
@@ -303,6 +333,8 @@ Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
 ## `goal new`
 
 Create a Goal Mode issue with objective, scope, autonomy, quality, stop, and child-ticket planning sections.
+
+Discovery tier: `advanced_orchestration`.
 
 Usage:
 
@@ -353,6 +385,8 @@ Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
 
 Select the next safe child ticket for a goal or explain why work must stop.
 
+Discovery tier: `advanced_orchestration`.
+
 Usage:
 
 ```bash
@@ -380,6 +414,10 @@ Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
 ## `goal plan`
 
 Propose or create same-repo or target-repo child ticket packets from a goal issue.
+
+Discovery tier: `advanced_orchestration`.
+
+Workflow role: `legacy_bullet_planning_engine`.
 
 Usage:
 
@@ -419,6 +457,10 @@ Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
 
 Build a visible report for one goal from stable Goal Mode state. Alias: gira goal dossier.
 
+Discovery tier: `advanced_orchestration`.
+
+Compatibility aliases: `gira goal dossier`.
+
 Usage:
 
 ```bash
@@ -456,6 +498,8 @@ Documented in: `docs/goal-operating-model.md`, `docs-site/goal-mode.md`, `docs-s
 
 Summarize a goal issue, child ticket graph, blockers, and next safe action.
 
+Discovery tier: `advanced_orchestration`.
+
 Usage:
 
 ```bash
@@ -483,6 +527,8 @@ Documented in: `docs/goal-operating-model.md`, `docs-site/command-reference.md`
 ## `jira doctor`
 
 Diagnose Jira-primary provider compatibility without mutating Jira or GitHub.
+
+Discovery tier: `assist`.
 
 Usage:
 
@@ -515,6 +561,8 @@ Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-pri
 
 Export GitHub issue state into Jira-friendly JSON and CSV artifacts.
 
+Discovery tier: `supporting`.
+
 Usage:
 
 ```bash
@@ -542,6 +590,8 @@ Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-pri
 ## `jira import`
 
 Import Jira CSV/JSON or read-only Jira API issues into GitHub issues.
+
+Discovery tier: `supporting`.
 
 Usage:
 
@@ -576,6 +626,8 @@ Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-pri
 
 Discover a Jira project and write reviewed non-secret provider config.
 
+Discovery tier: `supporting`.
+
 Usage:
 
 ```bash
@@ -609,6 +661,8 @@ Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-pri
 
 Create or reuse a GitHub mirror issue for one Jira key.
 
+Discovery tier: `supporting`.
+
 Usage:
 
 ```bash
@@ -639,6 +693,8 @@ Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-pri
 ## `jira transition`
 
 Plan one Jira status transition without mutation.
+
+Discovery tier: `supporting`.
 
 Usage:
 
@@ -671,6 +727,8 @@ Documented in: `README.md`, `docs/jira-primary-provider.md`, `docs-site/jira-pri
 
 Bulk attach selected tickets to a milestone through dry-run/apply.
 
+Discovery tier: `managed_delivery`.
+
 Usage:
 
 ```bash
@@ -701,6 +759,8 @@ Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
 
 List GitHub milestones with Gira progress fields.
 
+Discovery tier: `managed_delivery`.
+
 Usage:
 
 ```bash
@@ -728,6 +788,8 @@ Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
 ## `milestone new`
 
 Preview and create a GitHub milestone as a first-class Gira work batch.
+
+Discovery tier: `managed_delivery`.
 
 Usage:
 
@@ -759,6 +821,8 @@ Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
 ## `milestone plan`
 
 Select candidate tickets by labels and assign them to a milestone.
+
+Discovery tier: `managed_delivery`.
 
 Usage:
 
@@ -792,6 +856,8 @@ Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
 
 Summarize child ticket state for one milestone work batch.
 
+Discovery tier: `managed_delivery`.
+
 Usage:
 
 ```bash
@@ -818,6 +884,8 @@ Documented in: `docs-site/sprint-release.md`, `docs-site/ticket-workflow.md`
 ## `ops limit`
 
 Show GitHub REST, GraphQL, search, secondary-limit, and workflow budget diagnostics.
+
+Discovery tier: `supporting`.
 
 Usage:
 
@@ -859,6 +927,8 @@ Documented in: `docs/github-api-limits.md`, `docs/workflow-cost-profiles.md`, `d
 
 Validate and persist source-linked delivery acceptance and product outcome validation.
 
+Discovery tier: `advanced_orchestration`.
+
 Usage:
 
 ```bash
@@ -896,6 +966,8 @@ Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/com
 
 Hydrate a bounded, resumable PM protocol session from canonical Goal state.
 
+Discovery tier: `advanced_orchestration`.
+
 Usage:
 
 ```bash
@@ -926,6 +998,8 @@ Documented in: `docs/pm-operating-policy.md`, `docs/v3-pm-harness-release-readin
 ## `pm compile`
 
 Compile product intent into deterministic pm-ir/v1 and actionable diagnostics.
+
+Discovery tier: `advanced_orchestration`.
 
 Usage:
 
@@ -963,6 +1037,8 @@ Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/com
 
 Evaluate PM protocol compliance separately from semantic answer quality.
 
+Discovery tier: `advanced_orchestration`.
+
 Usage:
 
 ```bash
@@ -995,6 +1071,8 @@ Documented in: `docs/v3-pm-harness-release-readiness.md`, `docs-site/command-ref
 ## `pm context`
 
 Hydrate compact current PM state from typed and legacy GitHub issue evidence.
+
+Discovery tier: `advanced_orchestration`.
 
 Usage:
 
@@ -1031,6 +1109,8 @@ Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/com
 
 Trace product outcomes through opportunities, hypotheses, experiments, learning, and decisions.
 
+Discovery tier: `advanced_orchestration`.
+
 Usage:
 
 ```bash
@@ -1065,6 +1145,8 @@ Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/com
 ## `pm measure`
 
 Validate outcome measurement plans and evidence without mutation.
+
+Discovery tier: `advanced_orchestration`.
 
 Usage:
 
@@ -1101,6 +1183,8 @@ Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/com
 
 Diagnose product-state changes and order bounded PM actions without mutation.
 
+Discovery tier: `advanced_orchestration`.
+
 Usage:
 
 ```bash
@@ -1135,6 +1219,8 @@ Documented in: `docs/pm-operating-policy.md`, `docs/goal-operating-model.md`, `d
 
 Render a PM acceptance QA prompt from task-local PM state and PR evidence.
 
+Discovery tier: `advanced_orchestration`.
+
 Usage:
 
 ```bash
@@ -1166,6 +1252,8 @@ Documented in: `docs/pm-skill.md`, `docs-site/command-reference.md`
 ## `pm record`
 
 Append an idempotent typed record to a GitHub-native PM ledger.
+
+Discovery tier: `advanced_orchestration`.
 
 Usage:
 
@@ -1242,6 +1330,8 @@ Documented in: `docs/pm-operating-policy.md`, `docs/pm-skill.md`, `docs-site/com
 
 Preview or apply fingerprinted, capability-aware Goal graph mutations.
 
+Discovery tier: `advanced_orchestration`.
+
 Usage:
 
 ```bash
@@ -1280,6 +1370,8 @@ Documented in: `docs/pm-operating-policy.md`, `docs/goal-operating-model.md`, `d
 ## `pm spec`
 
 Render a compact profile-aware PM packet.
+
+Discovery tier: `advanced_orchestration`.
 
 Usage:
 
@@ -1326,6 +1418,10 @@ Documented in: `docs/pm-skill.md`, `docs-site/command-reference.md`
 
 Select or inspect an agent-ready workspace queue item and embed the worker-handoff/v1 payload.
 
+Discovery tier: `advanced_orchestration`.
+
+Workflow role: `advanced_workspace_selector`.
+
 Usage:
 
 ```bash
@@ -1358,6 +1454,8 @@ Documented in: `docs/workspace.md`, `docs/agent-handoff-queue.md`, `docs-site/ag
 
 List workspace queue items derived from workspace-queues/v1.
 
+Discovery tier: `advanced_orchestration`.
+
 Usage:
 
 ```bash
@@ -1389,6 +1487,8 @@ Documented in: `docs/workspace.md`, `docs/agent-handoff-queue.md`, `docs-site/ag
 
 Select the first agent-ready workspace queue item and print handoff and run-start commands.
 
+Discovery tier: `advanced_orchestration`.
+
 Usage:
 
 ```bash
@@ -1419,6 +1519,8 @@ Documented in: `docs/workspace.md`, `docs/agent-handoff-queue.md`, `docs-site/ag
 ## `queue take`
 
 Start a handoff-safe queue item through the existing ticket start policy.
+
+Discovery tier: `advanced_orchestration`.
 
 Usage:
 
@@ -1454,6 +1556,8 @@ Documented in: `docs/workspace.md`, `docs/agent-handoff-queue.md`, `docs-site/ag
 
 Build a backlog health report from open issue status, age, labels, and planning evidence.
 
+Discovery tier: `assist`.
+
 Usage:
 
 ```bash
@@ -1485,6 +1589,8 @@ Documented in: `README.md`, `docs-site/command-reference.md`
 ## `report changelog`
 
 Build a changelog document from the same milestone and merged PR evidence as release notes.
+
+Discovery tier: `assist`.
 
 Usage:
 
@@ -1519,6 +1625,8 @@ Documented in: `README.md`, `docs-site/command-reference.md`
 
 Build a delivery status report from milestone progress, blockers, and PR readiness evidence.
 
+Discovery tier: `assist`.
+
 Usage:
 
 ```bash
@@ -1550,6 +1658,8 @@ Documented in: `README.md`, `docs-site/command-reference.md`
 ## `report milestone`
 
 Build a milestone progress report from GitHub milestone and issue evidence.
+
+Discovery tier: `assist`.
 
 Usage:
 
@@ -1584,6 +1694,8 @@ Documented in: `README.md`, `docs-site/command-reference.md`
 
 Render a self-contained local HTML overview of milestone progress, dated gates, and blocked or review-waiting queues.
 
+Discovery tier: `assist`.
+
 Usage:
 
 ```bash
@@ -1613,6 +1725,8 @@ Documented in: `README.md`, `docs/visual-portfolio-report.md`, `docs-site/comman
 ## `report qa-checklist`
 
 Build a QA checklist report from issue labels, open PR checks, review state, and closure-link evidence.
+
+Discovery tier: `assist`.
 
 Usage:
 
@@ -1646,6 +1760,8 @@ Documented in: `README.md`, `docs-site/command-reference.md`
 ## `report release-notes`
 
 Build human-readable release notes from milestone issues and merged PR closing evidence.
+
+Discovery tier: `assist`.
 
 Usage:
 
@@ -1686,6 +1802,8 @@ Documented in: `README.md`, `docs-site/command-reference.md`
 
 Build a schedule-oriented execution report sorted by date and week bucket.
 
+Discovery tier: `assist`.
+
 Usage:
 
 ```bash
@@ -1724,6 +1842,8 @@ Documented in: `README.md`, `docs-site/command-reference.md`
 ## `report wbs`
 
 Build structural or execution-focused WBS reports from GitHub epics, issues, milestones, and roadmap dates.
+
+Discovery tier: `assist`.
 
 Usage:
 
@@ -1771,6 +1891,8 @@ Documented in: `README.md`, `docs-site/command-reference.md`
 
 Build a weekly PM cockpit report with deterministic KPIs and top exceptions.
 
+Discovery tier: `assist`.
+
 Usage:
 
 ```bash
@@ -1809,6 +1931,8 @@ Documented in: `README.md`, `docs-site/command-reference.md`
 
 Create or update the OS-user global config, workspace registry, and repo registry.
 
+Discovery tier: `supporting`.
+
 Usage:
 
 ```bash
@@ -1836,6 +1960,8 @@ Documented in: `README.md`, `docs/global-config-registry.md`, `docs-site/global-
 ## `stats pulse`
 
 Show a read-only recent workflow pulse for one GitHub repo.
+
+Discovery tier: `assist`.
 
 Usage:
 
@@ -1865,6 +1991,8 @@ Documented in: `docs/task-momentum-loop.md`, `docs/closure-funnel-stats.md`, `do
 ## `stats repo`
 
 Show a read-only Closure Funnel report for one GitHub repo.
+
+Discovery tier: `assist`.
 
 Usage:
 
@@ -1896,6 +2024,8 @@ Documented in: `README.md`, `docs/closure-funnel-stats.md`, `docs-site/closure-f
 
 Planned multi-repo Closure Funnel rollup for a configured workspace.
 
+Discovery tier: `assist`.
+
 Usage:
 
 ```bash
@@ -1922,6 +2052,8 @@ Documented in: `docs/closure-funnel-stats.md`, `docs-site/closure-funnel-stats.m
 
 Show linked PR checks, review blockers, and next action.
 
+Discovery tier: `managed_delivery`.
+
 Usage:
 
 ```bash
@@ -1944,6 +2076,8 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
 Merge the linked PR when policy allows; Draft PRs stop after ready transition and require a new finish preview.
 
+Discovery tier: `managed_delivery`.
+
 Usage:
 
 ```bash
@@ -1965,6 +2099,10 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 ## `ticket handoff`
 
 Compile a worker-neutral handoff packet from ticket context.
+
+Discovery tier: `managed_delivery`.
+
+Workflow role: `canonical_single_issue_agent_entry_point`.
 
 Usage:
 
@@ -1999,6 +2137,8 @@ Documented in: `docs-site/ticket-workflow.md`, `docs-site/command-reference.md`,
 ## `ticket new`
 
 Create a repo-bound executable GitHub issue with structured or full Markdown body input.
+
+Discovery tier: `managed_delivery`.
 
 Usage:
 
@@ -2042,6 +2182,8 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
 Post a structured context note to the issue, linked PR, or both.
 
+Discovery tier: `managed_delivery`.
+
 Usage:
 
 ```bash
@@ -2079,6 +2221,8 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
 Show, set, or clear a native GitHub sub-issue parent without adding a separate link command family.
 
+Discovery tier: `managed_delivery`.
+
 Usage:
 
 ```bash
@@ -2114,6 +2258,8 @@ Documented in: `README.md`, `docs/command-surface-boundary.md`
 
 Create or validate a linked PR with required issue closing text.
 
+Discovery tier: `managed_delivery`.
+
 Usage:
 
 ```bash
@@ -2135,6 +2281,8 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 ## `ticket prompt`
 
 Render a stateless planner, implementer, or reviewer prompt from ticket context.
+
+Discovery tier: `managed_delivery`.
 
 Usage:
 
@@ -2170,6 +2318,8 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 ## `ticket review`
 
 Render a reviewer packet from current ticket and linked PR state.
+
+Discovery tier: `managed_delivery`.
 
 Usage:
 
@@ -2214,6 +2364,8 @@ Documented in: `docs-site/ticket-workflow.md`, `docs-site/command-reference.md`,
 
 Post a self-review check note for the current branch ticket and linked PR.
 
+Discovery tier: `managed_delivery`.
+
 Usage:
 
 ```bash
@@ -2250,6 +2402,10 @@ Documented in: `docs-site/ticket-workflow.md`, `docs-site/command-reference.md`,
 
 Start a ready issue with an explicit branch strategy.
 
+Discovery tier: `managed_delivery`.
+
+Compatibility aliases: `gira start`.
+
 Usage:
 
 ```bash
@@ -2279,6 +2435,8 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 ## `ticket status`
 
 Report ticket status, linked PR blockers, and next action.
+
+Discovery tier: `managed_delivery`.
 
 Usage:
 
@@ -2317,6 +2475,8 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
 Close a ticket as superseded and create a linked replacement ticket.
 
+Discovery tier: `managed_delivery`.
+
 Usage:
 
 ```bash
@@ -2350,6 +2510,10 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
 Show a Gira operating card for the ticket, linked PR, blockers, and next action. Alias: gira ticket show.
 
+Discovery tier: `managed_delivery`.
+
+Compatibility aliases: `gira ticket show`.
+
 Usage:
 
 ```bash
@@ -2378,6 +2542,8 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
 Wait for pending linked PR checks without merging.
 
+Discovery tier: `managed_delivery`.
+
 Usage:
 
 ```bash
@@ -2399,6 +2565,8 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 ## `workspace repos sync`
 
 Discover GitHub owner/org repos and update a global workspace execution repo allowlist.
+
+Discovery tier: `managed_delivery`.
 
 Usage:
 
@@ -2427,6 +2595,8 @@ Documented in: `docs/global-config-registry.md`, `docs-site/global-config.md`, `
 ## `workspace status`
 
 Show inbox and execution repo state from a workspace config or global workspace registry.
+
+Discovery tier: `managed_delivery`.
 
 Usage:
 

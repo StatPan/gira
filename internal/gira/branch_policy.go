@@ -51,6 +51,7 @@ type ResolvedBranchPolicy struct {
 	FinishSyncLocal                 bool              `json:"finish_sync_local"`
 	Targets                         map[string]string `json:"targets,omitempty"`
 	Source                          string            `json:"source"`
+	ConfigSource                    string            `json:"config_source,omitempty"`
 }
 
 func ResolveBranchPolicy(config *BranchPolicyConfig, githubDefaultBranch string) (ResolvedBranchPolicy, error) {

@@ -16,9 +16,7 @@ start evidence, PRs are change units, and milestones are phase boundaries.
 
 - A branch starts one issue; a PR is its review and delivery unit.
 - A merged PR plus its closed linked issue is completion evidence.
-- Milestones group bounded phases. Project-only items must become repository
-  issues before implementation.
-- GitHub labels, milestones, issues, and PRs remain the source of truth.
+- Milestones group bounded phases; project-only items become repository issues.
 
 ## Standard Agent Flow
 
@@ -50,6 +48,7 @@ start evidence, PRs are change units, and milestones are phase boundaries.
    - Apply with `gira ticket pr --apply`.
    - The PR body must contain `Closes #N`, `Fixes #N`, or `Resolves #N`
      unless the issue is intentionally kept open.
+   - On `pr_base_mismatch`, use status guidance to deliberately retarget the PR.
 5. Check and wait.
    - Prefer `gira ticket review --diff-summary`.
    - Prefer `gira ticket checks`.

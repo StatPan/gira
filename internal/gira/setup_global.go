@@ -436,6 +436,9 @@ func renderSetupGlobalRepoEntry(entry GlobalRepoRegistryEntry) string {
 	if strings.TrimSpace(entry.Contract) != "" {
 		fmt.Fprintf(&b, "contract: %s\n", entry.Contract)
 	}
+	if operationPolicy := renderOperationPolicyConfig(OperationPolicyConfig{OperationMode: entry.OperationMode, DeliveryPolicy: entry.DeliveryPolicy}); operationPolicy != "" {
+		b.WriteString(operationPolicy)
+	}
 	if branchPolicy := renderBranchPolicyConfig(entry.BranchPolicy); branchPolicy != "" {
 		b.WriteString(branchPolicy)
 	}

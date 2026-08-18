@@ -34,7 +34,8 @@ Daily commands:
   repo        Manage global registry entries for repositories
   pm          PM skill commands for task-local PM state and worker-ready specs
   adopt       Plan or apply adoption for existing repositories and issues
-  ticket      Jira-style ticket lifecycle commands
+  ticket      Jira-style ticket lifecycle commands. Alias: t
+  new         Shortcut for ticket new
   run         Local Codex run manifests and execution state
   dispatch    Build official AI work-order packets
   feature     Optional issue-backed feature map commands. Alias: feat
@@ -98,7 +99,7 @@ const guideQuickstart = `Gira quickstart: first ticket to merged PR
    gira status
 
 3. Create a ticket, then choose its branch strategy.
-   gira ticket new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --apply
+   gira new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --apply
    gira ticket start TICKET --create --apply
 
 4. Implement the bounded scope and verify locally.
@@ -124,7 +125,7 @@ const guideQuickstart = `Gira quickstart: first ticket to merged PR
 const guideTicketIntro = `Gira ticket guide
 
 Daily loop:
-  gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply
+  gira new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply
   gira ticket start TICKET --create --apply
   gira ticket pr --apply --draft
   gira ticket review --diff-summary
@@ -146,6 +147,10 @@ Context rules:
 Safety:
   Use --dry-run before mutating commands when unsure.
   PR bodies must contain Closes #N, Fixes #N, or Resolves #N.
+
+Shortcuts:
+  gira new ...        Alias for gira ticket new ...
+  gira t n ...        Short alias for gira ticket new ...
 
 Registry-backed commands:
 `
@@ -1920,8 +1925,10 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runAdopt(args[1:], stdout, stderr)
 	case "start":
 		return runTicketStart(args[1:], stdout, stderr)
-	case "ticket":
+	case "ticket", "t":
 		return runTicket(args[1:], stdout, stderr)
+	case "new":
+		return runTicketNew(args[1:], stdout, stderr)
 	case "run":
 		return runRun(args[1:], stdout, stderr)
 	case "dispatch":
@@ -4472,7 +4479,7 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	switch args[0] {
-	case "new":
+	case "new", "n":
 		return runTicketNew(args[1:], stdout, stderr)
 	case "parent":
 		return runTicketParent(args[1:], stdout, stderr)
@@ -7518,7 +7525,7 @@ func extractTicketNotePositionals(args []string, stderr io.Writer) ([]string, in
 func extractTitlePositional(args []string, stderr io.Writer) ([]string, string, bool) {
 	cleaned := make([]string, 0, len(args))
 	title := ""
-	valueFlags := map[string]struct{}{"--repo": {}, "--title": {}, "--goal": {}, "--scope": {}, "--acceptance": {}, "--notes": {}, "--body": {}, "--type": {}, "--priority": {}, "--parent": {}, "--milestone": {}, "--label": {}, "--body-file": {}, "--objective": {}, "--direction": {}, "--autonomy": {}, "--decomposition": {}, "--quality-bar": {}, "--stop-condition": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--title": {}, "--goal": {}, "--scope": {}, "--acceptance": {}, "--notes": {}, "--body": {}, "--type": {}, "--priority": {}, "--parent": {}, "--milestone": {}, "--label": {}, "--body-file": {}, "--release-impact": {}, "--release-impact-reason": {}, "--objective": {}, "--direction": {}, "--autonomy": {}, "--decomposition": {}, "--quality-bar": {}, "--stop-condition": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)

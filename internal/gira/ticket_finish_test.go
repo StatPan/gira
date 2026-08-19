@@ -623,6 +623,24 @@ func TestFinishWorkDryRunPendingChecksReportsBlockerWithoutWaiting(t *testing.T)
 	}
 }
 
+func TestBuildWorkFinishReadinessBlocksUnknownChecks(t *testing.T) {
+	result := WorkFinishResult{
+		Repo:  "StatPan/gira",
+		Issue: 945,
+		FinalStatus: WorkStatusResult{
+			Repo:         "StatPan/gira",
+			Issue:        945,
+			ChecksStatus: "unknown",
+			Checks:       []DevPRCheck{{Name: "required", State: "unknown"}},
+			PullRequest:  &TicketStatusPullRequest{Available: true, Number: 948},
+		},
+	}
+	report := buildWorkFinishReadiness(result)
+	if report.Ready || !containsString(report.Blockers, "checks") {
+		t.Fatalf("unknown checks must block finish readiness: %+v", report)
+	}
+}
+
 func TestFinishWorkDryRunReadySuggestsFinishApply(t *testing.T) {
 	useFinishReviewPolicy(t, FinishReviewPolicyRequired)
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}

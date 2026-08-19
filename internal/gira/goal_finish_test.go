@@ -59,7 +59,7 @@ func TestBuildGoalFinishReportBlocksMissingEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildGoalFinishReport error: %v", err)
 	}
-	for _, want := range []string{"child_101_missing_pr", "child_101_checks_missing", "child_101_missing_finish_receipt"} {
+	for _, want := range []string{"child_101_missing_pr", "child_101_checks_unknown", "child_101_missing_finish_receipt"} {
 		if !containsString(report.Readiness.Blockers, want) {
 			t.Fatalf("blockers missing %s: %+v", want, report.Readiness.Blockers)
 		}
@@ -78,7 +78,7 @@ func TestBuildGoalFinishReportAcceptsPlanningOnlyChildReceipt(t *testing.T) {
 	if !report.Readiness.Ready || report.Readiness.TerminalRecommendation != "done" {
 		t.Fatalf("expected planning-only child to be ready for done: %+v", report.Readiness)
 	}
-	for _, blocker := range []string{"child_101_missing_pr", "child_101_checks_missing", "child_101_missing_finish_receipt"} {
+	for _, blocker := range []string{"child_101_missing_pr", "child_101_checks_unknown", "child_101_missing_finish_receipt"} {
 		if containsString(report.Readiness.Blockers, blocker) {
 			t.Fatalf("planning-only receipt should suppress %s: %+v", blocker, report.Readiness.Blockers)
 		}
@@ -105,7 +105,7 @@ func TestBuildGoalFinishReportGenericReceiptStillBlocksMissingPRChecks(t *testin
 	if err != nil {
 		t.Fatalf("BuildGoalFinishReport error: %v", err)
 	}
-	for _, want := range []string{"child_101_missing_pr", "child_101_checks_missing"} {
+	for _, want := range []string{"child_101_missing_pr", "child_101_checks_unknown"} {
 		if !containsString(report.Readiness.Blockers, want) {
 			t.Fatalf("generic receipt should still require %s: %+v", want, report.Readiness.Blockers)
 		}

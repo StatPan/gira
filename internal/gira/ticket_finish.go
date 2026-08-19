@@ -936,6 +936,9 @@ func finishReadinessBlockers(result WorkFinishResult, report WorkFinishReadiness
 	if report.Checks.Status == "pending" {
 		blockers = appendUniqueStrings(blockers, "checks_pending")
 	}
+	if !result.AlreadyDone && report.PullRequest.Available && (report.Checks.Status == "unknown" || report.Checks.Status == "missing" || report.Checks.Status == "") {
+		blockers = appendUniqueStrings(blockers, "checks")
+	}
 	if report.PullRequest.IsDraft {
 		blockers = appendUniqueStrings(blockers, "draft")
 	}

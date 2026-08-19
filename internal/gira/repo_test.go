@@ -32,6 +32,42 @@ func TestParseGitHubRemoteRepo(t *testing.T) {
 	}
 }
 
+func TestParseRepoRefAcceptsValidGitHubIdentifiers(t *testing.T) {
+	for _, raw := range []string{
+		"StatPan/gira",
+		"owner-123/repo_name.v2",
+		"github/.github",
+		" OWNER/repo ",
+	} {
+		repo, err := ParseRepoRef(raw)
+		if err != nil {
+			t.Fatalf("ParseRepoRef(%q) returned error: %v", raw, err)
+		}
+		if repo.Owner == "" || repo.Name == "" || strings.ContainsAny(repo.Owner+repo.Name, `/\\`) {
+			t.Fatalf("ParseRepoRef(%q) returned unsafe repo: %+v", raw, repo)
+		}
+	}
+}
+
+func TestParseRepoRefRejectsHostileOrInvalidIdentifiers(t *testing.T) {
+	for _, raw := range []string{
+		"../gira",
+		"StatPan/../../gira",
+		"StatPan\\gira",
+		"StatPan/gira\\escape",
+		"StatPan/gira\n",
+		"StatPan/gira\x00",
+		"Stat!Pan/gira",
+		"StatPan/repo?",
+		"StatPan/.",
+		"StatPan/..",
+	} {
+		if _, err := ParseRepoRef(raw); err == nil {
+			t.Fatalf("ParseRepoRef(%q) returned nil error", raw)
+		}
+	}
+}
+
 func TestResolveRepoContextOverrideWins(t *testing.T) {
 	isolateDefaultGlobalConfig(t)
 	repo, err := ResolveRepoContext("StatPan/override", repoContextTestRunner{

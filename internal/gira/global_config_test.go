@@ -50,6 +50,39 @@ func TestGlobalRegistryPathsUseConfigRoot(t *testing.T) {
 	}
 }
 
+func TestGlobalRepoRegistryPathRejectsHostileRepoRef(t *testing.T) {
+	root := t.TempDir()
+	for _, repo := range []RepoRef{
+		{Owner: "../outside", Name: "repo"},
+		{Owner: "StatPan", Name: "../outside"},
+		{Owner: "StatPan", Name: `repo\\outside`},
+		{Owner: "StatPan", Name: "repo\x00outside"},
+		{},
+	} {
+		if path, err := GlobalRepoRegistryPath(root, repo); err == nil {
+			t.Fatalf("GlobalRepoRegistryPath(%+v) returned path %q", repo, path)
+		}
+	}
+}
+
+func TestGlobalRepoRegistryPathIsContainedForValidRepoRefs(t *testing.T) {
+	root := t.TempDir()
+	registryRoot := filepath.Join(root, "repos")
+	for _, repo := range []RepoRef{
+		{Owner: "owner-123", Name: "repo_name.v2"},
+		{Owner: "github", Name: ".github"},
+	} {
+		path, err := GlobalRepoRegistryPath(root, repo)
+		if err != nil {
+			t.Fatalf("GlobalRepoRegistryPath(%+v) returned error: %v", repo, err)
+		}
+		rel, err := filepath.Rel(registryRoot, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			t.Fatalf("registry path %q escaped %q: rel=%q err=%v", path, registryRoot, rel, err)
+		}
+	}
+}
+
 func TestGlobalWorkspaceRegistryPathRejectsUnsafeNames(t *testing.T) {
 	for _, name := range []string{"", " ", ".", "..", "team/a", `team\a`} {
 		if _, err := GlobalWorkspaceRegistryPath(t.TempDir(), name); err == nil {

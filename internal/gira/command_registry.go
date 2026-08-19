@@ -1528,7 +1528,7 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 		case "jira export":
 			specs[i].Adapter = adapterApply("writes Jira-friendly export artifacts to the requested output path", JSONSupportStable)
 		case "ticket new":
-			specs[i].Adapter = adapterApply("creates a GitHub issue, may set a native parent, and may optionally start it; --dry-run previews issue body, labels, and parent plan", JSONSupportStable)
+			specs[i].Adapter = adapterApply("creates a GitHub issue, may set a native parent, and may optionally start it; --dry-run previews issue body, labels, and parent plan", JSONSupportStable, "gira new", "gira t new", "gira t n")
 		case "ticket parent":
 			specs[i].Adapter = adapterApply("sets or clears a native GitHub sub-issue parent; read mode shows the current parent and mutation modes require --dry-run or --apply", JSONSupportStable)
 		case "ticket view":

@@ -25,6 +25,35 @@ func TestEvaluatePRReadinessReadyForFinish(t *testing.T) {
 	}
 }
 
+func TestPRReadinessChecksFailClosedForUnknownOrEmptyState(t *testing.T) {
+	if got := prReadinessChecksStatus(nil); got != "unknown" {
+		t.Fatalf("empty checks status=%q, want unknown", got)
+	}
+	if got := prReadinessChecksStatus([]DevPRCheck{{State: "unknown"}}); got != "unknown" {
+		t.Fatalf("unknown check status=%q, want unknown", got)
+	}
+	if got := prReadinessChecksStatus([]DevPRCheck{{State: "passing", Conclusion: "SKIPPED"}}); got != "passed" {
+		t.Fatalf("explicitly skipped check status=%q, want passed", got)
+	}
+}
+
+func TestEvaluatePRReadinessReportsUnavailableChecksAsError(t *testing.T) {
+	report := evaluatePRReadiness(prReadinessInput{
+		Repo:             "StatPan/gira",
+		Issue:            945,
+		PullRequest:      946,
+		PRAvailable:      true,
+		ClosingReference: true,
+		ChecksStatus:     "unknown",
+		ReviewStatus:     "approved",
+		ReviewDecision:   "APPROVED",
+		FinishReady:      true,
+	})
+	if report.Readiness != "needs_revision" || !prReadinessHasFinding(report, "checks_unavailable") {
+		t.Fatalf("expected unavailable checks error, got %+v", report)
+	}
+}
+
 func TestEvaluatePRReadinessDetectsBaseMismatch(t *testing.T) {
 	report := evaluatePRReadiness(prReadinessInput{
 		Repo:             "StatPan/gira",

@@ -27,22 +27,23 @@ type DevPRCreateOptions struct {
 }
 
 type DevPRStatusResult struct {
-	Repo             string       `json:"repo"`
-	Issue            int          `json:"issue"`
-	PRNumber         int          `json:"pr_number,omitempty"`
-	PRURL            string       `json:"pr_url,omitempty"`
-	State            string       `json:"state,omitempty"`
-	Mergeable        string       `json:"mergeable,omitempty"`
-	ReviewDecision   string       `json:"review_decision,omitempty"`
-	IsDraft          bool         `json:"is_draft,omitempty"`
-	Binding          DevPRBinding `json:"binding,omitempty"`
-	Blockers         []string     `json:"blockers"`
-	Checks           []DevPRCheck `json:"checks,omitempty"`
-	Ready            bool         `json:"ready"`
-	LookupAttempts   int          `json:"lookup_attempts,omitempty"`
-	HeadSHA          string       `json:"head_sha,omitempty"`
-	MergeCommitSHA   string       `json:"merge_commit_sha,omitempty"`
-	ClosingReference bool         `json:"closing_reference"`
+	Repo              string       `json:"repo"`
+	Issue             int          `json:"issue"`
+	PRNumber          int          `json:"pr_number,omitempty"`
+	PRURL             string       `json:"pr_url,omitempty"`
+	State             string       `json:"state,omitempty"`
+	Mergeable         string       `json:"mergeable,omitempty"`
+	ReviewDecision    string       `json:"review_decision,omitempty"`
+	IsDraft           bool         `json:"is_draft,omitempty"`
+	Binding           DevPRBinding `json:"binding,omitempty"`
+	Blockers          []string     `json:"blockers"`
+	Checks            []DevPRCheck `json:"checks,omitempty"`
+	ChecksUnavailable bool         `json:"checks_unavailable,omitempty"`
+	Ready             bool         `json:"ready"`
+	LookupAttempts    int          `json:"lookup_attempts,omitempty"`
+	HeadSHA           string       `json:"head_sha,omitempty"`
+	MergeCommitSHA    string       `json:"merge_commit_sha,omitempty"`
+	ClosingReference  bool         `json:"closing_reference"`
 }
 
 type DevPRBinding struct {
@@ -360,7 +361,10 @@ func devPRStatusFromRESTPull(repo RepoRef, issueNumber int, pr restPull, binding
 	if result.ReviewDecision == "CHANGES_REQUESTED" || result.ReviewDecision == "REVIEW_REQUIRED" {
 		result.Blockers = append(result.Blockers, "review")
 	}
-	result.Checks = restPRChecks(repo, pr.Head.SHA, runner)
+	result.Checks, result.ChecksUnavailable = restPRChecksWithAvailability(repo, pr.Head.SHA, runner)
+	if result.ChecksUnavailable {
+		result.Blockers = appendUniqueStrings(result.Blockers, "checks")
+	}
 	result.Blockers = append(result.Blockers, devPRCheckBlockers(result.Checks)...)
 	result.Ready = len(result.Blockers) == 0
 	return result
@@ -580,31 +584,42 @@ func restBranchRequiresReviews(repo RepoRef, baseRef string, runner CommandRunne
 }
 
 func restPRChecks(repo RepoRef, headSHA string, runner CommandRunner) []DevPRCheck {
+	checks, _ := restPRChecksWithAvailability(repo, headSHA, runner)
+	return checks
+}
+
+func restPRChecksWithAvailability(repo RepoRef, headSHA string, runner CommandRunner) ([]DevPRCheck, bool) {
 	headSHA = strings.TrimSpace(headSHA)
 	if headSHA == "" {
-		return nil
+		return nil, true
 	}
-	checks := restCheckRunsForCommit(repo, headSHA, runner)
-	checks = append(checks, restStatusesForCommit(repo, headSHA, runner)...)
+	checkRuns, checkRunsAvailable := restCheckRunsForCommitWithAvailability(repo, headSHA, runner)
+	statuses, statusesAvailable := restStatusesForCommitWithAvailability(repo, headSHA, runner)
+	checks := append(checkRuns, statuses...)
 	sort.Slice(checks, func(i, j int) bool {
 		if checks[i].Workflow != checks[j].Workflow {
 			return checks[i].Workflow < checks[j].Workflow
 		}
 		return checks[i].Name < checks[j].Name
 	})
-	return checks
+	return checks, !checkRunsAvailable || !statusesAvailable
 }
 
 func restCheckRunsForCommit(repo RepoRef, headSHA string, runner CommandRunner) []DevPRCheck {
+	checks, _ := restCheckRunsForCommitWithAvailability(repo, headSHA, runner)
+	return checks
+}
+
+func restCheckRunsForCommitWithAvailability(repo RepoRef, headSHA string, runner CommandRunner) ([]DevPRCheck, bool) {
 	out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/commits/%s/check-runs", repo.FullName(), headSHA), "-X", "GET", "-f", "per_page=100", "-f", "filter=all", "--paginate", "--slurp")
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	payloads := []restCheckRuns{}
 	if err := json.Unmarshal(out, &payloads); err != nil {
 		var payload restCheckRuns
 		if err := json.Unmarshal(out, &payload); err != nil {
-			return nil
+			return nil, false
 		}
 		payloads = append(payloads, payload)
 	}
@@ -645,7 +660,7 @@ func restCheckRunsForCommit(repo RepoRef, headSHA string, runner CommandRunner) 
 			checks = append(checks, result)
 		}
 	}
-	return markSupersededCancelledChecks(checks, headSHA)
+	return markSupersededCancelledChecks(checks, headSHA), true
 }
 
 func isGitHubActionsCheck(check DevPRCheck) bool {
@@ -707,13 +722,18 @@ func markSupersededCancelledChecks(checks []DevPRCheck, headSHA string) []DevPRC
 }
 
 func restStatusesForCommit(repo RepoRef, headSHA string, runner CommandRunner) []DevPRCheck {
+	checks, _ := restStatusesForCommitWithAvailability(repo, headSHA, runner)
+	return checks
+}
+
+func restStatusesForCommitWithAvailability(repo RepoRef, headSHA string, runner CommandRunner) ([]DevPRCheck, bool) {
 	out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/commits/%s/status", repo.FullName(), headSHA))
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	var payload restCombinedStatus
 	if err := json.Unmarshal(out, &payload); err != nil {
-		return nil
+		return nil, false
 	}
 	checks := []DevPRCheck{}
 	for _, status := range payload.Statuses {
@@ -726,7 +746,7 @@ func restStatusesForCommit(repo RepoRef, headSHA string, runner CommandRunner) [
 			State:      classifyDevPRCheck(checkStatus, conclusion),
 		})
 	}
-	return checks
+	return checks, true
 }
 
 func restCommitStatusState(state string) (string, string) {
@@ -743,11 +763,30 @@ func restCommitStatusState(state string) (string, string) {
 }
 
 func devPRCheckBlockers(checks []DevPRCheck) []string {
+	if len(checks) == 0 {
+		return []string{"checks"}
+	}
 	for _, check := range checks {
-		if check.State == "failing" {
+		if strings.EqualFold(strings.TrimSpace(check.Conclusion), "skipped") {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(check.State), "failing") {
 			return []string{"checks"}
 		}
-		if check.State == "pending" {
+	}
+	for _, check := range checks {
+		if strings.EqualFold(strings.TrimSpace(check.Conclusion), "skipped") {
+			continue
+		}
+		if strings.TrimSpace(check.State) == "" || strings.EqualFold(strings.TrimSpace(check.State), "unknown") {
+			return []string{"checks"}
+		}
+	}
+	for _, check := range checks {
+		if strings.EqualFold(strings.TrimSpace(check.Conclusion), "skipped") {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(check.State), "pending") {
 			return []string{"checks_pending"}
 		}
 	}
@@ -912,9 +951,6 @@ func classifyDevPRCheck(status string, conclusion string) string {
 		return "pending"
 	}
 	if strings.EqualFold(conclusion, "success") || strings.EqualFold(conclusion, "neutral") || strings.EqualFold(conclusion, "skipped") {
-		return "passing"
-	}
-	if strings.EqualFold(status, "completed") && strings.TrimSpace(conclusion) == "" {
 		return "passing"
 	}
 	return "unknown"

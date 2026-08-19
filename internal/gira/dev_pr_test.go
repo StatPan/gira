@@ -346,6 +346,77 @@ func TestDevPRStatusRESTFirstMapsPendingChecks(t *testing.T) {
 	}
 }
 
+func TestDevPRCheckBlockersFailClosedForUnknownAndEmptyChecks(t *testing.T) {
+	tests := []struct {
+		name    string
+		checks  []DevPRCheck
+		blocked bool
+	}{
+		{name: "empty", checks: nil, blocked: true},
+		{name: "unknown", checks: []DevPRCheck{{Name: "required", State: "unknown"}}, blocked: true},
+		{name: "empty state", checks: []DevPRCheck{{Name: "required"}}, blocked: true},
+		{name: "explicitly skipped", checks: []DevPRCheck{{Name: "release", State: "passing", Conclusion: "SKIPPED"}}, blocked: false},
+		{name: "passing", checks: []DevPRCheck{{Name: "required", State: "passing", Conclusion: "SUCCESS"}}, blocked: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := containsString(devPRCheckBlockers(tt.checks), "checks")
+			if got != tt.blocked {
+				t.Fatalf("checks blocker=%t, want %t: %+v", got, tt.blocked, tt.checks)
+			}
+		})
+	}
+}
+
+func TestClassifyDevPRCheckCompletedWithoutConclusionIsUnknown(t *testing.T) {
+	if got := classifyDevPRCheck("completed", ""); got != "unknown" {
+		t.Fatalf("completed check without conclusion=%q, want unknown", got)
+	}
+}
+
+func TestDevPRStatusFailsClosedWhenChecksAreUnavailable(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := devPRRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/60/timeline --paginate": []byte(`[
+			{"event":"cross-referenced","source":{"issue":{"number":99,"body":"Closes #60","pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/99"}}}}
+		]`),
+		"gh api repos/StatPan/gira/pulls/99":                    []byte(`{"number":99,"body":"Closes #60","state":"open","html_url":"u","mergeable_state":"clean","head":{"ref":"issue-60-checks","sha":"abc123"},"base":{"ref":"main"}}`),
+		"gh api repos/StatPan/gira/pulls/99/reviews --paginate": []byte(`[]`),
+		"gh api repos/StatPan/gira/commits/abc123/status":       []byte(`{"statuses":[{"context":"commit-status","state":"success"}]}`),
+	}, errs: map[string]error{
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": fmt.Errorf("check-runs unavailable"),
+	}}
+
+	result, err := DevPRStatus(repo, 60, runner)
+	if err != nil {
+		t.Fatalf("DevPRStatus error: %v", err)
+	}
+	if result.Ready || !result.ChecksUnavailable || !containsString(result.Blockers, "checks") {
+		t.Fatalf("unavailable checks must block readiness: %+v", result)
+	}
+}
+
+func TestDevPRStatusAllowsExplicitlySkippedChecks(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := devPRRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/60/timeline --paginate": []byte(`[
+			{"event":"cross-referenced","source":{"issue":{"number":99,"body":"Closes #60","pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/99"}}}}
+		]`),
+		"gh api repos/StatPan/gira/pulls/99":                                                                          []byte(`{"number":99,"body":"Closes #60","state":"open","html_url":"u","mergeable_state":"clean","head":{"ref":"issue-60-checks","sha":"abc123"},"base":{"ref":"main"}}`),
+		"gh api repos/StatPan/gira/pulls/99/reviews --paginate":                                                       []byte(`[]`),
+		"gh api repos/StatPan/gira/commits/abc123/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": []byte(`{"check_runs":[{"name":"release","status":"completed","conclusion":"skipped"}]}`),
+		"gh api repos/StatPan/gira/commits/abc123/status":                                                             []byte(`{"statuses":[]}`),
+	}}
+
+	result, err := DevPRStatus(repo, 60, runner)
+	if err != nil {
+		t.Fatalf("DevPRStatus error: %v", err)
+	}
+	if !result.Ready || result.ChecksUnavailable || containsString(result.Blockers, "checks") {
+		t.Fatalf("explicitly skipped check should remain non-blocking: %+v", result)
+	}
+}
+
 func TestDevPRStatusRESTFirstMissingPRDoesNotFallBackToGraphQL(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	calls := []string{}

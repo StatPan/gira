@@ -248,6 +248,10 @@ func goalFinishChildBlockers(child GoalStatusChild, evidence GoalFinishChildEvid
 		if !goalFinishChildChecksNotRequired(child, evidence) {
 			blockers = append(blockers, fmt.Sprintf("child_%d_checks_missing", child.Number))
 		}
+	case "unknown":
+		if !goalFinishChildChecksNotRequired(child, evidence) {
+			blockers = append(blockers, fmt.Sprintf("child_%d_checks_unknown", child.Number))
+		}
 	}
 	if child.Category == "done" && !evidence.ReceiptPresent {
 		blockers = append(blockers, fmt.Sprintf("child_%d_missing_finish_receipt", child.Number))

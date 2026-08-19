@@ -160,6 +160,13 @@ func evaluatePRReadiness(input prReadinessInput) PRReadinessReport {
 			"One or more checks are still pending.",
 			"Wait for checks to finish before deciding whether the PR can finish.",
 		))
+	case "unknown":
+		report.Findings = append(report.Findings, prReadinessFinding(
+			"error",
+			"checks_unavailable",
+			"Required PR check state is unavailable or unknown.",
+			"Retry the PR check query and confirm every required check has an explicit result before finish.",
+		))
 	case "missing", "":
 		report.Findings = append(report.Findings, prReadinessFinding(
 			"warning",
@@ -248,14 +255,20 @@ func prReadinessFinding(severity string, kind string, message string, action str
 
 func prReadinessChecksStatus(checks []DevPRCheck) string {
 	if len(checks) == 0 {
-		return "missing"
+		return "unknown"
 	}
 	for _, check := range checks {
-		if check.State == "failing" {
+		if strings.EqualFold(strings.TrimSpace(check.Conclusion), "skipped") {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(check.State), "failing") {
 			return "failed"
 		}
-		if check.State == "pending" {
+		if strings.EqualFold(strings.TrimSpace(check.State), "pending") {
 			return "pending"
+		}
+		if strings.TrimSpace(check.State) == "" || strings.EqualFold(strings.TrimSpace(check.State), "unknown") {
+			return "unknown"
 		}
 	}
 	return "passed"

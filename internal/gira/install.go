@@ -24,7 +24,7 @@ func (r InstallResult) Changed() bool {
 }
 
 func InstallTemplates(targetPath string, rendered []RenderedTemplate, overwrite bool, branch string) (InstallResult, error) {
-	resolved, err := filepath.Abs(targetPath)
+	resolved, err := resolveInstallRoot(targetPath)
 	if err != nil {
 		return InstallResult{}, err
 	}
@@ -38,11 +38,15 @@ func InstallTemplates(targetPath string, rendered []RenderedTemplate, overwrite 
 	if !info.IsDir() {
 		return InstallResult{}, fmt.Errorf("target path is not a directory: %s", resolved)
 	}
-	if _, err := os.Stat(filepath.Join(resolved, ".git")); err != nil {
+	gitInfo, err := os.Lstat(filepath.Join(resolved, ".git"))
+	if err != nil {
 		if os.IsNotExist(err) {
 			return InstallResult{}, fmt.Errorf("target path is not a git repository: %s", resolved)
 		}
 		return InstallResult{}, err
+	}
+	if gitInfo.Mode()&os.ModeSymlink != 0 {
+		return InstallResult{}, fmt.Errorf("target path is not a git repository: .git is a symlink: %s", resolved)
 	}
 
 	if branch != "" {
@@ -59,6 +63,19 @@ func InstallTemplates(targetPath string, rendered []RenderedTemplate, overwrite 
 
 		dest := filepath.Join(resolved, filepath.FromSlash(item.Path))
 		newBytes := []byte(item.Content)
+		if err := ensureInstallParent(resolved, filepath.Dir(dest)); err != nil {
+			return InstallResult{}, err
+		}
+		info, err := os.Lstat(dest)
+		if err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return InstallResult{}, fmt.Errorf("unsafe template destination: symlink: %s", item.Path)
+		}
+		if err == nil && info.IsDir() {
+			return InstallResult{}, fmt.Errorf("template destination is a directory: %s", item.Path)
+		}
+		if err != nil && !os.IsNotExist(err) {
+			return InstallResult{}, err
+		}
 		existing, err := os.ReadFile(dest)
 		if err == nil {
 			if bytes.Equal(existing, newBytes) {
@@ -69,7 +86,7 @@ func InstallTemplates(targetPath string, rendered []RenderedTemplate, overwrite 
 				result.Conflicts = append(result.Conflicts, item.Path)
 				continue
 			}
-			if err := os.WriteFile(dest, newBytes, 0o644); err != nil {
+			if err := atomicInstallWrite(dest, newBytes, info.Mode().Perm()); err != nil {
 				return InstallResult{}, err
 			}
 			result.Overwritten = append(result.Overwritten, item.Path)
@@ -78,16 +95,96 @@ func InstallTemplates(targetPath string, rendered []RenderedTemplate, overwrite 
 		if !os.IsNotExist(err) {
 			return InstallResult{}, err
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return InstallResult{}, err
-		}
-		if err := os.WriteFile(dest, newBytes, 0o644); err != nil {
+		if err := atomicInstallWrite(dest, newBytes, 0o644); err != nil {
 			return InstallResult{}, err
 		}
 		result.Created = append(result.Created, item.Path)
 	}
 
 	return result, nil
+}
+
+func resolveInstallRoot(targetPath string) (string, error) {
+	resolved, err := filepath.Abs(targetPath)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("target path is not a directory: %s", resolved)
+		}
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("target path is not a directory: %s", resolved)
+	}
+	resolved, err = filepath.EvalSymlinks(resolved)
+	if err != nil {
+		return "", fmt.Errorf("resolve target path symlinks %q: %w", targetPath, err)
+	}
+	return filepath.Abs(resolved)
+}
+
+func ensureInstallParent(root string, parent string) error {
+	root = filepath.Clean(root)
+	parent = filepath.Clean(parent)
+	rel, err := filepath.Rel(root, parent)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("unsafe template parent: %s", parent)
+	}
+	if rel == "." {
+		return nil
+	}
+	current := root
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if os.IsNotExist(err) {
+			if err := os.Mkdir(current, 0o755); err != nil && !os.IsExist(err) {
+				return fmt.Errorf("create template parent %q: %w", current, err)
+			}
+			info, err = os.Lstat(current)
+		}
+		if err != nil {
+			return fmt.Errorf("inspect template parent %q: %w", current, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("unsafe template parent: symlink: %s", current)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("template parent is not a directory: %s", current)
+		}
+	}
+	return nil
+}
+
+func atomicInstallWrite(dest string, content []byte, mode os.FileMode) error {
+	temp, err := os.CreateTemp(filepath.Dir(dest), ".gira-install-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer func() { _ = os.Remove(tempPath) }()
+	if err := temp.Chmod(mode); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if _, err := temp.Write(content); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, dest)
 }
 
 func FormatInstallSummary(result InstallResult) string {
@@ -161,7 +258,7 @@ func runGit(path string, args ...string) ([]byte, error) {
 }
 
 func isSafeTemplatePath(path string) bool {
-	if path == "" || filepath.IsAbs(path) {
+	if path == "" || filepath.IsAbs(path) || strings.ContainsRune(path, 0) {
 		return false
 	}
 	for _, part := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {

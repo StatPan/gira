@@ -106,6 +106,66 @@ func TestInstallTemplatesRejectsUnsafeTemplatePaths(t *testing.T) {
 	}
 }
 
+func TestInstallTemplatesRejectsSymlinkDestination(t *testing.T) {
+	repo := newGitRepo(t)
+	external := filepath.Join(t.TempDir(), "AGENTS.md")
+	if err := os.WriteFile(external, []byte("external\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(repo, "AGENTS.md")
+	if err := os.Symlink(external, destination); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := InstallTemplates(repo, []RenderedTemplate{{Path: "AGENTS.md", Content: "replacement\n"}}, true, "")
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("error = %v, want symlink rejection", err)
+	}
+	if got := readFile(t, external); got != "external\n" {
+		t.Fatalf("external file = %q, want unchanged contents", got)
+	}
+}
+
+func TestInstallTemplatesRejectsSymlinkParent(t *testing.T) {
+	repo := newGitRepo(t)
+	externalDir := t.TempDir()
+	external := filepath.Join(externalDir, "README.md")
+	if err := os.WriteFile(external, []byte("external\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(repo, "docs")
+	if err := os.Symlink(externalDir, parent); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := InstallTemplates(repo, []RenderedTemplate{{Path: "docs/README.md", Content: "replacement\n"}}, true, "")
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("error = %v, want symlink rejection", err)
+	}
+	if got := readFile(t, external); got != "external\n" {
+		t.Fatalf("external file = %q, want unchanged contents", got)
+	}
+}
+
+func TestInstallTemplatesAllowsSymlinkedRepositoryRoot(t *testing.T) {
+	repo := newGitRepo(t)
+	link := filepath.Join(t.TempDir(), "repo-link")
+	if err := os.Symlink(repo, link); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := InstallTemplates(link, []RenderedTemplate{{Path: "AGENTS.md", Content: "agents\n"}}, false, "")
+	if err != nil {
+		t.Fatalf("InstallTemplates returned error: %v", err)
+	}
+	if len(result.Created) != 1 {
+		t.Fatalf("result = %+v, want one created file", result)
+	}
+	if got := readFile(t, filepath.Join(repo, "AGENTS.md")); got != "agents\n" {
+		t.Fatalf("AGENTS.md = %q, want rendered contents", got)
+	}
+}
+
 func TestInstallTemplatesRequiresExistingGitRepo(t *testing.T) {
 	dir := t.TempDir()
 	_, err := InstallTemplates(dir, nil, false, "")

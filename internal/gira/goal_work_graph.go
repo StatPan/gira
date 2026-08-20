@@ -2,6 +2,7 @@ package gira
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -228,6 +229,9 @@ func BuildPMWorkGraphReport(input PMWorkGraphInput, runner CommandRunner) (PMWor
 		}
 	}
 	report.PlanID = pmWorkGraphFingerprint(report)
+	if err := pmWorkGraphReconcileActions(&report, input.Repo, status.Children, runner); err != nil {
+		return report, err
+	}
 	if report.ExpectedPlanID != "" && report.ExpectedPlanID != report.PlanID {
 		report.Matched = false
 		report.Diagnostics = append(report.Diagnostics, workGraphDiagnostic("error", PMWorkGraphPlanChanged, "", "work graph fingerprint changed", "rerun dry-run and approve the new plan"))
@@ -471,6 +475,273 @@ func pmWorkGraphActions(nodes []PMWorkGraphNode, children []GoalStatusChild, rep
 	return actions
 }
 
+type PMWorkGraphProgress struct {
+	PlanID string
+	NodeID string
+	Repo   string
+	Issue  int
+	Linked bool
+}
+
+const (
+	pmWorkGraphNodeMarker     = "<!-- gira:work-graph-node/v1"
+	pmWorkGraphProgressMarker = "<!-- gira:work-graph-progress/v1"
+)
+
+func pmWorkGraphNodeToken(nodeID string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(nodeID))
+}
+
+func pmWorkGraphNodeFromToken(token string) (string, bool) {
+	decoded, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil || len(decoded) == 0 {
+		return "", false
+	}
+	return string(decoded), true
+}
+
+func pmWorkGraphProgressKey(plan, node string) string {
+	return strings.TrimSpace(plan) + "\x00" + node
+}
+
+func parsePMWorkGraphMarker(body, marker string) (map[string]string, bool) {
+	start := strings.Index(body, marker)
+	if start < 0 {
+		return nil, false
+	}
+	end := strings.Index(body[start:], "-->")
+	if end < 0 {
+		return nil, false
+	}
+	fields := strings.Fields(strings.TrimSpace(body[start+len(marker) : start+end]))
+	values := make(map[string]string, len(fields))
+	for _, field := range fields {
+		key, value, ok := strings.Cut(field, "=")
+		if ok && key != "" && value != "" {
+			values[key] = value
+		}
+	}
+	return values, true
+}
+
+func parsePMWorkGraphNodeMarker(body string) (string, string, bool) {
+	values, ok := parsePMWorkGraphMarker(body, pmWorkGraphNodeMarker)
+	if !ok {
+		return "", "", false
+	}
+	plan := strings.TrimSpace(values["plan"])
+	node, ok := pmWorkGraphNodeFromToken(values["node"])
+	if plan == "" || !ok {
+		return "", "", false
+	}
+	return plan, node, true
+}
+
+func parsePMWorkGraphProgress(body string) (PMWorkGraphProgress, bool) {
+	values, ok := parsePMWorkGraphMarker(body, pmWorkGraphProgressMarker)
+	if !ok {
+		return PMWorkGraphProgress{}, false
+	}
+	node, ok := pmWorkGraphNodeFromToken(values["node"])
+	if !ok {
+		return PMWorkGraphProgress{}, false
+	}
+	issue, err := strconv.Atoi(values["issue"])
+	if err != nil || issue <= 0 || strings.TrimSpace(values["plan"]) == "" || strings.TrimSpace(values["repo"]) == "" {
+		return PMWorkGraphProgress{}, false
+	}
+	linked, err := strconv.ParseBool(values["linked"])
+	if err != nil {
+		return PMWorkGraphProgress{}, false
+	}
+	return PMWorkGraphProgress{PlanID: values["plan"], NodeID: node, Repo: values["repo"], Issue: issue, Linked: linked}, true
+}
+
+func pmWorkGraphGoalComments(repo RepoRef, goal int, runner CommandRunner) ([]string, error) {
+	raw, err := runner.Run("gh", "issue", "view", strconv.Itoa(goal), "--repo", repo.FullName(), "--json", "comments")
+	if err != nil {
+		return nil, fmt.Errorf("read Goal comments: %w", err)
+	}
+	var payload struct {
+		Comments []struct {
+			Body string `json:"body"`
+		} `json:"comments"`
+	}
+	if json.Unmarshal(raw, &payload) != nil {
+		return nil, fmt.Errorf("parse Goal comments")
+	}
+	comments := make([]string, 0, len(payload.Comments))
+	for _, comment := range payload.Comments {
+		comments = append(comments, comment.Body)
+	}
+	return comments, nil
+}
+
+func loadPMWorkGraphProgress(repo RepoRef, goal int, plan string, runner CommandRunner) (map[string]PMWorkGraphProgress, error) {
+	progress := map[string]PMWorkGraphProgress{}
+	comments, err := pmWorkGraphGoalComments(repo, goal, runner)
+	if err != nil {
+		return nil, err
+	}
+	for _, body := range comments {
+		item, ok := parsePMWorkGraphProgress(body)
+		if !ok || item.PlanID != plan {
+			continue
+		}
+		progress[pmWorkGraphProgressKey(item.PlanID, item.NodeID)] = item
+	}
+	return progress, nil
+}
+
+func searchPMWorkGraphProgress(repo RepoRef, plan string, nodes []PMWorkGraphNode, runner CommandRunner) (map[string]PMWorkGraphProgress, error) {
+	query := fmt.Sprintf("\"gira:work-graph-node/v1\" \"plan=%s\"", plan)
+	raw, err := runner.Run("gh", "search", "issues", query, "--repo", repo.FullName(), "--match", "body", "--state", "all", "--json", "number,title,body,url,state", "--limit", "1000")
+	if err != nil {
+		return nil, fmt.Errorf("search work graph markers for %s: %w", repo.FullName(), err)
+	}
+	var rows []struct {
+		Number int    `json:"number"`
+		Body   string `json:"body"`
+	}
+	if json.Unmarshal(raw, &rows) != nil {
+		return nil, fmt.Errorf("parse work graph marker search for %s", repo.FullName())
+	}
+	nodesByID := make(map[string]struct{}, len(nodes))
+	for _, node := range nodes {
+		nodesByID[node.ID] = struct{}{}
+	}
+	found := make(map[string]PMWorkGraphProgress, len(nodes))
+	for _, row := range rows {
+		foundPlan, foundNode, ok := parsePMWorkGraphNodeMarker(row.Body)
+		if !ok || foundPlan != plan || row.Number <= 0 {
+			continue
+		}
+		if _, wanted := nodesByID[foundNode]; !wanted {
+			continue
+		}
+		if existing, duplicate := found[foundNode]; duplicate {
+			return nil, fmt.Errorf("multiple work graph marker issues found for %s (#%d and #%d)", foundNode, existing.Issue, row.Number)
+		}
+		found[foundNode] = PMWorkGraphProgress{PlanID: plan, NodeID: foundNode, Repo: repo.FullName(), Issue: row.Number, Linked: false}
+	}
+	if len(rows) >= 1000 {
+		for _, node := range nodes {
+			if _, ok := found[node.ID]; !ok {
+				return nil, fmt.Errorf("work graph marker search for %s reached the 1000-result limit before finding node %s", repo.FullName(), node.ID)
+			}
+		}
+	}
+	return found, nil
+}
+
+func pmWorkGraphChildLinked(children []GoalStatusChild, repo RepoRef, issue int) bool {
+	for _, child := range children {
+		childRepo := child.Repo
+		if childRepo == "" {
+			childRepo = repo.FullName()
+		}
+		if child.Number == issue && childRepo == repo.FullName() {
+			return true
+		}
+	}
+	return false
+}
+
+func pmWorkGraphActionLinked(action PMWorkGraphAction) bool {
+	return strings.Contains(strings.ToLower(action.Reason), "already linked")
+}
+
+func pmWorkGraphReconcileActions(report *PMWorkGraphReport, repo RepoRef, children []GoalStatusChild, runner CommandRunner) error {
+	if report == nil || strings.TrimSpace(report.PlanID) == "" {
+		return nil
+	}
+	progress, err := loadPMWorkGraphProgress(repo, report.Goal.Number, report.PlanID, runner)
+	if err != nil {
+		return fmt.Errorf("reconcile work graph progress: %w", err)
+	}
+	nodes := make(map[string]PMWorkGraphNode, len(report.Nodes))
+	for _, node := range report.Nodes {
+		nodes[node.ID] = node
+	}
+	nodesByTarget := make(map[string][]PMWorkGraphNode)
+	for _, action := range report.Actions {
+		if action.Action != "create" && action.Action != "supersede" {
+			continue
+		}
+		node, ok := nodes[action.NodeID]
+		if !ok {
+			continue
+		}
+		target, err := pmWorkGraphTargetRepo(repo, node)
+		if err != nil {
+			return err
+		}
+		if recovered, found := progress[pmWorkGraphProgressKey(report.PlanID, node.ID)]; !found || recovered.Repo != target.FullName() {
+			nodesByTarget[target.FullName()] = append(nodesByTarget[target.FullName()], node)
+		}
+	}
+	searched := make(map[string]map[string]PMWorkGraphProgress, len(nodesByTarget))
+	for targetName, targetNodes := range nodesByTarget {
+		target, err := ParseRepoRef(targetName)
+		if err != nil {
+			return err
+		}
+		searched[targetName], err = searchPMWorkGraphProgress(target, report.PlanID, targetNodes, runner)
+		if err != nil {
+			return fmt.Errorf("reconcile work graph nodes in %s: %w", targetName, err)
+		}
+	}
+	for i := range report.Actions {
+		action := &report.Actions[i]
+		if action.Action != "create" && action.Action != "supersede" {
+			continue
+		}
+		node, ok := nodes[action.NodeID]
+		if !ok {
+			continue
+		}
+		target, err := pmWorkGraphTargetRepo(repo, node)
+		if err != nil {
+			return err
+		}
+		recovered, found := progress[pmWorkGraphProgressKey(report.PlanID, node.ID)]
+		if found && recovered.Repo != target.FullName() {
+			found = false
+		}
+		if !found {
+			recovered, found = searched[target.FullName()][node.ID]
+		}
+		if !found || recovered.Issue <= 0 {
+			continue
+		}
+		linked := recovered.Linked || pmWorkGraphChildLinked(children, target, recovered.Issue) || target.FullName() != repo.FullName()
+		if action.Action == "supersede" {
+			action.CreatedIssue = recovered.Issue
+			if linked {
+				action.Reason = "recovered previously created replacement issue and already linked"
+			} else {
+				action.Reason = "recovered previously created replacement issue"
+			}
+			continue
+		}
+		action.ExistingIssue = recovered.Issue
+		if linked {
+			action.Action = "reuse"
+			action.Reason = "recovered previously created child and already linked"
+		} else {
+			action.Action = "link"
+			action.Reason = "recovered previously created child; parent link is pending"
+		}
+	}
+	return nil
+}
+
+func postPMWorkGraphProgress(repo RepoRef, goal int, progress PMWorkGraphProgress, runner CommandRunner) error {
+	body := fmt.Sprintf("%s plan=%s node=%s repo=%s issue=%d linked=%t -->", pmWorkGraphProgressMarker, progress.PlanID, pmWorkGraphNodeToken(progress.NodeID), progress.Repo, progress.Issue, progress.Linked)
+	_, err := runner.Run("gh", "issue", "comment", strconv.Itoa(goal), "--repo", repo.FullName(), "--body", body)
+	return err
+}
+
 func pmWorkGraphFingerprint(report PMWorkGraphReport) string {
 	value := struct {
 		Repo          string
@@ -516,19 +787,29 @@ func applyPMWorkGraph(report *PMWorkGraphReport, repo RepoRef, runner CommandRun
 			if err != nil {
 				return err
 			}
-			body := renderPMWorkGraphTicket(report.Goal.Number, repo, target, n)
-			milestone := report.Goal.Milestone
-			if target.FullName() != repo.FullName() {
-				milestone = ""
+			created := TicketCreatedIssue{Repo: target.FullName(), Number: a.CreatedIssue}
+			if created.Number <= 0 {
+				body := renderPMWorkGraphTicketWithPlan(report.PlanID, report.Goal.Number, repo, target, n)
+				milestone := report.Goal.Milestone
+				if target.FullName() != repo.FullName() {
+					milestone = ""
+				}
+				created, err = createRepoTicket(target, goalPlanTicketTitle(n.Title), body, labels, milestone, runner)
+				if err != nil {
+					return err
+				}
+				a.CreatedIssue = created.Number
+				report.Created = append(report.Created, GoalPlanChild{Repo: target.FullName(), Number: created.Number, Title: n.Title, Category: "ready", Status: "Ready", URL: created.URL})
+				// GitHub sub-issue links are same-repository only here. For a
+				// cross-repository node, Linked records that durable creation
+				// reconciliation is complete; the Parent reference remains in the
+				// child body rather than pretending a cross-repo sub-issue exists.
+				linked := target.FullName() != repo.FullName()
+				if err := postPMWorkGraphProgress(repo, report.Goal.Number, PMWorkGraphProgress{PlanID: report.PlanID, NodeID: n.ID, Repo: target.FullName(), Issue: created.Number, Linked: linked}, runner); err != nil {
+					return fmt.Errorf("record created work graph issue progress: %w", err)
+				}
 			}
-			created, err := createRepoTicket(target, goalPlanTicketTitle(n.Title), body, labels, milestone, runner)
-			if err != nil {
-				return err
-			}
-			a.CreatedIssue = created.Number
-			a.Status = "applied"
-			report.Created = append(report.Created, GoalPlanChild{Repo: target.FullName(), Number: created.Number, Title: n.Title, Category: "ready", Status: "Ready", URL: created.URL})
-			if target.FullName() == repo.FullName() {
+			if target.FullName() == repo.FullName() && !pmWorkGraphActionLinked(*a) {
 				child, fetchErr := fetchGitHubIssue(target, created.Number, runner)
 				if fetchErr != nil {
 					return fmt.Errorf("fetch created work graph issue for parent link: %w", fetchErr)
@@ -536,7 +817,11 @@ func applyPMWorkGraph(report *PMWorkGraphReport, repo RepoRef, runner CommandRun
 				if linkErr := addGitHubSubIssue(repo, report.Goal.Number, child.ID, false, runner); linkErr != nil {
 					return fmt.Errorf("link work graph issue to Goal: %w", linkErr)
 				}
+				if err := postPMWorkGraphProgress(repo, report.Goal.Number, PMWorkGraphProgress{PlanID: report.PlanID, NodeID: n.ID, Repo: target.FullName(), Issue: created.Number, Linked: true}, runner); err != nil {
+					return fmt.Errorf("record linked work graph issue progress: %w", err)
+				}
 			}
+			a.Status = "applied"
 			if a.Action == "supersede" {
 				message := fmt.Sprintf("Superseded by #%d through typed Goal work graph %s.", created.Number, report.PlanID)
 				if _, err = runner.Run("gh", "issue", "comment", strconv.Itoa(a.ExistingIssue), "--repo", target.FullName(), "--body", message); err != nil {
@@ -546,6 +831,24 @@ func applyPMWorkGraph(report *PMWorkGraphReport, repo RepoRef, runner CommandRun
 					return err
 				}
 			}
+		case "link":
+			target, err := pmWorkGraphTargetRepo(repo, n)
+			if err != nil {
+				return err
+			}
+			if target.FullName() == repo.FullName() && a.ExistingIssue > 0 {
+				child, fetchErr := fetchGitHubIssue(target, a.ExistingIssue, runner)
+				if fetchErr != nil {
+					return fmt.Errorf("fetch recovered work graph issue for parent link: %w", fetchErr)
+				}
+				if linkErr := addGitHubSubIssue(repo, report.Goal.Number, child.ID, false, runner); linkErr != nil {
+					return fmt.Errorf("link recovered work graph issue to Goal: %w", linkErr)
+				}
+				if err := postPMWorkGraphProgress(repo, report.Goal.Number, PMWorkGraphProgress{PlanID: report.PlanID, NodeID: n.ID, Repo: target.FullName(), Issue: a.ExistingIssue, Linked: true}, runner); err != nil {
+					return fmt.Errorf("record linked recovered work graph issue progress: %w", err)
+				}
+			}
+			a.Status = "applied"
 		case "reuse", "split", "defer":
 			a.Status = "applied"
 		}
@@ -565,9 +868,16 @@ func pmWorkGraphTargetRepo(parent RepoRef, node PMWorkGraphNode) (RepoRef, error
 }
 
 func renderPMWorkGraphTicket(goal int, parentRepo, targetRepo RepoRef, n PMWorkGraphNode) string {
+	return renderPMWorkGraphTicketWithPlan("", goal, parentRepo, targetRepo, n)
+}
+
+func renderPMWorkGraphTicketWithPlan(plan string, goal int, parentRepo, targetRepo RepoRef, n PMWorkGraphNode) string {
 	profile, _ := FindPMTaskProfile(n.Profile)
 	var b strings.Builder
 	b.WriteString(PMStateMarker + "\n")
+	if strings.TrimSpace(plan) != "" {
+		fmt.Fprintf(&b, "%s plan=%s node=%s -->\n", pmWorkGraphNodeMarker, plan, pmWorkGraphNodeToken(n.ID))
+	}
 	fmt.Fprintf(&b, "<!-- gira:task-packet schema=%s -->\n<!-- gira:task-profile/v1 profile=%s -->\n\n# %s\n\n", PMTaskPacketV2SchemaVersion, n.Profile, n.Title)
 	parentRef := fmt.Sprintf("#%d", goal)
 	if parentRepo.FullName() != targetRepo.FullName() {
@@ -677,7 +987,7 @@ func BuildPMWorkGraphCompact(report PMWorkGraphReport) PMWorkGraphCompactReport 
 				targetRepo = parsed
 			}
 		}
-		body := renderPMWorkGraphTicket(report.Goal.Number, parentRepo, targetRepo, n)
+		body := renderPMWorkGraphTicketWithPlan(report.PlanID, report.Goal.Number, parentRepo, targetRepo, n)
 		sum := sha256.Sum256([]byte(body))
 		compact.Nodes = append(compact.Nodes, PMWorkGraphCompactNode{ID: n.ID, Profile: n.Profile, Action: actionByID[n.ID], DependsOn: deps, VerificationCount: len(n.Verification), PayloadSHA256: hex.EncodeToString(sum[:])})
 	}

@@ -39,13 +39,12 @@ jobs:
       - name: Configure Pages
         id: configure-pages
         if: github.event_name == 'push'
-        continue-on-error: true
         uses: actions/configure-pages@v6.0.0
 
-      - name: Report skipped Pages configuration
-        if: github.event_name == 'push' && steps.configure-pages.outcome == 'failure'
+      - name: Report Pages configuration failure
+        if: ${{ failure() && steps.configure-pages.outcome == 'failure' }}
         run: |
-          echo "::warning::GitHub Pages is not enabled for this repository yet. Enable Pages with GitHub Actions as the source, then rerun this workflow."
+          echo "::error::GitHub Pages configuration failed. Verify the repository Pages settings and workflow permissions, then rerun the workflow."
 
       - name: Upload Pages artifact
         if: github.event_name == 'push'
@@ -66,10 +65,9 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        continue-on-error: true
         uses: actions/deploy-pages@v5.0.0
 
-      - name: Report skipped Pages deployment setup
-        if: steps.deployment.outcome == 'failure'
+      - name: Report Pages deployment failure
+        if: ${{ failure() && steps.deployment.outcome == 'failure' }}
         run: |
-          echo "::warning::GitHub Pages deployment failed. Enable Pages for this repository in Settings > Pages, then rerun this workflow."
+          echo "::error::GitHub Pages deployment failed. Verify the Pages environment and deployment permissions, then rerun the workflow."

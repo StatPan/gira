@@ -38,6 +38,14 @@ type StatusClient interface {
 	JSON(args []string, target any) error
 }
 
+// statusOperationPolicyProvider is implemented by GitHub-backed clients so
+// status can report the same repository policy that other read-only commands
+// use. Test and downstream clients that predate the policy contract retain
+// the managed compatibility behavior below.
+type statusOperationPolicyProvider interface {
+	ResolveOperationPolicy() (ResolvedOperationPolicy, error)
+}
+
 type StatusSummaryOptions struct {
 	IncludePullRequests bool
 }
@@ -58,6 +66,10 @@ func (c GHStatusClient) Repo() RepoRef {
 	return c.repo
 }
 
+func (c GHStatusClient) ResolveOperationPolicy() (ResolvedOperationPolicy, error) {
+	return ResolveRepoOperationPolicy(c.repo, c.runner)
+}
+
 func (c GHStatusClient) JSON(args []string, target any) error {
 	output, err := c.runner.Run("gh", args...)
 	if err != nil {
@@ -70,13 +82,14 @@ func (c GHStatusClient) JSON(args []string, target any) error {
 }
 
 type StatusSummary struct {
-	Counts     StatusCounts           `json:"counts"`
-	FetchedAt  string                 `json:"fetched_at"`
-	Issues     StatusIssueLists       `json:"issues"`
-	Milestones []MilestoneStats       `json:"milestones"`
-	Provenance StatusProvenanceCounts `json:"provenance"`
-	Repo       string                 `json:"repo"`
-	StaleDays  int                    `json:"stale_days"`
+	Counts     StatusCounts            `json:"counts"`
+	FetchedAt  string                  `json:"fetched_at"`
+	Issues     StatusIssueLists        `json:"issues"`
+	Milestones []MilestoneStats        `json:"milestones"`
+	Policy     ResolvedOperationPolicy `json:"policy"`
+	Provenance StatusProvenanceCounts  `json:"provenance"`
+	Repo       string                  `json:"repo"`
+	StaleDays  int                     `json:"stale_days"`
 }
 
 type GlobalStatusReport struct {
@@ -100,16 +113,17 @@ type GlobalStatusCounts struct {
 }
 
 type GlobalStatusRepo struct {
-	Repo            string `json:"repo"`
-	Open            int    `json:"open"`
-	Stale           int    `json:"stale"`
-	Blocked         int    `json:"blocked"`
-	OpenMilestones  int    `json:"open_milestones"`
-	TotalMilestones int    `json:"total_milestones"`
-	ActiveMilestone string `json:"active_milestone,omitempty"`
-	ProgressPercent int    `json:"progress_percent,omitempty"`
-	Status          string `json:"status"`
-	Error           string `json:"error,omitempty"`
+	Repo            string                  `json:"repo"`
+	Open            int                     `json:"open"`
+	Stale           int                     `json:"stale"`
+	Blocked         int                     `json:"blocked"`
+	OpenMilestones  int                     `json:"open_milestones"`
+	TotalMilestones int                     `json:"total_milestones"`
+	ActiveMilestone string                  `json:"active_milestone,omitempty"`
+	ProgressPercent int                     `json:"progress_percent,omitempty"`
+	Policy          ResolvedOperationPolicy `json:"policy"`
+	Status          string                  `json:"status"`
+	Error           string                  `json:"error,omitempty"`
 }
 
 type StatusCounts struct {
@@ -192,6 +206,10 @@ func BuildStatusSummary(client StatusClient, fetchedAt time.Time, staleDays int)
 }
 
 func BuildStatusSummaryWithOptions(client StatusClient, fetchedAt time.Time, staleDays int, options StatusSummaryOptions) (StatusSummary, error) {
+	policy, err := resolveStatusOperationPolicy(client)
+	if err != nil {
+		return StatusSummary{}, fmt.Errorf("resolve operation policy for %s: %w", client.Repo().FullName(), err)
+	}
 	var milestones []normalizedMilestone
 	var issues []normalizedIssue
 	var prs []statusPullRequest
@@ -229,7 +247,18 @@ func BuildStatusSummaryWithOptions(client StatusClient, fetchedAt time.Time, sta
 	if options.IncludePullRequests && prsErr == nil {
 		summary.Counts.Issues.PRsMissingClosureLink, summary.Counts.Issues.ClosureLinkMissingOpenIssues = closureLinkGapMetrics(prs)
 	}
+	summary.Policy = policy
 	return summary, nil
+}
+
+func resolveStatusOperationPolicy(client StatusClient) (ResolvedOperationPolicy, error) {
+	if provider, ok := client.(statusOperationPolicyProvider); ok {
+		return provider.ResolveOperationPolicy()
+	}
+	// Preserve the pre-contract behavior for callers that provide their own
+	// StatusClient implementation. GitHub-backed CLI clients always resolve
+	// the repository policy above.
+	return ResolveOperationPolicy(OperationPolicyConfig{}, "legacy_status_client", true)
 }
 
 func BuildGlobalStatusReport(scope string, repos []RepoRef, clientFor func(RepoRef) StatusClient, fetchedAt time.Time, staleDays int) GlobalStatusReport {
@@ -288,6 +317,7 @@ func buildGlobalStatusRepo(repo RepoRef, clientFor func(RepoRef) StatusClient, f
 	row.OpenMilestones = summary.Counts.Milestones.Open
 	row.TotalMilestones = summary.Counts.Milestones.Total
 	row.ActiveMilestone, row.ProgressPercent = activeStatusMilestone(summary.Milestones)
+	row.Policy = summary.Policy
 	return row
 }
 
@@ -679,6 +709,9 @@ func FormatGlobalStatusText(report GlobalStatusReport) string {
 }
 
 func statusNextStep(summary StatusSummary) string {
+	if summary.Policy.IsObservation() {
+		return fmt.Sprintf("observation only: configure operation_mode=managed before using Gira lifecycle commands for %s", summary.Repo)
+	}
 	if len(summary.Issues.BlockedOpen) > 0 {
 		return fmt.Sprintf("gira work status --repo %s --issue %d", summary.Repo, summary.Issues.BlockedOpen[0].Number)
 	}

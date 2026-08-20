@@ -124,6 +124,11 @@ func TestCommandCapabilitiesCoverAdapterClasses(t *testing.T) {
 	if !containsString(byCanonical["gira ticket view"].Aliases, "gira ticket show") {
 		t.Fatalf("ticket view capability must expose ticket show alias: %+v", byCanonical["gira ticket view"])
 	}
+	for _, alias := range []string{"gira new", "gira t new", "gira t n"} {
+		if !containsString(byCanonical["gira ticket new"].Aliases, alias) {
+			t.Fatalf("ticket new capability must expose %q: %+v", alias, byCanonical["gira ticket new"])
+		}
+	}
 }
 
 func TestCommandCapabilitiesDocsSiteIsGeneratedFromRegistry(t *testing.T) {

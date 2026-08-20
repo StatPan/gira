@@ -94,11 +94,34 @@ func GlobalReposRoot(configRoot string) (string, error) {
 }
 
 func GlobalRepoRegistryPath(configRoot string, repo RepoRef) (string, error) {
+	if err := validateRepoRef(repo); err != nil {
+		return "", fmt.Errorf("invalid repository reference: %w", err)
+	}
 	root, err := GlobalReposRoot(configRoot)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, repo.Owner, repo.Name+".yaml"), nil
+	path := filepath.Join(root, repo.Owner, repo.Name+".yaml")
+	if !isPathContained(root, path) {
+		return "", fmt.Errorf("global repo registry path %q escapes configured root %q", path, root)
+	}
+	return path, nil
+}
+
+func isPathContained(root string, candidate string) bool {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	candidateAbs, err := filepath.Abs(candidate)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(filepath.Clean(rootAbs), filepath.Clean(candidateAbs))
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 func GlobalWorkspacesRoot(configRoot string) (string, error) {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/pelletier/go-toml/v2"
 	"gopkg.in/yaml.v3"
@@ -36,11 +37,52 @@ func (r RepoRef) FullName() string {
 }
 
 func ParseRepoRef(value string) (RepoRef, error) {
+	if strings.ContainsFunc(value, unicode.IsControl) {
+		return RepoRef{}, fmt.Errorf("repo must be in OWNER/REPO format: identifiers must not contain control characters")
+	}
 	parts := strings.Split(strings.TrimSpace(value), "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return RepoRef{}, fmt.Errorf("repo must be in OWNER/REPO format")
 	}
-	return RepoRef{Owner: parts[0], Name: parts[1]}, nil
+	repo := RepoRef{Owner: parts[0], Name: parts[1]}
+	if err := validateRepoRef(repo); err != nil {
+		return RepoRef{}, fmt.Errorf("repo must be in OWNER/REPO format: %w", err)
+	}
+	return repo, nil
+}
+
+func validateRepoRef(repo RepoRef) error {
+	if !isValidGitHubOwner(repo.Owner) {
+		return fmt.Errorf("owner %q is not a valid GitHub owner identifier", repo.Owner)
+	}
+	if !isValidGitHubRepositoryName(repo.Name) {
+		return fmt.Errorf("repository %q is not a valid GitHub repository identifier", repo.Name)
+	}
+	return nil
+}
+
+func isValidGitHubOwner(value string) bool {
+	if len(value) == 0 || len(value) > 39 || value[0] == '-' || value[len(value)-1] == '-' {
+		return false
+	}
+	for _, char := range value {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidGitHubRepositoryName(value string) bool {
+	if value == "" || value == "." || value == ".." || len(value) > 100 {
+		return false
+	}
+	for _, char := range value {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '-' && char != '_' && char != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func ResolveRepoContext(repoValue string, runner CommandRunner) (RepoRef, error) {

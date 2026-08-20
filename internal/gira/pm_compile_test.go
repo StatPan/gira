@@ -126,6 +126,18 @@ func TestBuildPMCompileReportUsesOnlyExplicitGoalObjectiveAsInference(t *testing
 	}
 }
 
+func TestPMCompileRecognizesCanonicalGoalHeadings(t *testing.T) {
+	report, err := BuildPMCompileReport(PMCompileInput{RawIntent: "## Goal\nShip the goal.\n\n## Direction\nPrefer reversible work.\n\n## Scope\nCLI only.\n\n## Autonomy\nAgent may plan child tickets.\n\n## Decomposition\n- Split bounded work.\n\n## Quality Bar\n- Tests pass.\n\n## Stop Conditions\n- Ask before changing authority.\n\n## Child Tickets\n_No child tickets yet._"})
+	if err != nil {
+		t.Fatalf("BuildPMCompileReport: %v", err)
+	}
+	for _, diagnostic := range report.Diagnostics {
+		if diagnostic.Code == PMDiagnosticUnrecognizedSection {
+			t.Fatalf("canonical Goal heading was reported as unrecognized: %#v", diagnostic)
+		}
+	}
+}
+
 func TestPMCompileJSONRoundTripAndCompactBudget(t *testing.T) {
 	report, err := BuildPMCompileReport(PMCompileInput{RawIntent: readPMCompileFixture(t, "complete.md")})
 	if err != nil {

@@ -367,6 +367,14 @@ func hasRecognizedPMSections(document pmParsedDocument) bool {
 func recognizedPMHeadings() map[string]bool {
 	recognized := map[string]bool{}
 	for _, aliases := range [][]string{
+		{"goal"},
+		{"direction"},
+		{"scope"},
+		{"autonomy"},
+		{"decomposition"},
+		{"quality bar"},
+		{"stop conditions"},
+		{"child tickets"},
 		{"premise", "product premise", "product context"},
 		{"actor", "user", "customer", "affected user"},
 		{"problem"},

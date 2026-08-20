@@ -218,6 +218,25 @@ func TestBuildGoalStatusReportFailsClosedOnGraphQLProviderError(t *testing.T) {
 	}
 }
 
+func TestBuildGoalStatusReportFailsClosedOnOperationPolicyResolutionError(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, ".gira", "config.yaml"), "repo: StatPan/gira\noperation_mode: observation\ndelivery_policy: required\nprofiles:\n  default:\n    labels: []\n")
+	t.Chdir(root)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &goalStatusCountingRunner{responses: map[string]string{
+		"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"Goal","state":"open","body":"<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=201 -->","labels":[{"name":"type:epic"}]}`,
+		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
+		"gh api graphql": goalStatusGraphQLFixture(201, 201),
+	}}
+	report, err := BuildGoalStatusReport(GoalStatusInput{Repo: repo, Goal: 100}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalStatusReport error: %v", err)
+	}
+	if len(report.Children) != 0 || !containsString(report.Blockers, "child_201_status_unavailable") {
+		t.Fatalf("invalid operation policy must remain unavailable: %+v", report)
+	}
+}
+
 func TestGoalStatusIssueSnapshotRejectsTruncatedGraphQLConnections(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	base := `"number":201,"title":"Child","state":"OPEN","body":"Work","labels":{"nodes":[{"name":"status:ready"}],"pageInfo":{"hasNextPage":%s}},"timelineItems":{"totalCount":1,"pageInfo":{"hasNextPage":%s},"nodes":[{"source":{"number":301,"title":"PR","body":"Fixes #201","state":"OPEN","url":"u","isDraft":false,"mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","headRefName":"issue-201","baseRefName":"main","headRefOid":"sha","statusCheckRollup":{"contexts":{"pageInfo":{"hasNextPage":%s},"nodes":[{"name":"ci","status":"COMPLETED","conclusion":"SUCCESS"}]}}}}]}}`

@@ -45,27 +45,28 @@ type TicketLabelOutcome struct {
 }
 
 type TicketNewReport struct {
-	SchemaVersion   string                `json:"schema_version,omitempty"`
-	Repo            string                `json:"repo"`
-	Title           string                `json:"title"`
-	DryRun          bool                  `json:"dry_run"`
-	Start           bool                  `json:"start"`
-	Branch          string                `json:"branch,omitempty"`
-	Type            string                `json:"type,omitempty"`
-	Priority        string                `json:"priority,omitempty"`
-	Parent          int                   `json:"parent,omitempty"`
-	Labels          []string              `json:"labels"`
-	RequestedLabels []string              `json:"requested_labels"`
-	AppliedLabels   []string              `json:"applied_labels,omitempty"`
-	LabelOutcome    TicketLabelOutcome    `json:"label_outcome"`
-	Milestone       string                `json:"milestone,omitempty"`
-	ReleaseImpact   TicketReleaseImpact   `json:"release_impact"`
-	Body            string                `json:"body"`
-	TicketReadiness TicketReadinessReport `json:"ticket_readiness"`
-	Created         TicketCreatedIssue    `json:"created,omitempty"`
-	StartResult     WorkStartResult       `json:"start_result,omitempty"`
-	NextStep        string                `json:"next_step"`
-	Approval        *ApprovalEvidence     `json:"approval,omitempty"`
+	SchemaVersion   string                  `json:"schema_version,omitempty"`
+	Repo            string                  `json:"repo"`
+	Title           string                  `json:"title"`
+	DryRun          bool                    `json:"dry_run"`
+	Start           bool                    `json:"start"`
+	Branch          string                  `json:"branch,omitempty"`
+	Type            string                  `json:"type,omitempty"`
+	Priority        string                  `json:"priority,omitempty"`
+	Parent          int                     `json:"parent,omitempty"`
+	Labels          []string                `json:"labels"`
+	RequestedLabels []string                `json:"requested_labels"`
+	AppliedLabels   []string                `json:"applied_labels,omitempty"`
+	LabelOutcome    TicketLabelOutcome      `json:"label_outcome"`
+	Milestone       string                  `json:"milestone,omitempty"`
+	ReleaseImpact   TicketReleaseImpact     `json:"release_impact"`
+	Body            string                  `json:"body"`
+	Policy          ResolvedOperationPolicy `json:"policy"`
+	TicketReadiness TicketReadinessReport   `json:"ticket_readiness"`
+	Created         TicketCreatedIssue      `json:"created,omitempty"`
+	StartResult     WorkStartResult         `json:"start_result,omitempty"`
+	NextStep        string                  `json:"next_step"`
+	Approval        *ApprovalEvidence       `json:"approval,omitempty"`
 }
 
 func EnsureTicketNewReportSchema(report *TicketNewReport) {
@@ -101,6 +102,10 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		return TicketNewReport{}, err
 	}
 	labels := ticketNewLabels(ticketType, priority, input.Labels)
+	operationPolicy, err := ResolveRepoOperationPolicy(input.Repo, runner)
+	if err != nil {
+		return TicketNewReport{}, fmt.Errorf("resolve operation policy for %s before ticket creation: %w", input.Repo.FullName(), err)
+	}
 	report := TicketNewReport{
 		SchemaVersion:   TicketNewReportSchemaVersion,
 		Repo:            input.Repo.FullName(),
@@ -121,7 +126,8 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		Milestone:       strings.TrimSpace(input.Milestone),
 		ReleaseImpact:   releaseImpact,
 		Body:            body,
-		TicketReadiness: EvaluateTicketReadiness(body, labels, "open"),
+		Policy:          operationPolicy,
+		TicketReadiness: EvaluateTicketReadinessWithPolicy(body, labels, "open", operationPolicy),
 		NextStep:        "gira ticket new --apply",
 	}
 	if err := preflightTicketNewLabels(input.Repo, labels, runner); err != nil {
@@ -142,7 +148,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 	}
 	if input.Start {
 		if policy.StartMode == BranchStartModeExplicit && strings.TrimSpace(input.Branch) == "" {
-			report.NextStep = "create the ticket, then run `gira ticket start <ticket> --branch auto --apply` (or choose new, current, or NAME)"
+			report.NextStep = "create the ticket with `gira ticket new --apply`, then preview `gira ticket start <ticket> --branch auto --dry-run` (or choose new, current, or NAME)"
 			if !input.DryRun {
 				return report, fmt.Errorf("--start is not available when branch_policy.start_mode is explicit; create the ticket first, then choose a ticket start branch strategy")
 			}
@@ -169,7 +175,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 	// an unverified request for labels that GitHub actually applied.
 	report.Labels = append([]string(nil), report.AppliedLabels...)
 	report.LabelOutcome = ticketNewLabelOutcome(input.Repo, created.Number, report.RequestedLabels, report.AppliedLabels)
-	report.TicketReadiness = EvaluateTicketReadiness(body, report.AppliedLabels, createdIssue.State)
+	report.TicketReadiness = EvaluateTicketReadinessWithPolicy(body, report.AppliedLabels, createdIssue.State, operationPolicy)
 	if report.LabelOutcome.Status == "warning" {
 		report.NextStep = report.LabelOutcome.Remediation
 	}
@@ -195,12 +201,12 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 
 func ticketNewStartNextStep(issue int, startMode string, branch string) string {
 	if strings.TrimSpace(branch) != "" {
-		return fmt.Sprintf("gira ticket start %d --branch %s --apply", issue, QuoteShellArg(strings.TrimSpace(branch)))
+		return fmt.Sprintf("gira ticket start %d --branch %s --dry-run", issue, QuoteShellArg(strings.TrimSpace(branch)))
 	}
 	if startMode == BranchStartModeExplicit {
-		return fmt.Sprintf("gira ticket start %d --branch auto --apply", issue)
+		return fmt.Sprintf("gira ticket start %d --branch auto --dry-run", issue)
 	}
-	return fmt.Sprintf("gira ticket start %d --apply", issue)
+	return fmt.Sprintf("gira ticket start %d --dry-run", issue)
 }
 
 func ticketNewLabelOutcome(repo RepoRef, issueNumber int, requested []string, applied []string) TicketLabelOutcome {

@@ -8,18 +8,21 @@ import (
 const PRReadinessSchemaVersion = "pr-readiness/v1"
 
 type PRReadinessReport struct {
-	SchemaVersion string               `json:"schema_version"`
-	Repo          string               `json:"repo"`
-	Issue         int                  `json:"issue"`
-	PullRequest   int                  `json:"pull_request,omitempty"`
-	Readiness     string               `json:"readiness"`
-	Findings      []PRReadinessFinding `json:"findings"`
-	NextAction    string               `json:"next_action"`
+	SchemaVersion string                   `json:"schema_version"`
+	Repo          string                   `json:"repo"`
+	Issue         int                      `json:"issue"`
+	PullRequest   int                      `json:"pull_request,omitempty"`
+	Readiness     string                   `json:"readiness"`
+	Policy        *ResolvedOperationPolicy `json:"policy,omitempty"`
+	Findings      []PRReadinessFinding     `json:"findings"`
+	NextAction    string                   `json:"next_action"`
 }
 
 type PRReadinessFinding struct {
 	Severity          string `json:"severity"`
 	Kind              string `json:"kind"`
+	FindingClass      string `json:"finding_class"`
+	Enforced          bool   `json:"enforced"`
 	Message           string `json:"message"`
 	RecommendedAction string `json:"recommended_action"`
 }
@@ -43,12 +46,14 @@ type prReadinessInput struct {
 	ChangedFilesKnown bool
 	Telemetry         *TicketStatusTelemetry
 	Acceptance        *TicketStatusAcceptance
+	Policy            ResolvedOperationPolicy
 }
 
 func EvaluatePRReadinessFromStatus(status WorkStatusResult) PRReadinessReport {
 	input := prReadinessInput{
 		Repo:           status.Repo,
 		Issue:          status.Issue,
+		Policy:         compatibilityManagedRequiredPolicy(),
 		ChecksStatus:   status.ChecksStatus,
 		Checks:         append([]DevPRCheck(nil), status.Checks...),
 		ReviewStatus:   status.ReviewStatus,
@@ -56,6 +61,9 @@ func EvaluatePRReadinessFromStatus(status WorkStatusResult) PRReadinessReport {
 		ReviewEvidence: status.ReviewEvidence,
 		Telemetry:      status.Telemetry,
 		Acceptance:     status.Acceptance,
+	}
+	if status.Policy != nil {
+		input.Policy = *status.Policy
 	}
 	if status.PullRequest != nil {
 		input.PRAvailable = status.PullRequest.Available
@@ -70,13 +78,24 @@ func EvaluatePRReadinessFromStatus(status WorkStatusResult) PRReadinessReport {
 	if status.BranchPolicy != nil {
 		input.BaseMismatch = status.BranchPolicy.BaseMismatch
 	}
-	return evaluatePRReadiness(input)
+	report := evaluatePRReadinessWithPolicy(input, input.Policy)
+	if status.Policy == nil {
+		report.Policy = nil
+	}
+	return report
 }
 
 func EvaluatePRReadinessFromAgentReview(report AgentPromptReport) PRReadinessReport {
+	readiness := EvaluatePRReadinessFromAgentReviewWithPolicy(report, compatibilityManagedRequiredPolicy())
+	readiness.Policy = nil
+	return readiness
+}
+
+func EvaluatePRReadinessFromAgentReviewWithPolicy(report AgentPromptReport, policy ResolvedOperationPolicy) PRReadinessReport {
 	input := prReadinessInput{
 		Repo:       report.Repo,
 		Issue:      report.Ticket,
+		Policy:     policy,
 		Telemetry:  ticketStatusTelemetry(report.Issue.Body, report.Issue.Labels),
 		Acceptance: ticketStatusAcceptance(report.Issue.Body),
 	}
@@ -94,19 +113,31 @@ func EvaluatePRReadinessFromAgentReview(report AgentPromptReport) PRReadinessRep
 		input.ChangedFiles = append([]string(nil), report.PR.ChangedFiles...)
 		input.ChangedFilesKnown = true
 	}
-	return evaluatePRReadiness(input)
+	return evaluatePRReadinessWithPolicy(input, policy)
 }
 
 func evaluatePRReadiness(input prReadinessInput) PRReadinessReport {
-	report := PRReadinessReport{
+	if input.Policy.Source == "" && input.Policy.OperationMode == "" && input.Policy.DeliveryPolicy == "" {
+		input.Policy = compatibilityManagedRequiredPolicy()
+	}
+	readiness := evaluatePRReadinessWithPolicy(input, input.Policy)
+	readiness.Policy = nil
+	return readiness
+}
+
+func evaluatePRReadinessWithPolicy(input prReadinessInput, policy ResolvedOperationPolicy) (report PRReadinessReport) {
+	input.Policy = policy
+	report = PRReadinessReport{
 		SchemaVersion: PRReadinessSchemaVersion,
 		Repo:          input.Repo,
 		Issue:         input.Issue,
 		PullRequest:   input.PullRequest,
 		Readiness:     "ready_for_review",
+		Policy:        &policy,
 		Findings:      []PRReadinessFinding{},
 		NextAction:    "request_review",
 	}
+	defer func() { finalizePRReadiness(&report, input) }()
 
 	if !input.PRAvailable {
 		report.Findings = append(report.Findings, prReadinessFinding(
@@ -242,6 +273,55 @@ func evaluatePRReadiness(input prReadinessInput) PRReadinessReport {
 		report.NextAction = "request_review"
 	}
 	return report
+}
+
+func finalizePRReadiness(report *PRReadinessReport, input prReadinessInput) {
+	if report == nil {
+		return
+	}
+	enforceManaged := input.Policy.RequiresManagedDelivery()
+	providerBlocker := false
+	enforcedManagedBlocker := false
+	for i := range report.Findings {
+		finding := &report.Findings[i]
+		if isPRManagedPolicyFinding(finding.Kind) {
+			finding.FindingClass = ReviewFindingClassPolicy
+			finding.Enforced = enforceManaged
+			// An explicitly configured finish-review policy remains authoritative
+			// even when operation delivery is advisory.
+			if (finding.Kind == "review_required_but_absent" || finding.Kind == "review_policy_not_configured") && input.ReviewPolicy != nil && input.ReviewPolicy.Value == FinishReviewPolicyRequired {
+				finding.Enforced = true
+			}
+			if finding.Severity == "error" {
+				if finding.Enforced {
+					enforcedManagedBlocker = true
+				} else {
+					finding.Severity = "warning"
+				}
+			}
+			continue
+		}
+		finding.FindingClass = ReviewFindingClassProvider
+		finding.Enforced = true
+		if finding.Severity == "error" {
+			providerBlocker = true
+		}
+	}
+	if !providerBlocker && !enforcedManagedBlocker && !hasPRReadinessFinding(report.Findings, "checks_pending") {
+		if report.Readiness == "needs_revision" {
+			report.Readiness = "ready_for_review"
+			report.NextAction = "request_review"
+		}
+	}
+}
+
+func isPRManagedPolicyFinding(kind string) bool {
+	switch kind {
+	case "missing_closing_link", "missing_review", "review_policy_not_configured", "review_required_but_absent", "missing_telemetry", "acceptance_unknown", "changed_files_missing":
+		return true
+	default:
+		return false
+	}
 }
 
 func prReadinessFinding(severity string, kind string, message string, action string) PRReadinessFinding {

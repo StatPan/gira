@@ -117,10 +117,16 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 			snapshotUnavailable[repoName] = true
 			continue
 		}
+		operationPolicy, operationErr := ResolveRepoOperationPolicy(childRepo, runner)
+		if operationErr != nil {
+			snapshotUnavailable[repoName] = true
+			continue
+		}
 		snapshots[repoName] = snapshot
 		policies[repoName] = goalStatusRepositoryPolicies{
-			Branch: loadGoalStatusBranchPolicy(childRepo, runner),
-			Review: loadFinishReviewPolicy(childRepo),
+			Branch:    loadGoalStatusBranchPolicy(childRepo, runner),
+			Review:    loadFinishReviewPolicy(childRepo),
+			Operation: operationPolicy,
 		}
 	}
 	for _, childRef := range childRefs {

@@ -30,19 +30,20 @@ type AgentPromptInput struct {
 }
 
 type AgentPromptReport struct {
-	Command  string                 `json:"command"`
-	Repo     string                 `json:"repo"`
-	Ticket   int                    `json:"ticket"`
-	Role     string                 `json:"role"`
-	Profile  string                 `json:"profile"`
-	Issue    AgentPromptIssue       `json:"issue"`
-	PR       *AgentPromptPR         `json:"pr,omitempty"`
-	Evidence *AgentPromptEvidence   `json:"evidence,omitempty"`
-	Packet   *AgentPromptRolePacket `json:"packet,omitempty"`
-	PRReady  *PRReadinessReport     `json:"pr_readiness,omitempty"`
-	Review   *AgentReviewContract   `json:"review,omitempty"`
-	Prompt   string                 `json:"prompt"`
-	NextStep string                 `json:"next_step"`
+	Command  string                   `json:"command"`
+	Repo     string                   `json:"repo"`
+	Ticket   int                      `json:"ticket"`
+	Role     string                   `json:"role"`
+	Profile  string                   `json:"profile"`
+	Policy   *ResolvedOperationPolicy `json:"policy,omitempty"`
+	Issue    AgentPromptIssue         `json:"issue"`
+	PR       *AgentPromptPR           `json:"pr,omitempty"`
+	Evidence *AgentPromptEvidence     `json:"evidence,omitempty"`
+	Packet   *AgentPromptRolePacket   `json:"packet,omitempty"`
+	PRReady  *PRReadinessReport       `json:"pr_readiness,omitempty"`
+	Review   *AgentReviewContract     `json:"review,omitempty"`
+	Prompt   string                   `json:"prompt"`
+	NextStep string                   `json:"next_step"`
 }
 
 type AgentPromptIssue struct {
@@ -194,6 +195,11 @@ func BuildAgentPromptReport(input AgentPromptInput, runner CommandRunner) (Agent
 	report.Issue.Acceptance = markdownListSection(issue.Body, "Acceptance Criteria")
 	report.Packet = buildAgentPromptRolePacket(report, issue)
 	if role == AgentPromptRoleReviewer {
+		operationPolicy, err := ResolveRepoOperationPolicy(input.Repo, runner)
+		if err != nil {
+			return report, fmt.Errorf("resolve operation policy for %s: %w", input.Repo.FullName(), err)
+		}
+		report.Policy = &operationPolicy
 		pr, err := resolveAgentPromptPR(input.Repo, input.Ticket, input.PRNumber, runner)
 		if err != nil {
 			if !isMissingLinkedPRPromptError(err) {
@@ -205,7 +211,7 @@ func BuildAgentPromptReport(input AgentPromptInput, runner CommandRunner) (Agent
 			report.PR = pr
 			report.Evidence = agentPromptEvidence(pr)
 		}
-		prReady := EvaluatePRReadinessFromAgentReview(report)
+		prReady := EvaluatePRReadinessFromAgentReviewWithPolicy(report, operationPolicy)
 		report.PRReady = &prReady
 		report.Review = buildAgentReviewContract(report)
 		if input.IncludeDiffSummary && report.PR != nil {
@@ -879,7 +885,7 @@ func buildAgentPromptRolePacket(report AgentPromptReport, issue devStartIssue) *
 	case AgentPromptRoleImplementer:
 		branch := formatDevBranch(DefaultDevBranchPattern, report.Ticket, report.Issue.Title)
 		packet.WorkOrder = []string{
-			fmt.Sprintf("start or reuse branch `%s` with `gira ticket start --repo %s --ticket %d --apply`", branch, report.Repo, report.Ticket),
+			fmt.Sprintf("preview starting or reusing branch `%s` with `gira ticket start --repo %s --ticket %d --dry-run`", branch, report.Repo, report.Ticket),
 			"keep changes bounded to the ticket goal, scope, and acceptance criteria",
 			fmt.Sprintf("open a PR with a closing reference such as `Closes #%d`", report.Ticket),
 		}

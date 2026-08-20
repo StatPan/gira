@@ -19,8 +19,9 @@ type goalStatusRepositorySnapshot struct {
 }
 
 type goalStatusRepositoryPolicies struct {
-	Branch *ResolvedBranchPolicy
-	Review FinishReviewPolicy
+	Branch    *ResolvedBranchPolicy
+	Review    FinishReviewPolicy
+	Operation ResolvedOperationPolicy
 }
 
 // A single alias query also requests bounded timeline, review, and check
@@ -342,7 +343,7 @@ func goalStatusChildFromSnapshot(ref goalChildRef, snapshot goalStatusRepository
 	}
 	prStatus := goalStatusPRForIssue(ref.Repo, issue, snapshot.PRs, snapshot.PRsIncomplete[ref.Number], policies.Branch)
 	review := goalStatusReviewEvidenceForPR(issue, prStatus, snapshot, policies.Review)
-	workStatus := workStatusFromIssueAndPRWithPreparedReview(ref.Repo, issue.Number, issue, prStatus, policies.Review, review)
+	workStatus := workStatusFromIssueAndPRWithPreparedReview(ref.Repo, issue.Number, issue, prStatus, policies.Operation, policies.Review, review)
 	child := goalStatusChildFromWorkStatus(ref.Repo, ref.RelationSource, workStatus)
 	return child, nil
 }

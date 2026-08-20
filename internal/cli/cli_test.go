@@ -4527,8 +4527,8 @@ func TestTicketStartMissingReadyHumanShowsNextStep(t *testing.T) {
 			Title:      "RAG Docling",
 			Status:     "null",
 			NextStatus: "In progress",
-			NextStep:   "gira adopt issues --repo " + repo.FullName() + " --issue 33 --label status:ready --apply",
-		}, fmt.Errorf("issue #33 is not ready for start: missing label status:ready; try `gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply` after confirming the issue is executable")
+			NextStep:   "gira adopt issues --repo " + repo.FullName() + " --issue 33 --label status:ready --dry-run",
+		}, fmt.Errorf("issue #33 is not ready for start: missing label status:ready; try `gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --dry-run` after confirming the issue is executable")
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -4542,7 +4542,7 @@ func TestTicketStartMissingReadyHumanShowsNextStep(t *testing.T) {
 	for _, want := range []string{
 		"issue #33 is not ready for start",
 		"missing label status:ready",
-		"next step: gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply",
+		"next step: gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --dry-run",
 	} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("stderr missing %q:\n%s", want, stderr.String())
@@ -4559,8 +4559,8 @@ func TestTicketStartMissingReadyJSONUsesTicketNextStep(t *testing.T) {
 			Issue:      issue,
 			Status:     "null",
 			NextStatus: "In progress",
-			NextStep:   "gira adopt issues --repo " + repo.FullName() + " --issue 33 --label status:ready --apply",
-		}, fmt.Errorf("issue #33 is not ready for start: missing label status:ready; try `gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply` after confirming the issue is executable")
+			NextStep:   "gira adopt issues --repo " + repo.FullName() + " --issue 33 --label status:ready --dry-run",
+		}, fmt.Errorf("issue #33 is not ready for start: missing label status:ready; try `gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --dry-run` after confirming the issue is executable")
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -4568,7 +4568,7 @@ func TestTicketStartMissingReadyJSONUsesTicketNextStep(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
 	}
-	if !strings.Contains(stdout.String(), `"next_step": "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply"`) {
+	if !strings.Contains(stdout.String(), `"next_step": "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --dry-run"`) {
 		t.Fatalf("stdout missing actionable next step:\n%s", stdout.String())
 	}
 }
@@ -5631,7 +5631,7 @@ func TestWorkStatusHumanOutputUsesWorkNextStep(t *testing.T) {
 	}
 	for _, want := range []string{
 		"work status: issue #126",
-		"next step: gira work start --repo StatPan/gira --issue 126 --apply",
+		"next step: gira work start --repo StatPan/gira --issue 126 --dry-run",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("work status output missing %q:\n%s", want, stdout.String())
@@ -5656,7 +5656,7 @@ func TestTicketStatusHumanOutputUsesTicketNextStep(t *testing.T) {
 	}
 	for _, want := range []string{
 		"ticket status: ticket #126",
-		"next step: gira ticket pr --apply",
+		"next step: gira ticket pr --dry-run",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("ticket status output missing %q:\n%s", want, stdout.String())
@@ -5753,7 +5753,7 @@ func TestTicketStatusJSONUsesTicketNextStep(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), `"next_step": "gira ticket start 126 --apply"`) {
+	if !strings.Contains(stdout.String(), `"next_step": "gira ticket start 126 --dry-run"`) {
 		t.Fatalf("ticket status JSON should use ticket next step:\n%s", stdout.String())
 	}
 	if strings.Contains(stdout.String(), "gira work start") {
@@ -5773,7 +5773,7 @@ func TestTicketStatusJSONGuidesMissingStatusToAdoptReady(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	want := `"next_step": "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply"`
+	want := `"next_step": "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --dry-run"`
 	if !strings.Contains(stdout.String(), want) {
 		t.Fatalf("ticket status JSON missing adopt next step:\n%s", stdout.String())
 	}

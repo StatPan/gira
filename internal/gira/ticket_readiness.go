@@ -10,6 +10,7 @@ const TicketReadinessSchemaVersion = "ticket-readiness/v1"
 type TicketReadinessReport struct {
 	SchemaVersion string                   `json:"schema_version"`
 	Readiness     string                   `json:"readiness"`
+	Policy        *ResolvedOperationPolicy `json:"policy,omitempty"`
 	Findings      []TicketReadinessFinding `json:"findings"`
 	NextAction    string                   `json:"next_action"`
 }
@@ -17,17 +18,32 @@ type TicketReadinessReport struct {
 type TicketReadinessFinding struct {
 	Severity          string `json:"severity"`
 	Kind              string `json:"kind"`
+	FindingClass      string `json:"finding_class"`
+	Enforced          bool   `json:"enforced"`
 	Message           string `json:"message"`
 	RecommendedAction string `json:"recommended_action"`
 }
 
 func EvaluateTicketReadiness(body string, labels []string, issueState string) TicketReadinessReport {
-	report := TicketReadinessReport{
+	report := EvaluateTicketReadinessWithPolicy(body, labels, issueState, compatibilityManagedRequiredPolicy())
+	// Keep the legacy pure evaluator's JSON compact; policy-aware command
+	// consumers call EvaluateTicketReadinessWithPolicy explicitly.
+	report.Policy = nil
+	return report
+}
+
+// EvaluateTicketReadinessWithPolicy classifies work-packet and readiness-label
+// findings according to the repository's operation policy. Provider facts,
+// such as a closed issue, remain blocking in every policy mode.
+func EvaluateTicketReadinessWithPolicy(body string, labels []string, issueState string, policy ResolvedOperationPolicy) (report TicketReadinessReport) {
+	report = TicketReadinessReport{
 		SchemaVersion: TicketReadinessSchemaVersion,
 		Readiness:     "ready",
+		Policy:        &policy,
 		Findings:      []TicketReadinessFinding{},
 		NextAction:    "start_ticket",
 	}
+	defer func() { finalizeTicketReadiness(&report) }()
 
 	if strings.EqualFold(strings.TrimSpace(issueState), "closed") {
 		report.Findings = append(report.Findings, ticketReadinessFinding(
@@ -158,6 +174,49 @@ func EvaluateTicketReadiness(body string, labels []string, issueState string) Ti
 		report.NextAction = "refine_ticket"
 	}
 	return report
+}
+
+func compatibilityManagedRequiredPolicy() ResolvedOperationPolicy {
+	return ResolvedOperationPolicy{
+		OperationMode:  OperationModeManaged,
+		DeliveryPolicy: DeliveryPolicyRequired,
+		Source:         "compatibility",
+	}
+}
+
+func finalizeTicketReadiness(report *TicketReadinessReport) {
+	if report == nil {
+		return
+	}
+	policy := compatibilityManagedRequiredPolicy()
+	if report.Policy != nil {
+		policy = *report.Policy
+	}
+	enforceManaged := policy.RequiresManagedDelivery()
+	hasProviderBlocker := false
+	hasEnforcedBlocker := false
+	for i := range report.Findings {
+		finding := &report.Findings[i]
+		if finding.Kind == "closed_ticket" {
+			finding.FindingClass = ReviewFindingClassProvider
+			finding.Enforced = true
+			hasProviderBlocker = finding.Severity == "error"
+			continue
+		}
+		finding.FindingClass = ReviewFindingClassPolicy
+		finding.Enforced = enforceManaged
+		if finding.Severity == "error" {
+			if enforceManaged {
+				hasEnforcedBlocker = true
+			} else {
+				finding.Severity = "warning"
+			}
+		}
+	}
+	if !enforceManaged && !hasProviderBlocker && !hasEnforcedBlocker && report.Readiness != "unknown" {
+		report.Readiness = "ready"
+		report.NextAction = "start_ticket"
+	}
 }
 
 func ticketReadinessFinding(severity string, kind string, message string, action string) TicketReadinessFinding {

@@ -1195,16 +1195,16 @@ func appendUniqueStrings(values []string, additions ...string) []string {
 
 func finishBlockedNextStep(repo RepoRef, issueNumber int, blockers []string) string {
 	if containsString(blockers, "checks_pending") {
-		return "wait for required checks, then " + fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+		return "wait for required checks, then " + fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
 	}
 	if containsString(blockers, "checks") {
-		return "fix failing checks, then " + fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+		return "fix failing checks, then " + fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
 	}
 	if containsString(blockers, "review") {
-		return "resolve review requirements, then " + fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+		return "resolve review requirements, then " + fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
 	}
 	if containsString(blockers, "draft") {
-		return fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+		return fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
 	}
 	return fmt.Sprintf("gira ticket status --repo %s --ticket %d", repo.FullName(), issueNumber)
 }

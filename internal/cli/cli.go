@@ -8152,9 +8152,9 @@ func ticketStatusNextStep(result gira.WorkStatusResult) string {
 		if isMissingTicketStatus(result.Status) {
 			return readyTicketStatusNextStep(result.Repo, result.Issue)
 		}
-		return fmt.Sprintf("gira ticket start %d --apply", result.Issue)
+		return fmt.Sprintf("gira ticket start %d --dry-run", result.Issue)
 	case "open_pr":
-		return "gira ticket pr --apply"
+		return "gira ticket pr --dry-run"
 	case "resolve_blockers":
 		return "resolve blockers, then set status:ready before starting work"
 	case "mark_pr_ready":
@@ -8194,7 +8194,7 @@ func ticketWorkStartNextStep(result gira.WorkStartResult) string {
 }
 
 func readyTicketStatusNextStep(repo string, issue int) string {
-	return fmt.Sprintf("gira adopt issues --repo %s --issue %d --label status:ready --apply", repo, issue)
+	return fmt.Sprintf("gira adopt issues --repo %s --issue %d --label status:ready --dry-run", repo, issue)
 }
 
 func isMissingTicketStatus(status string) bool {

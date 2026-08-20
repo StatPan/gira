@@ -15,7 +15,7 @@ func TestWorkStatusNextStepGuidesUnreadyIssueToAdoptReady(t *testing.T) {
 	}
 
 	got := workStatusNextStep(result)
-	want := "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply"
+	want := "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --dry-run"
 	if got != want {
 		t.Fatalf("next step = %q, want %q", got, want)
 	}
@@ -31,7 +31,7 @@ func TestWorkStatusNextStepStartsReadyIssue(t *testing.T) {
 	}
 
 	got := workStatusNextStep(result)
-	want := "gira work start --repo StatPan/statpan-infra --issue 33 --apply"
+	want := "gira work start --repo StatPan/statpan-infra --issue 33 --dry-run"
 	if got != want {
 		t.Fatalf("next step = %q, want %q", got, want)
 	}
@@ -78,7 +78,7 @@ func TestStartWorkMissingReadyIncludesActionableNextStep(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing ready error")
 	}
-	want := "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply"
+	want := "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --dry-run"
 	if result.NextStep != want {
 		t.Fatalf("next step = %q, want %q", result.NextStep, want)
 	}
@@ -91,7 +91,7 @@ func TestFormatWorkStartUsesActionableReadyNextStep(t *testing.T) {
 		Branch:     "issue-33-rag-docling",
 		Status:     "null",
 		NextStatus: "In progress",
-		NextStep:   "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --apply",
+		NextStep:   "gira adopt issues --repo StatPan/statpan-infra --issue 33 --label status:ready --dry-run",
 	}
 
 	out := FormatWorkStart(result)

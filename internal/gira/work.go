@@ -940,20 +940,31 @@ func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue
 }
 
 func workStatusFromIssueAndPRWithReviewEvidence(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult, runner CommandRunner) WorkStatusResult {
-	applyDevPRBindingPolicy(&prStatus, issueNumber, devPRBindingPolicyFromIssue(issue, nil, repo))
 	policy := loadFinishReviewPolicy(repo)
 	var review *FinishReviewEvidence
+	applyDevPRBindingPolicy(&prStatus, issueNumber, devPRBindingPolicyFromIssue(issue, nil, repo))
 	status := displayStatus(managedStatusFromLabels(issue.Labels))
 	nextAction := nextWorkAction(issue.State, status, prStatus)
 	if runner != nil && prStatus.PRNumber > 0 && strings.EqualFold(status, "In review") && (nextAction == "merge_when_policy_allows" || containsString(prStatus.Blockers, "review")) {
 		evidence := finishReviewEvidence(repo, prStatus, policy, runner)
 		review = &evidence
+	}
+	return workStatusFromIssueAndPRWithPreparedReview(repo, issueNumber, issue, prStatus, policy, review)
+}
+
+// workStatusFromIssueAndPRWithPreparedReview keeps status shaping identical to
+// ticket status while allowing callers that already fetched review evidence to
+// avoid repeating a provider read per child.
+func workStatusFromIssueAndPRWithPreparedReview(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult, policy FinishReviewPolicy, review *FinishReviewEvidence) WorkStatusResult {
+	status := displayStatus(managedStatusFromLabels(issue.Labels))
+	nextAction := nextWorkAction(issue.State, status, prStatus)
+	if review != nil && prStatus.PRNumber > 0 && strings.EqualFold(status, "In review") && (nextAction == "merge_when_policy_allows" || containsString(prStatus.Blockers, "review")) {
 		if policy.Value == FinishReviewPolicyNone {
 			prStatus.Blockers = removeString(prStatus.Blockers, "review")
 			nextAction = nextWorkAction(issue.State, status, prStatus)
-		} else if evidence.Blocker != "" {
+		} else if review.Blocker != "" {
 			prStatus.Blockers = removeString(prStatus.Blockers, "review")
-			prStatus.Blockers = appendUniqueStrings(prStatus.Blockers, evidence.Blocker)
+			prStatus.Blockers = appendUniqueStrings(prStatus.Blockers, review.Blocker)
 			nextAction = nextWorkAction(issue.State, status, prStatus)
 		}
 	}

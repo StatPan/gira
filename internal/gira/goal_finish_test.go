@@ -268,12 +268,12 @@ func TestBuildGoalFinishReportApplyRejectsImplicitTerminal(t *testing.T) {
 	}
 }
 
-func goalFinishRunner(childComments string, childPRs string, childIssue string) onboardFakeRunner {
+func goalFinishRunner(childComments string, childPRs string, childIssue string) goalStatusFixtureRunner {
 	return goalFinishRunnerWithGoalComments(`{"comments":[]}`, childComments, childPRs, childIssue)
 }
 
-func goalFinishRunnerWithGoalComments(goalComments string, childComments string, childPRs string, childIssue string) onboardFakeRunner {
-	return onboardFakeRunner{responses: map[string]string{
+func goalFinishRunnerWithGoalComments(goalComments string, childComments string, childPRs string, childIssue string) goalStatusFixtureRunner {
+	return goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100": `{"number":100,"title":"Goal","state":"open","body":"## Goal\nShip\n\n## Scope\nGoal finish\n\n## Goal Plan\n- finish","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{"number":101}]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": goalComments,
@@ -300,6 +300,9 @@ func (r *goalFinishApplyRunner) Run(name string, args ...string) ([]byte, error)
 		return []byte("{}"), nil
 	}
 	key := strings.TrimSpace(name + " " + strings.Join(args, " "))
+	if strings.HasPrefix(key, "gh api graphql ") {
+		return (goalStatusFixtureRunner{responses: r.responses}).Run(name, args...)
+	}
 	response, ok := r.responses[key]
 	if !ok {
 		return nil, fmt.Errorf("unexpected command: %s", key)

@@ -97,14 +97,47 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 	if err != nil {
 		return report, err
 	}
+	// Child status is read from a repository-scoped snapshot when possible.
+	// The snapshot is deliberately local to this invocation. Incomplete or
+	// unavailable snapshots remain visible as child status blockers.
+	snapshots := map[string]goalStatusRepositorySnapshot{}
+	policies := map[string]goalStatusRepositoryPolicies{}
+	snapshotUnavailable := map[string]bool{}
+	childNumbersByRepo := goalStatusSnapshotNumbers(childRefs)
+	repoNames := make([]string, 0, len(childNumbersByRepo))
+	for repoName := range childNumbersByRepo {
+		repoNames = append(repoNames, repoName)
+	}
+	sort.Strings(repoNames)
+	for _, repoName := range repoNames {
+		childNumbers := childNumbersByRepo[repoName]
+		childRepo := goalStatusSnapshotRepoRef(childRefs, repoName)
+		snapshot, _, snapshotErr := goalStatusRepositorySnapshotFor(childRepo, childNumbers, runner)
+		if snapshotErr != nil {
+			snapshotUnavailable[repoName] = true
+			continue
+		}
+		snapshots[repoName] = snapshot
+		policies[repoName] = goalStatusRepositoryPolicies{
+			Branch: loadGoalStatusBranchPolicy(childRepo, runner),
+			Review: loadFinishReviewPolicy(childRepo),
+		}
+	}
 	for _, childRef := range childRefs {
-		childStatus, err := GetWorkStatus(childRef.Repo, childRef.Number, runner)
+		var child GoalStatusChild
+		var childErr error
+		if snapshot, ok := snapshots[childRef.Repo.FullName()]; ok {
+			child, childErr = goalStatusChildFromSnapshot(childRef, snapshot, policies[childRef.Repo.FullName()])
+		} else if snapshotUnavailable[childRef.Repo.FullName()] {
+			childErr = fmt.Errorf("repository snapshot unavailable")
+		} else {
+			childErr = fmt.Errorf("repository snapshot unavailable")
+		}
 		childBlockerKey := goalStatusChildBlockerKey(input.Repo, childRef.Repo, childRef.Number)
-		if err != nil {
+		if childErr != nil {
 			report.Blockers = appendUniqueStrings(report.Blockers, childBlockerKey+"_status_unavailable")
 			continue
 		}
-		child := goalStatusChildFromWorkStatus(childRef.Repo, childRef.RelationSource, childStatus)
 		report.Children = append(report.Children, child)
 		report.Counts[child.Category]++
 		if child.Category == "blocked" && len(child.Blockers) == 0 {

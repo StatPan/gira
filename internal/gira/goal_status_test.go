@@ -7,7 +7,7 @@ import (
 
 func TestBuildGoalStatusReportNoChildrenPlansChildren(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"Goal mode","state":"open","body":"## Goal\nShip goal mode","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
 	}}
@@ -53,7 +53,7 @@ func TestGoalPlanningEngineMakesMixedSourcesVisible(t *testing.T) {
 
 func TestBuildGoalStatusReportIncludesNativeChildren(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100": `{"number":100,"title":"Goal mode","state":"open","body":"## Goal\nShip goal mode","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{"number":101,"title":"Native child","state":"open"}]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
@@ -72,7 +72,7 @@ func TestBuildGoalStatusReportIncludesNativeChildren(t *testing.T) {
 
 func TestDiscoverGoalChildRefsMergesNativeAndTypedEvidence(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{"number":101,"title":"Duplicate native","state":"open"},{"number":102,"title":"Native only","state":"open"}]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"Created child tickets: #102 and #103\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=101 -->\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=103 -->"}]}`,
 	}}
@@ -96,7 +96,7 @@ func TestDiscoverGoalChildRefsMergesNativeAndTypedEvidence(t *testing.T) {
 
 func TestBuildGoalStatusReportSummarizesMixedChildren(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"Goal mode","state":"open","body":"## Goal\nShip goal mode","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=101 -->\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=102 -->"}]}`,
 		"gh api repos/StatPan/gira/issues/101":                  `{"number":101,"title":"Ready child","state":"open","body":"## Goal\nReady\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:ready"}]}`,
@@ -128,7 +128,7 @@ func TestBuildGoalStatusReportSummarizesMixedChildren(t *testing.T) {
 
 func TestBuildGoalStatusReportSummarizesBlockedChild(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"Goal mode","state":"open","body":"## Goal\nShip goal mode","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=103 -->"}]}`,
 		"gh api repos/StatPan/gira/issues/103":                  `{"number":103,"title":"Blocked child","state":"open","body":"## Goal\nBlocked\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:blocked"}]}`,
@@ -146,7 +146,7 @@ func TestBuildGoalStatusReportSummarizesBlockedChild(t *testing.T) {
 
 func TestBuildGoalStatusReportAllDoneFromGoalBody(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"Goal mode","state":"open","body":"## Goal\nShip goal mode\n\n## Child tickets\n- #201\n- #202\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=201 -->\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=202 -->","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
 		"gh api repos/StatPan/gira/issues/201":                  `{"number":201,"title":"Done one","state":"closed","body":"## Goal\nDone\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
@@ -166,7 +166,7 @@ func TestBuildGoalStatusReportAllDoneFromGoalBody(t *testing.T) {
 
 func TestBuildGoalStatusReportAllDoneWithHandoffStopsForHumanReview(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"Goal mode","state":"open","body":"## Goal\nShip goal mode\n\n## Child tickets\n- #201\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=201 -->","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"## Goal Finish Receipt\n\n- Schema: goal-finish-receipt/v1"}]}`,
 		"gh api repos/StatPan/gira/issues/201":                  `{"number":201,"title":"Done one","state":"closed","body":"## Goal\nDone\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
@@ -187,7 +187,7 @@ func TestBuildGoalStatusReportAllDoneWithHandoffStopsForHumanReview(t *testing.T
 
 func TestBuildGoalStatusReportClosedDoneGoalIsDone(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"Goal mode","state":"closed","body":"## Goal\nShip goal mode\n\n## Child tickets\n- #201\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=201 -->","labels":[{"name":"type:epic"},{"name":"status:done"}]}`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"## Goal Finish Receipt\n\n- Schema: goal-finish-receipt/v1\n- Terminal recommendation: done"}]}`,
 		"gh api repos/StatPan/gira/issues/201":                  `{"number":201,"title":"Done one","state":"closed","body":"## Goal\nDone\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
@@ -205,7 +205,7 @@ func TestBuildGoalStatusReportClosedDoneGoalIsDone(t *testing.T) {
 
 func TestBuildGoalStatusReportIncludesCrossRepoChildren(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "backlog"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/backlog/issues/100":                  `{"number":100,"title":"Goal mode","state":"open","body":"## Goal\nShip cross repo goal\n\n## Child tickets\n- StatPan/gira#201\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=201 -->","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		"gh issue view 100 --repo StatPan/backlog --json comments": `{"comments":[{"body":"Created child tickets:\n- StatPan/agentree#202\n<!-- gira:goal-child-link/v1 repo=StatPan/agentree issue=202 -->"}]}`,
 		"gh api repos/StatPan/gira/issues/201":                     `{"number":201,"title":"Gira child","state":"open","body":"## Goal\nGira\n\n## Acceptance Criteria\n- done","labels":[{"name":"type:task"},{"name":"status:ready"}]}`,
@@ -245,7 +245,7 @@ Grounding-gap parent: #160
 
 func TestDiscoverGoalChildRefsIgnoresLegacyParentAndProseReferences(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{"number":101,"title":"Native","state":"open"}]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"Goal planning says #102 is next. Parent: #100. StatPan/gira#103."}]}`,
 	}}

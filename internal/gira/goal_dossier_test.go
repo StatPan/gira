@@ -9,7 +9,7 @@ import (
 
 func TestBuildGoalDossierReportSummarizesGoalState(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100": `{"number":100,"title":"Goal mode","state":"open","body":"## Goal\nShip goal mode","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{"number":101},{"number":102}]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
@@ -53,7 +53,7 @@ func TestBuildGoalDossierReportSummarizesGoalState(t *testing.T) {
 
 func TestBuildGoalDossierReportCarriesStopConditions(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100": `{"number":100,"title":"Goal mode","state":"open","body":"## Goal\nShip goal mode","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		`gh issue list --repo StatPan/gira --state all --search repo:StatPan/gira is:issue "Parent: #100" --json number,title,state,url --limit 100`: `[]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,

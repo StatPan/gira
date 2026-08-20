@@ -4,6 +4,22 @@ Gira exposes readiness and audit reports so humans and agents can make decisions
 from GitHub evidence instead of terminal guesses. These commands are read-first
 unless an explicit lifecycle command says `--apply`.
 
+## Operation Policy
+
+Every readiness report exposes the resolved policy, its source, each finding's
+class, and whether the finding is enforced. The same report shape works across
+the three supported operating modes:
+
+| Policy | Gira-specific requirements | Provider facts |
+| --- | --- | --- |
+| `observation` | Advisory only; labels, closing links, and approval conventions do not block. | Reported neutrally. |
+| `managed` + `delivery_policy: advisory` | Reported as warnings with provenance. | Still reported and never hidden. |
+| `managed` + `delivery_policy: required` | Enforced as readiness blockers where applicable. | Unknown/provider errors fail closed. |
+
+This distinction keeps an unenrolled repository observable without silently
+enrolling it in Gira's delivery process. Use `gira status --json` or
+`gira doctor --json` to inspect policy provenance before applying a mutation.
+
 ## Ticket Readiness
 
 ```bash

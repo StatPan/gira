@@ -119,6 +119,36 @@ func TestAgentOperatorDocsSiteIsGeneratedFromRegistry(t *testing.T) {
 	}
 }
 
+func TestAgentOperatorDocsSiteKeepsPublicPathShort(t *testing.T) {
+	out := RenderAgentOperatorDocsSiteMarkdown(CoreAgentGuidanceSpec(), []CommandSpec{
+		{Path: []string{"ticket", "handoff"}, Usage: "gira ticket handoff [TICKET]", Summary: "Handoff a ticket."},
+		{Path: []string{"ticket", "start"}, Usage: "gira ticket start [TICKET] --branch auto", Summary: "Start a ticket."},
+		{Path: []string{"ticket", "finish"}, Usage: "gira ticket finish [TICKET] --dry-run|--apply", Summary: "Finish a ticket."},
+		{Path: []string{"goal", "plan"}, Usage: "gira goal plan [GOAL]", Summary: "Plan a goal."},
+	})
+	for _, want := range []string{"## Golden Path", "gira ticket handoff", "gira ticket start", "gira ticket finish", "Command Reference"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("short agent page missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "gira goal plan") {
+		t.Fatalf("public agent page should defer Goal planning to advanced docs:\n%s", out)
+	}
+}
+
+func TestAgentGuidanceExplainsReadyPolicyModes(t *testing.T) {
+	spec := CoreAgentGuidanceSpec()
+	for _, rendered := range []string{
+		RenderAgentGuide(spec, nil),
+		RenderAgentOperatorDocsSiteMarkdown(spec, nil),
+	} {
+		if !strings.Contains(rendered, "Only managed-required blocks on missing status:ready") ||
+			!strings.Contains(rendered, "provider/base safety") {
+			t.Fatalf("agent guidance hides operation-policy ready behavior:\n%s", rendered)
+		}
+	}
+}
+
 func TestAgentSkillManagedBlockIsGeneratedFromRegistry(t *testing.T) {
 	want := RenderAgentSkillManagedBlock(CoreCommandSpecs())
 	path := filepath.Join("..", "..", "docs", "skills", "gira-agent-operator.md")

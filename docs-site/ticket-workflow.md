@@ -1,70 +1,100 @@
 # Ticket Workflow
 
-Use Gira for the issue to branch to PR to merge lifecycle. Raw `gh` remains the backend, not the daily UX.
+The daily Gira path is one GitHub issue, one work branch, one linked PR, and
+one evidence-backed finish. Gira is the workflow UX; `gh` remains the backend.
 
-## New Work
+## Golden Path
+
+Preview every mutation first. The short aliases `gira new` and `gira t n` keep
+the same behavior as `gira ticket new`.
 
 ```bash
-gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply
-gira ticket start TICKET --apply
-gira ticket new --title "TITLE" --body-file issue.md --dry-run
-gira ticket new --title "TITLE" --body-file - --apply < issue.md
-gira ticket list --state open --label status:ready --limit 20
-gira milestone new "MILESTONE" --dry-run
-gira milestone plan "MILESTONE" --label status:ready --dry-run
-gira ticket pr --apply --draft
-gira ticket view
-gira ticket prompt --role implementer --profile python
-gira ticket handoff --json
-gira ticket review --diff-summary
-gira ticket self-review --diff-summary --dry-run
-gira ticket note "Implementation is ready for CI." --dry-run
+gira new "TITLE" --goal "GOAL" --acceptance "a;b;c" --start --dry-run
+gira new "TITLE" --goal "GOAL" --acceptance "a;b;c" --start --apply
+
+gira ticket pr --dry-run
+gira ticket pr --apply
 gira ticket checks
 gira ticket wait --timeout 5m
+gira ticket finish --dry-run
 gira ticket finish --apply
 ```
 
-## Existing Issue
+Add `--draft` when review must happen before a PR is ready. A finish preview
+for a draft PR only marks it ready; run finish dry-run/apply again after that
+transition.
+
+When an issue already exists, start it explicitly:
 
 ```bash
+gira ticket start 42 --dry-run
 gira ticket start 42 --apply
-gira ticket pr --apply --draft
-gira ticket view
-gira ticket review --diff-summary
-gira ticket note "Ready for review." --target pr --dry-run
-gira ticket finish --apply
 ```
 
-Use `gira ticket new --body`, `--body-file PATH`, or `--body-file -` when the issue packet is already drafted in Markdown. `gira new` is the daily shortcut, and `gira t n` is the compact ticket-group form; both retain the canonical command's dry-run/apply behavior. Dry-run output includes the title, repo, labels, milestone, start intent, body that will be sent to GitHub, and a `ticket-readiness/v1` work-order check. `ticket new` does not create taxonomy labels implicitly; requested labels must already exist and are checked during dry-run/apply. Use `gira ticket list` to discover repo issue-backed tickets without dropping to raw `gh`. It supports `--state open|closed|all`, repeatable or comma-separated `--label`, `--assignee`, `--milestone`, `--limit`, and `--json`.
-Use `gira milestone new`, `gira milestone list`, `gira milestone status`, `gira milestone assign`, and `gira milestone plan` when a work batch should be created, inspected, or filled before ticket execution starts. Milestone mutation commands use dry-run/apply, and `milestone plan` defaults to selecting `status:ready` tickets.
-Use `gira ticket view` instead of composing `gh issue view` and `gh pr view` when you need the ticket operating card. Use `gira ticket note --dry-run` before `--apply` when you need a progress, blocker, decision, handoff, summary, or check note on the issue or linked PR.
-Use `gira ticket prompt TICKET planner|implementer|reviewer --profile default|python` when a stateless agent needs a deterministic handoff prompt from the GitHub issue. `--role planner|implementer|reviewer` is still accepted for scripts. Each prompt includes a structured role packet with readiness, work-order, risk, expected-evidence, and repo-guidance fields relevant to that worker. Use `gira ticket handoff --json` from an `issue-N-*` branch when a worker adapter needs the machine contract without making Gira launch or host the worker; pass `TICKET` only when operating outside that branch context. The handoff packet uses schema `worker-handoff/v1` and includes the ticket readiness result, work order, branch policy/base context, expected evidence, required checks, review expectations, prohibited actions, telemetry/provenance expectations, repo guidance, and the next safe command. The [worker boundary](/worker-boundary) explains why exact tools, models, trace IDs, and attempt IDs belong in telemetry/provenance metadata rather than high-cardinality labels. Use `gira ticket review --diff-summary` when a reviewer needs the current ticket, linked PR, checks, changed files, PR readiness, finish readiness, and evidence fields in one packet. The diff summary includes changed files, diff stat, hunk headers, acceptance mapping candidates, risk hints, and the full diff command; `--include-diff` includes the full diff only when explicitly requested. Use `gira ticket review 42 --repo OWNER/app --diff-summary --html --output out/gira/review-42.html` when that reviewer packet should be shared as a local static page. Use `gira ticket self-review --diff-summary --dry-run` to preview the `kind=check` PR note for the current branch ticket, then `--apply` to post it. Reviewer prompts are read-only briefs: they tell the reviewer to inspect the actual PR diff, check repo-local instructions, and account for AI Delivery Telemetry, Gira label/workflow conventions, tool contracts, and tests required by the changed surface. Reviewer prompts and packets can include explicit PR context with `--pr N`; `--json` includes the rendered prompt, `pr-readiness/v1`, and structured role/review contract for automation.
-Use `gira ticket supersede TICKET --replacement-title "TITLE" --body-file replacement.md --dry-run` when an issue should be replaced instead of manually closing the old issue and creating cross-links. Superseded tickets are closed with `resolution:superseded`, not `status:done`, so lifecycle reports can separate replaced work from completed work.
-Use `gira epic list` for the same discovery pattern scoped to `type:epic` issues.
+## Branch Behavior
 
-The target [branch policy contract](/branch-policy) defines how future lifecycle
-commands should resolve a base branch once, record it as ticket state, preserve
-it through PR creation and review, and avoid hidden local checkout mutation
-during finish.
+The default branch selection is `auto`:
 
-`gira ticket status --json` is the stable per-ticket state contract for automation. It preserves the compact legacy fields (`repo`, `issue`, `status`, `pr_number`, `blockers`, `next_action`, `next_step`) and adds `schema_version`, `labels`, `milestone`, `branch`, `pull_request`, `checks_status`, `checks`, `review_status`, `evidence`, `ticket_readiness`, `pr_readiness`, and `warnings`. The `ticket_readiness` object uses schema `ticket-readiness/v1` and tells workers whether the issue is ready to start, needs refinement, is blocked, or needs human input before handoff. The `pr_readiness` object uses schema `pr-readiness/v1` and tells reviewers or worker adapters whether the linked PR is ready for review, needs revision, should wait for checks, is ready for finish, or is blocked. Missing linked PR, unknown branch, and missing checks are represented as explicit values so queue, review, finish, and audit commands can consume the same state without guessing from terminal text.
+| Checkout | Automatic result |
+| --- | --- |
+| Resolved base branch | Create the suggested issue branch from that base. |
+| Existing non-base branch | Bind the current branch without checkout, rename, or push. |
+| Detached checkout | Create the suggested issue branch from the recorded/resolved base. |
 
-Use `gira ticket status 42 --repo OWNER/app --html --output out/gira/ticket-42.html` when a human needs a local ticket detail page. The HTML report is a static view over the same `ticket-status/v1` contract and includes the ticket status, linked PR, check state, review decision, blockers, warnings, readiness findings, and next safe command.
+Use `--branch auto|new|current|NAME` for a deterministic choice. `NAME`
+adopts an existing local or origin branch. The compatibility spellings
+`--create`, `--current`, and `--adopt BRANCH` remain supported, but cannot be
+combined with `--branch`. A repository with `start_mode: explicit` requires a
+branch choice and stops before mutation when none is supplied.
 
-`pr-readiness/v1` is narrower than `finish-readiness/v1`. PR readiness checks whether worker output is reviewable or needs revision: closing link, recorded base, draft state, checks, review blocker state, telemetry/provenance warnings, acceptance evidence, and changed-file context when review packets can fetch it. Finish readiness remains the final merge/closure gate and uses GitHub evidence to decide whether `ticket finish` may merge, normalize labels, post a receipt, and close the loop.
+See [Branch Behavior](/branch-policy) for base resolution, lifecycle markers,
+and PR-base validation.
 
-`gira ticket finish --dry-run --json` includes a `readiness` report with schema `finish-readiness/v1`. The report groups issue state, linked PR state, checks, review status, label state, closing-reference evidence, acceptance-checklist counts, blockers, warnings, and the next safe action before any merge or provider mutation is attempted. Human output stays compact and shows `readiness=ready|blocked|unknown` beside the existing blockers and action plan.
+## Existing Issue Packets
 
-Finish also builds a `receipt` with schema `finish-receipt/v1`. Dry-run previews the concise issue comment; apply posts it after successful completion. The receipt records final issue/PR state, check and review summaries, evidence sources, label normalization, warnings, and AI Delivery Telemetry status. Agent-routed work such as `agent:worker`, `agent:codex`, `agent:gira`, `agent:reviewer`, `lane:agent`, or `lane:hybrid` expects an AI Delivery Telemetry or Gira provenance block; missing telemetry is reported as a warning in the receipt rather than expanded into a raw log dump.
+Use full Markdown when the issue packet is already drafted:
 
-Use `gira audit drift --repo OWNER/REPO --json` when you need a repo-local convergence report without mutating anything. It is the drift-focused alias for the workflow audit and detects stale status labels, open `status:done` issues, multiple `status:*` labels, in-review issues without linked PRs, merged PRs whose issues did not converge, failed or pending checks on finished tickets, and missing AI Delivery Telemetry or completion evidence. Each finding includes severity, kind, current state, expected state, evidence, and a recommended manual action.
+```bash
+gira ticket new --title "TITLE" --body-file issue.md --dry-run
+gira ticket new --title "TITLE" --body-file issue.md --apply
+gira ticket list --state open --label status:ready --limit 20
+```
 
-When [Jira-primary provider mode](/jira-primary-provider) is enabled, `gira ticket finish` also gates Jira Done on GitHub execution evidence. It refuses Done while the mirror issue, linked PR, review, checks, merge, or close evidence is incomplete.
+Use `gira ticket view` for the operating card. Use `gira ticket handoff --json`
+for a worker-neutral single-ticket packet. `gira dispatch goal`, queue, and PM
+commands are advanced orchestration; they are not required for ordinary issue
+work. The [Agent Operator](/agent-operator-skill) page describes the minimal
+handoff path.
+
+## Review And Finish Evidence
+
+- Keep the PR body linked with `Closes #N`, `Fixes #N`, or `Resolves #N`.
+- Run `gira ticket review --diff-summary` before requesting review.
+- Run `gira ticket self-review --diff-summary --dry-run` before posting a self-review note.
+- Use `gira ticket checks` and `gira ticket wait` to distinguish pending from failed checks.
+- Run `gira ticket finish --dry-run` before `--apply`; finish validates the linked PR, checks, review, base, labels, closing reference, and acceptance evidence.
+
+The detailed readiness schemas and reports are in [Readiness And Audit](/readiness-audit).
+The generated [Command Reference](/command-reference) contains every flag,
+alias, example, and JSON contract. It is exhaustive reference, not the daily
+entry point.
+
+## Operation Policy
+
+Operation policy changes enforcement without changing the evidence shape:
+
+| Mode | Meaning |
+| --- | --- |
+| `observation` | Report neutral provider facts; Gira labels, closing links, and approval conventions are advisory and do not block. |
+| `managed` + `delivery_policy: advisory` | Report managed-delivery gaps as warnings with policy provenance. |
+| `managed` + `delivery_policy: required` | Enforce managed-delivery requirements and fail closed on unknown policy/provider state. |
+
+See [Readiness And Audit](/readiness-audit) for finding classes and
+[Troubleshooting](/troubleshooting) for context failures.
 
 ## Agent Rules
 
-- Start from a GitHub issue.
-- Use a feature branch per issue.
-- Use Gira ticket lifecycle commands for view, status, start, PR, note, supersede, checks, wait, and finish work; use raw `gh` only when Gira has no lifecycle command or you intentionally need a low-level GitHub operation.
-- Keep PR bodies linked with `Closes #N`, `Fixes #N`, or `Resolves #N`.
-- Treat Project-only items as intake until they are backed by repository issues.
+- Start from a GitHub issue and keep one feature branch per issue.
+- Prefer Gira lifecycle commands over raw `gh` when Gira provides the operation.
+- Keep changes bounded to the issue and preserve unrelated work.
+- Treat project-only items as intake until a repository issue exists.

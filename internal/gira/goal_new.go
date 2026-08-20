@@ -108,10 +108,14 @@ func renderGoalNewBody(input GoalNewInput, title string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## Goal\n%s\n\n", goalNewSection(input.Objective, title))
 	fmt.Fprintf(&b, "## Direction\n%s\n\n", noResponse(input.Direction))
-	fmt.Fprintf(&b, "## Scope\n%s\n\n", noResponse(input.Scope))
+	fmt.Fprintf(&b, "## Scope\n%s\n\n", goalNewSection(input.Scope, "Bound the first child ticket to the objective above and its independently verifiable outcome."))
 	fmt.Fprintf(&b, "## Autonomy\n%s\n\n", noResponse(input.Autonomy))
 	b.WriteString("## Decomposition\n")
-	writeGoalNewList(&b, input.Decomposition)
+	if len(nonEmptyGoalNewValues(input.Decomposition)) == 0 {
+		b.WriteString("- Define the first independently verifiable child ticket.\n")
+	} else {
+		writeGoalNewList(&b, input.Decomposition)
+	}
 	b.WriteString("\n## Quality Bar\n")
 	writeGoalNewList(&b, input.QualityBar)
 	b.WriteString("\n## Stop Conditions\n")
@@ -120,6 +124,16 @@ func renderGoalNewBody(input GoalNewInput, title string) string {
 	b.WriteString(DefaultProvenanceBlock())
 	b.WriteString("\n")
 	return b.String()
+}
+
+func nonEmptyGoalNewValues(values []string) []string {
+	result := []string{}
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func goalNewSection(value string, fallback string) string {

@@ -124,6 +124,51 @@ func TestPMWorkGraphRejectsCyclesFalseDependenciesAndResidualDeliveryJudgment(t 
 	}
 }
 
+func TestPMWorkGraphMissingSourceGuidesLegacyGoalPlan(t *testing.T) {
+	runner := &workGraphRunner{body: "## Goal\nPlain goal.\n\n## Scope\nBounded CLI work.\n\n## Decomposition\n- Add the first child ticket.\n"}
+	report, err := BuildPMWorkGraphReport(PMWorkGraphInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Goal: 100, DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildPMWorkGraphReport: %v", err)
+	}
+	diagnostic := workGraphDiagnosticByCode(report.Diagnostics, PMWorkGraphMissingSource)
+	if diagnostic == nil || diagnostic.Severity != "info" || !strings.Contains(diagnostic.Repair, "goal plan") {
+		t.Fatalf("missing-source diagnostic did not guide legacy planning: %#v", report.Diagnostics)
+	}
+	if workGraphDiagnosticByCode(report.Diagnostics, PMWorkGraphInvalidSource) != nil || hasPMWorkGraphErrors(report.Diagnostics) {
+		t.Fatalf("absent opt-in graph was treated as invalid: %#v", report.Diagnostics)
+	}
+	if !strings.Contains(report.NextStep, "gira goal plan") || len(report.Nodes) != 0 {
+		t.Fatalf("missing-source next step/nodes = %q/%d", report.NextStep, len(report.Nodes))
+	}
+}
+
+func TestPMWorkGraphInvalidSourceFailsClosed(t *testing.T) {
+	runner := &workGraphRunner{body: "## Goal\nTyped goal.\n\n## Scope\nTyped scope.\n\n## Work Graph\n```json\n{\"schema_version\":\"wrong\",\"nodes\":[]}\n```\n"}
+	report, err := BuildPMWorkGraphReport(PMWorkGraphInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Goal: 100, DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildPMWorkGraphReport: %v", err)
+	}
+	diagnostic := workGraphDiagnosticByCode(report.Diagnostics, PMWorkGraphInvalidSource)
+	if diagnostic == nil || diagnostic.Severity != "error" {
+		t.Fatalf("invalid source was not an error: %#v", report.Diagnostics)
+	}
+	if workGraphDiagnosticByCode(report.Diagnostics, PMWorkGraphMissingSource) != nil {
+		t.Fatalf("invalid source was mislabeled missing: %#v", report.Diagnostics)
+	}
+}
+
+func TestPMWorkGraphMissingSourceApplyDoesNotFabricateGraph(t *testing.T) {
+	runner := &workGraphRunner{body: "## Goal\nPlain goal.\n\n## Scope\nBounded CLI work.\n\n## Decomposition\n- Add the first child ticket.\n"}
+	preview, err := BuildPMWorkGraphReport(PMWorkGraphInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Goal: 100, DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	_, err = BuildPMWorkGraphReport(PMWorkGraphInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Goal: 100, Apply: true, ExpectedPlanID: preview.PlanID}, runner)
+	if err == nil || !strings.Contains(err.Error(), "goal plan") || len(runner.comments) != 0 || runner.creates != 0 {
+		t.Fatalf("missing graph apply fabricated work: err=%v comments=%d creates=%d", err, len(runner.comments), runner.creates)
+	}
+}
+
 func TestPMWorkGraphFingerprintGuardApplyAndIdempotentRetry(t *testing.T) {
 	source := PMWorkGraphSource{SchemaVersion: PMWorkGraphSourceSchemaVersion, Nodes: []PMWorkGraphNode{{
 		ID: "build", Title: "Build bounded slice", Purpose: "Deliver verified behavior", Profile: "delivery", ParentOutcome: "goal:100", Size: "small", Uncertainty: "resolved",
@@ -169,4 +214,13 @@ func hasWorkGraphDiagnostic(values []PMWorkGraphDiagnostic, code string) bool {
 		}
 	}
 	return false
+}
+
+func workGraphDiagnosticByCode(values []PMWorkGraphDiagnostic, code string) *PMWorkGraphDiagnostic {
+	for i := range values {
+		if values[i].Code == code {
+			return &values[i]
+		}
+	}
+	return nil
 }

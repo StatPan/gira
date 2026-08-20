@@ -69,6 +69,40 @@ func TestGoalNewApplyCreatesIssue(t *testing.T) {
 	}
 }
 
+func TestGoalNewDefaultBodyIsImmediatelyPlanable(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	report, err := BuildGoalNewReport(GoalNewInput{Repo: repo, Title: "Plan this goal", DryRun: true}, &ticketNewRunner{outputs: ticketNewLabelOutputs("type:epic", "status:ready")})
+	if err != nil {
+		t.Fatalf("BuildGoalNewReport error: %v", err)
+	}
+	for _, want := range []string{
+		"## Scope\nBound the first child ticket",
+		"## Decomposition\n- Define the first independently verifiable child ticket.",
+	} {
+		if !strings.Contains(report.Body, want) {
+			t.Fatalf("default body missing %q:\n%s", want, report.Body)
+		}
+	}
+}
+
+func TestGoalNewDefaultBodyHasNoGoalPlanBlockers(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	newReport, err := BuildGoalNewReport(GoalNewInput{Repo: repo, Title: "Plan this goal", DryRun: true}, &ticketNewRunner{outputs: ticketNewLabelOutputs("type:epic", "status:ready")})
+	if err != nil {
+		t.Fatalf("BuildGoalNewReport error: %v", err)
+	}
+	runner := goalPlanRunner(goalPlanGoalJSON(100, newReport.Body, []string{"type:epic", "status:ready"}), `[]`, `{"comments":[]}`, nil)
+	plan, err := BuildGoalPlanReport(GoalPlanInput{Repo: repo, Goal: 100, DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalPlanReport error: %v", err)
+	}
+	for _, blocked := range []string{"missing_objective", "missing_decomposition_notes"} {
+		if containsString(plan.StopConditions, blocked) {
+			t.Fatalf("default goal produced %s: %+v", blocked, plan)
+		}
+	}
+}
+
 func TestGoalNewUsesFullBody(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	body := "## Goal\nUse exact goal packet\n\n## Scope\nPreserved"
@@ -94,5 +128,5 @@ func TestGoalNewRejectsInvalidTypeAndPriority(t *testing.T) {
 }
 
 func defaultGoalNewBody(title string) string {
-	return "## Goal\n" + title + "\n\n## Direction\n_No response_\n\n## Scope\n_No response_\n\n## Autonomy\n_No response_\n\n## Decomposition\n_No response_\n\n## Quality Bar\n_No response_\n\n## Stop Conditions\n_No response_\n\n## Child Tickets\n_No child tickets yet._\n\n" + DefaultProvenanceBlock() + "\n"
+	return "## Goal\n" + title + "\n\n## Direction\n_No response_\n\n## Scope\nBound the first child ticket to the objective above and its independently verifiable outcome.\n\n## Autonomy\n_No response_\n\n## Decomposition\n- Define the first independently verifiable child ticket.\n\n## Quality Bar\n_No response_\n\n## Stop Conditions\n_No response_\n\n## Child Tickets\n_No child tickets yet._\n\n" + DefaultProvenanceBlock() + "\n"
 }

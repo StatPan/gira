@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -30,7 +31,10 @@ const (
 	PMWorkGraphPlanChanged        = "PWG011_PLAN_CHANGED"
 	PMWorkGraphInvalidPMIR        = "PWG012_INVALID_PM_IR"
 	PMWorkGraphInvalidDiscovery   = "PWG013_INVALID_DISCOVERY_STATE"
+	PMWorkGraphInvalidSource      = "PWG014_INVALID_SOURCE"
 )
+
+var errPMWorkGraphSourceMissing = errors.New("Work Graph section is missing")
 
 type PMWorkGraphSource struct {
 	SchemaVersion string            `json:"schema_version"`
@@ -166,6 +170,7 @@ func BuildPMWorkGraphReport(input PMWorkGraphInput, runner CommandRunner) (PMWor
 		return report, err
 	}
 	report.Goal = status.Goal
+	source, parseErr := parsePMWorkGraphSource(goal.Body)
 	if input.Apply && pmWorkGraphReceiptPresent(input.Repo, goalNumber, report.ExpectedPlanID, runner) {
 		report.PlanID = report.ExpectedPlanID
 		report.Idempotent = true
@@ -179,7 +184,7 @@ func BuildPMWorkGraphReport(input PMWorkGraphInput, runner CommandRunner) (PMWor
 	}
 	report.PMIRDigest = compile.IR.SourceDigest
 	report.PMIRDiagnostics = compile.Diagnostics
-	if compile.Summary.Errors > 0 {
+	if compile.Summary.Errors > 0 && !errors.Is(parseErr, errPMWorkGraphSourceMissing) {
 		report.Diagnostics = append(report.Diagnostics, workGraphDiagnostic("error", PMWorkGraphInvalidPMIR, "", fmt.Sprintf("pm-ir/v1 contains %d compiler errors", compile.Summary.Errors), "repair the Goal source fields before lowering work"))
 	}
 	for _, item := range compile.IR.CandidateWork.Items {
@@ -202,9 +207,12 @@ func BuildPMWorkGraphReport(input PMWorkGraphInput, runner CommandRunner) (PMWor
 		report.OutcomeRefs = append(report.OutcomeRefs, ref)
 	}
 	sort.Strings(report.OutcomeRefs)
-	source, parseErr := parsePMWorkGraphSource(goal.Body)
 	if parseErr != nil {
-		report.Diagnostics = append(report.Diagnostics, workGraphDiagnostic("error", PMWorkGraphMissingSource, "", parseErr.Error(), "add a valid pm-work-graph-source/v1 JSON block under Work Graph"))
+		if errors.Is(parseErr, errPMWorkGraphSourceMissing) {
+			report.Diagnostics = append(report.Diagnostics, workGraphDiagnostic("info", PMWorkGraphMissingSource, "", "Goal has no opt-in typed Work Graph", "run `gira goal plan --dry-run` for the legacy bullet-based planner, or add a valid pm-work-graph-source/v1 block under Work Graph"))
+		} else {
+			report.Diagnostics = append(report.Diagnostics, workGraphDiagnostic("error", PMWorkGraphInvalidSource, "", parseErr.Error(), "repair the Work Graph JSON and schema before rerunning goal graph"))
+		}
 	} else {
 		report.Nodes = normalizePMWorkGraphNodes(source.Nodes)
 		report.Diagnostics = append(report.Diagnostics, validatePMWorkGraph(report.Nodes, outcomeSet)...)
@@ -225,8 +233,15 @@ func BuildPMWorkGraphReport(input PMWorkGraphInput, runner CommandRunner) (PMWor
 		report.Diagnostics = append(report.Diagnostics, workGraphDiagnostic("error", PMWorkGraphPlanChanged, "", "work graph fingerprint changed", "rerun dry-run and approve the new plan"))
 	}
 	sortPMWorkGraphDiagnostics(report.Diagnostics)
-	report.NextStep = fmt.Sprintf("gira goal graph %d --repo %s --dry-run --compact-json", goalNumber, input.Repo.FullName())
+	if errors.Is(parseErr, errPMWorkGraphSourceMissing) {
+		report.NextStep = fmt.Sprintf("gira goal plan %d --repo %s --dry-run", goalNumber, input.Repo.FullName())
+	} else {
+		report.NextStep = fmt.Sprintf("gira goal graph %d --repo %s --dry-run --compact-json", goalNumber, input.Repo.FullName())
+	}
 	if input.Apply {
+		if errors.Is(parseErr, errPMWorkGraphSourceMissing) {
+			return report, fmt.Errorf("typed Work Graph is not configured; run `gira goal plan --dry-run` or add a valid Work Graph block")
+		}
 		if !report.Matched || hasPMWorkGraphErrors(report.Diagnostics) {
 			return report, fmt.Errorf("work graph is not safe to apply")
 		}
@@ -241,7 +256,7 @@ func BuildPMWorkGraphReport(input PMWorkGraphInput, runner CommandRunner) (PMWor
 func parsePMWorkGraphSource(body string) (PMWorkGraphSource, error) {
 	section := strings.TrimSpace(markdownSection(body, "Work Graph"))
 	if section == "" {
-		return PMWorkGraphSource{}, fmt.Errorf("Work Graph section is missing")
+		return PMWorkGraphSource{}, errPMWorkGraphSourceMissing
 	}
 	raw := section
 	if start := strings.Index(section, "```"); start >= 0 {

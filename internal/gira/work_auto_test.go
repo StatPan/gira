@@ -106,6 +106,33 @@ func TestStartWorkUnifiedBranchSelectionsAndSafety(t *testing.T) {
 	}
 }
 
+func TestStartWorkBindingRejectsMismatchedLocalOriginBeforeMutation(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	for _, tt := range []struct {
+		name   string
+		branch string
+	}{
+		{name: "auto current", branch: "auto"},
+		{name: "current", branch: "current"},
+		{name: "named", branch: "team/work"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := autoStartRunner(956, "Automatic branch", "release/fix", false)
+			runner.outputs["git remote get-url origin"] = []byte("git@github.com:Other/repo.git")
+			if tt.branch == "team/work" {
+				runner.outputs["git show-ref --verify --quiet refs/heads/team/work"] = nil
+			}
+			_, err := StartWorkWithOptions(repo, 956, WorkStartOptions{DryRun: true, Branch: tt.branch}, runner)
+			if err == nil || !strings.Contains(err.Error(), "cannot bind work branch") {
+				t.Fatalf("mismatched local origin must reject binding: err=%v", err)
+			}
+			if containsCallWith(runner.calls, "-X PATCH -f body=", "work_branch:") || containsCall(runner.calls, "gh api repos/StatPan/gira/issues/956/labels -X POST -f labels[]=status:in-progress") {
+				t.Fatalf("origin mismatch must fail before lifecycle/status mutation: %v", runner.calls)
+			}
+		})
+	}
+}
+
 func TestStartWorkAutoApprovalPinsEffectiveAction(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	for _, tt := range []struct {

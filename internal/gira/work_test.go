@@ -61,6 +61,9 @@ func (r *workRunner) Run(name string, args ...string) ([]byte, error) {
 }
 
 func defaultBranchPolicyTestOutput(key string) ([]byte, bool) {
+	if key == "git remote get-url origin" {
+		return []byte("https://github.com/StatPan/gira.git"), true
+	}
 	if strings.HasPrefix(key, "gh api repos/") && strings.HasSuffix(key, "/reviews --paginate --slurp") {
 		return []byte(`[[{"state":"APPROVED","commit_id":"head220"}]]`), true
 	}

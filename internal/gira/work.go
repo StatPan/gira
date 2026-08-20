@@ -522,6 +522,11 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 	if err != nil {
 		return result, err
 	}
+	if strategy == "current" || strategy == "adopt" {
+		if err := validateWorkBranchRepository(repo, runner); err != nil {
+			return result, err
+		}
+	}
 	if strategy == "current" || strategy == "adopt" || strategy == "new" || strategy == "auto" {
 		if err := validateRemoteBranchExists("origin", base.BaseBranch, runner); err != nil {
 			return result, err
@@ -731,6 +736,25 @@ func validateAdoptedWorkBranch(branch string, base string, runner CommandRunner,
 	}
 	if !local && !remote {
 		return fmt.Errorf("cannot adopt work branch %q: it does not exist locally or on origin", branch)
+	}
+	return nil
+}
+
+// validateWorkBranchRepository prevents a --repo target from binding a local
+// checkout that belongs to a different GitHub repository. Binding current or
+// adopted branches does not perform a checkout or push, so the origin check is
+// the safety boundary before lifecycle state or labels can be mutated.
+func validateWorkBranchRepository(repo RepoRef, runner CommandRunner) error {
+	output, err := runner.Run("git", "remote", "get-url", "origin")
+	if err != nil {
+		return fmt.Errorf("verify local repository before binding work branch: %w", err)
+	}
+	origin, err := ParseGitHubRemoteRepo(strings.TrimSpace(string(output)))
+	if err != nil {
+		return fmt.Errorf("verify local repository before binding work branch: %w", err)
+	}
+	if !sameRepoRef(origin, repo) {
+		return fmt.Errorf("cannot bind work branch from local origin %q to target repo %q", origin.FullName(), repo.FullName())
 	}
 	return nil
 }

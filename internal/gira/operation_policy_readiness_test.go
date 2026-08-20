@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+func configureManagedRequiredPolicyTest(t *testing.T) {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".gira"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := "repo: StatPan/gira\noperation_mode: managed\ndelivery_policy: required\nprofiles:\n  default:\n    labels: []\n    milestones: []\n    issue_templates: []\n"
+	if err := os.WriteFile(filepath.Join(root, ".gira", "config.yaml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+}
+
 func TestTicketReadinessPolicyModesClassifyManagedFindings(t *testing.T) {
 	body := "## Goal\nShip the change\n\n## Scope\n_No response_\n\n## Acceptance Criteria\n_No response_\n"
 	tests := []struct {

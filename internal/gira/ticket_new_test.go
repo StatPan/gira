@@ -125,6 +125,7 @@ func TestTicketNewExplicitPolicyRejectsStartBeforeIssueCreation(t *testing.T) {
 }
 
 func TestTicketNewExplicitStatusLabelOverridesDefaultReady(t *testing.T) {
+	configureManagedRequiredPolicyTest(t)
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &ticketNewRunner{outputs: ticketNewLabelOutputs("type:task", "status:ready", "status:blocked")}
 
@@ -211,6 +212,7 @@ func TestTicketNewApplyCreatesIssue(t *testing.T) {
 }
 
 func TestTicketNewApplyReportsUnappliedLabelsAndActualReadiness(t *testing.T) {
+	configureManagedRequiredPolicyTest(t)
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	body := defaultTicketNewBody("Label verification")
 	outputs := ticketNewLabelOutputs("type:task", "status:ready")

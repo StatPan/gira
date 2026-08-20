@@ -444,13 +444,14 @@ func approvalHasAction(actions []ApprovalPlannedAction, action string) bool {
 }
 
 func TestStartWorkFailsMissingReady(t *testing.T) {
+	configureManagedRequiredPolicyTest(t)
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"type:task"}]}`),
 	}}
 
 	_, err := StartWork(repo, 126, true, runner)
-	if err == nil || !strings.Contains(err.Error(), "missing label status:ready") || !strings.Contains(err.Error(), "gira adopt issues --repo StatPan/gira --issue 126 --label status:ready --apply") {
+	if err == nil || !strings.Contains(err.Error(), "missing label status:ready") || !strings.Contains(err.Error(), "gira adopt issues --repo StatPan/gira --issue 126 --label status:ready --dry-run") {
 		t.Fatalf("expected missing ready error, got %v", err)
 	}
 }

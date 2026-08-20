@@ -111,7 +111,7 @@ func StartDevBranchWithOptions(repo RepoRef, issueNumber int, options DevStartOp
 	result.Checked["ready_label"] = hasReadyLabel(issue.Labels)
 	if !result.Checked["ready_label"] && !options.Force {
 		result.Failures["ready_label"] = "missing_status:ready"
-		return result, fmt.Errorf("issue #%d is not ready for start: missing label status:ready; try `gira adopt issues --repo %s --issue %d --label status:ready --apply` after confirming the issue is executable", issue.Number, repo.FullName(), issue.Number)
+		return result, fmt.Errorf("issue #%d is not ready for start: missing label status:ready; try `gira adopt issues --repo %s --issue %d --label status:ready --dry-run` after confirming the issue is executable", issue.Number, repo.FullName(), issue.Number)
 	}
 
 	if base != "" {

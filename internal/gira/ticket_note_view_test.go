@@ -30,7 +30,7 @@ func TestTicketLifecycleNextStepPreservesAdoptIssueFlag(t *testing.T) {
 		NextAction: "start_work",
 	}
 	got := ticketLifecycleNextStep(result)
-	want := "gira adopt issues --repo StatPan/gira --issue 760 --label status:ready --apply"
+	want := "gira adopt issues --repo StatPan/gira --issue 760 --label status:ready --dry-run"
 	if got != want {
 		t.Fatalf("next step = %q, want %q", got, want)
 	}

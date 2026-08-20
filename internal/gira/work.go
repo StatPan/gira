@@ -36,6 +36,8 @@ type WorkStartResult struct {
 	BranchSelection   string                     `json:"branch_selection,omitempty"`
 	SuggestedBranch   string                     `json:"suggested_branch,omitempty"`
 	SelectionRequired bool                       `json:"selection_required,omitempty"`
+	Policy            *ResolvedOperationPolicy   `json:"policy,omitempty"`
+	TicketReadiness   *TicketReadinessReport     `json:"ticket_readiness,omitempty"`
 	DryRun            bool                       `json:"dry_run"`
 	Started           bool                       `json:"started"`
 	ExecutionState    string                     `json:"execution_state"`
@@ -134,6 +136,7 @@ type WorkStatusResult struct {
 	Acceptance       *TicketStatusAcceptance   `json:"acceptance_criteria,omitempty"`
 	ReleaseImpact    *TicketReleaseImpact      `json:"release_impact,omitempty"`
 	Telemetry        *TicketStatusTelemetry    `json:"telemetry,omitempty"`
+	Policy           *ResolvedOperationPolicy  `json:"policy,omitempty"`
 	TicketReadiness  *TicketReadinessReport    `json:"ticket_readiness,omitempty"`
 	PRReadiness      *PRReadinessReport        `json:"pr_readiness,omitempty"`
 	Warnings         []string                  `json:"warnings,omitempty"`
@@ -444,26 +447,33 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 	if err != nil {
 		return WorkStartResult{}, err
 	}
+	operationPolicy, err := ResolveRepoOperationPolicy(repo, runner)
+	if err != nil {
+		return WorkStartResult{}, fmt.Errorf("resolve operation policy for %s before ticket start: %w", repo.FullName(), err)
+	}
+	ticketReadiness := EvaluateTicketReadinessWithPolicy(issue.Body, issue.Labels, issue.State, operationPolicy)
 	status := displayStatus(managedStatusFromLabels(issue.Labels))
 	alreadyStarted := status == "In progress"
 	if alreadyStarted && !strings.EqualFold(issue.State, "open") {
 		return WorkStartResult{}, fmt.Errorf("issue #%d is not open", issue.Number)
 	}
-	if !alreadyStarted && (!strings.EqualFold(issue.State, "open") || !hasReadyLabel(issue.Labels)) {
+	if !alreadyStarted && (!strings.EqualFold(issue.State, "open") || (!hasReadyLabel(issue.Labels) && operationPolicy.RequiresManagedDelivery())) {
 		start, err := StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: DefaultDevBranchPattern, DryRun: options.DryRun}, runner)
 		result := WorkStartResult{
-			SchemaVersion:  WorkStartResultSchemaVersion,
-			Repo:           repo.FullName(),
-			Issue:          issueNumber,
-			Title:          start.Title,
-			Branch:         start.Branch,
-			DryRun:         options.DryRun,
-			Status:         status,
-			NextStatus:     status,
-			NextStep:       workStartNextStep(repo.FullName(), issueNumber, issue.State, status, options.DryRun),
-			Checks:         start.Checked,
-			Preflight:      start.Preflight,
-			ExecutionState: WorkStartExecutionBlockedBeforeMutation,
+			SchemaVersion:   WorkStartResultSchemaVersion,
+			Repo:            repo.FullName(),
+			Issue:           issueNumber,
+			Title:           start.Title,
+			Branch:          start.Branch,
+			DryRun:          options.DryRun,
+			Status:          status,
+			NextStatus:      status,
+			NextStep:        workStartNextStep(repo.FullName(), issueNumber, issue.State, status, options.DryRun),
+			Checks:          start.Checked,
+			Preflight:       start.Preflight,
+			ExecutionState:  WorkStartExecutionBlockedBeforeMutation,
+			Policy:          &operationPolicy,
+			TicketReadiness: &ticketReadiness,
 		}
 		if options.DryRun && err == nil {
 			result.ExecutionState = WorkStartExecutionPlanned
@@ -503,8 +513,10 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 		Status:          status,
 		NextStatus:      status,
 		NextStep:        workStartNextStep(repo.FullName(), issueNumber, issue.State, status, options.DryRun),
-		Checks:          map[string]bool{"issue_exists": true, "issue_open": true, "ready_label": true},
+		Checks:          map[string]bool{"issue_exists": true, "issue_open": true, "ready_label": hasReadyLabel(issue.Labels)},
 		ExecutionState:  WorkStartExecutionBlockedBeforeMutation,
+		Policy:          &operationPolicy,
+		TicketReadiness: &ticketReadiness,
 	}
 	result.BranchSelection = strings.TrimSpace(options.Branch)
 	if base.WorkBranch == "" && base.StartMode == BranchStartModeExplicit && strings.TrimSpace(options.Branch) == "" && !options.Create && !options.Current && strings.TrimSpace(options.AdoptBranch) == "" {
@@ -564,7 +576,7 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 		result.BranchSource = "adopted"
 		branchSource = "adopted"
 	default:
-		start, err = StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: pattern, Branch: base.WorkBranch, Base: base.BaseBranch, DryRun: options.DryRun, Force: alreadyStarted, RequireCleanWorktree: true}, runner)
+		start, err = StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: pattern, Branch: base.WorkBranch, Base: base.BaseBranch, DryRun: options.DryRun, Force: alreadyStarted || (!operationPolicy.RequiresManagedDelivery() && strings.EqualFold(issue.State, "open")), RequireCleanWorktree: true}, runner)
 		result.Title = start.Title
 		result.Branch = start.Branch
 		result.CreatedBranch = start.Created
@@ -760,18 +772,18 @@ func validateWorkBranchRepository(repo RepoRef, runner CommandRunner) error {
 }
 
 func explicitBranchSelectionNextStep(repo string, issue int) string {
-	return fmt.Sprintf("choose a branch strategy (auto, new, current, or NAME); default: gira ticket start %d --repo %s --branch auto --apply", issue, repo)
+	return fmt.Sprintf("choose a branch strategy (auto, new, current, or NAME); preview: gira ticket start %d --repo %s --branch auto --dry-run", issue, repo)
 }
 
 func blockedWorkStartNextStep(repo string, issue int, preflight *DevStartWorktreePreflight) string {
 	if preflight != nil && strings.TrimSpace(preflight.SuggestedWorktree) != "" {
-		return fmt.Sprintf("cd %s && gira work start --repo %s --issue %d --apply", QuoteShellArg(preflight.SuggestedWorktree), repo, issue)
+		return fmt.Sprintf("cd %s && gira work start --repo %s --issue %d --dry-run", QuoteShellArg(preflight.SuggestedWorktree), repo, issue)
 	}
-	return fmt.Sprintf("clean the current worktree, then gira work start --repo %s --issue %d --apply", repo, issue)
+	return fmt.Sprintf("clean the current worktree, then gira work start --repo %s --issue %d --dry-run", repo, issue)
 }
 
 func retryWorkStartNextStep(repo string, issue int) string {
-	return fmt.Sprintf("resolve ticket start preflight failures, then gira work start --repo %s --issue %d --apply", repo, issue)
+	return fmt.Sprintf("resolve ticket start preflight failures, then gira work start --repo %s --issue %d --dry-run", repo, issue)
 }
 
 func partialWorkStartNextStep(repo string, issue int) string {
@@ -921,7 +933,11 @@ func GetWorkStatus(repo RepoRef, issueNumber int, runner CommandRunner) (WorkSta
 			return WorkStatusResult{}, prErr
 		}
 	}
-	return workStatusFromIssueAndPRWithReviewEvidence(repo, issueNumber, issue, prStatus, runner), nil
+	policy, err := ResolveRepoOperationPolicy(repo, runner)
+	if err != nil {
+		return WorkStatusResult{}, fmt.Errorf("resolve operation policy for %s: %w", repo.FullName(), err)
+	}
+	return workStatusFromIssueAndPRWithReviewEvidenceAndPolicy(repo, issueNumber, issue, prStatus, runner, policy), nil
 }
 
 func GetWorkStatusWithPRStatus(repo RepoRef, issueNumber int, prStatus DevPRStatusResult, runner CommandRunner) (WorkStatusResult, error) {
@@ -932,14 +948,28 @@ func GetWorkStatusWithPRStatus(repo RepoRef, issueNumber int, prStatus DevPRStat
 	if err != nil {
 		return WorkStatusResult{}, err
 	}
-	return workStatusFromIssueAndPRWithReviewEvidence(repo, issueNumber, issue, prStatus, runner), nil
+	policy, err := ResolveRepoOperationPolicy(repo, runner)
+	if err != nil {
+		return WorkStatusResult{}, fmt.Errorf("resolve operation policy for %s: %w", repo.FullName(), err)
+	}
+	return workStatusFromIssueAndPRWithReviewEvidenceAndPolicy(repo, issueNumber, issue, prStatus, runner, policy), nil
 }
 
 func workStatusFromIssueAndPR(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult) WorkStatusResult {
-	return workStatusFromIssueAndPRWithReviewEvidence(repo, issueNumber, issue, prStatus, nil)
+	return workStatusFromIssueAndPRWithReviewEvidenceAndPolicy(repo, issueNumber, issue, prStatus, nil, compatibilityManagedRequiredPolicy())
 }
 
 func workStatusFromIssueAndPRWithReviewEvidence(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult, runner CommandRunner) WorkStatusResult {
+	policy := compatibilityManagedRequiredPolicy()
+	if runner != nil {
+		if resolved, err := ResolveRepoOperationPolicy(repo, runner); err == nil {
+			policy = resolved
+		}
+	}
+	return workStatusFromIssueAndPRWithReviewEvidenceAndPolicy(repo, issueNumber, issue, prStatus, runner, policy)
+}
+
+func workStatusFromIssueAndPRWithReviewEvidenceAndPolicy(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult, runner CommandRunner, operationPolicy ResolvedOperationPolicy) WorkStatusResult {
 	applyDevPRBindingPolicy(&prStatus, issueNumber, devPRBindingPolicyFromIssue(issue, nil, repo))
 	policy := loadFinishReviewPolicy(repo)
 	var review *FinishReviewEvidence
@@ -996,7 +1026,8 @@ func workStatusFromIssueAndPRWithReviewEvidence(repo RepoRef, issueNumber int, i
 		Acceptance:       ticketStatusAcceptance(issue.Body),
 		ReleaseImpact:    ticketReleaseImpactPtr(ParseTicketReleaseImpact(issue.Body)),
 		Telemetry:        ticketStatusTelemetry(issue.Body, issue.Labels),
-		TicketReadiness:  ticketStatusReadiness(issue),
+		Policy:           &operationPolicy,
+		TicketReadiness:  ticketStatusReadinessWithPolicy(issue, operationPolicy),
 		Warnings:         ticketStatusWarnings(issue, prStatus),
 	}
 	result.NextStep = workStatusNextStep(result)
@@ -1287,6 +1318,11 @@ func ticketStatusReadiness(issue devStartIssue) *TicketReadinessReport {
 	return &report
 }
 
+func ticketStatusReadinessWithPolicy(issue devStartIssue, policy ResolvedOperationPolicy) *TicketReadinessReport {
+	report := EvaluateTicketReadinessWithPolicy(issue.Body, issue.Labels, issue.State, policy)
+	return &report
+}
+
 func setIssueStatus(repo RepoRef, issueNumber int, labels []string, targetLabel string, runner CommandRunner) error {
 	existing := managedStatusLabels(labels)
 	if len(existing) == 1 && strings.EqualFold(existing[0], targetLabel) {
@@ -1556,9 +1592,9 @@ func workStatusNextStep(result WorkStatusResult) string {
 		if isMissingWorkStatus(result.Status) {
 			return readyStatusNextStep(result.Repo, result.Issue)
 		}
-		return fmt.Sprintf("gira work start --repo %s --issue %d --apply", result.Repo, result.Issue)
+		return fmt.Sprintf("gira work start --repo %s --issue %d --dry-run", result.Repo, result.Issue)
 	case "open_pr":
-		return fmt.Sprintf("gira work pr --repo %s --issue %d --apply", result.Repo, result.Issue)
+		return fmt.Sprintf("gira work pr --repo %s --issue %d --dry-run", result.Repo, result.Issue)
 	case "resolve_blockers":
 		return "resolve blockers, then set status:ready before starting work"
 	case "mark_pr_ready":
@@ -1597,7 +1633,7 @@ func correctPRBaseNextStepForRepoName(repo string, prNumber int, base string) st
 }
 
 func readyStatusNextStep(repo string, issue int) string {
-	return fmt.Sprintf("gira adopt issues --repo %s --issue %d --label status:ready --apply", repo, issue)
+	return fmt.Sprintf("gira adopt issues --repo %s --issue %d --label status:ready --dry-run", repo, issue)
 }
 
 func isMissingWorkStatus(status string) bool {

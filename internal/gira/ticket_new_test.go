@@ -196,7 +196,7 @@ func TestTicketNewApplyCreatesIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildTicketNewReport error: %v", err)
 	}
-	if report.Created.Number != 224 || report.NextStep != "gira ticket start 224 --apply" {
+	if report.Created.Number != 224 || report.NextStep != "gira ticket start 224 --dry-run" {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 	if report.Approval != nil {

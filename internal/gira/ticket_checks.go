@@ -77,10 +77,10 @@ func ticketChecksReportFromStatus(repo RepoRef, issueNumber int, status DevPRSta
 
 func ticketChecksNextStep(repo RepoRef, issueNumber int, status DevPRStatusResult) string {
 	if status.PRNumber == 0 {
-		return fmt.Sprintf("gira ticket pr --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+		return fmt.Sprintf("gira ticket pr --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
 	}
 	if containsString(status.Blockers, "draft") {
-		return fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+		return fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
 	}
 	if containsString(status.Blockers, "checks_pending") {
 		return fmt.Sprintf("gira ticket wait --repo %s --ticket %d", repo.FullName(), issueNumber)
@@ -91,7 +91,7 @@ func ticketChecksNextStep(repo RepoRef, issueNumber int, status DevPRStatusResul
 	if containsString(status.Blockers, "review") {
 		return "resolve review requirements, then " + fmt.Sprintf("gira ticket checks --repo %s --ticket %d", repo.FullName(), issueNumber)
 	}
-	return fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+	return fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
 }
 
 func FormatTicketChecks(report TicketChecksReport) string {

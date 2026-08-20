@@ -185,7 +185,7 @@ func goalNextSafeCommand(repo RepoRef, child GoalStatusChild) string {
 	childRepo := goalNextChildRepo(repo, child)
 	switch child.Category {
 	case "ready":
-		return fmt.Sprintf("gira ticket start --repo %s --ticket %d --apply", childRepo.FullName(), child.Number)
+		return fmt.Sprintf("gira ticket start --repo %s --ticket %d --dry-run", childRepo.FullName(), child.Number)
 	case "in_progress":
 		if strings.TrimSpace(child.NextStep) != "" {
 			return normalizeGoalNextCommand(child.NextStep)

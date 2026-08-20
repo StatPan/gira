@@ -156,7 +156,7 @@ func TestFormatLowRiskReportsKeepOutputContracts(t *testing.T) {
 	}
 
 	none := FormatWorkStatus(WorkStatusResult{Repo: "StatPan/gira", Issue: 42, Status: "Ready", NextAction: "start_work"})
-	if !strings.Contains(none, "blockers=none") || !strings.Contains(none, "next step: gira work start --repo StatPan/gira --issue 42 --apply") {
+	if !strings.Contains(none, "blockers=none") || !strings.Contains(none, "next step: gira work start --repo StatPan/gira --issue 42 --dry-run") {
 		t.Fatalf("work status no-blocker output unexpected:\n%s", none)
 	}
 	blocked := FormatWorkStatus(WorkStatusResult{Repo: "StatPan/gira", Issue: 43, Status: "In review", PRNumber: 44, Blockers: []string{"draft", "checks"}, NextAction: "mark_pr_ready"})

@@ -24,6 +24,7 @@ type GoalStatusReport struct {
 	Counts                  map[string]int    `json:"counts"`
 	Blockers                []string          `json:"blockers,omitempty"`
 	HandoffReceiptPresent   bool              `json:"handoff_receipt_present"`
+	PlanningEngine          string            `json:"planning_engine"`
 	NextAction              string            `json:"next_action"`
 	NextStep                string            `json:"next_step"`
 	RemainingAutonomousWork int               `json:"remaining_autonomous_work"`
@@ -91,6 +92,7 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 		Counts: map[string]int{},
 	}
 	report.HandoffReceiptPresent = goalFinishGoalReceiptPresent(input.Repo, goal.Number, runner)
+	report.PlanningEngine = goalPlanningEngine(goal.Body)
 	childRefs, err := discoverGoalChildRefs(input.Repo, goal, runner)
 	if err != nil {
 		return report, err
@@ -121,6 +123,67 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 	report.RemainingAutonomousWork = goalRemainingAutonomousWork(report.Children)
 	report.NextAction, report.NextStep = goalStatusNextAction(input.Repo, report)
 	return report, nil
+}
+
+func goalPlanningEngine(body string) string {
+	hasBulletPlan := goalPlanningHasBulletPlan(body)
+	typedGraphState := goalPlanningTypedWorkGraphState(body)
+	switch {
+	case hasBulletPlan && typedGraphState == "valid":
+		return "mixed"
+	case hasBulletPlan && typedGraphState == "invalid":
+		return "mixed_invalid_typed_work_graph"
+	case typedGraphState == "valid":
+		return "typed_work_graph"
+	case typedGraphState == "invalid":
+		return "invalid_typed_work_graph"
+	case hasBulletPlan:
+		return "bullet_goal_plan"
+	default:
+		return "unconfigured"
+	}
+}
+
+func goalPlanningHasBulletPlan(body string) bool {
+	for _, heading := range []string{"Goal Plan", "Decomposition", "Child Ticket Plan", "Suggested Child Tickets", "Initial Follow-Up Issues To Create", "Follow-Up Issues"} {
+		for _, item := range markdownListSection(body, heading) {
+			if !emptyReadinessSection(cleanGoalPlanItem(item)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func goalPlanningTypedWorkGraphState(body string) string {
+	section, present := goalWorkGraphSection(body)
+	if !present {
+		return "absent"
+	}
+	if strings.TrimSpace(section) == "" {
+		return "invalid"
+	}
+	if emptyReadinessSection(section) {
+		return "absent"
+	}
+	source, err := parsePMWorkGraphSource(body)
+	if err != nil {
+		return "invalid"
+	}
+	for _, node := range source.Nodes {
+		if emptyReadinessSection(node.ID) || emptyReadinessSection(node.Title) || emptyReadinessSection(node.Purpose) || emptyReadinessSection(node.ParentOutcome) {
+			return "invalid"
+		}
+		if _, ok := FindPMTaskProfile(node.Profile); !ok || len(node.Verification) == 0 {
+			return "invalid"
+		}
+		for _, verification := range node.Verification {
+			if emptyReadinessSection(verification.Method) || emptyReadinessSection(verification.Evidence) {
+				return "invalid"
+			}
+		}
+	}
+	return "valid"
 }
 
 type goalChildRef struct {
@@ -375,7 +438,7 @@ func githubIssueURL(repo RepoRef, issue int) string {
 
 func FormatGoalStatus(report GoalStatusReport) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "goal status: #%d %s children=%d remaining=%d next=%s\n", report.Goal.Number, report.Goal.Status, len(report.Children), report.RemainingAutonomousWork, report.NextAction)
+	fmt.Fprintf(&b, "goal status: #%d %s children=%d remaining=%d planning_engine=%s next=%s\n", report.Goal.Number, report.Goal.Status, len(report.Children), report.RemainingAutonomousWork, report.PlanningEngine, report.NextAction)
 	if len(report.Children) > 0 {
 		keys := []string{"ready", "in_progress", "in_review", "blocked", "done", "closed_other", "unknown"}
 		parts := []string{}

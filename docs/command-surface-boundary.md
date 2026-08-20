@@ -18,6 +18,23 @@ Gira should stay CLI-first, but CLI-first does not mean every internal concern
 gets a top-level command. Daily commands should guide work. Ops commands should
 explain the machine.
 
+## Discovery Tiers
+
+Discovery tiers organize the taught path; they do not remove compatible commands
+or change authorization.
+
+| Tier | Start here when | Canonical agent entry point | Keep out of the default path |
+| --- | --- | --- | --- |
+| Assist | Reading GitHub state, diagnosing readiness, or choosing a next action. | Read the relevant `status`, `report`, or `review` output. | Mutating lifecycle commands and planning engines. |
+| Managed Delivery | One GitHub issue is the bounded unit of work. | `gira ticket handoff TICKET --repo OWNER/REPO --json` | Goal, queue, and PM coordination unless the work is genuinely multi-ticket. |
+| Advanced Orchestration | A Goal, a workspace-wide queue, or a durable PM protocol needs explicit coordination. | `gira dispatch goal GOAL --repo OWNER/REPO --compact-json` for Goal-level work. | Treating Goal, queue, or PM commands as prerequisites for a normal ticket. |
+
+Compatibility paths remain supported but are not taught as the default. Examples
+include `gira start` for `gira ticket start`, `gira work` for the ticket family,
+`gira docs` for `gira guide`, and `gira goal dossier` for `gira goal report`.
+The command registry records aliases and generated references label them so an
+agent can normalize to the canonical command before policy evaluation.
+
 ## Surface Classes
 
 | Surface | Purpose | Examples | Rule |

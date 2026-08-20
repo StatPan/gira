@@ -25,7 +25,7 @@ func TestRenderAgentGuideUsesCommandRegistry(t *testing.T) {
 			GuideOrder:  60,
 		},
 	})
-	if !strings.Contains(out, "Registry-backed lifecycle commands:") || !strings.Contains(out, "Start from registry metadata.") {
+	if !strings.Contains(out, "Agent entry points:") || !strings.Contains(out, "gira ticket handoff TICKET") || !strings.Contains(out, "Registry-backed lifecycle commands:") || !strings.Contains(out, "Start from registry metadata.") {
 		t.Fatalf("agent guide did not render registry metadata:\n%s", out)
 	}
 	if strings.Index(out, "gira ticket start") > strings.Index(out, "gira ticket finish") {

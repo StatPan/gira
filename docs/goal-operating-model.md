@@ -141,8 +141,9 @@ delivery tickets.
 ### Typed Work Graph
 
 `gira goal graph` is the deterministic path from PM intent and discovery state
-to independently verifiable child work. It leaves the legacy bullet-based
-`goal plan` path unchanged. A Goal opts in with a `## Work Graph` fenced JSON
+to independently verifiable child work. The bullet-based `goal plan` path
+remains available for Goals that have not opted into a typed Work Graph. A Goal
+opts in with a `## Work Graph` fenced JSON
 block using `pm-work-graph-source/v1`:
 
 ```json
@@ -174,6 +175,19 @@ facts and a `pwg-*` fingerprint. `--apply --expect-plan ID` lowers only the
 unchanged graph and posts a receipt. Repeating the approved apply returns the
 existing receipt without duplicating children. Full JSON retains PM IR digest,
 discovery outcome refs, graph semantics, diagnostics, and rendered action data.
+
+### Planning Engine Visibility
+
+`gira goal status` exposes `planning_engine` as `bullet_goal_plan`,
+`typed_work_graph`, `mixed`, `invalid_typed_work_graph`,
+`mixed_invalid_typed_work_graph`, or `unconfigured`. `mixed` means the Goal
+body has both bullet-plan and typed work-graph sources. The invalid states mean
+the Goal contains a present but malformed or incomplete typed Work Graph; the
+mixed invalid state also contains bullet-plan items. Gira intentionally does
+not choose or merge these sources automatically: run the intended engine
+explicitly, preserve the other source as migration evidence, then remove it in
+a reviewed follow-up. This prevents two planning engines from silently creating
+overlapping child tickets.
 
 ### Active Observe and Replan Loop
 

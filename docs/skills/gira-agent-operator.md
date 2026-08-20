@@ -1,22 +1,25 @@
 # Gira Agent Operator Skill
 
-This is the canonical operator skill; adapters point here.
+Canonical operator skill; adapters point here.
 
 ## Purpose
 
-Gira makes GitHub the execution backend: issues are work packets, branches are
-start evidence, PRs are change units, and milestones are phase boundaries.
+Gira uses GitHub: issues are work packets, branches start evidence, PRs are
+change units, and milestones phase boundaries.
 
 ## Canonical Surfaces
 
-- PM policy: `docs/pm-operating-policy.md`; packets: `docs/pm-skill.md`.
+- PM: `docs/pm-operating-policy.md`, `docs/pm-skill.md`.
 - CLI: `gira guide agent`; Codex adapter: `AGENTS.md`.
 
 ## Operating Model
 
-- A branch starts one issue; a PR is its review and delivery unit.
-- A merged PR plus its closed linked issue is completion evidence.
-- Milestones group bounded phases; project-only items become repository issues.
+- A branch starts one issue; its PR is the review and delivery unit; merged PR plus closed issue is completion evidence.
+- Milestones group phases; project-only items become repository issues.
+
+## Agent Entry Points
+
+- One issue: `ticket handoff`; Goal: `dispatch goal`; Goal/queue/PM: advanced.
 
 ## Standard Agent Flow
 

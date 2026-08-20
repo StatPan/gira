@@ -7,17 +7,31 @@ import (
 )
 
 type CommandSpec struct {
-	Path        []string
-	Summary     string
-	Usage       string
-	Flags       []FlagSpec
-	Since       string
-	Docs        []string
-	GuideTopics []string
-	GuideOrder  int
-	Examples    []CommandExample
-	Adapter     AdapterCommandCapability
+	Path         []string
+	Summary      string
+	Usage        string
+	Flags        []FlagSpec
+	Since        string
+	Docs         []string
+	GuideTopics  []string
+	GuideOrder   int
+	Examples     []CommandExample
+	Adapter      AdapterCommandCapability
+	Tier         CommandTier
+	WorkflowRole string
 }
+
+// CommandTier organizes command discovery. It does not affect availability,
+// compatibility, or authorization.
+type CommandTier string
+
+const (
+	CommandTierAssist                CommandTier = "assist"
+	CommandTierManagedDelivery       CommandTier = "managed_delivery"
+	CommandTierAdvancedOrchestration CommandTier = "advanced_orchestration"
+	CommandTierSupporting            CommandTier = "supporting"
+	CommandTierCompatibility         CommandTier = "compatibility"
+)
 
 type FlagSpec struct {
 	Name    string
@@ -64,6 +78,8 @@ type CommandCapabilityEntry struct {
 	MutationBoundary string                 `json:"mutation_boundary,omitempty"`
 	JSONSupport      string                 `json:"json_support"`
 	Aliases          []string               `json:"aliases,omitempty"`
+	Tier             CommandTier            `json:"tier"`
+	WorkflowRole     string                 `json:"workflow_role,omitempty"`
 	Docs             []string               `json:"docs"`
 	Since            string                 `json:"since,omitempty"`
 	Notes            string                 `json:"notes,omitempty"`
@@ -1411,7 +1427,37 @@ func CoreCommandSpecs() []CommandSpec {
 		},
 	}
 	applyAdapterCapabilities(specs)
+	applyCommandSurfaceMetadata(specs)
 	return specs
+}
+
+func applyCommandSurfaceMetadata(specs []CommandSpec) {
+	for i := range specs {
+		key := commandSpecKey(specs[i].Path)
+		specs[i].Tier = CommandTierSupporting
+		switch {
+		case strings.HasPrefix(key, "ticket ") || strings.HasPrefix(key, "workspace ") || strings.HasPrefix(key, "feature ") || strings.HasPrefix(key, "milestone "):
+			specs[i].Tier = CommandTierManagedDelivery
+		case strings.HasPrefix(key, "goal ") || strings.HasPrefix(key, "queue ") || strings.HasPrefix(key, "pm ") || key == "dispatch goal":
+			specs[i].Tier = CommandTierAdvancedOrchestration
+		case key == "status" || strings.HasPrefix(key, "report ") || strings.HasPrefix(key, "stats ") || key == "release readiness" || strings.HasPrefix(key, "config ") || key == "jira doctor":
+			specs[i].Tier = CommandTierAssist
+		}
+		switch key {
+		case "ticket handoff":
+			specs[i].WorkflowRole = "canonical_single_issue_agent_entry_point"
+		case "dispatch goal":
+			specs[i].WorkflowRole = "canonical_goal_agent_entry_point"
+		case "goal handoff":
+			specs[i].WorkflowRole = "advanced_goal_context_builder"
+		case "queue handoff":
+			specs[i].WorkflowRole = "advanced_workspace_selector"
+		case "goal plan":
+			specs[i].WorkflowRole = "goal_plan_bullet_planning_engine"
+		case "goal graph":
+			specs[i].WorkflowRole = "typed_work_graph_planning_engine"
+		}
+	}
 }
 
 func applyAdapterCapabilities(specs []CommandSpec) {
@@ -1608,6 +1654,8 @@ func BuildCommandCapabilityReport(specs []CommandSpec) CommandCapabilityReport {
 			MutationBoundary: adapter.MutationBoundary,
 			JSONSupport:      adapter.JSONSupport,
 			Aliases:          append([]string(nil), adapter.Aliases...),
+			Tier:             spec.Tier,
+			WorkflowRole:     spec.WorkflowRole,
 			Docs:             append([]string(nil), spec.Docs...),
 			Since:            spec.Since,
 			Notes:            adapter.Notes,
@@ -1622,8 +1670,8 @@ func RenderCommandCapabilitiesMarkdown(specs []CommandSpec) string {
 	b.WriteString("# Command Capabilities\n\n")
 	b.WriteString("This page is generated from Gira's command metadata registry. Update `internal/gira/command_registry.go` first, then refresh this page.\n\n")
 	fmt.Fprintf(&b, "Schema version: `%s`\n\n", report.SchemaVersion)
-	b.WriteString("| Command | Aliases | Capability | JSON support | Mutation boundary | Docs |\n")
-	b.WriteString("| --- | --- | --- | --- | --- | --- |\n")
+	b.WriteString("| Command | Tier | Workflow role | Aliases | Capability | JSON support | Mutation boundary | Docs |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | --- | --- |\n")
 	for _, command := range report.Commands {
 		boundary := command.MutationBoundary
 		if boundary == "" {
@@ -1637,7 +1685,11 @@ func RenderCommandCapabilitiesMarkdown(specs []CommandSpec) string {
 		if docs == "" {
 			docs = "none"
 		}
-		fmt.Fprintf(&b, "| `%s` | %s | `%s` | `%s` | %s | %s |\n", command.Canonical, aliases, command.Capability, command.JSONSupport, boundary, docs)
+		role := command.WorkflowRole
+		if role == "" {
+			role = "none"
+		}
+		fmt.Fprintf(&b, "| `%s` | `%s` | `%s` | %s | `%s` | `%s` | %s | %s |\n", command.Canonical, command.Tier, role, aliases, command.Capability, command.JSONSupport, boundary, docs)
 	}
 	return b.String()
 }
@@ -1653,6 +1705,15 @@ func RenderCommandReferenceMarkdown(specs []CommandSpec) string {
 	for _, spec := range specs {
 		fmt.Fprintf(&b, "## `%s`\n\n", strings.Join(spec.Path, " "))
 		fmt.Fprintf(&b, "%s\n\n", spec.Summary)
+		if spec.Tier != "" {
+			fmt.Fprintf(&b, "Discovery tier: `%s`.\n\n", spec.Tier)
+		}
+		if spec.WorkflowRole != "" {
+			fmt.Fprintf(&b, "Workflow role: `%s`.\n\n", spec.WorkflowRole)
+		}
+		if len(spec.Adapter.Aliases) > 0 {
+			fmt.Fprintf(&b, "Compatibility aliases: `%s`.\n\n", strings.Join(spec.Adapter.Aliases, "`, `"))
+		}
 		fmt.Fprintf(&b, "Usage:\n\n```bash\n%s\n```\n\n", spec.Usage)
 		if spec.Since != "" {
 			fmt.Fprintf(&b, "Since: `%s`\n\n", spec.Since)

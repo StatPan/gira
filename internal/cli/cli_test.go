@@ -57,6 +57,11 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(stdout.String(), "stats") {
 		t.Fatalf("help output missing stats command:\n%s", stdout.String())
 	}
+	for _, want := range []string{"Assist (read GitHub state", "Managed delivery (one GitHub issue", "Advanced orchestration (explicit multi-ticket", "Canonical ticket lifecycle commands", "Canonical Goal-level agent entry"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("help output missing tiered discovery %q:\n%s", want, stdout.String())
+		}
+	}
 	if strings.Contains(stdout.String(), "portfolio   ") || strings.Contains(stdout.String(), "jira        ") {
 		t.Fatalf("help output should not frontload advanced commands:\n%s", stdout.String())
 	}
@@ -993,7 +998,7 @@ func TestGuideQuickstartDefault(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{"Gira quickstart", "gira new", "gira ticket checks", "gira ticket finish --apply"} {
+	for _, want := range []string{"Gira quickstart", "gira new", "gira ticket checks", "gira ticket finish --apply", "gira ticket handoff TICKET", "gira dispatch goal GOAL"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("guide output missing %q:\n%s", want, stdout.String())
 		}
@@ -1040,6 +1045,7 @@ func TestGuideCapabilitiesJSON(t *testing.T) {
 		t.Fatalf("schema version = %q, want %q", report.SchemaVersion, gira.CommandCapabilitySchemaVersion)
 	}
 	foundTicketStart := false
+	foundCanonicalEntrypoint := false
 	for _, command := range report.Commands {
 		if command.Canonical == "gira ticket start" {
 			foundTicketStart = true
@@ -1047,9 +1053,15 @@ func TestGuideCapabilitiesJSON(t *testing.T) {
 				t.Fatalf("unexpected ticket start capability: %+v", command)
 			}
 		}
+		if command.Canonical == "gira ticket handoff" {
+			foundCanonicalEntrypoint = command.Tier == gira.CommandTierManagedDelivery && command.WorkflowRole == "canonical_single_issue_agent_entry_point"
+		}
 	}
 	if !foundTicketStart {
 		t.Fatalf("capability report missing gira ticket start: %+v", report.Commands)
+	}
+	if !foundCanonicalEntrypoint {
+		t.Fatalf("capability report missing canonical single-issue entry point metadata: %+v", report.Commands)
 	}
 }
 

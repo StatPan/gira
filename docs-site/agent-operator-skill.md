@@ -21,6 +21,12 @@ canonical sources instead of redefining them.
 - PRs are change units.
 - Merged PR plus closed issue is completion evidence.
 
+## Agent Entry Points
+
+- One selected issue: `gira ticket handoff TICKET --repo OWNER/REPO --json`.
+- Multi-ticket Goal: `gira dispatch goal GOAL --repo OWNER/REPO --compact-json`.
+- Goal, queue, and PM commands are Advanced orchestration; they are not required for a normal ticket.
+
 ## Registry-Backed Lifecycle Commands
 
 - `gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact MODE] [--start]`: Create a repo-bound executable GitHub issue with structured or full Markdown body input.

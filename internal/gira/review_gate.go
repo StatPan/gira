@@ -15,6 +15,9 @@ const (
 	BlockerFailingChecks     = "failing_checks"
 	BlockerUnresolvedBlocker = "unresolved_blockers"
 	BlockerPolicyViolation   = "policy_violation"
+
+	ReviewFindingClassProvider = "provider_observation"
+	ReviewFindingClassPolicy   = "managed_policy"
 )
 
 type ReviewPR struct {
@@ -43,9 +46,24 @@ type ReviewGateClient interface {
 	MergePR(number int) error
 }
 
+// ReviewGateFinding separates facts supplied by GitHub from checks that only
+// exist because a repository explicitly opted into managed delivery policy.
+// The fields are additive so existing blockers consumers remain compatible.
+type ReviewGateFinding struct {
+	FindingClass string `json:"finding_class"`
+	Code         string `json:"code"`
+	Enforced     bool   `json:"enforced"`
+	Message      string `json:"message"`
+	Target       string `json:"target,omitempty"`
+}
+
 type GHReviewGateClient struct {
 	repo   RepoRef
 	runner CommandRunner
+}
+
+func (c GHReviewGateClient) ResolveOperationPolicy() (ResolvedOperationPolicy, error) {
+	return ResolveRepoOperationPolicy(c.repo, c.runner)
 }
 
 func NewGHReviewGateClient(repo RepoRef, runner CommandRunner) GHReviewGateClient {
@@ -165,19 +183,21 @@ func (c GHReviewGateClient) MergePR(number int) error {
 }
 
 type ReviewQueueItem struct {
-	PR           ReviewPR  `json:"pr"`
-	RouteTo      string    `json:"route_to"`
-	StaleReview  bool      `json:"stale_review"`
-	Blockers     []string  `json:"blockers"`
-	QueueRank    int       `json:"queue_rank"`
-	RequeueToken string    `json:"requeue_token"`
-	UpdatedTime  time.Time `json:"-"`
+	PR           ReviewPR            `json:"pr"`
+	RouteTo      string              `json:"route_to"`
+	StaleReview  bool                `json:"stale_review"`
+	Blockers     []string            `json:"blockers"`
+	Findings     []ReviewGateFinding `json:"findings,omitempty"`
+	QueueRank    int                 `json:"queue_rank"`
+	RequeueToken string              `json:"requeue_token"`
+	UpdatedTime  time.Time           `json:"-"`
 }
 
 type ReviewQueueReport struct {
-	Repo      string            `json:"repo"`
-	Generated string            `json:"generated_at"`
-	Items     []ReviewQueueItem `json:"items"`
+	Repo      string                  `json:"repo"`
+	Generated string                  `json:"generated_at"`
+	Policy    ResolvedOperationPolicy `json:"policy"`
+	Items     []ReviewQueueItem       `json:"items"`
 }
 
 type MergeQueueReport struct {
@@ -189,16 +209,26 @@ type MergeQueueReport struct {
 }
 
 type ReleaseReadinessReport struct {
-	Repo            string            `json:"repo"`
-	Generated       string            `json:"generated_at"`
-	Ready           bool              `json:"ready"`
-	BlockingPRs     []ReviewQueueItem `json:"blocking_prs"`
-	OpenBlockers    []int             `json:"open_blocker_issues"`
-	OpenMustFix     []int             `json:"open_must_fix_issues"`
-	BlockerTaxonomy []string          `json:"blocker_taxonomy"`
+	Repo            string                  `json:"repo"`
+	Generated       string                  `json:"generated_at"`
+	Policy          ResolvedOperationPolicy `json:"policy"`
+	Ready           bool                    `json:"ready"`
+	BlockingPRs     []ReviewQueueItem       `json:"blocking_prs"`
+	OpenBlockers    []int                   `json:"open_blocker_issues"`
+	OpenMustFix     []int                   `json:"open_must_fix_issues"`
+	BlockerTaxonomy []string                `json:"blocker_taxonomy"`
+	Findings        []ReviewGateFinding     `json:"findings,omitempty"`
 }
 
 func BuildReviewQueue(client ReviewGateClient, now time.Time) (ReviewQueueReport, error) {
+	policy, err := resolveReviewGatePolicy(client)
+	if err != nil {
+		return ReviewQueueReport{}, err
+	}
+	return buildReviewQueueWithPolicy(client, now, policy)
+}
+
+func buildReviewQueueWithPolicy(client ReviewGateClient, now time.Time, policy ResolvedOperationPolicy) (ReviewQueueReport, error) {
 	prs, err := client.ListOpenPRs()
 	if err != nil {
 		return ReviewQueueReport{}, err
@@ -206,7 +236,7 @@ func BuildReviewQueue(client ReviewGateClient, now time.Time) (ReviewQueueReport
 	items := make([]ReviewQueueItem, 0, len(prs))
 	for _, pr := range prs {
 		updated, _ := time.Parse(time.RFC3339, pr.UpdatedAt)
-		blockers := classifyPRBlockers(pr)
+		blockers, findings := classifyPRBlockersWithPolicy(pr, policy)
 		route := "unassigned"
 		if len(pr.RequestedReviewers) > 0 {
 			route = pr.RequestedReviewers[0]
@@ -217,7 +247,7 @@ func BuildReviewQueue(client ReviewGateClient, now time.Time) (ReviewQueueReport
 		if !updated.IsZero() && updated.Before(now.Add(-72*time.Hour)) && contains(blockers, BlockerMissingApproval) {
 			stale = true
 		}
-		items = append(items, ReviewQueueItem{PR: pr, RouteTo: route, StaleReview: stale, Blockers: blockers, UpdatedTime: updated, RequeueToken: fmt.Sprintf("pr-%d:%s", pr.Number, updated.UTC().Format(time.RFC3339))})
+		items = append(items, ReviewQueueItem{PR: pr, RouteTo: route, StaleReview: stale, Blockers: blockers, Findings: findings, UpdatedTime: updated, RequeueToken: fmt.Sprintf("pr-%d:%s", pr.Number, updated.UTC().Format(time.RFC3339))})
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].StaleReview != items[j].StaleReview {
@@ -237,7 +267,7 @@ func BuildReviewQueue(client ReviewGateClient, now time.Time) (ReviewQueueReport
 	for i := range items {
 		items[i].QueueRank = i + 1
 	}
-	return ReviewQueueReport{Repo: client.Repo().FullName(), Generated: now.UTC().Format(time.RFC3339), Items: items}, nil
+	return ReviewQueueReport{Repo: client.Repo().FullName(), Generated: now.UTC().Format(time.RFC3339), Policy: policy, Items: items}, nil
 }
 
 func BuildMergeQueue(client ReviewGateClient, now time.Time, apply bool) (MergeQueueReport, error) {
@@ -267,7 +297,11 @@ func BuildMergeQueue(client ReviewGateClient, now time.Time, apply bool) (MergeQ
 }
 
 func BuildReleaseReadiness(client ReviewGateClient, now time.Time) (ReleaseReadinessReport, error) {
-	queue, err := BuildReviewQueue(client, now)
+	policy, err := resolveReviewGatePolicy(client)
+	if err != nil {
+		return ReleaseReadinessReport{}, err
+	}
+	queue, err := buildReviewQueueWithPolicy(client, now, policy)
 	if err != nil {
 		return ReleaseReadinessReport{}, err
 	}
@@ -296,18 +330,27 @@ func BuildReleaseReadiness(client ReviewGateClient, now time.Time) (ReleaseReadi
 	sort.Ints(blockers)
 	sort.Ints(mustFix)
 	blockingPRs := make([]ReviewQueueItem, 0)
+	findings := make([]ReviewGateFinding, 0)
 	for _, item := range queue.Items {
+		findings = append(findings, item.Findings...)
 		if len(item.Blockers) > 0 {
 			blockingPRs = append(blockingPRs, item)
 		}
 	}
-	ready := len(blockingPRs) == 0 && len(blockers) == 0 && len(mustFix) == 0
-	return ReleaseReadinessReport{Repo: client.Repo().FullName(), Generated: now.UTC().Format(time.RFC3339), Ready: ready, BlockingPRs: blockingPRs, OpenBlockers: blockers, OpenMustFix: mustFix, BlockerTaxonomy: []string{BlockerMissingApproval, BlockerFailingChecks, BlockerUnresolvedBlocker, BlockerPolicyViolation}}, nil
+	for _, issue := range blockers {
+		findings = append(findings, managedPolicyFindingForTarget(policy, BlockerUnresolvedBlocker, "open issue has a blocker label", fmt.Sprintf("issue#%d", issue)))
+	}
+	for _, issue := range mustFix {
+		findings = append(findings, managedPolicyFindingForTarget(policy, "must_fix_issue", "open issue has a must-fix label", fmt.Sprintf("issue#%d", issue)))
+	}
+	ready := len(blockingPRs) == 0 && (!policy.RequiresManagedDelivery() || (len(blockers) == 0 && len(mustFix) == 0))
+	return ReleaseReadinessReport{Repo: client.Repo().FullName(), Generated: now.UTC().Format(time.RFC3339), Policy: policy, Ready: ready, BlockingPRs: blockingPRs, OpenBlockers: blockers, OpenMustFix: mustFix, BlockerTaxonomy: []string{BlockerMissingApproval, BlockerFailingChecks, BlockerUnresolvedBlocker, BlockerPolicyViolation}, Findings: findings}, nil
 }
 
 func FormatReviewQueueText(report ReviewQueueReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "review queue: %s\n", report.Repo)
+	fmt.Fprintf(&b, "policy: mode=%s delivery=%s source=%s\n", report.Policy.OperationMode, report.Policy.DeliveryPolicy, report.Policy.Source)
 	fmt.Fprintf(&b, "items: %d\n", len(report.Items))
 	for _, item := range report.Items {
 		blockers := strings.Join(item.Blockers, ",")
@@ -315,8 +358,27 @@ func FormatReviewQueueText(report ReviewQueueReport) string {
 			blockers = "none"
 		}
 		fmt.Fprintf(&b, "- #%d %s route=%s blockers=%s\n", item.PR.Number, item.PR.Title, item.RouteTo, blockers)
+		for _, finding := range item.Findings {
+			fmt.Fprintf(&b, "  finding: %s finding_class=%s enforced=%t\n", finding.Code, finding.FindingClass, finding.Enforced)
+		}
 	}
 	fmt.Fprintf(&b, "next step: %s\n", reviewQueueNextStep(report))
+	return b.String()
+}
+
+func FormatReleaseReadinessText(report ReleaseReadinessReport) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "release readiness: %s ready=%t\n", report.Repo, report.Ready)
+	fmt.Fprintf(&b, "policy: mode=%s delivery=%s source=%s\n", report.Policy.OperationMode, report.Policy.DeliveryPolicy, report.Policy.Source)
+	fmt.Fprintf(&b, "blocking PRs: %d open blockers: %d open must-fix: %d\n", len(report.BlockingPRs), len(report.OpenBlockers), len(report.OpenMustFix))
+	for _, finding := range report.Findings {
+		fmt.Fprintf(&b, "- finding: %s finding_class=%s enforced=%t target=%s\n", finding.Code, finding.FindingClass, finding.Enforced, finding.Target)
+	}
+	if report.Ready {
+		b.WriteString("next step: proceed with release review\n")
+	} else {
+		b.WriteString("next step: resolve blocking readiness findings\n")
+	}
 	return b.String()
 }
 
@@ -328,27 +390,76 @@ func reviewQueueNextStep(report ReviewQueueReport) string {
 }
 
 func classifyPRBlockers(pr ReviewPR) []string {
+	blockers, _ := classifyPRBlockersWithPolicy(pr, ResolvedOperationPolicy{OperationMode: OperationModeManaged, DeliveryPolicy: DeliveryPolicyRequired, Source: "compatibility"})
+	return blockers
+}
+
+func classifyPRBlockersWithPolicy(pr ReviewPR, policy ResolvedOperationPolicy) ([]string, []ReviewGateFinding) {
 	blockers := make([]string, 0)
+	findings := make([]ReviewGateFinding, 0)
 	if pr.IsDraft {
 		blockers = append(blockers, BlockerPolicyViolation)
+		findings = append(findings, ReviewGateFinding{FindingClass: ReviewFindingClassProvider, Code: "draft_pr", Enforced: false, Message: "pull request is still a draft", Target: fmt.Sprintf("pr#%d", pr.Number)})
 	}
 	if pr.ReviewDecision != "APPROVED" {
-		blockers = append(blockers, BlockerMissingApproval)
+		finding := managedPolicyFinding(policy, BlockerMissingApproval, "pull request does not have an approving review", pr.Number)
+		findings = append(findings, finding)
+		if finding.Enforced {
+			blockers = append(blockers, BlockerMissingApproval)
+		}
 	}
 	if pr.CheckStatus == "failing" {
 		blockers = append(blockers, BlockerFailingChecks)
+		findings = append(findings, ReviewGateFinding{FindingClass: ReviewFindingClassProvider, Code: BlockerFailingChecks, Enforced: false, Message: "pull request checks are failing", Target: fmt.Sprintf("pr#%d", pr.Number)})
 	}
 	if len(ExtractClosureIssueNumbers(pr.Body)) == 0 && !hasSubstring(pr.Labels, "docs") && !hasSubstring(pr.Labels, "chore") {
-		blockers = append(blockers, BlockerPolicyViolation)
+		finding := managedPolicyFinding(policy, BlockerPolicyViolation, "pull request has no Gira closure link", pr.Number)
+		findings = append(findings, finding)
+		if finding.Enforced {
+			blockers = append(blockers, BlockerPolicyViolation)
+		}
 	}
 	for _, label := range pr.Labels {
 		if strings.Contains(strings.ToLower(label), "blocker") {
-			blockers = append(blockers, BlockerUnresolvedBlocker)
+			finding := managedPolicyFindingForTarget(policy, BlockerUnresolvedBlocker, "pull request has a blocker label", fmt.Sprintf("pr#%d", pr.Number))
+			findings = append(findings, finding)
+			if finding.Enforced {
+				blockers = append(blockers, BlockerUnresolvedBlocker)
+			}
 			break
 		}
 	}
 	sort.Strings(blockers)
-	return blockers
+	return blockers, findings
+}
+
+func managedPolicyFinding(policy ResolvedOperationPolicy, code, message string, pr int) ReviewGateFinding {
+	return managedPolicyFindingForTarget(policy, code, message, fmt.Sprintf("pr#%d", pr))
+}
+
+func managedPolicyFindingForTarget(policy ResolvedOperationPolicy, code, message, target string) ReviewGateFinding {
+	return ReviewGateFinding{FindingClass: ReviewFindingClassPolicy, Code: code, Enforced: policy.RequiresManagedDelivery(), Message: message, Target: target}
+}
+
+type reviewGatePolicyProvider interface {
+	ResolveOperationPolicy() (ResolvedOperationPolicy, error)
+}
+
+func resolveReviewGatePolicy(client ReviewGateClient) (ResolvedOperationPolicy, error) {
+	if provider, ok := client.(reviewGatePolicyProvider); ok {
+		policy, err := provider.ResolveOperationPolicy()
+		if err != nil {
+			return ResolvedOperationPolicy{}, fmt.Errorf("resolve review gate operation policy: %w", err)
+		}
+		if strings.TrimSpace(policy.OperationMode) == "" || strings.TrimSpace(policy.DeliveryPolicy) == "" || strings.TrimSpace(policy.Source) == "" {
+			return ResolvedOperationPolicy{}, fmt.Errorf("resolve review gate operation policy: incomplete resolved policy")
+		}
+		return policy, nil
+	}
+	// Preserve the compatibility behavior for downstream ReviewGateClient
+	// implementations that predate the operation-policy contract. The
+	// GitHub-backed CLI client resolves the real repository policy above.
+	return ResolveOperationPolicy(OperationPolicyConfig{}, "legacy_review_gate_client", true)
 }
 
 var closureKeywordPattern = regexp.MustCompile(`(?i)\b(?:closes|fixes|resolves)\s+#([0-9]+)\b`)

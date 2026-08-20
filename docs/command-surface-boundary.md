@@ -35,6 +35,19 @@ include `gira start` for `gira ticket start`, `gira work` for the ticket family,
 The command registry records aliases and generated references label them so an
 agent can normalize to the canonical command before policy evaluation.
 
+## Assist Review And Release Policy
+
+`gira review queue` and `gira release readiness` resolve the repository's
+operation policy before reading provider state. An observation-mode repository
+reports neutral GitHub facts and does not turn Gira-specific approval,
+closure-link, or label conventions into blocking requirements. A managed
+repository may declare `delivery_policy: advisory` to surface those checks as
+advisory findings, or `delivery_policy: required` to preserve strict blocking
+behavior. Reports include the resolved policy source plus each finding's class
+and enforcement so consumers can distinguish provider facts from managed
+policy. Policy resolution and provider read errors fail closed rather than
+silently falling back to strict or permissive behavior.
+
 ## Surface Classes
 
 | Surface | Purpose | Examples | Rule |

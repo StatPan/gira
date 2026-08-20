@@ -38,7 +38,7 @@ func TestBuildGoalNextReportPreservesCrossRepoChild(t *testing.T) {
 
 func TestBuildGoalNextReportSelectsOnlyTypedOrNativeChildrenWithProvenance(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100": `{"number":100,"title":"Goal","state":"open","body":"## Goal\nShip\n\nGoal planning notes mention #203, but it is not a child.\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=202 -->","labels":[{"name":"type:epic"},{"name":"status:ready"}]}`,
 		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{
 "number":201,"title":"Historical native child","state":"closed"}]`,

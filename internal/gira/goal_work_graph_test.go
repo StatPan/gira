@@ -44,6 +44,8 @@ func (r *workGraphRunner) Run(name string, args ...string) ([]byte, error) {
 		return []byte(`{"number":101,"title":"[Task] Existing evidence","state":"open","body":"## Goal\nExisting","labels":[{"name":"type:task"},{"name":"status:ready"}]}`), nil
 	case strings.HasPrefix(call, "gh pr list --repo OWNER/repo") && strings.Contains(call, " 101 "):
 		return []byte(`[]`), nil
+	case strings.HasPrefix(call, "gh api graphql "):
+		return []byte(`{"data":{"repository":{"issue101":{"number":101,"title":"[Task] Existing evidence","state":"OPEN","body":"## Goal\nExisting","labels":{"nodes":[{"name":"type:task"},{"name":"status:ready"}],"pageInfo":{"hasNextPage":false}},"timelineItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}}}}}`), nil
 	case strings.HasPrefix(call, "gh issue create --repo OWNER/repo --title "):
 		r.creates++
 		r.child = true

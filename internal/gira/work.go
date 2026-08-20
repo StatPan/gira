@@ -971,19 +971,30 @@ func workStatusFromIssueAndPRWithReviewEvidence(repo RepoRef, issueNumber int, i
 
 func workStatusFromIssueAndPRWithReviewEvidenceAndPolicy(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult, runner CommandRunner, operationPolicy ResolvedOperationPolicy) WorkStatusResult {
 	applyDevPRBindingPolicy(&prStatus, issueNumber, devPRBindingPolicyFromIssue(issue, nil, repo))
-	policy := loadFinishReviewPolicy(repo)
+	reviewPolicy := loadFinishReviewPolicy(repo)
 	var review *FinishReviewEvidence
 	status := displayStatus(managedStatusFromLabels(issue.Labels))
 	nextAction := nextWorkAction(issue.State, status, prStatus)
 	if runner != nil && prStatus.PRNumber > 0 && strings.EqualFold(status, "In review") && (nextAction == "merge_when_policy_allows" || containsString(prStatus.Blockers, "review")) {
-		evidence := finishReviewEvidence(repo, prStatus, policy, runner)
+		evidence := finishReviewEvidence(repo, prStatus, reviewPolicy, runner)
 		review = &evidence
-		if policy.Value == FinishReviewPolicyNone {
+	}
+	return workStatusFromIssueAndPRWithPreparedReview(repo, issueNumber, issue, prStatus, operationPolicy, reviewPolicy, review)
+}
+
+// workStatusFromIssueAndPRWithPreparedReview keeps status shaping identical to
+// ticket status while allowing callers that already fetched review evidence to
+// avoid repeating a provider read per child.
+func workStatusFromIssueAndPRWithPreparedReview(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult, operationPolicy ResolvedOperationPolicy, reviewPolicy FinishReviewPolicy, review *FinishReviewEvidence) WorkStatusResult {
+	status := displayStatus(managedStatusFromLabels(issue.Labels))
+	nextAction := nextWorkAction(issue.State, status, prStatus)
+	if review != nil && prStatus.PRNumber > 0 && strings.EqualFold(status, "In review") && (nextAction == "merge_when_policy_allows" || containsString(prStatus.Blockers, "review")) {
+		if reviewPolicy.Value == FinishReviewPolicyNone {
 			prStatus.Blockers = removeString(prStatus.Blockers, "review")
 			nextAction = nextWorkAction(issue.State, status, prStatus)
-		} else if evidence.Blocker != "" {
+		} else if review.Blocker != "" {
 			prStatus.Blockers = removeString(prStatus.Blockers, "review")
-			prStatus.Blockers = appendUniqueStrings(prStatus.Blockers, evidence.Blocker)
+			prStatus.Blockers = appendUniqueStrings(prStatus.Blockers, review.Blocker)
 			nextAction = nextWorkAction(issue.State, status, prStatus)
 		}
 	}
@@ -1020,7 +1031,7 @@ func workStatusFromIssueAndPRWithReviewEvidenceAndPolicy(repo RepoRef, issueNumb
 		ChecksStatus:     ticketStatusChecksStatus(prStatus),
 		Checks:           append([]DevPRCheck(nil), prStatus.Checks...),
 		ReviewStatus:     ticketStatusReviewStatusWithEvidence(prStatus, review),
-		ReviewPolicy:     reviewPolicyPtr(policy),
+		ReviewPolicy:     reviewPolicyPtr(reviewPolicy),
 		ReviewEvidence:   review,
 		Evidence:         ticketStatusEvidence(prStatus, nextAction),
 		Acceptance:       ticketStatusAcceptance(issue.Body),

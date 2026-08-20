@@ -33,7 +33,7 @@ func TestBuildGoalPlanReportValidPlan(t *testing.T) {
 
 func TestBuildGoalPlanReportCrossRepoTargets(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "backlog"}
-	runner := onboardFakeRunner{responses: map[string]string{
+	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/backlog/issues/100":                  goalPlanGoalJSONForRepo(100, "StatPan/backlog", goalPlanBody("## Goal\nShip cross repo goal\n\n## Scope\nCoordinate child work across repos\n\n## Goal Plan\n- StatPan/gira: Add goal status routing\n- target_repo: StatPan/agentree - Render worker run cards\n- Add same repo inbox docs\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
 		"gh issue view 100 --repo StatPan/backlog --json comments": `{"comments":[]}`,
 	}}
@@ -291,7 +291,7 @@ func TestBuildGoalPlanReportApplySkipsDuplicateChildren(t *testing.T) {
 	}
 }
 
-func goalPlanRunner(goalJSON string, childrenJSON string, commentsJSON string, extra map[string]string) onboardFakeRunner {
+func goalPlanRunner(goalJSON string, childrenJSON string, commentsJSON string, extra map[string]string) goalStatusFixtureRunner {
 	responses := map[string]string{
 		"gh api repos/StatPan/gira/issues/100": goalJSON,
 		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": childrenJSON,
@@ -300,7 +300,7 @@ func goalPlanRunner(goalJSON string, childrenJSON string, commentsJSON string, e
 	for key, value := range extra {
 		responses[key] = value
 	}
-	return onboardFakeRunner{responses: responses}
+	return goalStatusFixtureRunner{responses: responses}
 }
 
 type goalPlanApplyRunner struct {
@@ -321,11 +321,14 @@ func (r *goalPlanApplyRunner) Run(name string, args ...string) ([]byte, error) {
 		}
 		return []byte(fmt.Sprintf("https://github.com/%s/issues/%d\n", createRepo, 699+len(r.creates))), nil
 	}
+	key := strings.TrimSpace(name + " " + strings.Join(args, " "))
+	if strings.HasPrefix(key, "gh api graphql ") {
+		return (goalStatusFixtureRunner{responses: r.responses}).Run(name, args...)
+	}
 	if name == "gh" && len(args) >= 2 && args[0] == "issue" && args[1] == "comment" {
 		r.comments = append(r.comments, append([]string{}, args...))
 		return []byte("https://github.com/StatPan/gira/issues/100#issuecomment-1\n"), nil
 	}
-	key := strings.TrimSpace(name + " " + strings.Join(args, " "))
 	response, ok := r.responses[key]
 	if !ok {
 		return nil, fmt.Errorf("unexpected command: %s", key)

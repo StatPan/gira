@@ -11786,7 +11786,7 @@ func runRelease(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "%s\n", out)
 		return 0
 	}
-	fmt.Fprintf(stdout, "%s\n", out)
+	fmt.Fprint(stdout, gira.FormatReleaseReadinessText(report))
 	if !report.Ready {
 		return 1
 	}

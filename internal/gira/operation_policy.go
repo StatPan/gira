@@ -113,8 +113,8 @@ func validateOperationPolicyConfig(source string, modeField string, deliveryFiel
 
 // ResolveRepoOperationPolicy selects policy using the same precedence as the
 // branch-policy resolver: repo-local contract, global repo registry, then the
-// associated global workspace registry. It is intentionally not called by
-// existing commands until they opt into this policy contract.
+// associated global workspace registry. Assist/readiness consumers use this
+// resolver before classifying provider facts or managed-policy findings.
 func ResolveRepoOperationPolicy(repo RepoRef, runner CommandRunner) (ResolvedOperationPolicy, error) {
 	candidate, err := loadOperationPolicyCandidate(repo, runner)
 	if err != nil {

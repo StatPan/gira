@@ -522,7 +522,7 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 	if err != nil {
 		return result, err
 	}
-	if strategy == "current" || strategy == "adopt" {
+	if strategy == "create" || strategy == "current" || strategy == "adopt" {
 		if err := validateWorkBranchRepository(repo, runner); err != nil {
 			return result, err
 		}

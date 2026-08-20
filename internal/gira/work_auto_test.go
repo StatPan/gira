@@ -109,15 +109,18 @@ func TestStartWorkUnifiedBranchSelectionsAndSafety(t *testing.T) {
 func TestStartWorkBindingRejectsMismatchedLocalOriginBeforeMutation(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	for _, tt := range []struct {
-		name   string
-		branch string
+		name    string
+		branch  string
+		current string
 	}{
-		{name: "auto current", branch: "auto"},
-		{name: "current", branch: "current"},
-		{name: "named", branch: "team/work"},
+		{name: "auto base", branch: "auto", current: "main"},
+		{name: "new", branch: "new", current: "main"},
+		{name: "auto current", branch: "auto", current: "release/fix"},
+		{name: "current", branch: "current", current: "release/fix"},
+		{name: "named", branch: "team/work", current: "main"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			runner := autoStartRunner(956, "Automatic branch", "release/fix", false)
+			runner := autoStartRunner(956, "Automatic branch", tt.current, false)
 			runner.outputs["git remote get-url origin"] = []byte("git@github.com:Other/repo.git")
 			if tt.branch == "team/work" {
 				runner.outputs["git show-ref --verify --quiet refs/heads/team/work"] = nil

@@ -836,16 +836,67 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 		result.PRNumber = prStatus.PRNumber
 		result.PRURL = prStatus.PRURL
 		result.Blockers = prStatus.Blockers
-		applyPRBaseMismatch(&result, base.BaseBranch, prStatus.Binding.BaseRef)
+		if dryRun {
+			if terminal, terminalErr := classifyWorkPRProviderPair(issue, prStatus); terminalErr != nil {
+				result.Blockers = appendUniqueStrings(result.Blockers, workPRTerminalBlocker(terminalErr))
+				return result, terminalErr
+			} else if terminal == workPRTerminalDone {
+				result.Status = "Done"
+				result.NextStatus = "Done"
+				result.Blockers = []string{}
+			} else {
+				applyPRBaseMismatch(&result, base.BaseBranch, prStatus.Binding.BaseRef)
+			}
+			if result.BaseMismatch {
+				result.NextStep = correctPRBaseNextStep(repo, result.PRNumber, result.RecordedBase)
+				return result, fmt.Errorf("existing PR base %q does not match recorded ticket base %q", result.ActualBase, result.RecordedBase)
+			}
+			result.Approval = WorkPRApprovalEvidence(result, "gira work pr")
+			return result, nil
+		}
+
+		// A dry-run can be stale by the time its apply command runs. Re-read
+		// both provider objects immediately before changing the issue label so
+		// a merged/closed ticket cannot be moved back to in-review.
+		freshIssue, freshPR, err := revalidateWorkPRProviderState(repo, issueNumber, prStatus.PRNumber, runner)
+		if err != nil {
+			result.Blockers = appendUniqueStrings(result.Blockers, workPRTerminalBlocker(err))
+			return result, err
+		}
+		terminal, terminalErr := classifyWorkPRProviderPair(freshIssue, freshPR)
+		if terminalErr != nil {
+			result.Blockers = appendUniqueStrings(result.Blockers, workPRTerminalBlocker(terminalErr))
+			result.PRNumber = freshPR.PRNumber
+			result.PRURL = freshPR.PRURL
+			return result, terminalErr
+		}
+		result.PRNumber = freshPR.PRNumber
+		result.PRURL = freshPR.PRURL
+		result.Blockers = append([]string(nil), freshPR.Blockers...)
+		result.Draft = hasWorkBlocker(freshPR.Blockers, "draft")
+		result.ActualBase = freshPR.Binding.BaseRef
+		result.BaseMismatch = false
+		if terminal == workPRTerminalDone {
+			result.Status = "Done"
+			result.NextStatus = "Done"
+			result.Blockers = []string{}
+			if err := setIssueStatus(repo, issueNumber, freshIssue.Labels, "status:done", runner); err != nil {
+				return result, err
+			}
+			return result, nil
+		}
+		applyPRBaseMismatch(&result, base.BaseBranch, freshPR.Binding.BaseRef)
 		if result.BaseMismatch {
 			result.NextStep = correctPRBaseNextStep(repo, result.PRNumber, result.RecordedBase)
 			return result, fmt.Errorf("existing PR base %q does not match recorded ticket base %q", result.ActualBase, result.RecordedBase)
 		}
-		if dryRun {
-			result.Approval = WorkPRApprovalEvidence(result, "gira work pr")
-			return result, nil
+		actualDraft = result.Draft
+		targetStatus = "In review"
+		if actualDraft {
+			targetStatus = "In progress"
 		}
-		if err := setIssueStatus(repo, issueNumber, issue.Labels, statusLabelForDraft(actualDraft), runner); err != nil {
+		result.NextStatus = targetStatus
+		if err := setIssueStatus(repo, issueNumber, freshIssue.Labels, statusLabelForDraft(actualDraft), runner); err != nil {
 			return result, err
 		}
 		result.Status = targetStatus
@@ -853,6 +904,10 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 	}
 
 	result.Blockers = prStatus.Blockers
+	if _, terminalErr := classifyWorkPRProviderPair(issue, prStatus); terminalErr != nil {
+		result.Blockers = appendUniqueStrings(result.Blockers, workPRTerminalBlocker(terminalErr))
+		return result, terminalErr
+	}
 	if err := validateRemoteBranchExists("origin", base.BaseBranch, runner); err != nil {
 		return result, err
 	}
@@ -895,11 +950,141 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 	if draft {
 		result.Blockers = []string{"draft"}
 	}
-	if err := setIssueStatus(repo, issueNumber, issue.Labels, statusLabelForDraft(draft), runner); err != nil {
+
+	// PR creation is also a race boundary: the provider may merge and close
+	// the issue before this command gets to its status mutation.
+	freshIssue, freshPR, err := revalidateWorkPRProviderState(repo, issueNumber, opened.PRNumber, runner)
+	if err != nil {
+		result.Blockers = appendUniqueStrings(result.Blockers, workPRTerminalBlocker(err))
+		return result, err
+	}
+	terminal, terminalErr := classifyWorkPRProviderPair(freshIssue, freshPR)
+	if terminalErr != nil {
+		result.Blockers = appendUniqueStrings(result.Blockers, workPRTerminalBlocker(terminalErr))
+		return result, terminalErr
+	}
+	result.PRNumber = freshPR.PRNumber
+	result.PRURL = freshPR.PRURL
+	result.Blockers = append([]string(nil), freshPR.Blockers...)
+	result.Draft = hasWorkBlocker(freshPR.Blockers, "draft")
+	result.ActualBase = freshPR.Binding.BaseRef
+	if terminal == workPRTerminalDone {
+		result.Status = "Done"
+		result.NextStatus = "Done"
+		result.Blockers = []string{}
+		if err := setIssueStatus(repo, issueNumber, freshIssue.Labels, "status:done", runner); err != nil {
+			return result, err
+		}
+		return result, nil
+	}
+	applyPRBaseMismatch(&result, base.BaseBranch, freshPR.Binding.BaseRef)
+	if result.BaseMismatch {
+		result.NextStep = correctPRBaseNextStep(repo, result.PRNumber, result.RecordedBase)
+		return result, fmt.Errorf("created PR base %q does not match recorded ticket base %q", result.ActualBase, result.RecordedBase)
+	}
+	actualDraft := result.Draft
+	targetStatus = "In review"
+	if actualDraft {
+		targetStatus = "In progress"
+	}
+	result.NextStatus = targetStatus
+	if err := setIssueStatus(repo, issueNumber, freshIssue.Labels, statusLabelForDraft(actualDraft), runner); err != nil {
 		return result, err
 	}
 	result.Status = targetStatus
 	return result, nil
+}
+
+const (
+	workPRTerminalNormal = "normal"
+	workPRTerminalDone   = "done"
+)
+
+type workPRTerminalError struct {
+	Code   string
+	Detail string
+}
+
+func (e *workPRTerminalError) Error() string {
+	if strings.TrimSpace(e.Detail) == "" {
+		return e.Code
+	}
+	return e.Code + ": " + e.Detail
+}
+
+func workPRTerminalBlocker(err error) string {
+	var terminalErr *workPRTerminalError
+	if errors.As(err, &terminalErr) && terminalErr != nil && strings.TrimSpace(terminalErr.Code) != "" {
+		return terminalErr.Code
+	}
+	return "terminal_state_ambiguous"
+}
+
+// classifyWorkPRProviderPair treats issue and PR state as one authoritative
+// pairing. A status mutation is safe only for a known-open pair or for the
+// convergent merged+closed terminal pair.
+func classifyWorkPRProviderPair(issue devStartIssue, pr DevPRStatusResult) (string, error) {
+	issueClosed := strings.EqualFold(strings.TrimSpace(issue.State), "closed")
+	prState := strings.ToUpper(strings.TrimSpace(pr.State))
+
+	if pr.PRNumber == 0 {
+		if issueClosed {
+			return "", &workPRTerminalError{Code: "terminal_state_mismatch", Detail: fmt.Sprintf("issue #%d is closed but its linked PR is unavailable", issue.Number)}
+		}
+		return workPRTerminalNormal, nil
+	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(pr.Binding.Source)), "ambiguous_") || strings.EqualFold(strings.TrimSpace(pr.Binding.Source), "closed_unmerged_pr") {
+		return "", &workPRTerminalError{Code: "terminal_state_ambiguous", Detail: fmt.Sprintf("linked PR #%d has ambiguous provider pairing", pr.PRNumber)}
+	}
+	if containsString(pr.Blockers, "pr_binding") && (prState == "MERGED" || prState == "CLOSED") {
+		return "", &workPRTerminalError{Code: "terminal_state_ambiguous", Detail: fmt.Sprintf("linked PR #%d has untrusted terminal binding", pr.PRNumber)}
+	}
+
+	switch prState {
+	case "MERGED":
+		if !pr.Binding.Trusted {
+			return "", &workPRTerminalError{Code: "terminal_state_ambiguous", Detail: fmt.Sprintf("linked PR #%d has no trusted merge binding", pr.PRNumber)}
+		}
+		if issueClosed {
+			return workPRTerminalDone, nil
+		}
+		return "", &workPRTerminalError{Code: "terminal_state_mismatch", Detail: fmt.Sprintf("linked PR #%d is merged but issue #%d is %s", pr.PRNumber, issue.Number, strings.TrimSpace(issue.State))}
+	case "OPEN":
+		if issueClosed {
+			return "", &workPRTerminalError{Code: "terminal_state_mismatch", Detail: fmt.Sprintf("issue #%d is closed but linked PR #%d is still open", issue.Number, pr.PRNumber)}
+		}
+		return workPRTerminalNormal, nil
+	case "CLOSED":
+		return "", &workPRTerminalError{Code: "terminal_state_mismatch", Detail: fmt.Sprintf("linked PR #%d is closed without merge evidence", pr.PRNumber)}
+	default:
+		return "", &workPRTerminalError{Code: "terminal_state_ambiguous", Detail: fmt.Sprintf("linked PR #%d has unknown provider state %q", pr.PRNumber, pr.State)}
+	}
+}
+
+func revalidateWorkPRProviderState(repo RepoRef, issueNumber int, knownPRNumber int, runner CommandRunner) (devStartIssue, DevPRStatusResult, error) {
+	issue, err := fetchDevIssue(repo, issueNumber, runner)
+	if err != nil {
+		return devStartIssue{}, DevPRStatusResult{}, fmt.Errorf("revalidate ticket issue before PR status mutation: %w", err)
+	}
+	pr, err := DevPRStatusWithMissingPRRetry(repo, issueNumber, runner, 3, 0)
+	if err != nil {
+		return devStartIssue{}, DevPRStatusResult{}, fmt.Errorf("revalidate linked PR before issue status mutation: %w", err)
+	}
+	applyDevPRBindingPolicy(&pr, issueNumber, devPRBindingPolicyFromIssue(issue, runner, repo))
+	if pr.PRNumber == 0 && knownPRNumber > 0 {
+		// A newly-created PR can be absent from the closing-reference search
+		// briefly. Read the exact provider object before failing closed rather
+		// than treating search-index lag as a terminal mismatch.
+		if raw, ok := fetchRESTPull(repo, knownPRNumber, runner); ok && raw.Number == knownPRNumber && hasClosingKeyword(raw.Body, issueNumber) {
+			policy := devPRBindingPolicyFromIssue(issue, runner, repo)
+			pr = devPRStatusFromRESTPull(repo, issueNumber, raw, policy, runner)
+			applyDevPRBindingPolicy(&pr, issueNumber, policy)
+		}
+	}
+	if pr.PRNumber == 0 {
+		return issue, pr, &workPRTerminalError{Code: "terminal_state_ambiguous", Detail: fmt.Sprintf("linked PR #%d was not available during final provider revalidation", issueNumber)}
+	}
+	return issue, pr, nil
 }
 
 func GetWorkStatus(repo RepoRef, issueNumber int, runner CommandRunner) (WorkStatusResult, error) {

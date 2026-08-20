@@ -65,6 +65,11 @@ branch_policy:
 		"gh pr create --repo StatPan/gira --title feat: Work command --body Closes #126 --base dev": []byte("https://github.com/StatPan/gira/pull/201\n"),
 		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                  nil,
 		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":          nil,
+	}, queues: map[string][][]byte{
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": {
+			[]byte(`[]`),
+			[]byte(`[{"number":201,"title":"feat: Work command","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/201","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-126-work-command","baseRefName":"dev","headRefOid":"head220","statusCheckRollup":[]}]`),
+		},
 	}}
 
 	result, err := OpenWorkPR(ParseRepoRefMust("StatPan/gira"), 126, false, false, runner)

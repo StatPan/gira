@@ -18,19 +18,31 @@ const (
 	DoctorCheckSkip DoctorCheckStatus = "skip"
 )
 
+type DoctorFindingClass string
+
+const (
+	DoctorFindingEnvironment         DoctorFindingClass = "environment"
+	DoctorFindingProviderObservation DoctorFindingClass = "provider_observation"
+	DoctorFindingManagedPolicy       DoctorFindingClass = "managed_policy"
+)
+
 type DoctorReport struct {
-	Repo      string        `json:"repo"`
-	Command   string        `json:"command"`
-	CheckedAt string        `json:"checked_at"`
-	Ready     bool          `json:"ready"`
-	Checks    []DoctorCheck `json:"checks"`
+	Repo        string                  `json:"repo"`
+	Command     string                  `json:"command"`
+	CheckedAt   string                  `json:"checked_at"`
+	Ready       bool                    `json:"ready"`
+	Policy      ResolvedOperationPolicy `json:"policy"`
+	PolicyError string                  `json:"policy_error,omitempty"`
+	Checks      []DoctorCheck           `json:"checks"`
 }
 
 type DoctorCheck struct {
-	ID          string            `json:"id"`
-	Status      DoctorCheckStatus `json:"status"`
-	Detail      string            `json:"detail"`
-	Remediation string            `json:"remediation"`
+	ID           string             `json:"id"`
+	Status       DoctorCheckStatus  `json:"status"`
+	Detail       string             `json:"detail"`
+	Remediation  string             `json:"remediation"`
+	FindingClass DoctorFindingClass `json:"finding_class"`
+	Enforced     bool               `json:"enforced"`
 }
 
 func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Time) DoctorReport {
@@ -82,6 +94,7 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 		)
 		report.Checks = append(report.Checks, companionDoctorsCheck(repo))
 		report.Checks = append(report.Checks, localGitStateCheck(runner))
+		annotateDoctorChecks(report.Checks, report.Policy)
 		report.Ready = doctorReady(report.Checks)
 		return report
 	}
@@ -103,13 +116,31 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 	}
 
 	if repoCheck.Status == DoctorCheckPass {
-		report.Checks = append(report.Checks, repoAccessDoctorCheck(repo, runner))
-		report.Checks = append(report.Checks, metadataDriftDoctorCheck(repo, runner))
-		report.Checks = append(report.Checks, workflowPolicyLabelsDoctorCheck(repo, runner))
-		report.Checks = append(report.Checks, branchPolicyDoctorCheck(repo, runner))
-		report.Checks = append(report.Checks, closedIssueStatusLabelsDoctorCheck(repo, runner))
-		report.Checks = append(report.Checks, workflowNonconformanceDoctorCheck(repo, runner))
-		report.Checks = append(report.Checks, onboardReadinessDoctorCheck(repo, runner, checkedAt))
+		policy, err := ResolveRepoOperationPolicy(repo, runner)
+		if err != nil {
+			report.PolicyError = err.Error()
+			report.Checks = append(report.Checks, operationPolicyDoctorCheck(nil, err))
+			report.Ready = false
+			report.Checks = append(report.Checks,
+				skippedDoctorCheck("repo_access", "operation policy could not be resolved", "fix `operation_policy`, then rerun `gira doctor`"),
+				skippedDoctorCheck("metadata_drift", "operation policy could not be resolved", "fix `operation_policy`, then rerun `gira doctor`"),
+				skippedDoctorCheck("workflow_policy_labels", "operation policy could not be resolved", "fix `operation_policy`, then rerun `gira doctor`"),
+				skippedDoctorCheck("branch_policy", "operation policy could not be resolved", "fix `operation_policy`, then rerun `gira doctor`"),
+				skippedDoctorCheck("closed_issue_status_labels", "operation policy could not be resolved", "fix `operation_policy`, then rerun `gira doctor`"),
+				skippedDoctorCheck("workflow_nonconformance", "operation policy could not be resolved", "fix `operation_policy`, then rerun `gira doctor`"),
+				skippedDoctorCheck("onboard_readiness", "operation policy could not be resolved", "fix `operation_policy`, then rerun `gira doctor`"),
+			)
+		} else {
+			report.Policy = policy
+			report.Checks = append(report.Checks, operationPolicyDoctorCheck(&policy, nil))
+			report.Checks = append(report.Checks, repoAccessDoctorCheck(repo, runner))
+			report.Checks = append(report.Checks, metadataDriftDoctorCheck(repo, runner, policy))
+			report.Checks = append(report.Checks, workflowPolicyLabelsDoctorCheck(repo, runner, policy))
+			report.Checks = append(report.Checks, branchPolicyDoctorCheck(repo, runner, policy))
+			report.Checks = append(report.Checks, closedIssueStatusLabelsDoctorCheck(repo, runner, policy))
+			report.Checks = append(report.Checks, workflowNonconformanceDoctorCheck(repo, runner, policy))
+			report.Checks = append(report.Checks, onboardReadinessDoctorCheck(repo, runner, checkedAt, policy))
+		}
 	} else {
 		report.Checks = append(report.Checks,
 			skippedDoctorCheck("repo_access", "repo context is unavailable", "provide `--repo OWNER/REPO` or run from a GitHub repository"),
@@ -124,6 +155,7 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 
 	report.Checks = append(report.Checks, companionDoctorsCheck(repo))
 	report.Checks = append(report.Checks, localGitStateCheck(runner))
+	annotateDoctorChecks(report.Checks, report.Policy)
 	report.Ready = doctorReady(report.Checks)
 	return report
 }
@@ -149,6 +181,9 @@ func FormatDoctorReport(report DoctorReport) string {
 }
 
 func doctorNextStep(report DoctorReport) string {
+	if report.Policy.IsObservation() {
+		return fmt.Sprintf("observation only: configure operation_mode=managed before using Gira lifecycle commands for %s", report.Repo)
+	}
 	if report.Ready {
 		if strings.TrimSpace(report.Repo) != "" {
 			return "gira status --repo " + report.Repo
@@ -253,58 +288,35 @@ func repoAccessDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
 	}
 }
 
-func branchPolicyDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
+func branchPolicyDoctorCheck(repo RepoRef, runner CommandRunner, operationPolicy ResolvedOperationPolicy) DoctorCheck {
 	policy, err := resolveRepoBranchPolicy(repo, runner)
 	if err != nil {
-		return DoctorCheck{
-			ID:          "branch_policy",
-			Status:      DoctorCheckFail,
-			Detail:      err.Error(),
-			Remediation: fmt.Sprintf("fix branch_policy config for %s or remove invalid branch_policy fields, then rerun `gira doctor --repo %s`", repo.FullName(), repo.FullName()),
-		}
+		return providerObservationDoctorCheck("branch_policy", err.Error(), fmt.Sprintf("fix branch_policy config for %s or remove invalid branch_policy fields, then rerun `gira doctor --repo %s`", repo.FullName(), repo.FullName()))
 	}
 	if err := validateRemoteBranchExists("origin", policy.DefaultBase, runner); err != nil {
-		return DoctorCheck{
-			ID:          "branch_policy",
-			Status:      DoctorCheckFail,
-			Detail:      err.Error(),
-			Remediation: fmt.Sprintf("create or fetch base branch %q, or update branch_policy.default_base for %s", policy.DefaultBase, repo.FullName()),
-		}
+		return policyFindingDoctorCheck(operationPolicy, "branch_policy", err.Error(), fmt.Sprintf("create or fetch base branch %q, or update branch_policy.default_base for %s", policy.DefaultBase, repo.FullName()))
 	}
 	detail := fmt.Sprintf("mode=%s source=%s default_base=%s default_target=%s pr_base_source=%s finish_sync_local=%t", policy.Mode, policy.Source, policy.DefaultBase, policy.DefaultTarget, policy.PRBaseSource, policy.FinishSyncLocal)
 	if policy.FinishSyncLocal {
-		return DoctorCheck{
-			ID:          "branch_policy",
-			Status:      DoctorCheckWarn,
-			Detail:      detail + "; local finish sync is enabled",
-			Remediation: "prefer finish_sync_local=false unless local checkout mutation is intentionally accepted",
-		}
+		check := DoctorCheck{ID: "branch_policy", Status: DoctorCheckWarn, Detail: detail + "; local finish sync is enabled", Remediation: "prefer finish_sync_local=false unless local checkout mutation is intentionally accepted"}
+		check.FindingClass = DoctorFindingManagedPolicy
+		check.Enforced = operationPolicy.RequiresManagedDelivery()
+		return check
 	}
 	if policy.Source == "default" {
-		return DoctorCheck{
-			ID:          "branch_policy",
-			Status:      DoctorCheckWarn,
-			Detail:      detail + "; branch_policy config is absent and github-flow defaults are in use",
-			Remediation: "add branch_policy to .gira/config.yaml or the global repo registry when the repo does not use github-flow",
-		}
+		check := DoctorCheck{ID: "branch_policy", Status: DoctorCheckWarn, Detail: detail + "; branch_policy config is absent and github-flow defaults are in use", Remediation: "add branch_policy to .gira/config.yaml or the global repo registry when the repo does not use github-flow"}
+		check.FindingClass = DoctorFindingProviderObservation
+		return check
 	}
-	return DoctorCheck{
-		ID:          "branch_policy",
-		Status:      DoctorCheckPass,
-		Detail:      detail,
-		Remediation: "",
-	}
+	check := DoctorCheck{ID: "branch_policy", Status: DoctorCheckPass, Detail: detail, Remediation: ""}
+	check.FindingClass = DoctorFindingManagedPolicy
+	return check
 }
 
-func metadataDriftDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
+func metadataDriftDoctorCheck(repo RepoRef, runner CommandRunner, policy ResolvedOperationPolicy) DoctorCheck {
 	plan, err := BuildSyncPlan(NewGHSyncClient(repo, runner), SyncPlanOptions{EnableBootstrapIssues: true, PolicyMode: SyncPolicyMerge})
 	if err != nil {
-		return DoctorCheck{
-			ID:          "metadata_drift",
-			Status:      DoctorCheckFail,
-			Detail:      err.Error(),
-			Remediation: fmt.Sprintf("run `gira ops sync --repo %s --dry-run`; fix access errors, then apply with `gira ops sync --repo %s`", repo.FullName(), repo.FullName()),
-		}
+		return providerObservationDoctorCheck("metadata_drift", err.Error(), fmt.Sprintf("fix access errors, then rerun `gira doctor --repo %s`", repo.FullName()))
 	}
 	labelCreates := countLabelActions(plan.Labels, PlanCreate)
 	labelUpdates := countLabelActions(plan.Labels, PlanUpdate)
@@ -313,83 +325,52 @@ func metadataDriftDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
 	bootstrapIssueCreates := countBootstrapIssueActions(plan.BootstrapIssues, PlanCreate)
 	drift := labelCreates + labelUpdates + milestoneCreates + milestoneUpdates
 	if drift > 0 {
-		return DoctorCheck{
-			ID:          "metadata_drift",
-			Status:      DoctorCheckFail,
-			Detail:      fmt.Sprintf("labels create=%d update=%d; milestones create=%d update=%d; bootstrap issues create=%d", labelCreates, labelUpdates, milestoneCreates, milestoneUpdates, bootstrapIssueCreates),
-			Remediation: fmt.Sprintf("run `gira ops sync --repo %s --dry-run`, then apply with `gira ops sync --repo %s`; add `--bootstrap-issues` only for demo/self-dogfood seed issues", repo.FullName(), repo.FullName()),
-		}
+		return policyFindingDoctorCheck(policy, "metadata_drift", fmt.Sprintf("labels create=%d update=%d; milestones create=%d update=%d; bootstrap issues create=%d", labelCreates, labelUpdates, milestoneCreates, milestoneUpdates, bootstrapIssueCreates), fmt.Sprintf("run `gira ops sync --repo %s --dry-run`, then apply with `gira ops sync --repo %s`; add `--bootstrap-issues` only for demo/self-dogfood seed issues", repo.FullName(), repo.FullName()))
 	}
 	if bootstrapIssueCreates > 0 {
-		return DoctorCheck{
-			ID:          "metadata_drift",
-			Status:      DoctorCheckWarn,
-			Detail:      fmt.Sprintf("labels create=0 update=0; milestones create=0 update=0; optional bootstrap issues create=%d", bootstrapIssueCreates),
-			Remediation: fmt.Sprintf("run `gira ops sync --repo %s --bootstrap-issues --dry-run` only when you want Gira sample bootstrap issues", repo.FullName()),
-		}
+		check := DoctorCheck{ID: "metadata_drift", Status: DoctorCheckWarn, Detail: fmt.Sprintf("labels create=0 update=0; milestones create=0 update=0; optional bootstrap issues create=%d", bootstrapIssueCreates), Remediation: fmt.Sprintf("run `gira ops sync --repo %s --bootstrap-issues --dry-run` only when you want Gira sample bootstrap issues", repo.FullName())}
+		check.FindingClass = DoctorFindingManagedPolicy
+		return check
 	}
 	return DoctorCheck{
-		ID:          "metadata_drift",
-		Status:      DoctorCheckPass,
-		Detail:      "labels and milestones match the default Gira contract; bootstrap sample issues are optional",
-		Remediation: "",
+		ID:           "metadata_drift",
+		Status:       DoctorCheckPass,
+		Detail:       "labels and milestones match the default Gira contract; bootstrap sample issues are optional",
+		Remediation:  "",
+		FindingClass: DoctorFindingManagedPolicy,
 	}
 }
 
-func onboardReadinessDoctorCheck(repo RepoRef, runner CommandRunner, checkedAt time.Time) DoctorCheck {
+func onboardReadinessDoctorCheck(repo RepoRef, runner CommandRunner, checkedAt time.Time, policy ResolvedOperationPolicy) DoctorCheck {
 	summary, err := BuildStatusSummary(NewGHStatusClient(repo, runner), checkedAt, 14)
 	if err != nil {
-		return DoctorCheck{
-			ID:          "onboard_readiness",
-			Status:      DoctorCheckFail,
-			Detail:      err.Error(),
-			Remediation: fmt.Sprintf("run `gira status --repo %s --json`; fix read access or repository data before daily operation", repo.FullName()),
-		}
+		return providerObservationDoctorCheck("onboard_readiness", err.Error(), fmt.Sprintf("fix read access or repository data, then rerun `gira doctor --repo %s`", repo.FullName()))
 	}
 	if summary.Counts.Issues.Open == 0 {
-		return DoctorCheck{
-			ID:          "onboard_readiness",
-			Status:      DoctorCheckFail,
-			Detail:      "open issues=0",
-			Remediation: fmt.Sprintf("create or sync ready issues for %s before using Gira for daily operation", repo.FullName()),
-		}
+		return policyFindingDoctorCheck(policy, "onboard_readiness", "open issues=0", fmt.Sprintf("create or sync ready issues for %s before using Gira for daily operation", repo.FullName()))
 	}
 	if summary.Counts.Milestones.Total == 0 {
-		return DoctorCheck{
-			ID:          "onboard_readiness",
-			Status:      DoctorCheckFail,
-			Detail:      "milestones total=0",
-			Remediation: fmt.Sprintf("run `gira ops sync --repo %s --dry-run`, then `gira ops sync --repo %s` so milestone planning exists", repo.FullName(), repo.FullName()),
-		}
+		return policyFindingDoctorCheck(policy, "onboard_readiness", "milestones total=0", fmt.Sprintf("run `gira ops sync --repo %s --dry-run`, then `gira ops sync --repo %s` so milestone planning exists", repo.FullName(), repo.FullName()))
 	}
 	return DoctorCheck{
-		ID:          "onboard_readiness",
-		Status:      DoctorCheckPass,
-		Detail:      fmt.Sprintf("open issues=%d; milestones total=%d open=%d", summary.Counts.Issues.Open, summary.Counts.Milestones.Total, summary.Counts.Milestones.Open),
-		Remediation: "",
+		ID:           "onboard_readiness",
+		Status:       DoctorCheckPass,
+		Detail:       fmt.Sprintf("open issues=%d; milestones total=%d open=%d", summary.Counts.Issues.Open, summary.Counts.Milestones.Total, summary.Counts.Milestones.Open),
+		Remediation:  "",
+		FindingClass: DoctorFindingManagedPolicy,
 	}
 }
 
-func workflowPolicyLabelsDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
+func workflowPolicyLabelsDoctorCheck(repo RepoRef, runner CommandRunner, policy ResolvedOperationPolicy) DoctorCheck {
 	output, err := runner.Run("gh", "label", "list", "--repo", repo.FullName(), "--json", "name", "--limit", "1000")
 	if err != nil {
-		return DoctorCheck{
-			ID:          "workflow_policy_labels",
-			Status:      DoctorCheckFail,
-			Detail:      err.Error(),
-			Remediation: fmt.Sprintf("run `gh label list --repo %s --json name`; fix label read access before relying on agent workflow policy", repo.FullName()),
-		}
+		return providerObservationDoctorCheck("workflow_policy_labels", err.Error(), fmt.Sprintf("fix label read access, then rerun `gira doctor --repo %s`", repo.FullName()))
 	}
 	var rows []struct {
 		Name string `json:"name"`
 	}
 	if err := json.Unmarshal(output, &rows); err != nil {
-		return DoctorCheck{
-			ID:          "workflow_policy_labels",
-			Status:      DoctorCheckFail,
-			Detail:      fmt.Sprintf("parse label list: %v", err),
-			Remediation: fmt.Sprintf("rerun `gira doctor --repo %s`; if it repeats, inspect `gh label list --repo %s --json name` output", repo.FullName(), repo.FullName()),
-		}
+		return providerObservationDoctorCheck("workflow_policy_labels", fmt.Sprintf("parse label list: %v", err), fmt.Sprintf("rerun `gira doctor --repo %s`; if it repeats, inspect `gh label list --repo %s --json name` output", repo.FullName(), repo.FullName()))
 	}
 	existing := map[string]struct{}{}
 	for _, row := range rows {
@@ -405,12 +386,7 @@ func workflowPolicyLabelsDoctorCheck(repo RepoRef, runner CommandRunner) DoctorC
 		}
 	}
 	if len(missing) > 0 {
-		return DoctorCheck{
-			ID:          "workflow_policy_labels",
-			Status:      DoctorCheckFail,
-			Detail:      "missing labels: " + strings.Join(missing, ","),
-			Remediation: fmt.Sprintf("create reviewed repo labels or extend the managed taxonomy, then rerun `gira doctor --repo %s`", repo.FullName()),
-		}
+		return policyFindingDoctorCheck(policy, "workflow_policy_labels", "missing labels: "+strings.Join(missing, ","), fmt.Sprintf("create reviewed repo labels or extend the managed taxonomy, then rerun `gira doctor --repo %s`", repo.FullName()))
 	}
 	return DoctorCheck{
 		ID:          "workflow_policy_labels",
@@ -443,34 +419,21 @@ func doctorWorkflowPolicyLabels() []string {
 	}
 }
 
-func workflowNonconformanceDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
+func workflowNonconformanceDoctorCheck(repo RepoRef, runner CommandRunner, policy ResolvedOperationPolicy) DoctorCheck {
 	report, err := BuildWorkflowAuditReport(repo, runner, time.Now().UTC())
 	if err != nil {
-		return DoctorCheck{
-			ID:          "workflow_nonconformance",
-			Status:      DoctorCheckFail,
-			Detail:      err.Error(),
-			Remediation: fmt.Sprintf("run `gira audit workflow --repo %s --json`; fix read access or malformed GitHub data", repo.FullName()),
-		}
+		return providerObservationDoctorCheck("workflow_nonconformance", err.Error(), fmt.Sprintf("fix read access or malformed GitHub data, then rerun `gira doctor --repo %s`", repo.FullName()))
 	}
 	if len(report.Findings) == 0 {
 		return DoctorCheck{
-			ID:          "workflow_nonconformance",
-			Status:      DoctorCheckPass,
-			Detail:      fmt.Sprintf("workflow drift findings=0; issues scanned=%d; prs scanned=%d", report.Counts.IssuesScanned, report.Counts.PRsScanned),
-			Remediation: "",
+			ID:           "workflow_nonconformance",
+			Status:       DoctorCheckPass,
+			Detail:       fmt.Sprintf("workflow drift findings=0; issues scanned=%d; prs scanned=%d", report.Counts.IssuesScanned, report.Counts.PRsScanned),
+			Remediation:  "",
+			FindingClass: DoctorFindingManagedPolicy,
 		}
 	}
-	status := DoctorCheckFail
-	if report.Ready {
-		status = DoctorCheckWarn
-	}
-	return DoctorCheck{
-		ID:          "workflow_nonconformance",
-		Status:      status,
-		Detail:      fmt.Sprintf("workflow drift findings=%d (%s)", len(report.Findings), formatWorkflowFindingSummary(report.Findings)),
-		Remediation: fmt.Sprintf("run `gira audit workflow --repo %s --json`, then normalize safe status drift with `gira adopt issues --repo %s --state all --normalize-status --dry-run`", repo.FullName(), repo.FullName()),
-	}
+	return policyFindingDoctorCheck(policy, "workflow_nonconformance", fmt.Sprintf("workflow drift findings=%d (%s)", len(report.Findings), formatWorkflowFindingSummary(report.Findings)), fmt.Sprintf("run `gira audit workflow --repo %s --json`, then normalize safe status drift with `gira adopt issues --repo %s --state all --normalize-status --dry-run`", repo.FullName(), repo.FullName()))
 }
 
 type closedIssueStatusProblem struct {
@@ -478,15 +441,10 @@ type closedIssueStatusProblem struct {
 	Labels []string
 }
 
-func closedIssueStatusLabelsDoctorCheck(repo RepoRef, runner CommandRunner) DoctorCheck {
+func closedIssueStatusLabelsDoctorCheck(repo RepoRef, runner CommandRunner, policy ResolvedOperationPolicy) DoctorCheck {
 	output, err := runner.Run("gh", "issue", "list", "--repo", repo.FullName(), "--state", "closed", "--limit", "1000", "--json", "number,title,labels")
 	if err != nil {
-		return DoctorCheck{
-			ID:          "closed_issue_status_labels",
-			Status:      DoctorCheckFail,
-			Detail:      err.Error(),
-			Remediation: fmt.Sprintf("run `gh issue list --repo %s --state closed --limit 1000 --json number,labels`; fix issue read access", repo.FullName()),
-		}
+		return providerObservationDoctorCheck("closed_issue_status_labels", err.Error(), fmt.Sprintf("fix issue read access, then rerun `gira doctor --repo %s`", repo.FullName()))
 	}
 	var rows []struct {
 		Number int `json:"number"`
@@ -495,12 +453,7 @@ func closedIssueStatusLabelsDoctorCheck(repo RepoRef, runner CommandRunner) Doct
 		} `json:"labels"`
 	}
 	if err := json.Unmarshal(output, &rows); err != nil {
-		return DoctorCheck{
-			ID:          "closed_issue_status_labels",
-			Status:      DoctorCheckFail,
-			Detail:      fmt.Sprintf("parse closed issue list: %v", err),
-			Remediation: fmt.Sprintf("rerun `gira doctor --repo %s`; if it repeats, inspect the GitHub issue list JSON", repo.FullName()),
-		}
+		return providerObservationDoctorCheck("closed_issue_status_labels", fmt.Sprintf("parse closed issue list: %v", err), fmt.Sprintf("rerun `gira doctor --repo %s`; if it repeats, inspect the GitHub issue list JSON", repo.FullName()))
 	}
 	problems := []closedIssueStatusProblem{}
 	for _, row := range rows {
@@ -518,18 +471,14 @@ func closedIssueStatusLabelsDoctorCheck(repo RepoRef, runner CommandRunner) Doct
 		for _, problem := range problems {
 			numbers = append(numbers, problem.Number)
 		}
-		return DoctorCheck{
-			ID:          "closed_issue_status_labels",
-			Status:      DoctorCheckFail,
-			Detail:      fmt.Sprintf("closed issues with active status labels=%d (%s)", len(problems), formatClosedIssueStatusProblems(problems)),
-			Remediation: fmt.Sprintf("run `gira adopt issues --repo %s --state all --issues %s --normalize-status --dry-run`, then rerun with `--apply`", repo.FullName(), joinIssueNumbers(numbers)),
-		}
+		return policyFindingDoctorCheck(policy, "closed_issue_status_labels", fmt.Sprintf("closed issues with active status labels=%d (%s)", len(problems), formatClosedIssueStatusProblems(problems)), fmt.Sprintf("run `gira adopt issues --repo %s --state all --issues %s --normalize-status --dry-run`, then rerun with `--apply`", repo.FullName(), joinIssueNumbers(numbers)))
 	}
 	return DoctorCheck{
-		ID:          "closed_issue_status_labels",
-		Status:      DoctorCheckPass,
-		Detail:      fmt.Sprintf("closed issues scanned=%d; active status labels=0", len(rows)),
-		Remediation: "",
+		ID:           "closed_issue_status_labels",
+		Status:       DoctorCheckPass,
+		Detail:       fmt.Sprintf("closed issues scanned=%d; active status labels=0", len(rows)),
+		Remediation:  "",
+		FindingClass: DoctorFindingManagedPolicy,
 	}
 }
 
@@ -630,6 +579,96 @@ func localGitStateCheck(runner CommandRunner) DoctorCheck {
 		Status:      DoctorCheckPass,
 		Detail:      fmt.Sprintf("branch=%s; worktree clean", branch),
 		Remediation: "",
+	}
+}
+
+func operationPolicyDoctorCheck(policy *ResolvedOperationPolicy, err error) DoctorCheck {
+	if err != nil {
+		return DoctorCheck{
+			ID:           "operation_policy",
+			Status:       DoctorCheckFail,
+			Detail:       err.Error(),
+			Remediation:  "fix the repository operation_mode/delivery_policy configuration, then rerun `gira doctor`",
+			FindingClass: DoctorFindingManagedPolicy,
+			Enforced:     true,
+		}
+	}
+	check := DoctorCheck{
+		ID:           "operation_policy",
+		Status:       DoctorCheckPass,
+		Detail:       "repository operation policy resolved",
+		FindingClass: DoctorFindingManagedPolicy,
+	}
+	if policy != nil {
+		check.Detail = fmt.Sprintf("mode=%s delivery=%s source=%s", policy.OperationMode, policy.DeliveryPolicy, policy.Source)
+		check.Enforced = policy.RequiresManagedDelivery()
+		if policy.IsObservation() {
+			check.FindingClass = DoctorFindingProviderObservation
+		}
+	}
+	return check
+}
+
+func providerObservationDoctorCheck(id string, detail string, remediation string) DoctorCheck {
+	return DoctorCheck{
+		ID:           id,
+		Status:       DoctorCheckFail,
+		Detail:       detail,
+		Remediation:  remediation,
+		FindingClass: DoctorFindingProviderObservation,
+	}
+}
+
+func policyFindingDoctorCheck(policy ResolvedOperationPolicy, id string, detail string, remediation string) DoctorCheck {
+	check := DoctorCheck{
+		ID:           id,
+		Status:       DoctorCheckFail,
+		Detail:       detail,
+		Remediation:  remediation,
+		FindingClass: DoctorFindingManagedPolicy,
+		Enforced:     policy.RequiresManagedDelivery(),
+	}
+	if !policy.RequiresManagedDelivery() {
+		check.Status = DoctorCheckWarn
+		if policy.IsObservation() {
+			check.FindingClass = DoctorFindingProviderObservation
+			check.Remediation = ""
+			check.Detail = "advisory: " + detail + "; repository is observation-only and no managed mutation is prescribed"
+		} else {
+			check.Detail = "advisory: " + detail + "; managed delivery policy is advisory"
+		}
+	}
+	return check
+}
+
+func annotateDoctorChecks(checks []DoctorCheck, policy ResolvedOperationPolicy) {
+	managedIDs := map[string]struct{}{
+		"metadata_drift":             {},
+		"workflow_policy_labels":     {},
+		"branch_policy":              {},
+		"closed_issue_status_labels": {},
+		"workflow_nonconformance":    {},
+		"onboard_readiness":          {},
+		"operation_policy":           {},
+	}
+	for i := range checks {
+		check := &checks[i]
+		if check.FindingClass == "" {
+			if strings.TrimSpace(policy.OperationMode) == "" {
+				check.FindingClass = DoctorFindingEnvironment
+			} else if _, ok := managedIDs[check.ID]; ok {
+				if policy.IsObservation() {
+					check.FindingClass = DoctorFindingProviderObservation
+				} else {
+					check.FindingClass = DoctorFindingManagedPolicy
+				}
+			} else {
+				check.FindingClass = DoctorFindingEnvironment
+			}
+		}
+		if check.FindingClass == DoctorFindingManagedPolicy && check.Status == DoctorCheckFail {
+			check.Enforced = policy.RequiresManagedDelivery() || check.ID == "operation_policy"
+		}
 	}
 }
 

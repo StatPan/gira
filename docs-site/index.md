@@ -14,37 +14,28 @@ hero:
       link: /install
 
 features:
-  - title: Setup and adoption
-    details: Initialize global config, register repos, adopt existing GitHub issues, and keep shared repo contracts separate from personal operator state.
-  - title: Workspace visibility
-    details: Inspect multi-repo workspaces, sync repo allowlists, see bounded status reads, and surface agent, review, finish, blocked, and failed-check queues.
   - title: Ticket lifecycle
-    details: Create, start, review, check, wait, note, supersede, and finish GitHub issue-backed work with dry-run/apply safety.
-  - title: Goals, epics, and milestones
-    details: Plan child tickets, select the next safe goal item, inspect epic progress, and use milestones as sprint or release boundaries.
+    details: Create, start, review, check, wait, and finish issue-backed work with dry-run/apply safety.
+  - title: Automatic branch selection
+    details: Start from the base branch, an existing work branch, or a detached checkout without repeating low-level branch flags.
+  - title: Agent handoff
+    details: Give one issue to an external coding agent through a bounded worker handoff, then keep PR and check evidence in GitHub.
   - title: Readiness and audit
-    details: Use ticket, PR, finish, provider, and drift reports to make missing evidence, blockers, checks, and review state explicit.
-  - title: 2.0 control-plane contract
-    details: Stabilize ticket lifecycle, goal mode, workspace queues, readiness reports, and adapter approval evidence without introducing a hidden planning database.
-  - title: Distribution and providers
-    details: Install the same Go-built binary through release archives, npm, PyPI, Homebrew, or install.sh, with optional Jira-primary provider mode.
+    details: Inspect policy, evidence, checks, review state, and the next safe action before mutation.
+  - title: Advanced coordination
+    details: Use workspace, queue, Goal, milestone, PM, and provider workflows only when the work needs them.
 ---
 
-## Current Feature Map
+## Find The Smallest Path
 
 | Need | Start here | Main commands |
 | --- | --- | --- |
-| Install, upgrade, or inspect adoption signals | [Install](/install), [Distribution](/distribution), [Adoption Signals](/adoption-signals) | `gira version`, `gira upgrade`, `gira cache prune` |
-| Set up a repo or personal workspace | [Quick Start](/quickstart), [Global Config](/global-config) | `gira init`, `gira setup global`, `gira repo register`, `gira adopt repo` |
-| See work across repos | [Workspace](/workspace) | `gira workspace status`, `gira workspace repos sync` |
-| Select LLM-ready work | [Agent Handoff Queue](/agent-handoff-queue) | `gira queue list`, `queue next`, `queue handoff`, `queue take --dry-run` |
-| Run issue to PR work | [Ticket Workflow](/ticket-workflow) | `gira ticket new`, `start`, `pr`, `review`, `checks`, `wait`, `finish` |
-| Maintain an optional feature map | [Feature Map](/feature-map) | `gira feature list`, `feature check`, `feature for` |
-| Manage larger work packets | [Goal Mode](/goal-mode), [Sprint And Release](/sprint-release) | `gira goal status`, `goal next`, `goal finish`, `epic list`, `milestone plan` |
-| Understand the 2.0 contract | [Gira 2.0 Control Plane](/v2-control-plane), [State Model](/state-model) | `gira ticket status`, `gira goal status`, `gira workspace status --json` |
-| Plan the first 3.0 surface | [Gira 3.0 Local Report Bundle](/gira-3-local-report-bundle) | `gira export dashboard`, `gira goal report --html` |
-| Diagnose readiness and drift | [Readiness And Audit](/readiness-audit), [Troubleshooting](/troubleshooting) | `gira ticket status`, `ticket review`, `audit drift`, `jira doctor` |
-| Map Jira concepts to GitHub | [Jira Mapping](/jira-mapping), [Jira Provider](/jira-primary-provider) | `gira jira init`, `jira mirror`, `jira transition`, `jira import`, `jira export` |
+| Install and verify | [Install](/install), [Quick Start](/quickstart) | `gira version`, `gh auth status` |
+| Create or adopt one ticket | [Ticket Workflow](/ticket-workflow) | `gira new`, `gira t n`, `gira ticket start` |
+| Choose a branch safely | [Branch Behavior](/branch-policy) | `--branch auto|new|current|NAME` |
+| Hand work to an agent | [Agent Operator](/agent-operator-skill) | `gira ticket handoff`, `gira dispatch goal` |
+| Inspect before changing state | [Readiness And Audit](/readiness-audit), [Troubleshooting](/troubleshooting) | `gira ticket status`, `gira ticket review`, `gira doctor` |
+| Coordinate larger work | [Workspace](/workspace), [Goal Mode](/goal-mode) | `gira queue`, `gira goal`, `gira milestone` |
 
 ## Command Families
 
@@ -65,27 +56,50 @@ features:
 ```bash
 gh auth status
 gira init --repo OWNER/REPO --path . --dry-run
-gira adopt repo --repo OWNER/REPO --path . --dry-run
-gira ticket new "TITLE" --goal "GOAL" --acceptance "done criteria" --apply
-gira ticket start TICKET --apply
-gira ticket pr --apply --draft
+gira adopt repo --repo OWNER/REPO --path . --strategy merge --dry-run
+gira adopt repo --repo OWNER/REPO --path . --strategy merge --apply
+gira new "TITLE" --goal "GOAL" --acceptance "done criteria" --start --dry-run
+gira new "TITLE" --goal "GOAL" --acceptance "done criteria" --start --apply
+gira ticket pr --dry-run
+gira ticket pr --apply
 gira ticket checks
 gira ticket wait --timeout 5m
+gira ticket finish --dry-run
 gira ticket finish --apply
 ```
 
 Gira is a Go-built CLI. Package managers are distribution channels for the same official binary, not alternate product runtimes.
 
-Use [Jira-primary provider mode](/jira-primary-provider) only when Jira already owns planning and status for a repo. GitHub-native mode remains the default.
+`gira init --dry-run` is the read-only onboarding plan. Apply the repository
+adoption separately with `gira adopt repo --dry-run` followed by
+`gira adopt repo --strategy merge --apply` (or use the exact strategy emitted
+by the preview).
 
-Use [workspace status](/workspace) when a personal operator needs a bounded multi-repo view, and [goal mode](/goal-mode) when a larger objective needs child-ticket convergence before handoff.
+`gira new` and `gira t n` are the short ticket aliases. They retain the
+canonical command's dry-run/apply behavior. The default branch mode is `auto`:
+Gira creates a suggested branch from the resolved base, reuses an existing
+non-base checkout without renaming or pushing it, and starts safely from a
+detached checkout. Use `--branch new|current|NAME` when the choice must be
+explicit. See [Branch Behavior](/branch-policy) for the full contract.
 
-The [Gira 2.0 control-plane contract](/v2-control-plane) is CLI-first. The
-first 3.0 surface is a [local report bundle](/gira-3-local-report-bundle) over
-stable state contracts. The future hosted direction is documented as a bounded
-[control-plane roadmap](/hosted-control-plane), not as a replacement for the
-CLI.
+The shortest loop uses a non-draft PR. Add `--draft` when review must happen
+before a PR is ready; a finish preview for a draft PR only marks it ready, so
+run `gira ticket finish --dry-run` again after that transition before applying
+the final preview.
 
-Gira's [worker boundary](/worker-boundary) keeps the product focused on
-contracts, readiness, review packets, provenance, and finish convergence while
-external coding agents execute the work.
+Operation policy changes the enforcement level, not the evidence shape:
+`observation` reports neutral provider facts, managed `advisory` reports Gira
+conventions as warnings, and managed `required` enforces those conventions.
+See [Readiness And Audit](/readiness-audit) for the policy fields and finding
+classes.
+
+Use [workspace status](/workspace) for a bounded multi-repo view, and [goal
+mode](/goal-mode) when a larger objective needs child-ticket convergence.
+
+Goal, PM, provider, version, diagnostics, and architecture material stays
+available under [Advanced Orchestration](/goal-mode) and [Reference](/command-reference);
+it is intentionally secondary to the daily ticket path.
+
+The [Worker Boundary](/worker-boundary) keeps Gira focused on contracts,
+readiness, review packets, provenance, and finish convergence while external
+coding agents execute the work.

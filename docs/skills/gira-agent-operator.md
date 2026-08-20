@@ -157,8 +157,8 @@ provenance levels and receipt expectations.
 
 - Project-only item: do not implement directly. Route it to a repository issue
   first, then start the issue.
-- Missing `status:ready`: do not start. Use Gira adoption or triage flow to add
-  the correct status after confirming the issue is executable.
+- Missing `status:ready`: only managed-required blocks; otherwise warn and honor
+  provider/base safety.
 - Existing branch: inspect whether the branch belongs to the same issue. Reuse
   it only when it is clearly the issue branch and local changes are safe.
 - Existing PR: validate linkage and checks instead of opening a duplicate PR.

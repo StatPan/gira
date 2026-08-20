@@ -9,7 +9,8 @@ root="${1:-.}"
 		npm ci
 	fi
 	go run ./scripts/refresh-docs-contract.go .
-	go test ./internal/gira -run 'Test(CommandReferenceIsGeneratedFromRegistry|AgentOperatorDocsSiteIsGeneratedFromRegistry|AgentSkillManagedBlockIsGeneratedFromRegistry|AgentSkillManagedBlockIsUnique)$'
+	go test ./internal/gira -run 'Test(CommandReferenceDocsSiteIsGeneratedFromRegistry|CommandCapabilitiesDocsSiteIsGeneratedFromRegistry|AgentOperatorDocsSiteIsGeneratedFromRegistry|AgentSkillManagedBlockIsGeneratedFromRegistry|AgentSkillManagedBlockIsUnique)$'
+	node scripts/check-docs-links.mjs docs-site
 	sh scripts/build-docs-site.sh docs-site site
-	git diff --exit-code -- docs-site/command-reference.md docs-site/agent-operator-skill.md docs/skills/gira-agent-operator.md
+	git diff --exit-code -- docs-site/command-reference.md docs-site/command-capabilities.md docs-site/agent-operator-skill.md docs/skills/gira-agent-operator.md
 )

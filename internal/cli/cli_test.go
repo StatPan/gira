@@ -998,7 +998,7 @@ func TestGuideQuickstartDefault(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{"Gira quickstart", "gira ticket new", "gira ticket checks", "gira ticket finish --apply", "gira ticket handoff TICKET", "gira dispatch goal GOAL"} {
+	for _, want := range []string{"Gira quickstart", "gira new", "gira ticket checks", "gira ticket finish --apply", "gira ticket handoff TICKET", "gira dispatch goal GOAL"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("guide output missing %q:\n%s", want, stdout.String())
 		}
@@ -3724,6 +3724,97 @@ func TestTicketNewDryRunJSON(t *testing.T) {
 	}
 	if report.Approval.Blockers == nil || report.Approval.Warnings == nil {
 		t.Fatalf("approval blockers and warnings must be stable arrays: %+v", report.Approval)
+	}
+}
+
+func TestTicketNewAcceptsSpaceSeparatedReleaseImpactAndAliases(t *testing.T) {
+	restore := newTicketNewReport
+	t.Cleanup(func() { newTicketNewReport = restore })
+
+	tests := []struct {
+		name           string
+		args           []string
+		expectedTitle  string
+		expectedImpact string
+	}{
+		{
+			name:           "canonical positional title",
+			args:           []string{"ticket", "new", "Create packet", "--repo", "StatPan/gira", "--body", "body", "--release-impact", "internal", "--dry-run"},
+			expectedTitle:  "Create packet",
+			expectedImpact: "internal",
+		},
+		{
+			name:           "explicit title",
+			args:           []string{"ticket", "new", "--title", "Create packet", "--repo", "StatPan/gira", "--body", "body", "--release-impact", "internal", "--dry-run"},
+			expectedTitle:  "Create packet",
+			expectedImpact: "internal",
+		},
+		{
+			name:           "release impact reason",
+			args:           []string{"ticket", "new", "Create packet", "--repo", "StatPan/gira", "--body", "body", "--release-impact", "exempt", "--release-impact-reason", "No release note needed", "--dry-run"},
+			expectedTitle:  "Create packet",
+			expectedImpact: "exempt",
+		},
+		{
+			name:          "root shortcut",
+			args:          []string{"new", "Create packet", "--repo", "StatPan/gira", "--body", "body", "--dry-run"},
+			expectedTitle: "Create packet",
+		},
+		{
+			name:          "compact ticket shortcut",
+			args:          []string{"t", "n", "Create packet", "--repo", "StatPan/gira", "--body", "body", "--dry-run"},
+			expectedTitle: "Create packet",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
+				if input.Title != test.expectedTitle || input.ReleaseImpact != test.expectedImpact || !input.DryRun {
+					t.Fatalf("unexpected ticket input: %+v", input)
+				}
+				return gira.TicketNewReport{Repo: input.Repo.FullName(), Title: input.Title, DryRun: true, Labels: []string{"type:task", "status:ready"}, Body: input.Body, NextStep: "gira ticket new --apply"}, nil
+			}
+			var stdout, stderr bytes.Buffer
+			if code := Run(test.args, &stdout, &stderr); code != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+			}
+		})
+	}
+}
+
+func TestTicketNewReadsStdinBodyWithSpaceSeparatedReleaseImpact(t *testing.T) {
+	restore := newTicketNewReport
+	originalStdin := os.Stdin
+	t.Cleanup(func() {
+		newTicketNewReport = restore
+		os.Stdin = originalStdin
+	})
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdin pipe: %v", err)
+	}
+	if _, err := writer.WriteString("## Goal\nFrom stdin\n"); err != nil {
+		t.Fatalf("write stdin pipe: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stdin writer: %v", err)
+	}
+	os.Stdin = reader
+	t.Cleanup(func() { _ = reader.Close() })
+
+	newTicketNewReport = func(input gira.TicketNewInput) (gira.TicketNewReport, error) {
+		if input.Title != "Create packet" || input.Body != "## Goal\nFrom stdin" || input.ReleaseImpact != "internal" || !input.DryRun {
+			t.Fatalf("unexpected ticket input: %+v", input)
+		}
+		return gira.TicketNewReport{Repo: input.Repo.FullName(), Title: input.Title, DryRun: true, Labels: []string{"type:task", "status:ready"}, Body: input.Body, NextStep: "gira ticket new --apply"}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "new", "Create packet", "--repo", "StatPan/gira", "--body-file", "-", "--release-impact", "internal", "--dry-run"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
 }
 

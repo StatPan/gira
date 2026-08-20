@@ -41,14 +41,16 @@ type GlobalPathsConfig struct {
 }
 
 type GlobalRepoRegistryEntry struct {
-	Repo         string                 `yaml:"repo" toml:"repo" json:"repo"`
-	Path         string                 `yaml:"path" toml:"path" json:"path,omitempty"`
-	Aliases      []string               `yaml:"aliases" toml:"aliases" json:"aliases,omitempty"`
-	Contract     string                 `yaml:"contract" toml:"contract" json:"contract,omitempty"`
-	Defaults     GlobalDefaults         `yaml:"defaults" toml:"defaults" json:"defaults,omitempty"`
-	Workspace    GlobalRepoWorkspaceRef `yaml:"workspace" toml:"workspace" json:"workspace,omitempty"`
-	BranchPolicy *BranchPolicyConfig    `yaml:"branch_policy,omitempty" toml:"branch_policy,omitempty" json:"branch_policy,omitempty"`
-	Providers    *GlobalProvidersConfig `yaml:"providers,omitempty" toml:"providers,omitempty" json:"providers,omitempty"`
+	Repo           string                 `yaml:"repo" toml:"repo" json:"repo"`
+	Path           string                 `yaml:"path" toml:"path" json:"path,omitempty"`
+	Aliases        []string               `yaml:"aliases" toml:"aliases" json:"aliases,omitempty"`
+	Contract       string                 `yaml:"contract" toml:"contract" json:"contract,omitempty"`
+	Defaults       GlobalDefaults         `yaml:"defaults" toml:"defaults" json:"defaults,omitempty"`
+	Workspace      GlobalRepoWorkspaceRef `yaml:"workspace" toml:"workspace" json:"workspace,omitempty"`
+	OperationMode  string                 `yaml:"operation_mode,omitempty" toml:"operation_mode" json:"operation_mode,omitempty"`
+	DeliveryPolicy string                 `yaml:"delivery_policy,omitempty" toml:"delivery_policy" json:"delivery_policy,omitempty"`
+	BranchPolicy   *BranchPolicyConfig    `yaml:"branch_policy,omitempty" toml:"branch_policy,omitempty" json:"branch_policy,omitempty"`
+	Providers      *GlobalProvidersConfig `yaml:"providers,omitempty" toml:"providers,omitempty" json:"providers,omitempty"`
 }
 
 type GlobalProvidersConfig struct {
@@ -60,9 +62,11 @@ type GlobalRepoWorkspaceRef struct {
 }
 
 type GlobalWorkspaceRegistryEntry struct {
-	Workspace    WorkspaceConfig     `yaml:"workspace" toml:"workspace" json:"workspace"`
-	Defaults     GlobalDefaults      `yaml:"defaults" toml:"defaults" json:"defaults,omitempty"`
-	BranchPolicy *BranchPolicyConfig `yaml:"branch_policy,omitempty" toml:"branch_policy,omitempty" json:"branch_policy,omitempty"`
+	Workspace      WorkspaceConfig     `yaml:"workspace" toml:"workspace" json:"workspace"`
+	Defaults       GlobalDefaults      `yaml:"defaults" toml:"defaults" json:"defaults,omitempty"`
+	OperationMode  string              `yaml:"operation_mode" toml:"operation_mode" json:"operation_mode,omitempty"`
+	DeliveryPolicy string              `yaml:"delivery_policy" toml:"delivery_policy" json:"delivery_policy,omitempty"`
+	BranchPolicy   *BranchPolicyConfig `yaml:"branch_policy,omitempty" toml:"branch_policy,omitempty" json:"branch_policy,omitempty"`
 }
 
 func DefaultGlobalConfigRoot() (string, error) {
@@ -90,11 +94,34 @@ func GlobalReposRoot(configRoot string) (string, error) {
 }
 
 func GlobalRepoRegistryPath(configRoot string, repo RepoRef) (string, error) {
+	if err := validateRepoRef(repo); err != nil {
+		return "", fmt.Errorf("invalid repository reference: %w", err)
+	}
 	root, err := GlobalReposRoot(configRoot)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, repo.Owner, repo.Name+".yaml"), nil
+	path := filepath.Join(root, repo.Owner, repo.Name+".yaml")
+	if !isPathContained(root, path) {
+		return "", fmt.Errorf("global repo registry path %q escapes configured root %q", path, root)
+	}
+	return path, nil
+}
+
+func isPathContained(root string, candidate string) bool {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	candidateAbs, err := filepath.Abs(candidate)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(filepath.Clean(rootAbs), filepath.Clean(candidateAbs))
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 func GlobalWorkspacesRoot(configRoot string) (string, error) {
@@ -222,6 +249,9 @@ func ValidateGlobalRepoRegistryEntry(entry GlobalRepoRegistryEntry, expected Rep
 			return err
 		}
 	}
+	if err := validateOperationPolicyConfig(source, "operation_mode", "delivery_policy", OperationPolicyConfig{OperationMode: entry.OperationMode, DeliveryPolicy: entry.DeliveryPolicy}); err != nil {
+		return err
+	}
 	if err := validateBranchPolicyConfig(source, "branch_policy", entry.BranchPolicy); err != nil {
 		return err
 	}
@@ -262,6 +292,9 @@ func ValidateGlobalWorkspaceRegistryEntry(entry GlobalWorkspaceRegistryEntry, ex
 	}
 	if workspace.Project.Number < 0 {
 		return fmt.Errorf("invalid global workspace registry %q: workspace.project.number must be >= 0 when workspace.project is set", source)
+	}
+	if err := validateOperationPolicyConfig(source, "operation_mode", "delivery_policy", OperationPolicyConfig{OperationMode: entry.OperationMode, DeliveryPolicy: entry.DeliveryPolicy}); err != nil {
+		return err
 	}
 	if err := validateBranchPolicyConfig(source, "branch_policy", entry.BranchPolicy); err != nil {
 		return err

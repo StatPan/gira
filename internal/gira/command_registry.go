@@ -1453,7 +1453,7 @@ func applyCommandSurfaceMetadata(specs []CommandSpec) {
 		case "queue handoff":
 			specs[i].WorkflowRole = "advanced_workspace_selector"
 		case "goal plan":
-			specs[i].WorkflowRole = "legacy_bullet_planning_engine"
+			specs[i].WorkflowRole = "goal_plan_bullet_planning_engine"
 		case "goal graph":
 			specs[i].WorkflowRole = "typed_work_graph_planning_engine"
 		}
@@ -1574,7 +1574,7 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 		case "jira export":
 			specs[i].Adapter = adapterApply("writes Jira-friendly export artifacts to the requested output path", JSONSupportStable)
 		case "ticket new":
-			specs[i].Adapter = adapterApply("creates a GitHub issue, may set a native parent, and may optionally start it; --dry-run previews issue body, labels, and parent plan", JSONSupportStable)
+			specs[i].Adapter = adapterApply("creates a GitHub issue, may set a native parent, and may optionally start it; --dry-run previews issue body, labels, and parent plan", JSONSupportStable, "gira new", "gira t new", "gira t n")
 		case "ticket parent":
 			specs[i].Adapter = adapterApply("sets or clears a native GitHub sub-issue parent; read mode shows the current parent and mutation modes require --dry-run or --apply", JSONSupportStable)
 		case "ticket view":

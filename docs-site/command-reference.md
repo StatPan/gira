@@ -417,7 +417,7 @@ Propose or create same-repo or target-repo child ticket packets from a goal issu
 
 Discovery tier: `advanced_orchestration`.
 
-Workflow role: `legacy_bullet_planning_engine`.
+Workflow role: `goal_plan_bullet_planning_engine`.
 
 Usage:
 
@@ -2139,6 +2139,8 @@ Documented in: `docs-site/ticket-workflow.md`, `docs-site/command-reference.md`,
 Create a repo-bound executable GitHub issue with structured or full Markdown body input.
 
 Discovery tier: `managed_delivery`.
+
+Compatibility aliases: `gira new`, `gira t new`, `gira t n`.
 
 Usage:
 

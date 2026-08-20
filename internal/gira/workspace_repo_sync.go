@@ -332,12 +332,16 @@ func diffRepoStrings(oldRepos []string, newRepos []string) ([]string, []string) 
 
 func renderGlobalWorkspaceRegistryEntry(entry GlobalWorkspaceRegistryEntry) string {
 	content := renderWorkspaceGlobalConfig(entry.Workspace.Name, entry.Workspace.Owner, entry.Workspace.InboxRepo, entry.Workspace.Repos, entry.Workspace.Project)
+	operationPolicy := renderOperationPolicyConfig(OperationPolicyConfig{OperationMode: entry.OperationMode, DeliveryPolicy: entry.DeliveryPolicy})
 	branchPolicy := renderBranchPolicyConfig(entry.BranchPolicy)
-	if entry.Defaults.Agent == "" && entry.Defaults.Assignee == "" && len(entry.Defaults.AgentLabels) == 0 && branchPolicy == "" {
+	if entry.Defaults.Agent == "" && entry.Defaults.Assignee == "" && len(entry.Defaults.AgentLabels) == 0 && operationPolicy == "" && branchPolicy == "" {
 		return content
 	}
 	var b strings.Builder
 	b.WriteString(content)
+	if operationPolicy != "" {
+		b.WriteString(operationPolicy)
+	}
 	if branchPolicy != "" {
 		b.WriteString(branchPolicy)
 	}

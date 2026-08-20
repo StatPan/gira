@@ -136,6 +136,11 @@ func TestCommandCapabilitiesCoverAdapterClasses(t *testing.T) {
 	if byCanonical["gira config storage"].Tier != CommandTierAssist || byCanonical["gira workspace status"].Tier != CommandTierManagedDelivery || byCanonical["gira ops limit"].Tier != CommandTierSupporting {
 		t.Fatalf("key command tiers do not match help guidance: config=%q workspace=%q ops=%q", byCanonical["gira config storage"].Tier, byCanonical["gira workspace status"].Tier, byCanonical["gira ops limit"].Tier)
 	}
+	for _, alias := range []string{"gira new", "gira t new", "gira t n"} {
+		if !containsString(byCanonical["gira ticket new"].Aliases, alias) {
+			t.Fatalf("ticket new capability must expose %q: %+v", alias, byCanonical["gira ticket new"])
+		}
+	}
 }
 
 func TestCoreCommandSpecsAllHaveDiscoveryTiers(t *testing.T) {

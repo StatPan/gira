@@ -954,7 +954,18 @@ func ticketStatusPullRequest(pr DevPRStatusResult) *TicketStatusPullRequest {
 
 func ticketStatusChecksStatus(pr DevPRStatusResult) string {
 	if len(pr.Checks) == 0 {
-		return "missing"
+		return "unknown"
+	}
+	if pr.ChecksUnavailable {
+		return "unknown"
+	}
+	for _, check := range pr.Checks {
+		if strings.EqualFold(strings.TrimSpace(check.Conclusion), "skipped") {
+			continue
+		}
+		if strings.TrimSpace(check.State) == "" || strings.EqualFold(strings.TrimSpace(check.State), "unknown") {
+			return "unknown"
+		}
 	}
 	if containsString(pr.Blockers, "checks") {
 		return "failed"

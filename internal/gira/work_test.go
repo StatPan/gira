@@ -1054,7 +1054,7 @@ func TestGetWorkStatusFetchesIssueAndPRConcurrently(t *testing.T) {
 	runner := &workRunner{
 		outputs: map[string][]byte{
 			issueCall: []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
-			prCall:    []byte(`[{"number":203,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/203","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
+			prCall:    []byte(`[{"number":203,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/203","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"status":"COMPLETED","conclusion":"SUCCESS"}]}]`),
 		},
 		delays: map[string]time.Duration{
 			issueCall: 80 * time.Millisecond,
@@ -1092,7 +1092,7 @@ func TestGetWorkStatusRetriesTransientMissingLinkedPRForReviewStatus(t *testing.
 		queues: map[string][][]byte{
 			prCall: {
 				[]byte(`[]`),
-				[]byte(`[{"number":203,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/203","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[]}]`),
+				[]byte(`[{"number":203,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/203","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"status":"COMPLETED","conclusion":"SUCCESS"}]}]`),
 			},
 		},
 	}

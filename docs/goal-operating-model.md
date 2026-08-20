@@ -141,8 +141,9 @@ delivery tickets.
 ### Typed Work Graph
 
 `gira goal graph` is the deterministic path from PM intent and discovery state
-to independently verifiable child work. It leaves the legacy bullet-based
-`goal plan` path unchanged. A Goal opts in with a `## Work Graph` fenced JSON
+to independently verifiable child work. The bullet-based `goal plan` path
+remains available for Goals that have not opted into a typed Work Graph. A Goal
+opts in with a `## Work Graph` fenced JSON
 block using `pm-work-graph-source/v1`:
 
 ```json

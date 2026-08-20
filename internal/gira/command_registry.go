@@ -239,8 +239,8 @@ func CoreCommandSpecs() []CommandSpec {
 		},
 		{
 			Path:    []string{"queue", "take"},
-			Summary: "Start a handoff-safe queue item through the existing ticket start policy.",
-			Usage:   "gira queue take [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] --dry-run|--apply [--json]",
+			Summary: "Take a safe queue item and start its ticket.",
+			Usage:   "gira queue take [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--branch auto|new|current|NAME] [--create|--current|--adopt BRANCH] [--compact] --dry-run|--apply [--json]",
 			Since:   "v2.1.0",
 			Flags: []FlagSpec{
 				{Name: "--config", Summary: "Explicit workspace config path. Defaults to global registry, then .gira/config.yaml."},
@@ -248,6 +248,10 @@ func CoreCommandSpecs() []CommandSpec {
 				{Name: "--ticket", Summary: "Explicit ticket number. Without it, take uses queue next selection."},
 				{Name: "--role", Summary: "Handoff role: planner, implementer, or reviewer. Default: implementer."},
 				{Name: "--profile", Summary: "Handoff profile: default or python. Default: default."},
+				{Name: "--branch", Summary: "Branch selection passed to ticket start: auto, new, current, or an existing branch."},
+				{Name: "--create", Summary: "Compatibility spelling for --branch new."},
+				{Name: "--current", Summary: "Compatibility spelling for --branch current."},
+				{Name: "--adopt", Summary: "Compatibility spelling for --branch NAME."},
 				{Name: "--compact", Summary: "Print compact text output."},
 				{Name: "--dry-run", Summary: "Preview selection, worker handoff, and ticket start without mutation."},
 				{Name: "--apply", Summary: "Start only a handoff-safe and worker-ready queue item."},
@@ -1160,7 +1164,7 @@ func CoreCommandSpecs() []CommandSpec {
 		{
 			Path:    []string{"ticket", "new"},
 			Summary: "Create a repo-bound executable GitHub issue with structured or full Markdown body input.",
-			Usage:   "gira ticket new \"Title\" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact MODE] [--start]",
+			Usage:   "gira ticket new \"Title\" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact MODE] [--start] [--branch auto|new|current|NAME]",
 			Since:   "v1.0.0",
 			Flags: []FlagSpec{
 				{Name: "--goal", Summary: "Structured issue goal."},
@@ -1174,6 +1178,7 @@ func CoreCommandSpecs() []CommandSpec {
 				{Name: "--release-impact", Summary: "Release impact: user-facing, internal, or exempt."},
 				{Name: "--release-impact-reason", Summary: "Reason required for exempt."},
 				{Name: "--start", Summary: "Start the created ticket after apply."},
+				{Name: "--branch", Summary: "Branch selection for --start: auto, new, current, or an existing local/origin branch."},
 			},
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
 			GuideTopics: []string{"quickstart", "ticket", "agent"},
@@ -1296,11 +1301,12 @@ func CoreCommandSpecs() []CommandSpec {
 		},
 		{
 			Path:    []string{"ticket", "start"},
-			Summary: "Start a ready issue with an explicit branch strategy.",
-			Usage:   "gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--create|--current|--adopt BRANCH]",
+			Summary: "Start a ready issue with branch selection.",
+			Usage:   "gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--branch auto|new|current|NAME] [--create|--current|--adopt BRANCH]",
 			Since:   "v1.0.0",
 			Flags: []FlagSpec{
 				{Name: "--base", Summary: "Explicit lifecycle base branch override recorded on the ticket."},
+				{Name: "--branch", Summary: "Select auto, new, current, or an existing local/origin branch. Without it, the repository auto policy is used."},
 				{Name: "--create", Summary: "Create the policy-suggested work branch."},
 				{Name: "--current", Summary: "Bind the current branch without checkout or push."},
 				{Name: "--adopt", Summary: "Bind an existing local or origin branch without checkout or push."},
@@ -1310,7 +1316,8 @@ func CoreCommandSpecs() []CommandSpec {
 			GuideTopics: []string{"ticket", "agent"},
 			GuideOrder:  20,
 			Examples: []CommandExample{
-				{Summary: "Create the suggested branch for a ready issue", Command: "gira ticket start 42 --create --apply"},
+				{Summary: "Start with the automatic branch policy", Command: "gira ticket start 42 --apply"},
+				{Summary: "Bind a named existing branch", Command: "gira ticket start 42 --branch team/work --apply"},
 			},
 		},
 		{

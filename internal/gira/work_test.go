@@ -61,6 +61,9 @@ func (r *workRunner) Run(name string, args ...string) ([]byte, error) {
 }
 
 func defaultBranchPolicyTestOutput(key string) ([]byte, bool) {
+	if key == "git remote get-url origin" {
+		return []byte("https://github.com/StatPan/gira.git"), true
+	}
 	if strings.HasPrefix(key, "gh api repos/") && strings.HasSuffix(key, "/reviews --paginate --slurp") {
 		return []byte(`[[{"state":"APPROVED","commit_id":"head220"}]]`), true
 	}
@@ -72,6 +75,9 @@ func defaultBranchPolicyTestOutput(key string) ([]byte, bool) {
 	}
 	if key == "git status --porcelain" {
 		return nil, true
+	}
+	if key == "git branch --show-current" {
+		return []byte("main\n"), true
 	}
 	if strings.HasPrefix(key, "gh api repos/") && strings.Contains(key, " -X PATCH -f body=") {
 		return nil, true
@@ -339,7 +345,7 @@ func TestStartWorkDryRunIncludesApprovalEvidence(t *testing.T) {
 	if result.SchemaVersion != WorkStartResultSchemaVersion {
 		t.Fatalf("schema version = %q, want %q", result.SchemaVersion, WorkStartResultSchemaVersion)
 	}
-	if approval.ApplyCommand != "gira work start --repo StatPan/gira --issue 126 --apply" || approval.DryRunCommand != "gira work start --repo StatPan/gira --issue 126 --dry-run" {
+	if approval.ApplyCommand != "gira work start --repo StatPan/gira --issue 126 --branch new --apply" || approval.DryRunCommand != "gira work start --repo StatPan/gira --issue 126 --branch new --dry-run" {
 		t.Fatalf("unexpected approval commands: %+v", approval)
 	}
 	if approval.OutputSchema != WorkStartResultSchemaVersion || approval.PostApplyVerification != "gira ticket status 126 --repo StatPan/gira --json" {

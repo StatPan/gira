@@ -14,6 +14,8 @@ type TicketLifecycleState struct {
 	BaseBranch       string `json:"base_branch,omitempty"`
 	BaseSource       string `json:"base_source,omitempty"`
 	BranchPolicyMode string `json:"branch_policy_mode,omitempty"`
+	StartMode        string `json:"start_mode,omitempty"`
+	BranchStrategy   string `json:"branch_strategy,omitempty"`
 	Target           string `json:"target,omitempty"`
 	WorkBranch       string `json:"work_branch,omitempty"`
 	WorkBranchSource string `json:"work_branch_source,omitempty"`
@@ -38,6 +40,10 @@ func ParseTicketLifecycleState(text string) TicketLifecycleState {
 			state.BaseSource = value
 		case "branch_policy_mode":
 			state.BranchPolicyMode = value
+		case "start_mode":
+			state.StartMode = value
+		case "branch_strategy":
+			state.BranchStrategy = value
 		case "target":
 			state.Target = value
 		case "work_branch":
@@ -56,6 +62,8 @@ func RenderTicketLifecycleBlock(state TicketLifecycleState) string {
 	writeLifecycleLine(&b, "base_branch", state.BaseBranch)
 	writeLifecycleLine(&b, "base_source", state.BaseSource)
 	writeLifecycleLine(&b, "branch_policy_mode", state.BranchPolicyMode)
+	writeLifecycleLine(&b, "start_mode", state.StartMode)
+	writeLifecycleLine(&b, "branch_strategy", state.BranchStrategy)
 	writeLifecycleLine(&b, "target", state.Target)
 	writeLifecycleLine(&b, "work_branch", state.WorkBranch)
 	writeLifecycleLine(&b, "work_branch_source", state.WorkBranchSource)

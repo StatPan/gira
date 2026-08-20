@@ -240,20 +240,20 @@ Provider config is non-secret and lives in the user-global repo registry. Jira c
 
 ## Ticket Flow Cases
 
-Most first-time work creates a repo-bound ticket, then selects a branch strategy:
+Most first-time work creates a repo-bound ticket, then starts with the repository's automatic branch policy:
 
 ```bash
 gira ticket new "Fix install retry" \
   --goal "Retry transient install downloads" \
   --acceptance "retries temporary network failures;does not hide checksum errors;has tests" \
   --apply
-gira ticket start TICKET --create --apply
+gira ticket start TICKET --apply
 ```
 
 If the GitHub issue already exists, start from that ticket number once. After Gira checks out the `issue-N-*` branch, the rest of the flow infers the ticket from context:
 
 ```bash
-gira ticket start 42 --create --apply
+gira ticket start 42 --apply
 gira ticket pr --apply --draft
 gira ticket view
 gira ticket review --diff-summary

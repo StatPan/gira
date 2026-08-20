@@ -443,3 +443,21 @@ func TestPMWorkGraphApplyFailsClosedWhenProgressReadFails(t *testing.T) {
 		t.Fatalf("progress read failure was not fail-closed: creates=%d err=%v", runner.creates, err)
 	}
 }
+
+func TestPMWorkGraphIgnoresProgressMarkerForWrongRepo(t *testing.T) {
+	source := PMWorkGraphSource{SchemaVersion: PMWorkGraphSourceSchemaVersion, Nodes: []PMWorkGraphNode{{
+		ID: "build", Title: "Build bounded slice", Purpose: "Deliver verified behavior", Profile: "delivery", ParentOutcome: "goal:100", Size: "small", Uncertainty: "resolved", Verification: []PMWorkGraphVerification{{Method: "go test", Evidence: "passing tests"}},
+	}}}
+	runner := newResumableWorkGraphRunner(workGraphGoalBody(t, source))
+	preview, err := BuildPMWorkGraphReport(PMWorkGraphInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Goal: 100, DryRun: true}, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.comments = []string{fmt.Sprintf("%s plan=%s node=%s repo=OTHER/repo issue=999 linked=false -->", pmWorkGraphProgressMarker, preview.PlanID, pmWorkGraphNodeToken("build"))}
+	if _, err := BuildPMWorkGraphReport(PMWorkGraphInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Goal: 100, Apply: true, ExpectedPlanID: preview.PlanID}, runner); err != nil {
+		t.Fatalf("wrong-repo progress marker prevented exact-target reconciliation: %v", err)
+	}
+	if runner.creates != 1 {
+		t.Fatalf("wrong-repo marker was trusted instead of ignored: creates=%d", runner.creates)
+	}
+}

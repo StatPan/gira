@@ -561,31 +561,45 @@ func loadPMWorkGraphProgress(repo RepoRef, goal int, plan string, runner Command
 	return progress, nil
 }
 
-func searchPMWorkGraphProgress(repo RepoRef, plan string, node PMWorkGraphNode, runner CommandRunner) (PMWorkGraphProgress, bool, error) {
-	token := pmWorkGraphNodeToken(node.ID)
-	query := fmt.Sprintf("\"gira:work-graph-node/v1\" \"plan=%s\" \"node=%s\"", plan, token)
-	raw, err := runner.Run("gh", "search", "issues", query, "--repo", repo.FullName(), "--match", "body", "--state", "all", "--json", "number,title,body,url,state", "--limit", "20")
+func searchPMWorkGraphProgress(repo RepoRef, plan string, nodes []PMWorkGraphNode, runner CommandRunner) (map[string]PMWorkGraphProgress, error) {
+	query := fmt.Sprintf("\"gira:work-graph-node/v1\" \"plan=%s\"", plan)
+	raw, err := runner.Run("gh", "search", "issues", query, "--repo", repo.FullName(), "--match", "body", "--state", "all", "--json", "number,title,body,url,state", "--limit", "1000")
 	if err != nil {
-		return PMWorkGraphProgress{}, false, fmt.Errorf("search work graph marker for %s: %w", node.ID, err)
+		return nil, fmt.Errorf("search work graph markers for %s: %w", repo.FullName(), err)
 	}
 	var rows []struct {
 		Number int    `json:"number"`
 		Body   string `json:"body"`
 	}
 	if json.Unmarshal(raw, &rows) != nil {
-		return PMWorkGraphProgress{}, false, fmt.Errorf("parse work graph marker search for %s", node.ID)
+		return nil, fmt.Errorf("parse work graph marker search for %s", repo.FullName())
 	}
-	var found PMWorkGraphProgress
+	nodesByID := make(map[string]struct{}, len(nodes))
+	for _, node := range nodes {
+		nodesByID[node.ID] = struct{}{}
+	}
+	found := make(map[string]PMWorkGraphProgress, len(nodes))
 	for _, row := range rows {
 		foundPlan, foundNode, ok := parsePMWorkGraphNodeMarker(row.Body)
-		if ok && foundPlan == plan && foundNode == node.ID && row.Number > 0 {
-			if found.Issue > 0 {
-				return PMWorkGraphProgress{}, false, fmt.Errorf("multiple work graph marker issues found for %s", node.ID)
+		if !ok || foundPlan != plan || row.Number <= 0 {
+			continue
+		}
+		if _, wanted := nodesByID[foundNode]; !wanted {
+			continue
+		}
+		if existing, duplicate := found[foundNode]; duplicate {
+			return nil, fmt.Errorf("multiple work graph marker issues found for %s (#%d and #%d)", foundNode, existing.Issue, row.Number)
+		}
+		found[foundNode] = PMWorkGraphProgress{PlanID: plan, NodeID: foundNode, Repo: repo.FullName(), Issue: row.Number, Linked: false}
+	}
+	if len(rows) >= 1000 {
+		for _, node := range nodes {
+			if _, ok := found[node.ID]; !ok {
+				return nil, fmt.Errorf("work graph marker search for %s reached the 1000-result limit before finding node %s", repo.FullName(), node.ID)
 			}
-			found = PMWorkGraphProgress{PlanID: plan, NodeID: node.ID, Repo: repo.FullName(), Issue: row.Number, Linked: false}
 		}
 	}
-	return found, found.Issue > 0, nil
+	return found, nil
 }
 
 func pmWorkGraphChildLinked(children []GoalStatusChild, repo RepoRef, issue int) bool {
@@ -617,6 +631,34 @@ func pmWorkGraphReconcileActions(report *PMWorkGraphReport, repo RepoRef, childr
 	for _, node := range report.Nodes {
 		nodes[node.ID] = node
 	}
+	nodesByTarget := make(map[string][]PMWorkGraphNode)
+	for _, action := range report.Actions {
+		if action.Action != "create" && action.Action != "supersede" {
+			continue
+		}
+		node, ok := nodes[action.NodeID]
+		if !ok {
+			continue
+		}
+		target, err := pmWorkGraphTargetRepo(repo, node)
+		if err != nil {
+			return err
+		}
+		if recovered, found := progress[pmWorkGraphProgressKey(report.PlanID, node.ID)]; !found || recovered.Repo != target.FullName() {
+			nodesByTarget[target.FullName()] = append(nodesByTarget[target.FullName()], node)
+		}
+	}
+	searched := make(map[string]map[string]PMWorkGraphProgress, len(nodesByTarget))
+	for targetName, targetNodes := range nodesByTarget {
+		target, err := ParseRepoRef(targetName)
+		if err != nil {
+			return err
+		}
+		searched[targetName], err = searchPMWorkGraphProgress(target, report.PlanID, targetNodes, runner)
+		if err != nil {
+			return fmt.Errorf("reconcile work graph nodes in %s: %w", targetName, err)
+		}
+	}
 	for i := range report.Actions {
 		action := &report.Actions[i]
 		if action.Action != "create" && action.Action != "supersede" {
@@ -631,11 +673,11 @@ func pmWorkGraphReconcileActions(report *PMWorkGraphReport, repo RepoRef, childr
 			return err
 		}
 		recovered, found := progress[pmWorkGraphProgressKey(report.PlanID, node.ID)]
+		if found && recovered.Repo != target.FullName() {
+			found = false
+		}
 		if !found {
-			recovered, found, err = searchPMWorkGraphProgress(target, report.PlanID, node, runner)
-			if err != nil {
-				return fmt.Errorf("reconcile work graph node %s: %w", node.ID, err)
-			}
+			recovered, found = searched[target.FullName()][node.ID]
 		}
 		if !found || recovered.Issue <= 0 {
 			continue

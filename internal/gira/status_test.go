@@ -70,6 +70,75 @@ func TestFormatStatusTextIsCompact(t *testing.T) {
 	}
 }
 
+func TestStatusNextStepDoesNotPrescribeManagedLifecycleInObservation(t *testing.T) {
+	cases := []struct {
+		name   string
+		policy ResolvedOperationPolicy
+		want   string
+	}{
+		{
+			name:   "unenrolled observation",
+			policy: ResolvedOperationPolicy{OperationMode: OperationModeObservation, DeliveryPolicy: DeliveryPolicyNone, Source: OperationPolicySourceUnconfigured},
+			want:   "observation only: configure operation_mode=managed",
+		},
+		{
+			name:   "explicit observation",
+			policy: ResolvedOperationPolicy{OperationMode: OperationModeObservation, DeliveryPolicy: DeliveryPolicyNone, Source: "repo_local_contract"},
+			want:   "observation only: configure operation_mode=managed",
+		},
+		{
+			name:   "managed compatibility",
+			policy: ResolvedOperationPolicy{OperationMode: OperationModeManaged, DeliveryPolicy: DeliveryPolicyRequired, CompatibilityFallback: OperationPolicyFallbackConfiguredRepository},
+			want:   "gira work start --repo StatPan/gira --issue 1 --dry-run",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			summary := StatusSummary{
+				Repo:   "StatPan/gira",
+				Policy: tc.policy,
+				Issues: StatusIssueLists{Open: []IssueStats{{Number: 1, Title: "Open", State: "open"}}},
+			}
+			if got := statusNextStep(summary); !strings.Contains(got, tc.want) {
+				t.Fatalf("next step = %q, want substring %q", got, tc.want)
+			}
+		})
+	}
+}
+
+type policyStatusClient struct {
+	fakeStatusClient
+	policy ResolvedOperationPolicy
+}
+
+func (c policyStatusClient) ResolveOperationPolicy() (ResolvedOperationPolicy, error) {
+	return c.policy, nil
+}
+
+func TestBuildStatusSummaryIncludesResolvedPolicy(t *testing.T) {
+	client := policyStatusClient{
+		fakeStatusClient: fakeStatusClient{
+			repo: mustRepo(t, "StatPan/unenrolled"),
+			responses: map[string]string{
+				"api repos/StatPan/unenrolled/milestones --paginate --slurp -X GET -f state=all -f per_page=100":                              `[[ ]]`,
+				"issue list --repo StatPan/unenrolled --state all --limit 1000 --json number,title,state,labels,milestone,updatedAt,url,body": `[]`,
+				"api repos/StatPan/unenrolled/pulls --paginate --slurp -X GET -f state=open -f per_page=100":                                  `[[ ]]`,
+			},
+		},
+		policy: ResolvedOperationPolicy{OperationMode: OperationModeObservation, DeliveryPolicy: DeliveryPolicyNone, Source: OperationPolicySourceUnconfigured, CompatibilityFallback: OperationPolicyFallbackUnenrolledRepository},
+	}
+	summary, err := BuildStatusSummary(client, statusNowFixture, 14)
+	if err != nil {
+		t.Fatalf("BuildStatusSummary returned error: %v", err)
+	}
+	if summary.Policy != client.policy {
+		t.Fatalf("summary policy = %+v, want %+v", summary.Policy, client.policy)
+	}
+	if got := statusNextStep(summary); !strings.Contains(got, "observation only") {
+		t.Fatalf("observation summary next step = %q", got)
+	}
+}
+
 func TestBuildStatusSummaryFetchesWithGhShape(t *testing.T) {
 	client := fakeStatusClient{
 		repo: mustRepo(t, "StatPan/gira"),

@@ -2,6 +2,8 @@ package gira
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +30,129 @@ func TestBuildDoctorReportReady(t *testing.T) {
 	}
 	if got := doctorCheckByID(report, "branch_policy"); got == nil || got.Status != DoctorCheckWarn || !strings.Contains(got.Detail, "github-flow defaults") {
 		t.Fatalf("branch_policy = %+v, want default-policy warning", got)
+	}
+}
+
+func TestBuildDoctorReportObservationClassifiesGiraMetadataAsAdvisory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	runner := readyDoctorRunner()
+	runner.responses["gh label list --repo StatPan/gira --json name,color,description --limit 1000"] = `[]`
+	runner.responses["gh label list --repo StatPan/gira --json name --limit 1000"] = `[]`
+	runner.responses["gh api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100"] = `[[ ]]`
+
+	report := BuildDoctorReport("StatPan/gira", runner, time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC))
+	if report.Policy.OperationMode != OperationModeObservation || report.Policy.Source != OperationPolicySourceUnconfigured {
+		t.Fatalf("policy = %+v, want unenrolled observation policy", report.Policy)
+	}
+	if !report.Ready {
+		t.Fatalf("ready = false, want true with observation advisories: %+v", report.Checks)
+	}
+	for _, id := range []string{"metadata_drift", "workflow_policy_labels", "onboard_readiness"} {
+		check := doctorCheckByID(report, id)
+		if check == nil {
+			t.Fatalf("missing check %s", id)
+		}
+		if check.Status != DoctorCheckWarn || check.FindingClass != DoctorFindingProviderObservation || check.Enforced {
+			t.Fatalf("check %s = %+v, want provider observation warning", id, *check)
+		}
+		if check.Remediation != "" || !strings.Contains(check.Detail, "no managed mutation is prescribed") {
+			t.Fatalf("check %s should not prescribe managed mutation: %+v", id, *check)
+		}
+	}
+	policyCheck := doctorCheckByID(report, "operation_policy")
+	if policyCheck == nil || policyCheck.Status != DoctorCheckPass || policyCheck.FindingClass != DoctorFindingProviderObservation || policyCheck.Enforced {
+		t.Fatalf("operation_policy = %+v, want observation provenance", policyCheck)
+	}
+}
+
+func TestPolicyFindingDoctorFixtures(t *testing.T) {
+	cases := []struct {
+		name        string
+		policy      ResolvedOperationPolicy
+		status      DoctorCheckStatus
+		class       DoctorFindingClass
+		enforced    bool
+		remediation bool
+	}{
+		{
+			name:        "unenrolled observation",
+			policy:      ResolvedOperationPolicy{OperationMode: OperationModeObservation, DeliveryPolicy: DeliveryPolicyNone},
+			status:      DoctorCheckWarn,
+			class:       DoctorFindingProviderObservation,
+			enforced:    false,
+			remediation: false,
+		},
+		{
+			name:        "explicit observation",
+			policy:      ResolvedOperationPolicy{OperationMode: OperationModeObservation, DeliveryPolicy: DeliveryPolicyNone, Source: "repo_local_contract"},
+			status:      DoctorCheckWarn,
+			class:       DoctorFindingProviderObservation,
+			enforced:    false,
+			remediation: false,
+		},
+		{
+			name:        "managed advisory",
+			policy:      ResolvedOperationPolicy{OperationMode: OperationModeManaged, DeliveryPolicy: DeliveryPolicyAdvisory},
+			status:      DoctorCheckWarn,
+			class:       DoctorFindingManagedPolicy,
+			enforced:    false,
+			remediation: true,
+		},
+		{
+			name:        "managed compatibility",
+			policy:      ResolvedOperationPolicy{OperationMode: OperationModeManaged, DeliveryPolicy: DeliveryPolicyRequired, CompatibilityFallback: OperationPolicyFallbackConfiguredRepository},
+			status:      DoctorCheckFail,
+			class:       DoctorFindingManagedPolicy,
+			enforced:    true,
+			remediation: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			check := policyFindingDoctorCheck(tc.policy, "metadata_drift", "missing labels", "run sync")
+			if check.Status != tc.status || check.FindingClass != tc.class || check.Enforced != tc.enforced {
+				t.Fatalf("check = %+v, want status=%s class=%s enforced=%t", check, tc.status, tc.class, tc.enforced)
+			}
+			if (check.Remediation != "") != tc.remediation {
+				t.Fatalf("remediation = %q, want present=%t", check.Remediation, tc.remediation)
+			}
+		})
+	}
+}
+
+func TestBuildDoctorReportFailsClosedWhenOperationPolicyCannotResolve(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := os.MkdirAll(filepath.Join(root, ".gira"), 0o755); err != nil {
+		t.Fatalf("mkdir .gira: %v", err)
+	}
+	config := `repo: StatPan/gira
+operation_mode: invalid
+profiles:
+  default:
+    labels: []
+    milestones: []
+    issue_templates: []
+`
+	if err := os.WriteFile(filepath.Join(root, ".gira", "config.yaml"), []byte(config), 0o644); err != nil {
+		t.Fatalf("write invalid config: %v", err)
+	}
+
+	report := BuildDoctorReport("StatPan/gira", readyDoctorRunner(), time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC))
+	if report.Ready {
+		t.Fatal("ready = true, want false for policy resolution error")
+	}
+	check := doctorCheckByID(report, "operation_policy")
+	if check == nil || check.Status != DoctorCheckFail || check.FindingClass != DoctorFindingManagedPolicy || !check.Enforced {
+		t.Fatalf("operation_policy = %+v, want enforced fail", check)
+	}
+	if report.PolicyError == "" {
+		t.Fatal("policy_error is empty, want stable failure detail")
+	}
+	if got := doctorCheckByID(report, "metadata_drift"); got == nil || got.Status != DoctorCheckSkip {
+		t.Fatalf("metadata_drift = %+v, want skipped after policy resolution failure", got)
 	}
 }
 

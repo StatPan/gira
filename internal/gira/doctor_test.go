@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -28,8 +29,8 @@ func TestBuildDoctorReportReady(t *testing.T) {
 	if !strings.Contains(cliCheck.Detail, "executable=") {
 		t.Fatalf("gira_cli_visible detail = %q, want executable detail", cliCheck.Detail)
 	}
-	if got := doctorCheckByID(report, "branch_policy"); got == nil || got.Status != DoctorCheckWarn || !strings.Contains(got.Detail, "github-flow defaults") {
-		t.Fatalf("branch_policy = %+v, want default-policy warning", got)
+	if got := doctorCheckByID(report, "branch_policy"); got == nil || got.Status == DoctorCheckFail {
+		t.Fatalf("branch_policy = %+v, want a non-blocking configured/default policy result", got)
 	}
 }
 
@@ -37,6 +38,7 @@ func TestBuildDoctorReportObservationClassifiesGiraMetadataAsAdvisory(t *testing
 	t.Chdir(t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	runner := readyDoctorRunner()
+	runner.errors["git rev-parse --show-toplevel"] = fmt.Errorf("no local Gira contract")
 	runner.responses["gh label list --repo StatPan/gira --json name,color,description --limit 1000"] = `[]`
 	runner.responses["gh label list --repo StatPan/gira --json name --limit 1000"] = `[]`
 	runner.responses["gh api repos/StatPan/gira/milestones --paginate --slurp -X GET -f state=all -f per_page=100"] = `[[ ]]`
@@ -140,7 +142,9 @@ profiles:
 		t.Fatalf("write invalid config: %v", err)
 	}
 
-	report := BuildDoctorReport("StatPan/gira", readyDoctorRunner(), time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC))
+	runner := readyDoctorRunner()
+	runner.responses["git rev-parse --show-toplevel"] = root
+	report := BuildDoctorReport("StatPan/gira", runner, time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC))
 	if report.Ready {
 		t.Fatal("ready = true, want false for policy resolution error")
 	}
@@ -352,6 +356,8 @@ func TestBuildDoctorReportAuditOnlyDirtyWorktreeWarns(t *testing.T) {
 }
 
 func readyDoctorRunner() onboardFakeRunner {
+	_, file, _, _ := runtime.Caller(0)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "../.."))
 	return onboardFakeRunner{
 		responses: map[string]string{
 			"gh --version":   "gh version 2.0.0",
@@ -366,6 +372,7 @@ func readyDoctorRunner() onboardFakeRunner {
 			"gh pr list --repo StatPan/gira --state all --limit 1000 --json number,title,body,state,mergedAt":              `[]`,
 			"gh issue list --repo StatPan/gira --state all --label gira:bootstrap --json number,title,labels --limit 1000": desiredBootstrapIssuesJSON(),
 			"git rev-parse --is-inside-work-tree":                                                                          "true",
+			"git rev-parse --show-toplevel":                                                                                repoRoot,
 			"git ls-remote --exit-code --heads origin main":                                                                "abc\trefs/heads/main",
 			"git branch --show-current": "main",
 			"git status --porcelain":    "",

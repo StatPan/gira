@@ -124,7 +124,7 @@ func TestPMWorkGraphRejectsCyclesFalseDependenciesAndResidualDeliveryJudgment(t 
 	}
 }
 
-func TestPMWorkGraphMissingSourceGuidesLegacyGoalPlan(t *testing.T) {
+func TestPMWorkGraphMissingSourceGuidesBulletGoalPlan(t *testing.T) {
 	runner := &workGraphRunner{body: "## Goal\nPlain goal.\n\n## Scope\nBounded CLI work.\n\n## Decomposition\n- Add the first child ticket.\n"}
 	report, err := BuildPMWorkGraphReport(PMWorkGraphInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Goal: 100, DryRun: true}, runner)
 	if err != nil {
@@ -132,7 +132,7 @@ func TestPMWorkGraphMissingSourceGuidesLegacyGoalPlan(t *testing.T) {
 	}
 	diagnostic := workGraphDiagnosticByCode(report.Diagnostics, PMWorkGraphMissingSource)
 	if diagnostic == nil || diagnostic.Severity != "info" || !strings.Contains(diagnostic.Repair, "goal plan") {
-		t.Fatalf("missing-source diagnostic did not guide legacy planning: %#v", report.Diagnostics)
+		t.Fatalf("missing-source diagnostic did not guide bullet planning: %#v", report.Diagnostics)
 	}
 	if workGraphDiagnosticByCode(report.Diagnostics, PMWorkGraphInvalidSource) != nil || hasPMWorkGraphErrors(report.Diagnostics) {
 		t.Fatalf("absent opt-in graph was treated as invalid: %#v", report.Diagnostics)
@@ -154,6 +154,20 @@ func TestPMWorkGraphInvalidSourceFailsClosed(t *testing.T) {
 	}
 	if workGraphDiagnosticByCode(report.Diagnostics, PMWorkGraphMissingSource) != nil {
 		t.Fatalf("invalid source was mislabeled missing: %#v", report.Diagnostics)
+	}
+}
+
+func TestPMWorkGraphEmptyPresentSourceFailsClosed(t *testing.T) {
+	runner := &workGraphRunner{body: "## Goal\nTyped goal.\n\n## Work Graph\n"}
+	report, err := BuildPMWorkGraphReport(PMWorkGraphInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Goal: 100, DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildPMWorkGraphReport: %v", err)
+	}
+	if diagnostic := workGraphDiagnosticByCode(report.Diagnostics, PMWorkGraphInvalidSource); diagnostic == nil || diagnostic.Severity != "error" {
+		t.Fatalf("empty present source was not an invalid error: %#v", report.Diagnostics)
+	}
+	if workGraphDiagnosticByCode(report.Diagnostics, PMWorkGraphMissingSource) != nil {
+		t.Fatalf("empty present source was mislabeled missing: %#v", report.Diagnostics)
 	}
 }
 

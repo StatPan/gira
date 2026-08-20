@@ -254,8 +254,14 @@ func BuildPMWorkGraphReport(input PMWorkGraphInput, runner CommandRunner) (PMWor
 }
 
 func parsePMWorkGraphSource(body string) (PMWorkGraphSource, error) {
-	section := strings.TrimSpace(markdownSection(body, "Work Graph"))
-	if section == "" {
+	section, present := goalWorkGraphSection(body)
+	if !present {
+		return PMWorkGraphSource{}, errPMWorkGraphSourceMissing
+	}
+	if strings.TrimSpace(section) == "" {
+		return PMWorkGraphSource{}, fmt.Errorf("Work Graph section is empty")
+	}
+	if emptyReadinessSection(section) {
 		return PMWorkGraphSource{}, errPMWorkGraphSourceMissing
 	}
 	raw := section
@@ -282,6 +288,32 @@ func parsePMWorkGraphSource(body string) (PMWorkGraphSource, error) {
 		return source, fmt.Errorf("Work Graph requires nodes")
 	}
 	return source, nil
+}
+
+func goalWorkGraphSection(body string) (string, bool) {
+	lines := strings.Split(body, "\n")
+	inSection := false
+	present := false
+	values := []string{}
+	target := strings.ToLower(strings.TrimSpace("Work Graph"))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "## ") {
+			current := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(trimmed, "## ")))
+			if inSection {
+				break
+			}
+			inSection = current == target
+			if inSection {
+				present = true
+			}
+			continue
+		}
+		if inSection {
+			values = append(values, line)
+		}
+	}
+	return strings.TrimSpace(strings.Join(values, "\n")), present
 }
 
 func normalizePMWorkGraphNodes(nodes []PMWorkGraphNode) []PMWorkGraphNode {

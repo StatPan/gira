@@ -126,21 +126,25 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 }
 
 func goalPlanningEngine(body string) string {
-	hasLegacyPlan := goalPlanningHasLegacyPlan(body)
-	hasTypedGraph := goalPlanningHasTypedWorkGraph(body)
+	hasBulletPlan := goalPlanningHasBulletPlan(body)
+	typedGraphState := goalPlanningTypedWorkGraphState(body)
 	switch {
-	case hasLegacyPlan && hasTypedGraph:
+	case hasBulletPlan && typedGraphState == "valid":
 		return "mixed"
-	case hasTypedGraph:
+	case hasBulletPlan && typedGraphState == "invalid":
+		return "mixed_invalid_typed_work_graph"
+	case typedGraphState == "valid":
 		return "typed_work_graph"
-	case hasLegacyPlan:
-		return "legacy_goal_plan"
+	case typedGraphState == "invalid":
+		return "invalid_typed_work_graph"
+	case hasBulletPlan:
+		return "bullet_goal_plan"
 	default:
 		return "unconfigured"
 	}
 }
 
-func goalPlanningHasLegacyPlan(body string) bool {
+func goalPlanningHasBulletPlan(body string) bool {
 	for _, heading := range []string{"Goal Plan", "Decomposition", "Child Ticket Plan", "Suggested Child Tickets", "Initial Follow-Up Issues To Create", "Follow-Up Issues"} {
 		for _, item := range markdownListSection(body, heading) {
 			if !emptyReadinessSection(cleanGoalPlanItem(item)) {
@@ -151,25 +155,35 @@ func goalPlanningHasLegacyPlan(body string) bool {
 	return false
 }
 
-func goalPlanningHasTypedWorkGraph(body string) bool {
+func goalPlanningTypedWorkGraphState(body string) string {
+	section, present := goalWorkGraphSection(body)
+	if !present {
+		return "absent"
+	}
+	if strings.TrimSpace(section) == "" {
+		return "invalid"
+	}
+	if emptyReadinessSection(section) {
+		return "absent"
+	}
 	source, err := parsePMWorkGraphSource(body)
 	if err != nil {
-		return false
+		return "invalid"
 	}
 	for _, node := range source.Nodes {
 		if emptyReadinessSection(node.ID) || emptyReadinessSection(node.Title) || emptyReadinessSection(node.Purpose) || emptyReadinessSection(node.ParentOutcome) {
-			return false
+			return "invalid"
 		}
 		if _, ok := FindPMTaskProfile(node.Profile); !ok || len(node.Verification) == 0 {
-			return false
+			return "invalid"
 		}
 		for _, verification := range node.Verification {
 			if emptyReadinessSection(verification.Method) || emptyReadinessSection(verification.Evidence) {
-				return false
+				return "invalid"
 			}
 		}
 	}
-	return true
+	return "valid"
 }
 
 type goalChildRef struct {

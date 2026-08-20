@@ -178,10 +178,13 @@ discovery outcome refs, graph semantics, diagnostics, and rendered action data.
 
 ### Planning Engine Visibility
 
-`gira goal status` exposes `planning_engine` as `legacy_goal_plan`,
-`typed_work_graph`, `mixed`, or `unconfigured`. `mixed` means the Goal body has
-both legacy bullet-plan and typed work-graph sources. Gira intentionally does
-not choose or merge those sources automatically: run the intended engine
+`gira goal status` exposes `planning_engine` as `bullet_goal_plan`,
+`typed_work_graph`, `mixed`, `invalid_typed_work_graph`,
+`mixed_invalid_typed_work_graph`, or `unconfigured`. `mixed` means the Goal
+body has both bullet-plan and typed work-graph sources. The invalid states mean
+the Goal contains a present but malformed or incomplete typed Work Graph; the
+mixed invalid state also contains bullet-plan items. Gira intentionally does
+not choose or merge these sources automatically: run the intended engine
 explicitly, preserve the other source as migration evidence, then remove it in
 a reviewed follow-up. This prevents two planning engines from silently creating
 overlapping child tickets.

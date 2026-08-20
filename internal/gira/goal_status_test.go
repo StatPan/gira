@@ -36,10 +36,12 @@ func TestGoalPlanningEngineMakesMixedSourcesVisible(t *testing.T) {
 	}{
 		{name: "default placeholders", body: "## Decomposition\n_No response_\n\n## Work Graph\n_No response_", want: "unconfigured"},
 		{name: "placeholder list", body: "## Goal Plan\n- _No response_", want: "unconfigured"},
-		{name: "malformed graph", body: "## Work Graph\n```json\n{}\n```", want: "unconfigured"},
-		{name: "valid legacy", body: "## Goal Plan\n- Deliver the bounded slice", want: "legacy_goal_plan"},
+		{name: "malformed graph", body: "## Work Graph\n```json\n{}\n```", want: "invalid_typed_work_graph"},
+		{name: "empty graph section", body: "## Work Graph", want: "invalid_typed_work_graph"},
+		{name: "valid bullet plan", body: "## Goal Plan\n- Deliver the bounded slice", want: "bullet_goal_plan"},
 		{name: "valid typed", body: validGraph, want: "typed_work_graph"},
 		{name: "mixed", body: "## Goal Plan\n- Deliver the bounded slice\n\n" + validGraph, want: "mixed"},
+		{name: "mixed malformed graph", body: "## Goal Plan\n- Deliver the bounded slice\n\n## Work Graph\n```json\n{}\n```", want: "mixed_invalid_typed_work_graph"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := goalPlanningEngine(tc.body); got != tc.want {

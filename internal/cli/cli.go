@@ -111,9 +111,9 @@ Choose the smallest path that matches the work:
    gira adopt repo --repo OWNER/REPO --path . --dry-run
    gira status
 
-3. Create a ticket, then choose its branch strategy.
+3. Create a ticket, then let the automatic branch policy choose safely.
    gira new "TITLE" --goal "GOAL" --acceptance "item 1;item 2" --apply
-   gira ticket start TICKET --create --apply
+   gira ticket start TICKET --apply
 
 4. Implement the bounded scope and verify locally.
    go test ./...
@@ -144,7 +144,7 @@ protocol. For multi-ticket Goal work, use gira dispatch goal.
 
 Daily loop:
   gira new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply
-  gira ticket start TICKET --create --apply
+  gira ticket start TICKET --apply
   gira ticket pr --apply --draft
   gira ticket review --diff-summary
   gira ticket self-review --diff-summary --dry-run
@@ -153,7 +153,7 @@ Daily loop:
   gira ticket finish --apply
 
 Existing GitHub issue:
-  gira ticket start 42 --create --apply
+  gira ticket start 42 --apply
   gira ticket pr --apply --draft
   gira ticket review --diff-summary
   gira ticket finish --apply
@@ -164,6 +164,7 @@ Context rules:
 
 Safety:
   Use --dry-run before mutating commands when unsure.
+  Use --branch with auto, new, current, or NAME for deterministic branch selection; --create, --current, and --adopt BRANCH remain compatibility spellings.
   PR bodies must contain Closes #N, Fixes #N, or Resolves #N.
 
 Shortcuts:
@@ -375,7 +376,7 @@ Usage:
   gira queue list [--config .gira/config.yaml] [--repo OWNER/REPO] [--queue ready|review|finish|blocked|failed|human] [--limit N] [--compact] [--cache-ttl 5m] [--refresh] [--json]
   gira queue next [--config .gira/config.yaml] [--repo OWNER/REPO] [--role implementer] [--profile default] [--compact] [--cache-ttl 5m] [--refresh] [--json]
   gira queue handoff [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] [--cache-ttl 5m] [--refresh] [--json]
-  gira queue take [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--create] [--compact] [--cache-ttl 5m] [--refresh] --dry-run|--apply [--json]
+  gira queue take [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--branch auto|new|current|NAME] [--create|--current|--adopt BRANCH] [--compact] [--cache-ttl 5m] [--refresh] --dry-run|--apply [--json]
 
 Commands:
   list     Show queue items derived from workspace-queues/v1
@@ -394,6 +395,9 @@ Flags:
   --profile string      Handoff profile: default or python. Default: default
 
   --create              Create the policy-suggested work branch when required
+  --branch string       Branch selection for queue take: auto|new|current|NAME
+  --current             Bind the current work branch without checkout or push
+  --adopt string        Bind an existing local or origin work branch
   --compact             Print compact text output
   --max-concurrency int Maximum concurrent repo status fetches (default 4)
   --cache-ttl duration  Reuse recent per-repo status cache (default 5m)
@@ -937,7 +941,7 @@ Usage:
 const ticketHelp = `Jira-style ticket lifecycle commands.
 
 Usage:
-  gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact user-facing|internal|exempt] [--start] [--json]
+  gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact user-facing|internal|exempt] [--start] [--branch auto|new|current|NAME] [--json]
   gira ticket parent TICKET [--set PARENT|--clear] [--dry-run|--apply] [--repo OWNER/REPO] [--json]
   gira ticket list [--repo OWNER/REPO] [--state open|closed|all] [--label LABEL] [--assignee LOGIN] [--milestone TITLE] [--limit N] [--json]
   gira ticket view|show [TICKET|JIRA-KEY] [--repo OWNER/REPO] [--json]
@@ -945,7 +949,7 @@ Usage:
   gira ticket handoff [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--json]
   gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] [--include-diff] [--json|--html --output PATH]
   gira ticket self-review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] --dry-run|--apply [--json]
-  gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--create|--current|--adopt BRANCH] [--json]
+  gira ticket start [TICKET|JIRA-KEY] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--branch auto|new|current|NAME] [--create|--current|--adopt BRANCH] [--json]
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
   gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both] [--body TEXT|--body-file PATH|-] [--json]
   gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr] [--json]
@@ -1002,6 +1006,7 @@ Flags:
   --timeout duration  Pending-check wait timeout for ticket wait. Default: 5m
   --interval duration  Poll interval for ticket wait. Default: 5s
   --start          Start a newly created ticket after ticket new --apply
+  --branch string  Branch selection for ticket start/new: auto, new, current, or an existing branch name
   --release-impact string Release impact for ticket new: user-facing, internal, or exempt
   --release-impact-reason string Required reason when ticket new release impact is exempt
   --json           Emit stable JSON output
@@ -1211,7 +1216,7 @@ const workHelp = `Daily issue lifecycle command.
 
 Usage:
   gira start --repo OWNER/REPO --issue N --dry-run|--apply [--json]
-  gira work start --repo OWNER/REPO --issue N --dry-run|--apply [--json]
+  gira work start --repo OWNER/REPO --issue N --branch auto|new|current|NAME [--create|--current|--adopt BRANCH] --dry-run|--apply [--json]
   gira work pr --repo OWNER/REPO --issue N --dry-run|--apply [--draft] [--json]
   gira work status --repo OWNER/REPO --issue N [--json]
 
@@ -1223,6 +1228,8 @@ Commands:
 Flags:
   --repo string  Target GitHub repo in OWNER/REPO format
   --issue int    Issue number
+  --branch string Branch selection: auto|new|current|NAME
+  --create/--current/--adopt  Compatibility branch selections
   --dry-run      Preview without mutation
   --apply        Apply branch, PR, and status label changes
   --draft        Create/keep PR as draft for work pr
@@ -1654,7 +1661,7 @@ var newWorkStartResult = func(repo gira.RepoRef, issue int, dryRun bool) (gira.W
 }
 
 var newWorkStartResultWithOptions = func(repo gira.RepoRef, issue int, options gira.WorkStartOptions) (gira.WorkStartResult, error) {
-	if strings.TrimSpace(options.BaseOverride) == "" && !options.Create && !options.Current && strings.TrimSpace(options.AdoptBranch) == "" {
+	if strings.TrimSpace(options.BaseOverride) == "" && strings.TrimSpace(options.Branch) == "" && !options.Create && !options.Current && strings.TrimSpace(options.AdoptBranch) == "" {
 		return newWorkStartResult(repo, issue, options.DryRun)
 	}
 	return gira.StartWorkWithOptions(repo, issue, options, devCommandRunner)
@@ -6456,6 +6463,7 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 	releaseImpactReason := fs.String("release-impact-reason", "", "Reason when release impact is exempt")
 	bodyFile := fs.String("body-file", "", "Read issue body from file")
 	start := fs.Bool("start", false, "Start the created ticket")
+	branch := fs.String("branch", "", "Branch selection for --start: auto|new|current|NAME")
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
 	apply := fs.Bool("apply", false, "Apply changes")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
@@ -6508,6 +6516,7 @@ func runTicketNew(args []string, stdout io.Writer, stderr io.Writer) int {
 		ReleaseImpact:       *releaseImpact,
 		ReleaseImpactReason: *releaseImpactReason,
 		Start:               *start,
+		Branch:              *branch,
 		DryRun:              *dryRun,
 	})
 	if err != nil {
@@ -6609,6 +6618,7 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 	ticket := fs.Int("ticket", 0, "Ticket number")
 	issue := fs.Int("issue", 0, "Compatibility alias for --ticket")
 	base := fs.String("base", "", "Explicit base branch override for ticket start")
+	branch := fs.String("branch", "", "Branch selection: auto|new|current|NAME")
 	create := fs.Bool("create", false, "Create the policy-suggested work branch")
 	current := fs.Bool("current", false, "Bind the current work branch without checkout or push")
 	adopt := fs.String("adopt", "", "Bind an existing local or origin work branch without checkout or push")
@@ -6625,6 +6635,11 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 	if *help {
 		_, _ = io.WriteString(stdout, ticketHelp)
 		return 0
+	}
+	if strings.TrimSpace(*branch) != "" && (*create || *current || strings.TrimSpace(*adopt) != "") {
+		fmt.Fprintln(stderr, "--branch cannot be combined with --create, --current, or --adopt")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
 	}
 	explicitNumber, ok := resolveExplicitTicket(*ticket, *issue, positionalIdentifier.Number, stderr)
 	if !ok {
@@ -6656,7 +6671,7 @@ func runTicketStart(args []string, stdout io.Writer, stderr io.Writer) int {
 		ticketNumber = mirror.Number
 		jiraKey = strings.ToUpper(strings.TrimSpace(positionalIdentifier.JiraKey))
 	}
-	result, err := newWorkStartResultWithOptions(repo, ticketNumber, gira.WorkStartOptions{DryRun: *dryRun, BaseOverride: *base, Create: *create, Current: *current, AdoptBranch: *adopt})
+	result, err := newWorkStartResultWithOptions(repo, ticketNumber, gira.WorkStartOptions{DryRun: *dryRun, BaseOverride: *base, Branch: *branch, Create: *create, Current: *current, AdoptBranch: *adopt})
 	if jiraKey != "" {
 		result.JiraKey = jiraKey
 		result.MirrorIssue = ticketNumber
@@ -7137,6 +7152,10 @@ func runWorkStart(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs.SetOutput(io.Discard)
 	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
 	issue := fs.Int("issue", 0, "Issue number")
+	branch := fs.String("branch", "", "Branch selection: auto|new|current|NAME")
+	create := fs.Bool("create", false, "Create the policy-suggested work branch")
+	current := fs.Bool("current", false, "Bind the current work branch without checkout or push")
+	adopt := fs.String("adopt", "", "Bind an existing local or origin work branch")
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
 	apply := fs.Bool("apply", false, "Apply changes")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
@@ -7151,12 +7170,17 @@ func runWorkStart(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stdout, workHelp)
 		return 0
 	}
+	if strings.TrimSpace(*branch) != "" && (*create || *current || strings.TrimSpace(*adopt) != "") {
+		fmt.Fprintln(stderr, "--branch cannot be combined with --create, --current, or --adopt")
+		_, _ = io.WriteString(stderr, workHelp)
+		return 2
+	}
 	repo, ok := parseWorkRequiredFlags(*repoValue, *issue, *dryRun, *apply, stderr)
 	if !ok {
 		_, _ = io.WriteString(stderr, workHelp)
 		return 2
 	}
-	result, err := newWorkStartResult(repo, *issue, *dryRun)
+	result, err := newWorkStartResultWithOptions(repo, *issue, gira.WorkStartOptions{DryRun: *dryRun, Branch: *branch, Create: *create, Current: *current, AdoptBranch: *adopt})
 	if err != nil {
 		if *jsonOutput {
 			gira.EnsureWorkStartResultSchema(&result)
@@ -7287,7 +7311,7 @@ func parseWorkRequiredFlags(repoValue string, issue int, dryRun bool, apply bool
 func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bool) {
 	cleaned := make([]string, 0, len(args))
 	positional := 0
-	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}, "--timeout": {}, "--interval": {}, "--replacement-title": {}, "--body": {}, "--body-file": {}, "--milestone": {}, "--label": {}, "--output": {}, "--set": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}, "--timeout": {}, "--interval": {}, "--replacement-title": {}, "--body": {}, "--body-file": {}, "--milestone": {}, "--label": {}, "--output": {}, "--set": {}, "--branch": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)
@@ -7465,7 +7489,7 @@ func extractTicketIdentifierPositional(args []string, stderr io.Writer) ([]strin
 	cleaned := make([]string, 0, len(args))
 	var identifier ticketIdentifier
 	seen := false
-	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--role": {}, "--profile": {}, "--pr": {}, "--output": {}, "--base": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--role": {}, "--profile": {}, "--pr": {}, "--output": {}, "--base": {}, "--branch": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)
@@ -7543,7 +7567,7 @@ func extractTicketNotePositionals(args []string, stderr io.Writer) ([]string, in
 func extractTitlePositional(args []string, stderr io.Writer) ([]string, string, bool) {
 	cleaned := make([]string, 0, len(args))
 	title := ""
-	valueFlags := map[string]struct{}{"--repo": {}, "--title": {}, "--goal": {}, "--scope": {}, "--acceptance": {}, "--notes": {}, "--body": {}, "--type": {}, "--priority": {}, "--parent": {}, "--milestone": {}, "--label": {}, "--body-file": {}, "--release-impact": {}, "--release-impact-reason": {}, "--objective": {}, "--direction": {}, "--autonomy": {}, "--decomposition": {}, "--quality-bar": {}, "--stop-condition": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--title": {}, "--goal": {}, "--scope": {}, "--acceptance": {}, "--notes": {}, "--body": {}, "--type": {}, "--priority": {}, "--parent": {}, "--milestone": {}, "--label": {}, "--body-file": {}, "--release-impact": {}, "--release-impact-reason": {}, "--objective": {}, "--direction": {}, "--autonomy": {}, "--decomposition": {}, "--quality-bar": {}, "--stop-condition": {}, "--branch": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)
@@ -7999,6 +8023,12 @@ func formatTicketStart(result gira.WorkStartResult) string {
 		fmt.Fprintf(&b, "branch strategy: selection required (suggestion=%s)\n", result.SuggestedBranch)
 	} else if result.BranchStrategy != "" {
 		fmt.Fprintf(&b, "branch strategy: %s\n", result.BranchStrategy)
+	}
+	if strings.TrimSpace(result.BranchSource) != "" {
+		fmt.Fprintf(&b, "branch source: %s\n", result.BranchSource)
+	}
+	if result.SuggestedBranch != "" && result.Branch != "" && result.SuggestedBranch != result.Branch {
+		fmt.Fprintf(&b, "branch advisory: selected %s differs from suggested %s\n", result.Branch, result.SuggestedBranch)
 	}
 	if strings.TrimSpace(result.BaseBranch) != "" {
 		fmt.Fprintf(&b, "base: %s", result.BaseBranch)
@@ -8752,7 +8782,10 @@ func runQueueTake(args []string, stdout io.Writer, stderr io.Writer) int {
 	profileValue := fs.String("profile", gira.AgentPromptProfileDefault, "Handoff profile: default|python")
 	dryRun := fs.Bool("dry-run", false, "Preview ticket start without mutation")
 	apply := fs.Bool("apply", false, "Apply ticket start for a handoff-safe queue item")
+	branch := fs.String("branch", "", "Branch selection: auto|new|current|NAME")
 	create := fs.Bool("create", false, "Create the policy-suggested work branch when required")
+	current := fs.Bool("current", false, "Bind the current work branch without checkout or push")
+	adopt := fs.String("adopt", "", "Bind an existing local or origin work branch without checkout or push")
 	compact := fs.Bool("compact", false, "Print compact text output")
 	maxConcurrency := fs.Int("max-concurrency", 4, "Maximum concurrent repo status fetches")
 	cacheTTL := fs.Duration("cache-ttl", 5*time.Minute, "Reuse recent per-repo status cache for this duration. Use 0 to disable")
@@ -8769,6 +8802,11 @@ func runQueueTake(args []string, stdout io.Writer, stderr io.Writer) int {
 	if *help {
 		fmt.Fprint(stdout, queueHelp)
 		return 0
+	}
+	if strings.TrimSpace(*branch) != "" && (*create || *current || strings.TrimSpace(*adopt) != "") {
+		fmt.Fprintln(stderr, "--branch cannot be combined with --create, --current, or --adopt")
+		fmt.Fprint(stderr, queueHelp)
+		return 2
 	}
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "unexpected argument: %s\n\n", fs.Arg(0))
@@ -8841,7 +8879,7 @@ func runQueueTake(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 2
 	}
-	report, err := queueTakeReport(workspaceReport, repoFilters, *ticket, role, profile, *dryRun, *apply, *create)
+	report, err := queueTakeReport(workspaceReport, repoFilters, *ticket, role, profile, *dryRun, *apply, gira.WorkStartOptions{Branch: *branch, Create: *create, Current: *current, AdoptBranch: *adopt})
 	if *jsonOutput {
 		out, encodeErr := json.MarshalIndent(report, "", "  ")
 		if encodeErr != nil {
@@ -11393,7 +11431,7 @@ func queueExplicitHandoffReport(workspaceReport gira.WorkspaceReport, repoFilter
 	return report, err
 }
 
-func queueTakeReport(workspaceReport gira.WorkspaceReport, repoFilters []string, ticket int, role string, profile string, dryRun bool, apply bool, create bool) (gira.QueueTakeReport, error) {
+func queueTakeReport(workspaceReport gira.WorkspaceReport, repoFilters []string, ticket int, role string, profile string, dryRun bool, apply bool, startOptions gira.WorkStartOptions) (gira.QueueTakeReport, error) {
 	handoff, err := queueHandoffReport(workspaceReport, repoFilters, ticket, role, profile)
 	if err != nil {
 		return gira.BuildQueueTakeReport(handoff, nil, dryRun, apply), err
@@ -11405,7 +11443,8 @@ func queueTakeReport(workspaceReport gira.WorkspaceReport, repoFilters []string,
 	if err != nil {
 		return gira.BuildQueueTakeReport(handoff, nil, dryRun, apply), err
 	}
-	start, err := newWorkStartResultWithOptions(repo, handoff.Selected.Issue, gira.WorkStartOptions{DryRun: dryRun, Create: create})
+	startOptions.DryRun = dryRun
+	start, err := newWorkStartResultWithOptions(repo, handoff.Selected.Issue, startOptions)
 	report := gira.BuildQueueTakeReport(handoff, &start, dryRun, apply)
 	return report, err
 }

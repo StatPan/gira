@@ -143,13 +143,31 @@ func workStartApprovalCommand(result WorkStartResult, canonicalCommand string, m
 	if result.BaseSource == "explicit --base" && result.BaseBranch != "" {
 		args = append(args, "--base", QuoteShellArg(result.BaseBranch))
 	}
-	switch result.BranchStrategy {
-	case "create":
-		args = append(args, "--create")
-	case "current":
-		args = append(args, "--current")
-	case "adopt":
-		args = append(args, "--adopt", QuoteShellArg(result.Branch))
+	selection := strings.TrimSpace(result.BranchSelection)
+	// Auto is useful provenance in the result, but an approval replay must
+	// pin the effective action observed during dry-run so a checkout change
+	// cannot turn a bind into a branch creation (or vice versa).
+	if selection == "auto" {
+		switch result.BranchStrategy {
+		case "create":
+			selection = "new"
+		case "current":
+			selection = "current"
+		case "adopt":
+			selection = result.Branch
+		}
+	}
+	if selection != "" {
+		args = append(args, "--branch", QuoteShellArg(selection))
+	} else {
+		switch result.BranchStrategy {
+		case "create":
+			args = append(args, "--create")
+		case "current":
+			args = append(args, "--current")
+		case "adopt":
+			args = append(args, "--adopt", QuoteShellArg(result.Branch))
+		}
 	}
 	args = append(args, mode)
 	return strings.Join(args, " ")
@@ -541,6 +559,9 @@ func ticketNewApprovalCommand(report TicketNewReport, mode string) string {
 	}
 	if report.Start {
 		args = append(args, "--start")
+		if strings.TrimSpace(report.Branch) != "" {
+			args = append(args, "--branch", QuoteShellArg(report.Branch))
+		}
 	}
 	args = append(args, mode)
 	return strings.Join(args, " ")

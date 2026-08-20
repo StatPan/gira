@@ -14,6 +14,7 @@ const (
 	BranchPolicyModeCustom       = "custom"
 
 	BranchPolicyPRBaseRecordedTicketBase = "recorded_ticket_base"
+	BranchStartModeAuto                  = "auto"
 	BranchStartModeLegacyCreate          = "legacy-create"
 	BranchStartModeExplicit              = "explicit"
 )
@@ -91,7 +92,7 @@ func branchPolicyPreset(mode string, defaultBranch string) (ResolvedBranchPolicy
 			ProductionBase:                  defaultBranch,
 			DefaultTarget:                   "default",
 			FeatureBranchPattern:            "issue/{number}-{slug}",
-			StartMode:                       BranchStartModeLegacyCreate,
+			StartMode:                       BranchStartModeAuto,
 			PreserveStartBase:               true,
 			ForbidImplicitCurrentBranchBase: true,
 			PRBaseSource:                    BranchPolicyPRBaseRecordedTicketBase,
@@ -106,7 +107,7 @@ func branchPolicyPreset(mode string, defaultBranch string) (ResolvedBranchPolicy
 			ProductionBase:                  defaultBranch,
 			DefaultTarget:                   "dev",
 			FeatureBranchPattern:            "issue/{number}-{slug}",
-			StartMode:                       BranchStartModeLegacyCreate,
+			StartMode:                       BranchStartModeAuto,
 			PreserveStartBase:               true,
 			ForbidImplicitCurrentBranchBase: true,
 			PRBaseSource:                    BranchPolicyPRBaseRecordedTicketBase,
@@ -121,7 +122,7 @@ func branchPolicyPreset(mode string, defaultBranch string) (ResolvedBranchPolicy
 			ProductionBase:                  "main",
 			DefaultTarget:                   "dev",
 			FeatureBranchPattern:            "feature/{number}-{slug}",
-			StartMode:                       BranchStartModeLegacyCreate,
+			StartMode:                       BranchStartModeAuto,
 			ReleaseBranchPattern:            "release/*",
 			HotfixBranchPattern:             "hotfix/*",
 			PreserveStartBase:               true,
@@ -138,7 +139,7 @@ func branchPolicyPreset(mode string, defaultBranch string) (ResolvedBranchPolicy
 			ProductionBase:                  defaultBranch,
 			DefaultTarget:                   "dev",
 			FeatureBranchPattern:            "issue/{number}-{slug}",
-			StartMode:                       BranchStartModeLegacyCreate,
+			StartMode:                       BranchStartModeAuto,
 			ReleaseBranchPattern:            "release/*",
 			PreserveStartBase:               true,
 			ForbidImplicitCurrentBranchBase: true,
@@ -154,7 +155,7 @@ func branchPolicyPreset(mode string, defaultBranch string) (ResolvedBranchPolicy
 			ProductionBase:                  defaultBranch,
 			DefaultTarget:                   "default",
 			FeatureBranchPattern:            "issue/{number}-{slug}",
-			StartMode:                       BranchStartModeLegacyCreate,
+			StartMode:                       BranchStartModeAuto,
 			PreserveStartBase:               true,
 			ForbidImplicitCurrentBranchBase: true,
 			PRBaseSource:                    BranchPolicyPRBaseRecordedTicketBase,
@@ -245,8 +246,8 @@ func validateResolvedBranchPolicy(policy ResolvedBranchPolicy) error {
 	if strings.TrimSpace(policy.PRBaseSource) != BranchPolicyPRBaseRecordedTicketBase {
 		return fmt.Errorf("branch_policy pr_base_source must be %q", BranchPolicyPRBaseRecordedTicketBase)
 	}
-	if policy.StartMode != BranchStartModeLegacyCreate && policy.StartMode != BranchStartModeExplicit {
-		return fmt.Errorf("branch_policy start_mode must be %q or %q", BranchStartModeLegacyCreate, BranchStartModeExplicit)
+	if policy.StartMode != BranchStartModeAuto && policy.StartMode != BranchStartModeLegacyCreate && policy.StartMode != BranchStartModeExplicit {
+		return fmt.Errorf("branch_policy start_mode must be %q, %q, or %q", BranchStartModeAuto, BranchStartModeLegacyCreate, BranchStartModeExplicit)
 	}
 	for key, value := range policy.Targets {
 		if strings.TrimSpace(key) == "" {

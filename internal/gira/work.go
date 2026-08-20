@@ -32,6 +32,8 @@ type WorkStartResult struct {
 	BaseSource        string                     `json:"base_source,omitempty"`
 	PolicyMode        string                     `json:"branch_policy_mode,omitempty"`
 	BranchStrategy    string                     `json:"branch_strategy,omitempty"`
+	BranchSource      string                     `json:"branch_source,omitempty"`
+	BranchSelection   string                     `json:"branch_selection,omitempty"`
 	SuggestedBranch   string                     `json:"suggested_branch,omitempty"`
 	SelectionRequired bool                       `json:"selection_required,omitempty"`
 	DryRun            bool                       `json:"dry_run"`
@@ -68,9 +70,13 @@ func EnsureWorkStartResultSchema(result *WorkStartResult) {
 type WorkStartOptions struct {
 	DryRun       bool
 	BaseOverride string
-	Create       bool
-	Current      bool
-	AdoptBranch  string
+	// Branch accepts auto, new, current, or an existing branch name. The
+	// legacy Create/Current/AdoptBranch fields remain supported for callers
+	// compiled against the pre-unified interface.
+	Branch      string
+	Create      bool
+	Current     bool
+	AdoptBranch string
 }
 
 type WorkPRResult struct {
@@ -146,6 +152,8 @@ type TicketStatusBranchPolicy struct {
 	RecordedBase       string   `json:"recorded_base,omitempty"`
 	RecordedBaseSource string   `json:"recorded_base_source,omitempty"`
 	PolicyMode         string   `json:"policy_mode,omitempty"`
+	StartMode          string   `json:"start_mode,omitempty"`
+	BranchStrategy     string   `json:"branch_strategy,omitempty"`
 	WorkBranch         string   `json:"work_branch,omitempty"`
 	WorkBranchSource   string   `json:"work_branch_source,omitempty"`
 	ActualPRBase       string   `json:"actual_pr_base,omitempty"`
@@ -206,7 +214,18 @@ type ticketStartBaseResolution struct {
 
 func resolveTicketStartBase(repo RepoRef, issue devStartIssue, explicitBase string, runner CommandRunner) (ticketStartBaseResolution, error) {
 	if base := strings.TrimSpace(explicitBase); base != "" {
-		return ticketStartBaseResolution{BaseBranch: base, BaseSource: "explicit --base", Target: "override"}, nil
+		policy, err := resolveRepoBranchPolicy(repo, runner)
+		if err != nil {
+			return ticketStartBaseResolution{}, err
+		}
+		return ticketStartBaseResolution{
+			BaseBranch:           base,
+			BaseSource:           "explicit --base",
+			PolicyMode:           policy.Mode,
+			Target:               "override",
+			FeatureBranchPattern: configuredFeatureBranchPattern(policy),
+			StartMode:            policy.StartMode,
+		}, nil
 	}
 	recorded := ParseTicketLifecycleState(issue.Body)
 	if strings.TrimSpace(recorded.BaseBranch) != "" {
@@ -214,7 +233,11 @@ func resolveTicketStartBase(repo RepoRef, issue devStartIssue, explicitBase stri
 		if source == "" {
 			source = "recorded_ticket_base"
 		}
-		return ticketStartBaseResolution{BaseBranch: strings.TrimSpace(recorded.BaseBranch), BaseSource: source, PolicyMode: recorded.BranchPolicyMode, Target: recorded.Target, WorkBranch: strings.TrimSpace(recorded.WorkBranch), WorkBranchSource: strings.TrimSpace(recorded.WorkBranchSource), StartMode: BranchStartModeLegacyCreate}, nil
+		startMode := strings.TrimSpace(recorded.StartMode)
+		if startMode == "" {
+			startMode = BranchStartModeLegacyCreate
+		}
+		return ticketStartBaseResolution{BaseBranch: strings.TrimSpace(recorded.BaseBranch), BaseSource: source, PolicyMode: recorded.BranchPolicyMode, Target: recorded.Target, WorkBranch: strings.TrimSpace(recorded.WorkBranch), WorkBranchSource: strings.TrimSpace(recorded.WorkBranchSource), StartMode: startMode}, nil
 	}
 	policy, err := resolveRepoBranchPolicy(repo, runner)
 	if err != nil {
@@ -242,7 +265,11 @@ func resolveTicketPRBase(repo RepoRef, issue devStartIssue, runner CommandRunner
 		if source == "" {
 			source = "recorded_ticket_base"
 		}
-		return ticketStartBaseResolution{BaseBranch: strings.TrimSpace(recorded.BaseBranch), BaseSource: source, PolicyMode: recorded.BranchPolicyMode, Target: recorded.Target, WorkBranch: strings.TrimSpace(recorded.WorkBranch), WorkBranchSource: strings.TrimSpace(recorded.WorkBranchSource), StartMode: BranchStartModeLegacyCreate}, nil
+		startMode := strings.TrimSpace(recorded.StartMode)
+		if startMode == "" {
+			startMode = BranchStartModeLegacyCreate
+		}
+		return ticketStartBaseResolution{BaseBranch: strings.TrimSpace(recorded.BaseBranch), BaseSource: source, PolicyMode: recorded.BranchPolicyMode, Target: recorded.Target, WorkBranch: strings.TrimSpace(recorded.WorkBranch), WorkBranchSource: strings.TrimSpace(recorded.WorkBranchSource), StartMode: startMode}, nil
 	}
 	policy, err := resolveRepoBranchPolicy(repo, runner)
 	if err != nil {
@@ -410,6 +437,9 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
+	if strings.TrimSpace(options.Branch) != "" && countWorkStartLegacyStrategies(options) > 0 {
+		return WorkStartResult{}, fmt.Errorf("--branch cannot be combined with --create, --current, or --adopt")
+	}
 	issue, err := fetchDevIssue(repo, issueNumber, runner)
 	if err != nil {
 		return WorkStartResult{}, err
@@ -476,7 +506,8 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 		Checks:          map[string]bool{"issue_exists": true, "issue_open": true, "ready_label": true},
 		ExecutionState:  WorkStartExecutionBlockedBeforeMutation,
 	}
-	if base.WorkBranch == "" && base.StartMode == BranchStartModeExplicit && !options.Create && !options.Current && strings.TrimSpace(options.AdoptBranch) == "" {
+	result.BranchSelection = strings.TrimSpace(options.Branch)
+	if base.WorkBranch == "" && base.StartMode == BranchStartModeExplicit && strings.TrimSpace(options.Branch) == "" && !options.Create && !options.Current && strings.TrimSpace(options.AdoptBranch) == "" {
 		result.BranchStrategy = "selection-required"
 		result.SelectionRequired = true
 		result.NextStep = explicitBranchSelectionNextStep(repo.FullName(), issueNumber)
@@ -484,9 +515,14 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 			result.ExecutionState = WorkStartExecutionPlanned
 			return result, nil
 		}
-		return result, fmt.Errorf("branch strategy is required: choose --create, --current, or --adopt BRANCH")
+		return result, fmt.Errorf("branch strategy is required: choose --branch auto|new|current|NAME, or --create, --current, or --adopt BRANCH")
 	}
-	if options.Current || strings.TrimSpace(options.AdoptBranch) != "" {
+
+	strategy, selection, err := resolveWorkStartStrategy(options, base, runner)
+	if err != nil {
+		return result, err
+	}
+	if strategy == "current" || strategy == "adopt" || strategy == "new" || strategy == "auto" {
 		if err := validateRemoteBranchExists("origin", base.BaseBranch, runner); err != nil {
 			return result, err
 		}
@@ -495,8 +531,8 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 
 	var start DevStartResult
 	branchSource := strings.TrimSpace(base.WorkBranchSource)
-	switch {
-	case options.Current:
+	switch strategy {
+	case "current":
 		branch, err := currentWorkBranch(runner)
 		if err != nil {
 			return result, err
@@ -505,21 +541,24 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 			return result, err
 		}
 		result.Branch = branch
-		result.BranchStrategy = "current"
+		result.BranchStrategy = strategy
+		result.BranchSelection = selection
+		result.BranchSource = "current"
 		branchSource = "current"
-	case strings.TrimSpace(options.AdoptBranch) != "":
+	case "adopt":
 		branch := strings.TrimSpace(options.AdoptBranch)
+		if branch == "" {
+			branch = strings.TrimSpace(options.Branch)
+		}
 		if err := validateAdoptedWorkBranch(branch, base.BaseBranch, runner, true); err != nil {
 			return result, err
 		}
 		result.Branch = branch
-		result.BranchStrategy = "adopt"
+		result.BranchStrategy = strategy
+		result.BranchSelection = selection
+		result.BranchSource = "adopted"
 		branchSource = "adopted"
 	default:
-		strategy := "legacy-create"
-		if options.Create {
-			strategy = "create"
-		}
 		start, err = StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: pattern, Branch: base.WorkBranch, Base: base.BaseBranch, DryRun: options.DryRun, Force: alreadyStarted, RequireCleanWorktree: true}, runner)
 		result.Title = start.Title
 		result.Branch = start.Branch
@@ -528,6 +567,8 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 		result.BranchReuse = start.BranchReuse
 		result.Preflight = start.Preflight
 		result.BranchStrategy = strategy
+		result.BranchSelection = selection
+		result.BranchSource = "generated"
 		if branchSource == "" {
 			branchSource = "generated"
 		}
@@ -550,6 +591,8 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 		BaseBranch:       base.BaseBranch,
 		BaseSource:       base.BaseSource,
 		BranchPolicyMode: base.PolicyMode,
+		StartMode:        base.StartMode,
+		BranchStrategy:   result.BranchStrategy,
 		Target:           base.Target,
 		WorkBranch:       result.Branch,
 		WorkBranchSource: branchSource,
@@ -572,6 +615,10 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 }
 
 func countWorkStartStrategies(options WorkStartOptions) int {
+	return countWorkStartLegacyStrategies(options)
+}
+
+func countWorkStartLegacyStrategies(options WorkStartOptions) int {
 	count := 0
 	if options.Create {
 		count++
@@ -583,6 +630,70 @@ func countWorkStartStrategies(options WorkStartOptions) int {
 		count++
 	}
 	return count
+}
+
+// resolveWorkStartStrategy resolves both the unified --branch spelling and
+// the compatibility flags. It deliberately decides auto before any branch
+// mutation, so a non-base checkout is only bound and a base/detached checkout
+// is safely created from the recorded remote base.
+func resolveWorkStartStrategy(options WorkStartOptions, base ticketStartBaseResolution, runner CommandRunner) (string, string, error) {
+	requested := strings.TrimSpace(options.Branch)
+	if requested != "" {
+		switch strings.ToLower(requested) {
+		case "auto":
+			current, err := currentWorkBranchOptional(runner)
+			if err != nil {
+				return "", "", err
+			}
+			if current != "" && current != strings.TrimSpace(base.BaseBranch) {
+				if err := validateAdoptedWorkBranch(current, base.BaseBranch, runner, false); err != nil {
+					return "", "", err
+				}
+				return "current", "auto", nil
+			}
+			return "create", "auto", nil
+		case "new":
+			return "create", "new", nil
+		case "current":
+			return "current", "current", nil
+		default:
+			return "adopt", requested, nil
+		}
+	}
+	if options.Current {
+		return "current", "", nil
+	}
+	if strings.TrimSpace(options.AdoptBranch) != "" {
+		return "adopt", "", nil
+	}
+	if options.Create {
+		return "create", "", nil
+	}
+	// A recorded work branch is authoritative for retries. Legacy configs
+	// retain their historical create/reuse behavior; new presets default to
+	// automatic selection.
+	if strings.TrimSpace(base.WorkBranch) != "" || base.StartMode == BranchStartModeLegacyCreate {
+		return "create", "", nil
+	}
+	current, err := currentWorkBranchOptional(runner)
+	if err != nil {
+		return "", "", err
+	}
+	if current != "" && current != strings.TrimSpace(base.BaseBranch) {
+		if err := validateAdoptedWorkBranch(current, base.BaseBranch, runner, false); err != nil {
+			return "", "", err
+		}
+		return "current", "auto", nil
+	}
+	return "create", "auto", nil
+}
+
+func currentWorkBranchOptional(runner CommandRunner) (string, error) {
+	output, err := runner.Run("git", "branch", "--show-current")
+	if err != nil {
+		return "", fmt.Errorf("read current work branch: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
 }
 
 func currentWorkBranch(runner CommandRunner) (string, error) {
@@ -625,7 +736,7 @@ func validateAdoptedWorkBranch(branch string, base string, runner CommandRunner,
 }
 
 func explicitBranchSelectionNextStep(repo string, issue int) string {
-	return fmt.Sprintf("choose a branch strategy: gira ticket start %d --repo %s --create --apply, --current --apply, or --adopt BRANCH --apply", issue, repo)
+	return fmt.Sprintf("choose a branch strategy (auto, new, current, or NAME); default: gira ticket start %d --repo %s --branch auto --apply", issue, repo)
 }
 
 func blockedWorkStartNextStep(repo string, issue int, preflight *DevStartWorktreePreflight) string {
@@ -906,6 +1017,8 @@ func ticketStatusBranchPolicy(issue devStartIssue, pr DevPRStatusResult) *Ticket
 		RecordedBase:       strings.TrimSpace(state.BaseBranch),
 		RecordedBaseSource: strings.TrimSpace(state.BaseSource),
 		PolicyMode:         strings.TrimSpace(state.BranchPolicyMode),
+		StartMode:          strings.TrimSpace(state.StartMode),
+		BranchStrategy:     strings.TrimSpace(state.BranchStrategy),
 		WorkBranch:         strings.TrimSpace(state.WorkBranch),
 		WorkBranchSource:   strings.TrimSpace(state.WorkBranchSource),
 		ActualPRBase:       strings.TrimSpace(pr.Binding.BaseRef),

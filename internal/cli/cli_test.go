@@ -3447,6 +3447,38 @@ func TestTicketStartDryRunJSON(t *testing.T) {
 	}
 }
 
+func TestTicketStartUnifiedBranchSelectionReachesResolver(t *testing.T) {
+	restore := newWorkStartResultWithOptions
+	t.Cleanup(func() { newWorkStartResultWithOptions = restore })
+	newWorkStartResultWithOptions = func(repo gira.RepoRef, issue int, options gira.WorkStartOptions) (gira.WorkStartResult, error) {
+		if issue != 126 || options.Branch != "current" || !options.DryRun {
+			t.Fatalf("unexpected unified branch options: %+v", options)
+		}
+		return gira.WorkStartResult{Repo: repo.FullName(), Issue: issue, Branch: "team/work", BranchStrategy: "current", BranchSource: "current", DryRun: true, NextStatus: "In progress"}, nil
+	}
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"ticket", "start", "126", "--repo", "StatPan/gira", "--branch", "current", "--dry-run", "--json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"branch_strategy": "current"`) {
+		t.Fatalf("unified branch result missing: %s", stdout.String())
+	}
+}
+
+func TestTicketStartUnifiedBranchConflictsBeforeResolver(t *testing.T) {
+	called := false
+	restore := newWorkStartResultWithOptions
+	t.Cleanup(func() { newWorkStartResultWithOptions = restore })
+	newWorkStartResultWithOptions = func(repo gira.RepoRef, issue int, options gira.WorkStartOptions) (gira.WorkStartResult, error) {
+		called = true
+		return gira.WorkStartResult{}, nil
+	}
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"ticket", "start", "126", "--repo", "StatPan/gira", "--branch", "auto", "--create", "--dry-run"}, &stdout, &stderr); code != 2 || called || !strings.Contains(stderr.String(), "cannot be combined") {
+		t.Fatalf("conflict was not rejected before resolver: code=%d called=%t stderr=%s", code, called, stderr.String())
+	}
+}
+
 func TestTicketStartTextShowsSafeBranchReuseDiagnostics(t *testing.T) {
 	restore := newWorkStartResult
 	t.Cleanup(func() { newWorkStartResult = restore })

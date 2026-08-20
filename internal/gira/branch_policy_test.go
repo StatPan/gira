@@ -152,7 +152,7 @@ func TestResolveBranchPolicyRejectsUnknownPRBaseSource(t *testing.T) {
 
 func TestResolveBranchPolicyStartModeDefaultsAndValidates(t *testing.T) {
 	policy, err := ResolveBranchPolicy(nil, "main")
-	if err != nil || policy.StartMode != BranchStartModeLegacyCreate {
+	if err != nil || policy.StartMode != BranchStartModeAuto {
 		t.Fatalf("default start mode = %+v err=%v", policy, err)
 	}
 	policy, err = ResolveBranchPolicy(&BranchPolicyConfig{StartMode: BranchStartModeExplicit}, "main")

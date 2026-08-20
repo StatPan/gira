@@ -6,7 +6,7 @@ Use Gira for the issue to branch to PR to merge lifecycle. Raw `gh` remains the 
 
 ```bash
 gira ticket new "TITLE" --goal "GOAL" --acceptance "a;b;c" --apply
-gira ticket start TICKET --create --apply
+gira ticket start TICKET --apply
 gira ticket new --title "TITLE" --body-file issue.md --dry-run
 gira ticket new --title "TITLE" --body-file - --apply < issue.md
 gira ticket list --state open --label status:ready --limit 20
@@ -27,7 +27,7 @@ gira ticket finish --apply
 ## Existing Issue
 
 ```bash
-gira ticket start 42 --create --apply
+gira ticket start 42 --apply
 gira ticket pr --apply --draft
 gira ticket view
 gira ticket review --diff-summary

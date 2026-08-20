@@ -1518,14 +1518,14 @@ Documented in: `docs/workspace.md`, `docs/agent-handoff-queue.md`, `docs-site/ag
 
 ## `queue take`
 
-Start a handoff-safe queue item through the existing ticket start policy.
+Take a safe queue item and start its ticket.
 
 Discovery tier: `advanced_orchestration`.
 
 Usage:
 
 ```bash
-gira queue take [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] --dry-run|--apply [--json]
+gira queue take [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--branch auto|new|current|NAME] [--create|--current|--adopt BRANCH] [--compact] --dry-run|--apply [--json]
 ```
 
 Since: `v2.1.0`
@@ -1537,6 +1537,10 @@ Flags:
 - `--ticket`: Explicit ticket number. Without it, take uses queue next selection.
 - `--role`: Handoff role: planner, implementer, or reviewer. Default: implementer.
 - `--profile`: Handoff profile: default or python. Default: default.
+- `--branch`: Branch selection passed to ticket start: auto, new, current, or an existing branch.
+- `--create`: Compatibility spelling for --branch new.
+- `--current`: Compatibility spelling for --branch current.
+- `--adopt`: Compatibility spelling for --branch NAME.
 - `--compact`: Print compact text output.
 - `--dry-run`: Preview selection, worker handoff, and ticket start without mutation.
 - `--apply`: Start only a handoff-safe and worker-ready queue item.
@@ -2145,7 +2149,7 @@ Compatibility aliases: `gira new`, `gira t new`, `gira t n`.
 Usage:
 
 ```bash
-gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact MODE] [--start]
+gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact MODE] [--start] [--branch auto|new|current|NAME]
 ```
 
 Since: `v1.0.0`
@@ -2163,6 +2167,7 @@ Flags:
 - `--release-impact`: Release impact: user-facing, internal, or exempt.
 - `--release-impact-reason`: Reason required for exempt.
 - `--start`: Start the created ticket after apply.
+- `--branch`: Branch selection for --start: auto, new, current, or an existing local/origin branch.
 
 Examples:
 
@@ -2402,7 +2407,7 @@ Documented in: `docs-site/ticket-workflow.md`, `docs-site/command-reference.md`,
 
 ## `ticket start`
 
-Start a ready issue with an explicit branch strategy.
+Start a ready issue with branch selection.
 
 Discovery tier: `managed_delivery`.
 
@@ -2411,7 +2416,7 @@ Compatibility aliases: `gira start`.
 Usage:
 
 ```bash
-gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--create|--current|--adopt BRANCH]
+gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--branch auto|new|current|NAME] [--create|--current|--adopt BRANCH]
 ```
 
 Since: `v1.0.0`
@@ -2419,6 +2424,7 @@ Since: `v1.0.0`
 Flags:
 
 - `--base`: Explicit lifecycle base branch override recorded on the ticket.
+- `--branch`: Select auto, new, current, or an existing local/origin branch. Without it, the repository auto policy is used.
 - `--create`: Create the policy-suggested work branch.
 - `--current`: Bind the current branch without checkout or push.
 - `--adopt`: Bind an existing local or origin branch without checkout or push.
@@ -2426,10 +2432,16 @@ Flags:
 
 Examples:
 
-- Create the suggested branch for a ready issue
+- Start with the automatic branch policy
 
 ```bash
-gira ticket start 42 --create --apply
+gira ticket start 42 --apply
+```
+
+- Bind a named existing branch
+
+```bash
+gira ticket start 42 --branch team/work --apply
 ```
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`

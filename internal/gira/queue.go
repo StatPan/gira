@@ -344,7 +344,11 @@ func QueueTakeApprovalEvidence(report QueueTakeReport) *ApprovalEvidence {
 		{Action: "ticket_start:delegate", Target: fmt.Sprintf("%s#%d", item.Repo, item.Issue), Detail: "use ticket start branch and status policy"},
 	}
 	if report.StartResult != nil && strings.TrimSpace(report.StartResult.Branch) != "" {
-		actions = append(actions, ApprovalPlannedAction{Action: "branch:create_or_reuse", Target: report.StartResult.Branch, Detail: "planned by ticket start"})
+		action := "branch:create_or_reuse"
+		if report.StartResult.BranchStrategy == "current" || report.StartResult.BranchStrategy == "adopt" {
+			action = "branch:bind"
+		}
+		actions = append(actions, ApprovalPlannedAction{Action: action, Target: report.StartResult.Branch, Detail: "planned by ticket start"})
 	}
 	return &ApprovalEvidence{
 		SchemaVersion:         ApprovalPlanSchemaVersion,
@@ -364,8 +368,27 @@ func QueueTakeApprovalEvidence(report QueueTakeReport) *ApprovalEvidence {
 
 func queueTakeCommandForStart(item WorkspaceQueueItem, role string, profile string, mode string, start *WorkStartResult) string {
 	command := QueueTakeCommand(item, role, profile, "")
-	if start != nil && start.BranchStrategy == "create" {
-		command += " --create"
+	if start != nil {
+		if selection := strings.TrimSpace(start.BranchSelection); selection != "" {
+			effective := selection
+			if effective == "auto" {
+				switch start.BranchStrategy {
+				case "create":
+					effective = "new"
+				case "current":
+					effective = "current"
+				case "adopt":
+					effective = start.Branch
+				}
+			}
+			command += " --branch " + QuoteShellArg(effective)
+		} else if start.BranchStrategy == "create" {
+			command += " --create"
+		} else if start.BranchStrategy == "current" {
+			command += " --current"
+		} else if start.BranchStrategy == "adopt" && strings.TrimSpace(start.Branch) != "" {
+			command += " --adopt " + QuoteShellArg(start.Branch)
+		}
 	}
 	if strings.TrimSpace(mode) != "" {
 		command += " " + strings.TrimSpace(mode)
@@ -648,7 +671,7 @@ func FormatQueueTake(report QueueTakeReport, compact bool) string {
 	fmt.Fprintf(&b, "title: %s\n", item.Title)
 	fmt.Fprintf(&b, "handoff command: %s\n", report.Handoff.HandoffCommand)
 	if report.StartResult != nil {
-		fmt.Fprintf(&b, "ticket start: branch=%s status=%s next=%s\n", report.StartResult.Branch, report.StartResult.NextStatus, report.StartResult.NextStep)
+		fmt.Fprintf(&b, "ticket start: branch=%s strategy=%s source=%s status=%s next=%s\n", report.StartResult.Branch, report.StartResult.BranchStrategy, report.StartResult.BranchSource, report.StartResult.NextStatus, report.StartResult.NextStep)
 	}
 	fmt.Fprintf(&b, "run command: %s\n", report.Handoff.RunCommand)
 	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)

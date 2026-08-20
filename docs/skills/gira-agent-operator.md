@@ -33,13 +33,9 @@ change units, and milestones phase boundaries.
      required labels, doctor impact, or evidence expectations before starting
      implementation.
 2. Start ticket.
-   - Choose `--create`, `--current`, or `--adopt BRANCH`; dry-run first.
-   - Apply only the previewed strategy.
+   - Auto default; use `--branch VALUE` for a deterministic choice; dry-run first.
    - Use one feature branch per issue.
-   - After checkout, prefer current-branch commands without ticket or PR
-     numbers. Use explicit `--ticket`, `--pr`, and `--repo` only for detached
-     context, ambiguous branch state, other-person PR review, or historical
-     audit.
+   - After checkout, infer ticket context; pass explicit IDs only outside it.
 3. Implement bounded scope.
    - Keep changes limited to the issue goal and acceptance criteria.
    - For feature or workflow changes, record the intended doctor impact in the
@@ -81,13 +77,13 @@ change units, and milestones phase boundaries.
 
 This generated section contains command facts for the agent lifecycle. Update `internal/gira/command_registry.go` first, then refresh this block.
 
-- `gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact MODE] [--start]`: Create a repo-bound executable GitHub issue with structured or full Markdown body input.
+- `gira ticket new "Title" --dry-run|--apply [--parent N] [--body TEXT|--body-file PATH|-] [--release-impact MODE] [--start] [--branch auto|new|current|NAME]`: Create a repo-bound executable GitHub issue with structured or full Markdown body input.
 - `gira ticket parent TICKET [--set PARENT|--clear] [--dry-run|--apply] [--repo OWNER/REPO] [--json]`: Show, set, or clear a native GitHub sub-issue parent without adding a separate link command family.
 - `gira ticket view|show [TICKET] [--repo OWNER/REPO] [--json]`: Show a Gira operating card for the ticket, linked PR, blockers, and next action. Alias: gira ticket show.
 - `gira ticket prompt [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--pr N] [--json]`: Render a stateless planner, implementer, or reviewer prompt from ticket context.
 - `gira ticket handoff [TICKET] [planner|implementer|reviewer] [--role planner|implementer|reviewer] [--profile default|python] [--repo OWNER/REPO] [--json]`: Compile a worker-neutral handoff packet from ticket context.
 - `gira ticket review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] [--include-diff] [--json|--html --output PATH]`: Render a reviewer packet from current ticket and linked PR state.
-- `gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--create|--current|--adopt BRANCH]`: Start a ready issue with an explicit branch strategy.
+- `gira ticket start [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--base BRANCH] [--branch auto|new|current|NAME] [--create|--current|--adopt BRANCH]`: Start a ready issue with branch selection.
 - `gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft]`: Create or validate a linked PR with required issue closing text.
 - `gira ticket self-review [TICKET] [--repo OWNER/REPO] [--pr N] [--diff-summary] --dry-run|--apply [--json]`: Post a self-review check note for the current branch ticket and linked PR.
 - `gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both]`: Post a structured context note to the issue, linked PR, or both.
@@ -118,7 +114,7 @@ This generated section contains command facts for the agent lifecycle. Update `i
 - `gira queue handoff [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] [--json]`: Select or inspect an agent-ready workspace queue item and embed the worker-handoff/v1 payload.
 - `gira queue list [--config .gira/config.yaml] [--repo OWNER/REPO] [--queue ready|review|finish|blocked|failed|human] [--limit N] [--compact] [--json]`: List workspace queue items derived from workspace-queues/v1.
 - `gira queue next [--config .gira/config.yaml] [--repo OWNER/REPO] [--role implementer] [--profile default] [--compact] [--json]`: Select the first agent-ready workspace queue item and print handoff and run-start commands.
-- `gira queue take [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--compact] --dry-run|--apply [--json]`: Start a handoff-safe queue item through the existing ticket start policy.
+- `gira queue take [--config .gira/config.yaml] [--repo OWNER/REPO] [--ticket N] [--role implementer] [--profile default] [--branch auto|new|current|NAME] [--create|--current|--adopt BRANCH] [--compact] --dry-run|--apply [--json]`: Take a safe queue item and start its ticket.
 
 <!-- gira:agent-skill:end -->
 

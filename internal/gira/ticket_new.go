@@ -25,6 +25,7 @@ type TicketNewInput struct {
 	ReleaseImpactReason string   `json:"release_impact_reason,omitempty"`
 	BodyFile            string   `json:"body_file,omitempty"`
 	Start               bool     `json:"start"`
+	Branch              string   `json:"branch,omitempty"`
 	DryRun              bool     `json:"dry_run"`
 }
 
@@ -49,6 +50,7 @@ type TicketNewReport struct {
 	Title           string                `json:"title"`
 	DryRun          bool                  `json:"dry_run"`
 	Start           bool                  `json:"start"`
+	Branch          string                `json:"branch,omitempty"`
 	Type            string                `json:"type,omitempty"`
 	Priority        string                `json:"priority,omitempty"`
 	Parent          int                   `json:"parent,omitempty"`
@@ -105,6 +107,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		Title:           input.Title,
 		DryRun:          input.DryRun,
 		Start:           input.Start,
+		Branch:          strings.TrimSpace(input.Branch),
 		Type:            ticketType,
 		Priority:        priority,
 		Parent:          input.Parent,
@@ -138,8 +141,8 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		policy = resolved
 	}
 	if input.Start {
-		if policy.StartMode == BranchStartModeExplicit {
-			report.NextStep = "create the ticket, then choose `gira ticket start <ticket> --create|--current|--adopt BRANCH --apply`"
+		if policy.StartMode == BranchStartModeExplicit && strings.TrimSpace(input.Branch) == "" {
+			report.NextStep = "create the ticket, then run `gira ticket start <ticket> --branch auto --apply` (or choose new, current, or NAME)"
 			if !input.DryRun {
 				return report, fmt.Errorf("--start is not available when branch_policy.start_mode is explicit; create the ticket first, then choose a ticket start branch strategy")
 			}
@@ -155,7 +158,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		return report, err
 	}
 	report.Created = created
-	report.NextStep = ticketNewStartNextStep(created.Number, policy.StartMode)
+	report.NextStep = ticketNewStartNextStep(created.Number, policy.StartMode, input.Branch)
 	createdIssue, err := fetchDevIssue(input.Repo, created.Number, runner)
 	if err != nil {
 		return report, fmt.Errorf("verify created issue labels: %w", err)
@@ -180,7 +183,7 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 		}
 	}
 	if input.Start && report.LabelOutcome.Status != "warning" {
-		start, err := StartWork(input.Repo, created.Number, false, runner)
+		start, err := StartWorkWithOptions(input.Repo, created.Number, WorkStartOptions{Branch: input.Branch}, runner)
 		report.StartResult = start
 		if err != nil {
 			return report, err
@@ -190,9 +193,12 @@ func BuildTicketNewReport(input TicketNewInput, runner CommandRunner) (TicketNew
 	return report, nil
 }
 
-func ticketNewStartNextStep(issue int, startMode string) string {
+func ticketNewStartNextStep(issue int, startMode string, branch string) string {
+	if strings.TrimSpace(branch) != "" {
+		return fmt.Sprintf("gira ticket start %d --branch %s --apply", issue, QuoteShellArg(strings.TrimSpace(branch)))
+	}
 	if startMode == BranchStartModeExplicit {
-		return fmt.Sprintf("gira ticket start %d --create --apply", issue)
+		return fmt.Sprintf("gira ticket start %d --branch auto --apply", issue)
 	}
 	return fmt.Sprintf("gira ticket start %d --apply", issue)
 }

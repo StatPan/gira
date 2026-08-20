@@ -1,8 +1,7 @@
 # Branch Policy Contract
 
 This document defines the branch policy contract for Gira ticket lifecycle
-commands. Config schema and preset loading are implemented; lifecycle command
-behavior is being delivered in the follow-up slices listed below.
+commands, including automatic branch selection and the explicit opt-in mode.
 
 Gira should not make users repeat low-level `gh` or `git` branch flags at every
 step. The Gira-native value is to resolve branch intent once, record it as
@@ -83,7 +82,7 @@ Supported fields:
 | `production_base` | Production branch, commonly `main`. |
 | `default_target` | Named target used when no explicit lifecycle target is provided. |
 | `feature_branch_pattern` | Pattern for feature branch names. |
-| `start_mode` | `legacy-create` preserves automatic creation; `explicit` requires a branch strategy. |
+| `start_mode` | `auto` selects a safe branch automatically; `explicit` requires a branch selection; `legacy-create` is a compatibility value for historical automatic creation. |
 | `release_branch_pattern` | Pattern for release branch names. |
 | `hotfix_branch_pattern` | Pattern for hotfix branch names. |
 | `preserve_start_base` | Whether `ticket start` should preserve the resolved base. |
@@ -98,11 +97,23 @@ Gira records the rendered branch as ticket lifecycle `work_branch` for context,
 but a valid non-default branch may still open or back an unambiguous PR with a
 closing reference. Naming differences are reported as advisories.
 
-With `start_mode: explicit`, choose a strategy before applying: `--create`
-creates the suggested name, `--current` records the checked-out branch, and
-`--adopt BRANCH` records an existing local or origin branch. The bind paths do
-not checkout, rename, or push. Existing policies that omit `start_mode` retain
-`legacy-create` compatibility.
+The default `start_mode: auto` keeps everyday starts short. With no branch
+option, Gira validates the resolved base and then creates the suggested branch
+when the checkout is on that base (or detached); from an existing non-base
+checkout it records the current branch without checkout, rename, or push. It
+never binds the resolved base as a work branch. The selected strategy and
+source are visible in dry-run JSON/text (`branch_strategy`, `branch_source`),
+and a non-default name remains an advisory mismatch rather than an error.
+
+Use one unified option when you need deterministic behavior:
+`--branch auto|new|current|NAME`. `--branch NAME` adopts an existing local or
+origin branch. The compatibility spellings `--create`, `--current`, and
+`--adopt BRANCH` remain supported, but cannot be combined with `--branch`.
+
+Set `start_mode: explicit` when a repository intentionally requires a human or
+agent to choose a strategy. Strategy-less apply then stops before mutation with
+an actionable command; `--branch auto`, `new`, `current`, or `NAME` is still
+accepted as an explicit choice.
 
 Before `ticket pr` pushes a branch or creates a PR, Gira verifies that the
 recorded base exists on `origin`; a missing configured base fails before any
@@ -131,6 +142,7 @@ Minimal `github-flow` shape:
 ```yaml
 branch_policy:
   mode: github-flow
+  start_mode: auto
 ```
 
 Explicit `github-flow` shape:
@@ -216,8 +228,8 @@ local checkout state for branch base selection.
 The resolved base branch must be recorded in a place that ticket lifecycle
 commands can read without depending on the current shell or local checkout.
 
-The first implementation slice should decide the exact storage surface, but the
-recorded state must support these properties:
+The managed issue-body lifecycle block is the durable storage surface, and the
+recorded state supports these properties:
 
 - It is tied to the ticket, not only the local branch.
 - It survives command reruns and new shells.
@@ -225,9 +237,7 @@ recorded state must support these properties:
 - It is visible in `ticket status --json`.
 - It can be surfaced in reviewer packets and doctor diagnostics.
 
-Candidate storage surfaces include a structured marker in the issue body, a
-managed issue comment, or a Gira-specific lifecycle metadata block. Local
-`.git/config` may be useful as a cache, but it cannot be the sole source of
+Local `.git/config` may be useful as a cache, but it cannot be the sole source of
 truth because Gira operates across machines and agents.
 
 ## Command Contract

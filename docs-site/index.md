@@ -67,7 +67,7 @@ gh auth status
 gira init --repo OWNER/REPO --path . --dry-run
 gira adopt repo --repo OWNER/REPO --path . --dry-run
 gira ticket new "TITLE" --goal "GOAL" --acceptance "done criteria" --apply
-gira ticket start TICKET --create --apply
+gira ticket start TICKET --apply
 gira ticket pr --apply --draft
 gira ticket checks
 gira ticket wait --timeout 5m

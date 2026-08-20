@@ -225,6 +225,8 @@ func repoRegistryEntriesEqual(a GlobalRepoRegistryEntry, b GlobalRepoRegistryEnt
 		strings.EqualFold(a.Workspace.Name, b.Workspace.Name) &&
 		stringSlicesEqual(a.Aliases, b.Aliases) &&
 		globalDefaultsEqual(a.Defaults, b.Defaults) &&
+		a.OperationMode == b.OperationMode &&
+		a.DeliveryPolicy == b.DeliveryPolicy &&
 		reflect.DeepEqual(a.BranchPolicy, b.BranchPolicy) &&
 		reflect.DeepEqual(a.Providers, b.Providers)
 }

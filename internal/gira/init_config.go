@@ -12,6 +12,8 @@ import (
 
 type InitConfig struct {
 	Repo               string                 `yaml:"repo" toml:"repo" json:"repo"`
+	OperationMode      string                 `yaml:"operation_mode" toml:"operation_mode" json:"operation_mode,omitempty"`
+	DeliveryPolicy     string                 `yaml:"delivery_policy" toml:"delivery_policy" json:"delivery_policy,omitempty"`
 	BranchPolicy       *BranchPolicyConfig    `yaml:"branch_policy" toml:"branch_policy" json:"branch_policy,omitempty"`
 	FinishReviewPolicy string                 `yaml:"finish_review_policy" toml:"finish_review_policy" json:"finish_review_policy,omitempty"`
 	Review             ReviewConfig           `yaml:"review" toml:"review" json:"review,omitempty"`
@@ -91,6 +93,9 @@ func LoadInitConfig(path string) (InitConfig, error) {
 		if _, err := ParseRepoRef(cfg.Repo); err != nil {
 			return InitConfig{}, fmt.Errorf("invalid init config %q: repo must be in OWNER/REPO format", path)
 		}
+	}
+	if err := validateOperationPolicyConfig(path, "operation_mode", "delivery_policy", OperationPolicyConfig{OperationMode: cfg.OperationMode, DeliveryPolicy: cfg.DeliveryPolicy}); err != nil {
+		return InitConfig{}, err
 	}
 	if err := validateBranchPolicyConfig(path, "branch_policy", cfg.BranchPolicy); err != nil {
 		return InitConfig{}, err

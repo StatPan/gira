@@ -15,8 +15,8 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 - Added automatic ticket branch selection. `gira ticket start`, `ticket new
   --start`, and `queue take` now accept `--branch auto|new|current|NAME` and
   default to safely creating from the resolved base or binding an existing
-  non-base checkout; `--create`, `--current`, and `--adopt` remain compatible
-  spellings.
+  non-base checkout. `--create`, `--current`, and `--adopt` remain compatible
+  spellings on `ticket start` and `queue take`.
 - Added an explicit operation-mode and delivery-policy contract. Existing
   configured repositories stay managed; unenrolled repositories are
   observation-safe for `status` and `doctor`; managed delivery, review, and

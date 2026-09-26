@@ -129,6 +129,133 @@ func TestDevPRStatusUsesRESTFirstLinkedPRSnapshot(t *testing.T) {
 	}
 }
 
+func TestRestCheckRunsLatestAttemptPerWorkflowJob(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	for _, tt := range []struct {
+		name, first, second, secondStatus, wantState, wantBlocker string
+	}{
+		{name: "successful rerun", first: "failure", second: "success", secondStatus: "completed", wantState: "passing"},
+		{name: "failed rerun", first: "success", second: "failure", secondStatus: "completed", wantState: "failing", wantBlocker: "checks"},
+		{name: "pending rerun", first: "failure", secondStatus: "in_progress", wantState: "pending", wantBlocker: "checks_pending"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := devPRRunner{outputs: map[string][]byte{
+				"gh api repos/StatPan/gira/commits/head123/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": []byte(fmt.Sprintf(`{"check_runs":[
+					{"name":"Ops and Terraform","status":"completed","conclusion":%q,"html_url":"https://github.com/StatPan/gira/actions/runs/100/job/10","app":{"id":15368,"slug":"github-actions"}},
+					{"name":"Ops and Terraform","status":%q,"conclusion":%q,"html_url":"https://github.com/StatPan/gira/actions/runs/100/job/11","app":{"id":15368,"slug":"github-actions"}}
+				]}`, tt.first, tt.secondStatus, tt.second)),
+				"gh api repos/StatPan/gira/actions/runs/100": []byte(`{"workflow_id":42,"head_sha":"head123"}`),
+				"gh api repos/StatPan/gira/actions/jobs/10":  []byte(`{"id":10,"run_id":100,"run_attempt":1,"head_sha":"head123","name":"Ops and Terraform"}`),
+				"gh api repos/StatPan/gira/actions/jobs/11":  []byte(`{"id":11,"run_id":100,"run_attempt":2,"head_sha":"head123","name":"Ops and Terraform"}`),
+			}}
+			checks := restCheckRunsForCommit(repo, "head123", runner)
+			if len(checks) != 1 || checks[0].State != tt.wantState {
+				t.Fatalf("effective checks = %+v, want one %s check", checks, tt.wantState)
+			}
+			if blockers := devPRCheckBlockers(checks); (len(blockers) > 0 && blockers[0] != tt.wantBlocker) ||
+				(len(blockers) == 0 && tt.wantBlocker != "") {
+				t.Fatalf("check blockers = %v, want %q", blockers, tt.wantBlocker)
+			}
+		})
+	}
+}
+
+func TestTicketStatusAndFinishUseCurrentRerunChecks(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyRequired)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	outputs := map[string][]byte{
+		"gh api repos/StatPan/gira/issues/219":                           []byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`),
+		"gh api repos/StatPan/gira/issues/219/timeline --paginate":       []byte(`[{"source":{"issue":{"number":220,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/220"}}}}]`),
+		"gh api repos/StatPan/gira/pulls/220":                            []byte(`{"number":220,"body":"Closes #219","state":"open","html_url":"https://github.com/StatPan/gira/pull/220","mergeable_state":"clean","head":{"ref":"issue-219-finish","sha":"head123"},"base":{"ref":"main"}}`),
+		"gh api repos/StatPan/gira/pulls/220/reviews --paginate":         []byte(`[{"state":"APPROVED","submitted_at":"2026-09-26T09:00:00Z"}]`),
+		"gh api repos/StatPan/gira/pulls/220/reviews --paginate --slurp": []byte(`[[{"state":"APPROVED","commit_id":"head123"}]]`),
+		"gh api repos/StatPan/gira/actions/runs/100":                     []byte(`{"workflow_id":42,"head_sha":"head123"}`),
+		"gh api repos/StatPan/gira/commits/head123/status":               []byte(`{"statuses":[]}`),
+	}
+	var runs strings.Builder
+	runs.WriteString(`{"check_runs":[`)
+	names := []string{"Frontend quality", "Backend quality", "Backend PostgreSQL migration/live", "Browser e2e", "Ops and Terraform"}
+	for attempt := 1; attempt <= 2; attempt++ {
+		for index, name := range names {
+			if attempt != 1 || index != 0 {
+				runs.WriteByte(',')
+			}
+			jobID := attempt*10 + index
+			conclusion := "success"
+			if attempt == 1 && index == 4 {
+				conclusion = "failure"
+			}
+			fmt.Fprintf(&runs, `{"name":%q,"status":"completed","conclusion":%q,"html_url":"https://github.com/StatPan/gira/actions/runs/100/job/%d","app":{"id":15368,"slug":"github-actions"}}`, name, conclusion, jobID)
+			outputs[fmt.Sprintf("gh api repos/StatPan/gira/actions/jobs/%d", jobID)] = []byte(fmt.Sprintf(`{"id":%d,"run_id":100,"run_attempt":%d,"head_sha":"head123","name":%q}`, jobID, attempt, name))
+		}
+	}
+	runs.WriteString(`]}`)
+	outputs["gh api repos/StatPan/gira/commits/head123/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp"] = []byte(runs.String())
+	runner := devPRRunner{outputs: outputs}
+	status, err := GetWorkStatus(repo, 219, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.ChecksStatus != "passed" || len(status.Checks) != 5 || containsString(status.Blockers, "checks") {
+		t.Fatalf("ticket status must show five current passing contexts: %+v", status)
+	}
+	finish, err := FinishWork(repo, 219, true, 0, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !finish.Readiness.Ready || finish.Readiness.Checks.Total != 5 || finish.Readiness.Checks.Passing != 5 ||
+		finish.Readiness.Checks.Failing != 0 || containsString(finish.Blockers, "checks") {
+		t.Fatalf("finish must use the same five current contexts: %+v", finish.Readiness)
+	}
+	outputs["gh api repos/StatPan/gira/pulls/220/reviews --paginate"] = []byte(`[]`)
+	outputs["gh api repos/StatPan/gira/pulls/220/reviews --paginate --slurp"] = []byte(`[[]]`)
+	unapproved, err := FinishWork(repo, 219, true, 0, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unapproved.Readiness.Ready || len(unapproved.Readiness.Blockers) == 0 ||
+		unapproved.Readiness.Checks.Total != 5 || unapproved.Readiness.Checks.Failing != 0 {
+		t.Fatalf("passing checks must not bypass missing approval: %+v", unapproved.Readiness)
+	}
+}
+
+func TestRestCheckRunsKeepUnrerunAndUnverifiedContexts(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	for _, tt := range []struct {
+		name, secondRun, secondJob string
+		wantChecks                 int
+		wantBlocked                bool
+	}{
+		{name: "partial rerun retains other context", secondRun: "100", secondJob: `{"id":11,"run_id":100,"run_attempt":2,"head_sha":"head123","name":"Ops"}`, wantChecks: 2},
+		{name: "missing job metadata retains failed context", secondRun: "100", wantChecks: 3, wantBlocked: true},
+		{name: "different run keeps separate failure", secondRun: "101", secondJob: `{"id":11,"run_id":101,"run_attempt":2,"head_sha":"head123","name":"Ops"}`, wantChecks: 3, wantBlocked: true},
+		{name: "inconsistent job metadata retains failure", secondRun: "100", secondJob: `{"id":11,"run_id":100,"run_attempt":2,"head_sha":"other-head","name":"Ops"}`, wantChecks: 3, wantBlocked: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			outputs := map[string][]byte{
+				"gh api repos/StatPan/gira/commits/head123/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": []byte(fmt.Sprintf(`{"check_runs":[
+					{"name":"Frontend quality","status":"completed","conclusion":"success","html_url":"https://github.com/StatPan/gira/actions/runs/100/job/9","app":{"id":15368,"slug":"github-actions"}},
+					{"name":"Ops","status":"completed","conclusion":"failure","html_url":"https://github.com/StatPan/gira/actions/runs/100/job/10","app":{"id":15368,"slug":"github-actions"}},
+					{"name":"Ops","status":"completed","conclusion":"success","html_url":"https://github.com/StatPan/gira/actions/runs/%s/job/11","app":{"id":15368,"slug":"github-actions"}}
+				]}`, tt.secondRun)),
+				"gh api repos/StatPan/gira/actions/runs/100": []byte(`{"workflow_id":42,"head_sha":"head123"}`),
+				"gh api repos/StatPan/gira/actions/runs/101": []byte(`{"workflow_id":42,"head_sha":"head123"}`),
+				"gh api repos/StatPan/gira/actions/jobs/10":  []byte(`{"id":10,"run_id":100,"run_attempt":1,"head_sha":"head123","name":"Ops"}`),
+			}
+			if tt.secondJob != "" {
+				outputs["gh api repos/StatPan/gira/actions/jobs/11"] = []byte(tt.secondJob)
+			}
+			checks := restCheckRunsForCommit(repo, "head123", devPRRunner{outputs: outputs})
+			if len(checks) != tt.wantChecks {
+				t.Fatalf("effective checks = %+v, want %d contexts", checks, tt.wantChecks)
+			}
+			if blocked := containsString(devPRCheckBlockers(checks), "checks"); blocked != tt.wantBlocked {
+				t.Fatalf("checks blocker = %t, want %t", blocked, tt.wantBlocked)
+			}
+		})
+	}
+}
+
 func TestRestCheckRunsOnlySupersedesCancelledChecksWithNewerSameWorkflowSuccess(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	checkRuns := func(replacementStatus string, replacementConclusion string, replacementHead string, includeReplacement bool) string {

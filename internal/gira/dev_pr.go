@@ -660,7 +660,7 @@ func restCheckRunsForCommitWithAvailability(repo RepoRef, headSHA string, runner
 			checks = append(checks, result)
 		}
 	}
-	return markSupersededCancelledChecks(checks, headSHA), true
+	return markSupersededCancelledChecks(latestWorkflowAttemptChecks(repo, checks, headSHA, runner), headSHA), true
 }
 
 func isGitHubActionsCheck(check DevPRCheck) bool {
@@ -691,6 +691,101 @@ func fetchWorkflowRun(repo RepoRef, runID int, runner CommandRunner) (restWorkfl
 		return restWorkflowRun{}, false
 	}
 	return run, true
+}
+
+// The commit check-runs endpoint with filter=all includes jobs from previous
+// attempts of the same Actions run. Job metadata, unlike the workflow run
+// itself, identifies the attempt to which each check belongs.
+func latestWorkflowAttemptChecks(repo RepoRef, checks []DevPRCheck, headSHA string, runner CommandRunner) []DevPRCheck {
+	type context struct {
+		runID, appID, workflowID int
+		name                     string
+	}
+	groups := make(map[context][]int)
+	for index, check := range checks {
+		if !isGitHubActionsCheck(check) || check.WorkflowID <= 0 || check.HeadSHA != headSHA || check.Name == "" {
+			continue
+		}
+		if runID := githubActionsRunID(check.URL); runID > 0 {
+			key := context{runID: runID, appID: check.AppID, workflowID: check.WorkflowID, name: check.Name}
+			groups[key] = append(groups[key], index)
+		}
+	}
+
+	var drop []bool
+	for key, indexes := range groups {
+		if len(indexes) < 2 {
+			continue
+		}
+		attempts := make(map[int]int, len(indexes))
+		latest := 0
+		valid := true
+		for _, index := range indexes {
+			jobID := githubActionsJobID(checks[index].URL)
+			if jobID == 0 {
+				valid = false
+				break
+			}
+			out, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/actions/jobs/%d", repo.FullName(), jobID))
+			if err != nil {
+				valid = false
+				break
+			}
+			var job struct {
+				ID         int    `json:"id"`
+				RunID      int    `json:"run_id"`
+				RunAttempt int    `json:"run_attempt"`
+				HeadSHA    string `json:"head_sha"`
+				Name       string `json:"name"`
+			}
+			if json.Unmarshal(out, &job) != nil || job.ID != jobID || job.RunID != key.runID ||
+				job.RunAttempt <= 0 || job.HeadSHA != headSHA || job.Name != key.name {
+				valid = false
+				break
+			}
+			if _, exists := attempts[job.RunAttempt]; exists {
+				valid = false // Same-name jobs within one attempt are ambiguous.
+				break
+			}
+			attempts[job.RunAttempt] = index
+			if job.RunAttempt > latest {
+				latest = job.RunAttempt
+			}
+		}
+		if !valid {
+			continue // Missing or inconsistent provenance must not hide a blocker.
+		}
+		if drop == nil {
+			drop = make([]bool, len(checks))
+		}
+		for attempt, index := range attempts {
+			if attempt < latest {
+				drop[index] = true
+			}
+		}
+	}
+	if drop == nil {
+		return checks
+	}
+	effective := make([]DevPRCheck, 0, len(checks))
+	for index, check := range checks {
+		if !drop[index] {
+			effective = append(effective, check)
+		}
+	}
+	return effective
+}
+
+func githubActionsJobID(rawURL string) int {
+	parts := strings.Split(strings.TrimSpace(rawURL), "/")
+	if len(parts) < 2 || parts[len(parts)-2] != "job" {
+		return 0
+	}
+	jobID, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil || jobID <= 0 {
+		return 0
+	}
+	return jobID
 }
 
 func markSupersededCancelledChecks(checks []DevPRCheck, headSHA string) []DevPRCheck {

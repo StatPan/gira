@@ -56,6 +56,12 @@ Finish readiness is recomputed from GitHub evidence and Gira configuration.
 
 Local cache can accelerate reads, but it is not the completion source of truth.
 
+For GitHub Actions check runs on the PR head, Gira uses each job's workflow-run
+attempt to exclude proven older attempts of the same run and check context.
+Other contexts and commit statuses remain separate. If the job's attempt cannot
+be verified, Gira retains the check rather than silently ignoring a failure;
+review approval is evaluated independently of check results.
+
 ## `finish-readiness/v1`
 
 `finish-readiness/v1` answers one question:

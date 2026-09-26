@@ -132,19 +132,18 @@ func TestDevPRStatusUsesRESTFirstLinkedPRSnapshot(t *testing.T) {
 func TestRestCheckRunsLatestAttemptPerWorkflowJob(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	for _, tt := range []struct {
-		name, first, second string
-		wantState           string
-		wantBlocked         bool
+		name, first, second, secondStatus, wantState, wantBlocker string
 	}{
-		{name: "successful rerun", first: "failure", second: "success", wantState: "passing"},
-		{name: "failed rerun", first: "success", second: "failure", wantState: "failing", wantBlocked: true},
+		{name: "successful rerun", first: "failure", second: "success", secondStatus: "completed", wantState: "passing"},
+		{name: "failed rerun", first: "success", second: "failure", secondStatus: "completed", wantState: "failing", wantBlocker: "checks"},
+		{name: "pending rerun", first: "failure", secondStatus: "in_progress", wantState: "pending", wantBlocker: "checks_pending"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			runner := devPRRunner{outputs: map[string][]byte{
 				"gh api repos/StatPan/gira/commits/head123/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": []byte(fmt.Sprintf(`{"check_runs":[
 					{"name":"Ops and Terraform","status":"completed","conclusion":%q,"html_url":"https://github.com/StatPan/gira/actions/runs/100/job/10","app":{"id":15368,"slug":"github-actions"}},
-					{"name":"Ops and Terraform","status":"completed","conclusion":%q,"html_url":"https://github.com/StatPan/gira/actions/runs/100/job/11","app":{"id":15368,"slug":"github-actions"}}
-				]}`, tt.first, tt.second)),
+					{"name":"Ops and Terraform","status":%q,"conclusion":%q,"html_url":"https://github.com/StatPan/gira/actions/runs/100/job/11","app":{"id":15368,"slug":"github-actions"}}
+				]}`, tt.first, tt.secondStatus, tt.second)),
 				"gh api repos/StatPan/gira/actions/runs/100": []byte(`{"workflow_id":42,"head_sha":"head123"}`),
 				"gh api repos/StatPan/gira/actions/jobs/10":  []byte(`{"id":10,"run_id":100,"run_attempt":1,"head_sha":"head123","name":"Ops and Terraform"}`),
 				"gh api repos/StatPan/gira/actions/jobs/11":  []byte(`{"id":11,"run_id":100,"run_attempt":2,"head_sha":"head123","name":"Ops and Terraform"}`),
@@ -153,8 +152,9 @@ func TestRestCheckRunsLatestAttemptPerWorkflowJob(t *testing.T) {
 			if len(checks) != 1 || checks[0].State != tt.wantState {
 				t.Fatalf("effective checks = %+v, want one %s check", checks, tt.wantState)
 			}
-			if blocked := containsString(devPRCheckBlockers(checks), "checks"); blocked != tt.wantBlocked {
-				t.Fatalf("checks blocker = %t, want %t", blocked, tt.wantBlocked)
+			if blockers := devPRCheckBlockers(checks); (len(blockers) > 0 && blockers[0] != tt.wantBlocker) ||
+				(len(blockers) == 0 && tt.wantBlocker != "") {
+				t.Fatalf("check blockers = %v, want %q", blockers, tt.wantBlocker)
 			}
 		})
 	}

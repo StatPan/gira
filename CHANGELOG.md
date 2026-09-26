@@ -5,6 +5,10 @@ All notable Gira release changes are tracked here.
 Gira uses SemVer tags. User-facing features normally increment the minor version and fixes increment the patch version.
 
 ## Unreleased
+- Fixed `ticket status` and `ticket finish` check counts after GitHub Actions
+  workflow reruns: superseded jobs from earlier attempts of the same run no
+  longer block a successful current attempt. A failed current attempt still
+  blocks; unavailable attempt metadata keeps the gate conservative.
 
 - Added automatic ticket branch selection. `gira ticket start`, `ticket new
   --start`, and `queue take` now accept `--branch auto|new|current|NAME` and

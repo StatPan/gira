@@ -5016,9 +5016,9 @@ func TestTicketChecksJSON(t *testing.T) {
 	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
 		"git branch --show-current": []byte("issue-227-checks\n"),
 	}}
-	newTicketChecksReport = func(repo gira.RepoRef, issue int, wait time.Duration, pollInterval time.Duration) (gira.TicketChecksReport, error) {
-		if repo.FullName() != "StatPan/gira" || issue != 227 || wait != 0 || pollInterval != 0 {
-			t.Fatalf("unexpected args repo=%s issue=%d wait=%s poll=%s", repo.FullName(), issue, wait, pollInterval)
+	newTicketChecksReport = func(repo gira.RepoRef, issue int, options gira.TicketChecksOptions) (gira.TicketChecksReport, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 227 || options.Wait != 0 || options.PollInterval != 0 || options.Detail {
+			t.Fatalf("unexpected args repo=%s issue=%d wait=%s poll=%s detail=%t", repo.FullName(), issue, options.Wait, options.PollInterval, options.Detail)
 		}
 		return gira.TicketChecksReport{Repo: repo.FullName(), Issue: issue, PRNumber: 228, Blockers: []string{"checks_pending"}, Checks: []gira.DevPRCheck{{Name: "Build", State: "pending"}}, NextStep: "gira ticket wait --repo StatPan/gira --ticket 227"}, nil
 	}
@@ -5362,9 +5362,9 @@ func TestTicketSupersedeApplyJSONOmitsApprovalEvidence(t *testing.T) {
 func TestTicketWaitUsesTimeoutAndInterval(t *testing.T) {
 	restoreChecks := newTicketChecksReport
 	t.Cleanup(func() { newTicketChecksReport = restoreChecks })
-	newTicketChecksReport = func(repo gira.RepoRef, issue int, wait time.Duration, pollInterval time.Duration) (gira.TicketChecksReport, error) {
-		if repo.FullName() != "StatPan/gira" || issue != 227 || wait != 2*time.Minute || pollInterval != time.Second {
-			t.Fatalf("unexpected args repo=%s issue=%d wait=%s poll=%s", repo.FullName(), issue, wait, pollInterval)
+	newTicketChecksReport = func(repo gira.RepoRef, issue int, options gira.TicketChecksOptions) (gira.TicketChecksReport, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 227 || options.Wait != 2*time.Minute || options.PollInterval != time.Second || options.Detail || options.OnProgress != nil {
+			t.Fatalf("unexpected args repo=%s issue=%d wait=%s poll=%s detail=%t", repo.FullName(), issue, options.Wait, options.PollInterval, options.Detail)
 		}
 		return gira.TicketChecksReport{Repo: repo.FullName(), Issue: issue, PRNumber: 228, Ready: true, Checks: []gira.DevPRCheck{{Name: "Build", State: "passing"}}, NextStep: "gira ticket finish --repo StatPan/gira --ticket 227 --apply"}, nil
 	}

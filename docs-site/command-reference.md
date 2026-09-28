@@ -2061,7 +2061,7 @@ Discovery tier: `managed_delivery`.
 Usage:
 
 ```bash
-gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]
+gira ticket checks [TICKET] [--repo OWNER/REPO] [--detail] [--json]
 ```
 
 Since: `v1.0.0`
@@ -2072,6 +2072,12 @@ Examples:
 
 ```bash
 gira ticket checks
+```
+
+- Inspect the current CI step
+
+```bash
+gira ticket checks --detail
 ```
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
@@ -2561,7 +2567,7 @@ Discovery tier: `managed_delivery`.
 Usage:
 
 ```bash
-gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s]
+gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--detail] [--json]
 ```
 
 Since: `v1.0.0`
@@ -2572,6 +2578,12 @@ Examples:
 
 ```bash
 gira ticket wait --timeout 5m
+```
+
+- Watch CI step changes
+
+```bash
+gira ticket wait --detail --timeout 5m
 ```
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`

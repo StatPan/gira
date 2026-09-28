@@ -1378,25 +1378,27 @@ func CoreCommandSpecs() []CommandSpec {
 		{
 			Path:        []string{"ticket", "checks"},
 			Summary:     "Show linked PR checks, review blockers, and next action.",
-			Usage:       "gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]",
+			Usage:       "gira ticket checks [TICKET] [--repo OWNER/REPO] [--detail] [--json]",
 			Since:       "v1.0.0",
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
 			GuideTopics: []string{"ticket", "agent"},
 			GuideOrder:  40,
 			Examples: []CommandExample{
 				{Summary: "Inspect PR readiness", Command: "gira ticket checks"},
+				{Summary: "Inspect the current CI step", Command: "gira ticket checks --detail"},
 			},
 		},
 		{
 			Path:        []string{"ticket", "wait"},
 			Summary:     "Wait for pending linked PR checks without merging.",
-			Usage:       "gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s]",
+			Usage:       "gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--detail] [--json]",
 			Since:       "v1.0.0",
 			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
 			GuideTopics: []string{"ticket", "agent"},
 			GuideOrder:  50,
 			Examples: []CommandExample{
 				{Summary: "Wait for CI", Command: "gira ticket wait --timeout 5m"},
+				{Summary: "Watch CI step changes", Command: "gira ticket wait --detail --timeout 5m"},
 			},
 		},
 		{

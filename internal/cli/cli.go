@@ -953,8 +953,8 @@ Usage:
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
   gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both] [--body TEXT|--body-file PATH|-] [--json]
   gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr] [--json]
-  gira ticket checks [TICKET] [--repo OWNER/REPO] [--json]
-  gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--json]
+  gira ticket checks [TICKET] [--repo OWNER/REPO] [--detail] [--json]
+  gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--detail] [--json]
   gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--wait 0s] [--sync-local] [--json]
   gira ticket status [TICKET] [--repo OWNER/REPO] [--json|--html --output PATH]
 
@@ -1005,7 +1005,7 @@ Flags:
   --wait duration  Optional pending-check wait for ticket finish. Default: 0s
   --timeout duration  Pending-check wait timeout for ticket wait. Default: 5m
   --interval duration  Poll interval for ticket wait. Default: 5s
-  --start          Start a newly created ticket after ticket new --apply
+  --detail         Show the Actions run, attempt, and current or failed step
   --branch string  Branch selection for ticket start/new: auto, new, current, or an existing branch name
   --release-impact string Release impact for ticket new: user-facing, internal, or exempt
   --release-impact-reason string Required reason when ticket new release impact is exempt
@@ -1723,8 +1723,11 @@ var newMilestonePlanReport = func(input gira.MilestonePlanInput) (gira.Milestone
 	return gira.BuildMilestonePlanReport(input, devCommandRunner)
 }
 
-var newTicketChecksReport = func(repo gira.RepoRef, issue int, wait time.Duration, pollInterval time.Duration) (gira.TicketChecksReport, error) {
-	return gira.BuildTicketChecksReport(repo, issue, wait, pollInterval, devCommandRunner)
+var ticketChecksNow = time.Now
+var ticketChecksSleep = time.Sleep
+
+var newTicketChecksReport = func(repo gira.RepoRef, issue int, options gira.TicketChecksOptions) (gira.TicketChecksReport, error) {
+	return gira.BuildTicketChecksReport(repo, issue, options, devCommandRunner)
 }
 
 var newTicketViewReport = func(repo gira.RepoRef, issue int) (gira.TicketViewReport, error) {
@@ -6960,6 +6963,7 @@ func runTicketChecksLike(args []string, stdout io.Writer, stderr io.Writer, wait
 	timeout := fs.Duration("timeout", 5*time.Minute, "Pending-check wait timeout")
 	interval := fs.Duration("interval", 5*time.Second, "Pending-check poll interval")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	detail := fs.Bool("detail", false, "Show the Actions run, attempt, and current or failed step")
 	help := fs.Bool("help", false, "Show help")
 	fs.BoolVar(help, "h", false, "Show help")
 	if err := fs.Parse(args); err != nil {
@@ -6987,7 +6991,22 @@ func runTicketChecksLike(args []string, stdout io.Writer, stderr io.Writer, wait
 		wait = *timeout
 		poll = *interval
 	}
-	result, err := newTicketChecksReport(repo, ticketNumber, wait, poll)
+	options := gira.TicketChecksOptions{
+		Wait:         wait,
+		PollInterval: poll,
+		Detail:       *detail,
+		Now:          ticketChecksNow,
+		Sleep:        ticketChecksSleep,
+	}
+	if waitMode && *detail {
+		progress := gira.NewTicketWaitProgress(ticketChecksNow(), wait)
+		options.OnProgress = func(report gira.TicketChecksReport) {
+			if text := progress.Observe(report, ticketChecksNow()); text != "" {
+				fmt.Fprint(stderr, text)
+			}
+		}
+	}
+	result, err := newTicketChecksReport(repo, ticketNumber, options)
 	result.NextStep = shortenTicketNextStep(result.NextStep, result.Repo, result.Issue)
 	if err != nil {
 		if *jsonOutput {

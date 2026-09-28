@@ -34,7 +34,7 @@ func TestTicketChecksDetailJSONAndText(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{"run #128", "attempt 2", "run 100", "step 3/8: Run tests", "https://github.com/StatPan/gira/actions/runs/100/job/200"} {
+	for _, want := range []string{"run #128", "attempt 2", "step 3/8: Run tests", "https://github.com/StatPan/gira/actions/runs/100/job/200"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("checks detail missing %q:\n%s", want, stdout.String())
 		}

@@ -44,7 +44,7 @@ func TestBuildTicketChecksReportDetailKeepsAttemptPerJob(t *testing.T) {
 		t.Fatalf("attempt 2 row mixed identities: %+v", byJob[201])
 	}
 	text := FormatTicketChecks(report)
-	for _, want := range []string{"run #128", "attempt 1", "attempt 2", "run 100", "step 3/8: Run tests", "step 4/8: Upload", "https://github.com/StatPan/gira/actions/runs/100/job/200", "https://github.com/StatPan/gira/actions/runs/100/job/201"} {
+	for _, want := range []string{"run #128", "attempt 1", "attempt 2", "step 3/8: Run tests", "step 4/8: Upload", "https://github.com/StatPan/gira/actions/runs/100/job/200", "https://github.com/StatPan/gira/actions/runs/100/job/201"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("detail text missing %q:\n%s", want, text)
 		}
@@ -142,7 +142,7 @@ func TestBuildTicketChecksReportDetailStatesStayTruthful(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := FormatTicketChecks(report)
-		if report.Detail.Checks[0].Step != nil || !strings.Contains(text, "\n  queued https://github.com/StatPan/gira/actions/runs/100/job/200\n") {
+		if report.Detail.Checks[0].Step != nil || !strings.Contains(text, "queued https://github.com/StatPan/gira/actions/runs/100/job/200") || strings.Contains(text, "\n  ") {
 			t.Fatalf("queued detail invented a step:\n%s\n%+v", text, report.Detail.Checks[0])
 		}
 	})
@@ -308,6 +308,34 @@ func TestBuildTicketChecksReportOrdinaryOmitsDetail(t *testing.T) {
 	}
 }
 
+func TestFormatTicketChecksDetailGlanceKeepsRecentFew(t *testing.T) {
+	checks := make([]DevPRCheck, 5)
+	details := make([]TicketCheckDetail, 5)
+	for index := range checks {
+		checks[index] = DevPRCheck{Name: fmt.Sprintf("job-%d", index), State: "passing"}
+		details[index] = TicketCheckDetail{
+			CheckIndex:    index,
+			Availability:  "available",
+			WorkflowName:  "CI",
+			RunNumber:     int64(100 + index),
+			RunAttempt:    1,
+			JobStatus:     "completed",
+			JobConclusion: "success",
+			CompletedAt:   time.Date(2026, 9, 28, 0, index, 0, 0, time.UTC).Format(time.RFC3339),
+		}
+	}
+	checks[1].State = "failing"
+	report := TicketChecksReport{Issue: 7, PRNumber: 8, Checks: checks, Detail: &TicketChecksDetail{Checks: details}, NextStep: "next"}
+	text := FormatTicketChecks(report)
+	for _, want := range []string{"- failing job-1", "- passing job-4", "- passing job-3", "other checks: 2 passing"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("glance missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "job-0") || strings.Contains(text, "job-2") {
+		t.Fatalf("glance showed older passing jobs:\n%s", text)
+	}
+}
 func detailRunner(snapshots int, pull string, checkRuns []string, jobs []string, errs map[string]error) *finishRunner {
 	if errs == nil {
 		errs = map[string]error{}

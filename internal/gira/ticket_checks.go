@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
-const ticketWaitHeartbeat = 30 * time.Second
+const (
+	ticketWaitHeartbeat     = 30 * time.Second
+	ticketChecksGlanceLimit = 3
+)
 
 type TicketChecksOptions struct {
 	Wait         time.Duration
@@ -239,8 +243,15 @@ func formatTicketChecks(report TicketChecksReport, now time.Time) string {
 			b.WriteString("\n")
 		}
 	} else {
-		for index := range report.Checks {
+		shown := ticketCheckGlanceIndexes(report)
+		shownSet := map[int]struct{}{}
+		for _, index := range shown {
+			shownSet[index] = struct{}{}
 			writeTicketCheckDetail(&b, report, index, now)
+		}
+		if summary := ticketCheckGlanceRemainder(report, shownSet); summary != "" {
+			b.WriteString(summary)
+			b.WriteString("\n")
 		}
 	}
 	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
@@ -271,17 +282,90 @@ func writeTicketCheckDetail(b *strings.Builder, report TicketChecksReport, index
 	if detail.RunAttempt > 0 {
 		fmt.Fprintf(b, " attempt %d", detail.RunAttempt)
 	}
-	if detail.RunID > 0 {
-		fmt.Fprintf(b, " run %d", detail.RunID)
+	fmt.Fprintf(b, " %s", ticketCheckProgressPhrase(check, detail, now))
+	if ticketCheckGlanceShowsLink(check, detail) {
+		if link := ticketCheckDetailLink(check, detail); link != "" {
+			b.WriteByte(' ')
+			b.WriteString(link)
+		}
 	}
 	b.WriteString("\n")
-	b.WriteString("  ")
-	b.WriteString(ticketCheckProgressPhrase(check, detail, now))
-	if link := ticketCheckDetailLink(check, detail); link != "" {
-		b.WriteByte(' ')
-		b.WriteString(link)
+}
+
+func ticketCheckGlanceShowsLink(check DevPRCheck, detail TicketCheckDetail) bool {
+	return check.State != "passing" || check.Superseded || detail.Availability != "available"
+}
+
+func ticketCheckGlanceIndexes(report TicketChecksReport) []int {
+	indexes := make([]int, len(report.Checks))
+	for index := range report.Checks {
+		indexes[index] = index
 	}
-	b.WriteString("\n")
+	sort.SliceStable(indexes, func(i, j int) bool {
+		left, right := indexes[i], indexes[j]
+		leftRank, leftAt := ticketCheckGlanceRank(report, left)
+		rightRank, rightAt := ticketCheckGlanceRank(report, right)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		if !leftAt.Equal(rightAt) {
+			return leftAt.After(rightAt)
+		}
+		return left < right
+	})
+	if len(indexes) > ticketChecksGlanceLimit {
+		return indexes[:ticketChecksGlanceLimit]
+	}
+	return indexes
+}
+
+func ticketCheckGlanceRank(report TicketChecksReport, index int) (int, time.Time) {
+	check := report.Checks[index]
+	detail := ticketCheckDetailAt(report, index)
+	rank := 1
+	if check.State != "passing" || detail.Availability != "available" {
+		rank = 0
+	}
+	return rank, ticketCheckActivityTime(check, detail)
+}
+
+func ticketCheckActivityTime(check DevPRCheck, detail TicketCheckDetail) time.Time {
+	candidates := []string{detail.CompletedAt, detail.StartedAt, check.CompletedAt}
+	if detail.Step != nil {
+		candidates = append([]string{detail.Step.CompletedAt, detail.Step.StartedAt}, candidates...)
+	}
+	for _, raw := range candidates {
+		if parsed, ok := parseTicketCheckTime(raw); ok {
+			return parsed
+		}
+	}
+	return time.Time{}
+}
+
+func ticketCheckGlanceRemainder(report TicketChecksReport, shown map[int]struct{}) string {
+	counts := map[string]int{}
+	order := []string{}
+	for index, check := range report.Checks {
+		if _, ok := shown[index]; ok {
+			continue
+		}
+		state := check.State
+		if state == "" {
+			state = "unknown"
+		}
+		if counts[state] == 0 {
+			order = append(order, state)
+		}
+		counts[state]++
+	}
+	if len(order) == 0 {
+		return ""
+	}
+	parts := make([]string, len(order))
+	for index, state := range order {
+		parts[index] = fmt.Sprintf("%d %s", counts[state], state)
+	}
+	return "other checks: " + strings.Join(parts, ", ")
 }
 
 func ticketCheckDisplayName(check DevPRCheck) string {

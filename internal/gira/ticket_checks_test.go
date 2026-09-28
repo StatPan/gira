@@ -17,7 +17,7 @@ func TestBuildTicketChecksReportShowsPendingChecks(t *testing.T) {
 		"gh api repos/StatPan/gira/commits/abc123/status": {[]byte(`{"statuses":[]}`)},
 	}}
 
-	report, err := BuildTicketChecksReport(repo, 227, 0, 0, runner)
+	report, err := BuildTicketChecksReport(repo, 227, TicketChecksOptions{}, runner)
 	if err != nil {
 		t.Fatalf("BuildTicketChecksReport error: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestBuildTicketChecksReportWaitsUntilChecksPass(t *testing.T) {
 		},
 	}}
 
-	report, err := BuildTicketChecksReport(repo, 227, time.Second, 0, runner)
+	report, err := BuildTicketChecksReport(repo, 227, TicketChecksOptions{Wait: time.Second}, runner)
 	if err != nil {
 		t.Fatalf("BuildTicketChecksReport error: %v", err)
 	}

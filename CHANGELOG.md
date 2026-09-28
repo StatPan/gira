@@ -10,6 +10,11 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
   longer block a successful current attempt. A failed current attempt still
   blocks; unavailable attempt metadata keeps the gate conservative.
 
+- Added opt-in `--detail` to `gira ticket checks` and `gira ticket wait`.
+  Text shows up to three recent jobs on one line. JSON keeps the full run,
+  attempt, and step detail without changing readiness. `ticket wait --detail`
+  prints step changes and a 30-second heartbeat on stderr; stdout stays the
+  final report or one JSON object.
 - Added automatic ticket branch selection. `gira ticket start`, `ticket new
   --start`, and `queue take` now accept `--branch auto|new|current|NAME` and
   default to safely creating from the resolved base or binding an existing

@@ -71,7 +71,7 @@ handoff path.
 - Keep the PR body linked with `Closes #N`, `Fixes #N`, or `Resolves #N`.
 - Run `gira ticket review --diff-summary` before requesting review.
 - Run `gira ticket self-review --diff-summary --dry-run` before posting a self-review note.
-- Use `gira ticket checks` and `gira ticket wait` to distinguish pending from failed checks.
+- Use `gira ticket checks` and `gira ticket wait` to distinguish pending from failed checks. Add `--detail` to see the Actions run, attempt, and current or failed step. Wait progress stays on stderr and does not change readiness.
 - Run `gira ticket finish --dry-run` before `--apply`; finish validates the linked PR, checks, review, base, labels, closing reference, and acceptance evidence.
 
 The detailed readiness schemas and reports are in [Readiness And Audit](/readiness-audit).

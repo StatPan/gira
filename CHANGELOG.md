@@ -5,26 +5,41 @@ All notable Gira release changes are tracked here.
 Gira uses SemVer tags. User-facing features normally increment the minor version and fixes increment the patch version.
 
 ## Unreleased
-- Fixed `ticket status` and `ticket finish` check counts after GitHub Actions
-  workflow reruns: superseded jobs from earlier attempts of the same run no
-  longer block a successful current attempt. A failed current attempt still
-  blocks; unavailable attempt metadata keeps the gate conservative.
+
+## v3.2.0 - 2026-09-29
 
 - Added opt-in `--detail` to `gira ticket checks` and `gira ticket wait`.
   Text shows up to three recent jobs on one line. JSON keeps the full run,
   attempt, and step detail without changing readiness. `ticket wait --detail`
   prints step changes and a 30-second heartbeat on stderr; stdout stays the
   final report or one JSON object.
+- Fixed `ticket status` and `ticket finish` check counts after GitHub Actions
+  workflow reruns: superseded jobs from earlier attempts of the same run no
+  longer block a successful current attempt. A failed current attempt still
+  blocks; unavailable attempt metadata keeps the gate conservative.
+- Fixed `gira ticket new` so the documented space form `--release-impact
+  user-facing|internal|exempt` consumes its value before title detection,
+  matching `--release-impact=<value>`. `gira new` and `gira t n` are now
+  aliases for the daily ticket-creation path.
 - Added automatic ticket branch selection. `gira ticket start`, `ticket new
   --start`, and `queue take` now accept `--branch auto|new|current|NAME` and
   default to safely creating from the resolved base or binding an existing
-  non-base checkout; `--create`, `--current`, and `--adopt` remain compatible
-  spellings.
-- Fixed ticket PR base selection to honor the target repository's registered
-  global repo or workspace branch policy even when Gira runs outside that
-  checkout. Gira now records the policy provenance, rejects a missing configured
-  remote base before mutating, and reports existing PR base mismatches with an
-  explicit non-automatic remediation.
+  non-base checkout. `--create`, `--current`, and `--adopt` remain compatible
+  spellings on `ticket start` and `queue take`.
+- Added an explicit operation-mode and delivery-policy contract. Existing
+  configured repositories stay managed; unenrolled repositories are
+  observation-safe for `status` and `doctor`; managed delivery, review, and
+  release readiness enforcement is policy-aware and dry-run-first.
+- Tiered command discovery so Assist, Managed Delivery, and Advanced
+  Orchestration entry points stay distinct, and simplified essential
+  operator docs around aliases, dry-run/apply, automatic branches, and
+  operation modes.
+- Hardened ticket and Goal safety: PR checks fail closed when unavailable,
+  Goal graph apply resumes after partial failure, Goal planning diagnostics
+  stay aligned with the default scaffold, `goal status` batches multi-child
+  reads, template installation is symlink-safe, registry writes validate
+  repository identifiers, worker lease claims serialize across processes, and
+  ticket PR apply no longer regresses terminal status after merge.
 - Added a release-impact contract for new tickets and linked pull requests.
   User-facing stories now carry their release decision into CI, which requires
   their `CHANGELOG.md` entry in the same PR; internal work and documented
@@ -35,6 +50,14 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
   Branch names are now advisory rather than globally enforced, while Gira still
   records the selected branch and rejects using the resolved base branch as a
   pull request head.
+
+## v3.1.3 - 2026-08-13
+
+- Fixed ticket PR base selection to honor the target repository's registered
+  global repo or workspace branch policy even when Gira runs outside that
+  checkout. Gira now records the policy provenance, rejects a missing configured
+  remote base before mutating, and reports existing PR base mismatches with an
+  explicit non-automatic remediation.
 
 ## v3.1.2 - 2026-08-07
 

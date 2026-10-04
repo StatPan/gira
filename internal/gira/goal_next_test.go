@@ -44,9 +44,9 @@ func TestBuildGoalNextReportSelectsOnlyTypedOrNativeChildrenWithProvenance(t *te
 "number":201,"title":"Historical native child","state":"closed"}]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"Grounding-gap parent: #203"}]}`,
 		"gh api repos/StatPan/gira/issues/201":                  `{"number":201,"title":"Historical native child","state":"closed","body":"## Goal\nDone","labels":[{"name":"type:task"},{"name":"status:done"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid,baseRefOid --limit 20": `[]`,
 		"gh api repos/StatPan/gira/issues/202": `{"number":202,"title":"Typed ready child","state":"open","body":"## Goal\nReady","labels":[{"name":"type:task"},{"name":"status:ready"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 202 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 202 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid,baseRefOid --limit 20": `[]`,
 	}}
 
 	report, err := BuildGoalNextReport(GoalNextInput{Repo: repo, Goal: 100}, runner)

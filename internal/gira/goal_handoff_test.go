@@ -14,7 +14,7 @@ func TestBuildGoalHandoffReportEmbedsSelectedWorkerHandoff(t *testing.T) {
 		"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"LLM delegation goal","state":"open","body":` + strconv.Quote(goalBody) + `,"labels":[{"name":"type:epic"},{"name":"status:ready"},{"name":"lane:agent"}]}`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
 		"gh api repos/StatPan/gira/issues/201":                  `{"number":201,"title":"Add goal handoff","state":"open","body":` + strconv.Quote(childBody) + `,"labels":[{"name":"type:task"},{"name":"status:ready"}]}`,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": `[]`,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 201 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid,baseRefOid --limit 20": `[]`,
 	}}
 
 	report, err := BuildGoalHandoffReport(GoalHandoffInput{Repo: repo, Goal: 100, Role: AgentPromptRoleImplementer, Profile: AgentPromptProfileDefault}, runner)

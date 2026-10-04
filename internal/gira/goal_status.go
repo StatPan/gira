@@ -102,6 +102,7 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 	// unavailable snapshots remain visible as child status blockers.
 	snapshots := map[string]goalStatusRepositorySnapshot{}
 	policies := map[string]goalStatusRepositoryPolicies{}
+	reviewPolicies := goalStatusReviewPolicyCache{}
 	snapshotUnavailable := map[string]bool{}
 	childNumbersByRepo := goalStatusSnapshotNumbers(childRefs)
 	repoNames := make([]string, 0, len(childNumbersByRepo))
@@ -125,7 +126,6 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 		snapshots[repoName] = snapshot
 		policies[repoName] = goalStatusRepositoryPolicies{
 			Branch:    loadGoalStatusBranchPolicy(childRepo, runner),
-			Review:    loadFinishReviewPolicy(childRepo),
 			Operation: operationPolicy,
 		}
 	}
@@ -133,7 +133,7 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 		var child GoalStatusChild
 		var childErr error
 		if snapshot, ok := snapshots[childRef.Repo.FullName()]; ok {
-			child, childErr = goalStatusChildFromSnapshot(childRef, snapshot, policies[childRef.Repo.FullName()])
+			child, childErr = goalStatusChildFromSnapshot(childRef, snapshot, policies[childRef.Repo.FullName()], reviewPolicies, runner)
 		} else if snapshotUnavailable[childRef.Repo.FullName()] {
 			childErr = fmt.Errorf("repository snapshot unavailable")
 		} else {

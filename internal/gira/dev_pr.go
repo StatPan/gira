@@ -42,6 +42,7 @@ type DevPRStatusResult struct {
 	Ready             bool         `json:"ready"`
 	LookupAttempts    int          `json:"lookup_attempts,omitempty"`
 	HeadSHA           string       `json:"head_sha,omitempty"`
+	BaseSHA           string       `json:"base_sha,omitempty"`
 	MergeCommitSHA    string       `json:"merge_commit_sha,omitempty"`
 	ClosingReference  bool         `json:"closing_reference"`
 }
@@ -89,6 +90,7 @@ type prSummary struct {
 	HeadRefName    string `json:"headRefName"`
 	BaseRefName    string `json:"baseRefName"`
 	HeadRefOID     string `json:"headRefOid"`
+	BaseRefOID     string `json:"baseRefOid"`
 	MergeCommit    *struct {
 		OID string `json:"oid"`
 	} `json:"mergeCommit"`
@@ -134,6 +136,7 @@ type restPull struct {
 	} `json:"head"`
 	Base struct {
 		Ref string `json:"ref"`
+		SHA string `json:"sha"`
 	} `json:"base"`
 }
 
@@ -237,7 +240,7 @@ func devPRGraphQLFallbackEnabled() bool {
 
 func devPRStatusGraphQLFallback(repo RepoRef, issueNumber int, bindingPolicy devPRBindingPolicy, runner CommandRunner) (DevPRStatusResult, error) {
 	search := fmt.Sprintf("repo:%s is:pr %d", repo.FullName(), issueNumber)
-	out, err := runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--state", "all", "--search", search, "--json", "number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid", "--limit", "20")
+	out, err := runner.Run("gh", "pr", "list", "--repo", repo.FullName(), "--state", "all", "--search", search, "--json", "number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid,baseRefOid", "--limit", "20")
 	if err != nil {
 		return DevPRStatusResult{}, err
 	}
@@ -348,6 +351,7 @@ func devPRStatusFromRESTPull(repo RepoRef, issueNumber int, pr restPull, binding
 	result.ReviewDecision = restPRReviewDecision(repo, pr.Number, pr.Base.Ref, runner)
 	result.IsDraft = pr.Draft
 	result.HeadSHA = strings.TrimSpace(pr.Head.SHA)
+	result.BaseSHA = strings.TrimSpace(pr.Base.SHA)
 	result.MergeCommitSHA = strings.TrimSpace(pr.MergeCommitSHA)
 	result.ClosingReference = hasClosingKeyword(pr.Body, issueNumber)
 	summary := restPullSummary(pr)
@@ -371,7 +375,7 @@ func devPRStatusFromRESTPull(repo RepoRef, issueNumber int, pr restPull, binding
 }
 
 func restPullSummary(pr restPull) prSummary {
-	summary := prSummary{Number: pr.Number, Title: pr.Title, Body: pr.Body, State: restPRState(pr), URL: pr.HTMLURL, IsDraft: pr.Draft, HeadRefName: pr.Head.Ref, BaseRefName: pr.Base.Ref, HeadRefOID: pr.Head.SHA}
+	summary := prSummary{Number: pr.Number, Title: pr.Title, Body: pr.Body, State: restPRState(pr), URL: pr.HTMLURL, IsDraft: pr.Draft, HeadRefName: pr.Head.Ref, BaseRefName: pr.Base.Ref, HeadRefOID: pr.Head.SHA, BaseRefOID: pr.Base.SHA}
 	if strings.TrimSpace(pr.MergeCommitSHA) != "" {
 		summary.MergeCommit = &struct {
 			OID string `json:"oid"`
@@ -393,6 +397,7 @@ func devPRStatusFromSummary(repo RepoRef, issueNumber int, pr prSummary, binding
 		Binding:          validateDevPRBinding(issueNumber, pr, bindingPolicy),
 		Blockers:         []string{},
 		HeadSHA:          strings.TrimSpace(pr.HeadRefOID),
+		BaseSHA:          strings.TrimSpace(pr.BaseRefOID),
 		ClosingReference: hasClosingKeyword(pr.Body, issueNumber),
 	}
 	if pr.MergeCommit != nil {

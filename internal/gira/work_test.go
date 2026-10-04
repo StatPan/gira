@@ -1242,7 +1242,7 @@ func TestGetWorkStatusRetriesTransientMissingLinkedPRForReviewStatus(t *testing.
 		queues: map[string][][]byte{
 			prCall: {
 				[]byte(`[]`),
-				[]byte(`[{"number":203,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/203","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"status":"COMPLETED","conclusion":"SUCCESS"}]}]`),
+				[]byte(`[{"number":203,"title":"x","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/203","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","baseRefName":"main","headRefOid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","baseRefOid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","statusCheckRollup":[{"status":"COMPLETED","conclusion":"SUCCESS"}]}]`),
 			},
 		},
 	}

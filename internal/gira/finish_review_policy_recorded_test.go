@@ -222,20 +222,32 @@ func githubContentsFile(path, content string) []byte {
 // Security tests use explicit remote responses so a local proposal cannot
 // accidentally become the authority under test.
 func finishReviewPolicyFixtureResponse(key string) ([]byte, error, bool) {
-	const prefix = "gh api repos/StatPan/gira/contents/"
+	const prefix = "gh api repos/"
 	const suffix = " --method GET -f ref="
 	if !strings.HasPrefix(key, prefix) || !strings.Contains(key, suffix) {
 		return nil, nil, false
 	}
-	path := strings.TrimPrefix(strings.SplitN(key, suffix, 2)[0], prefix)
+	request := strings.TrimPrefix(strings.SplitN(key, suffix, 2)[0], prefix)
+	repoName, path, ok := strings.Cut(request, "/contents/")
+	if !ok {
+		return nil, nil, false
+	}
+	repo, err := ParseRepoRef(repoName)
+	if err != nil {
+		return nil, fmt.Errorf("invalid repository in finish-policy fixture request: %w", err), true
+	}
 	if path != ".gira/config.yaml" && path != ".gira/config.toml" {
 		return nil, fmt.Errorf("unexpected config path: %s", path), true
 	}
-	content, err := os.ReadFile(filepath.Join(".gira", strings.TrimPrefix(path, ".gira/")))
+	localPath, _, err := loadLocalRepoInitConfig(repo)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("HTTP 404: Not Found"), true
-		}
+		return nil, err, true
+	}
+	if localPath == "" || filepath.Base(localPath) != filepath.Base(path) {
+		return nil, fmt.Errorf("HTTP 404: Not Found"), true
+	}
+	content, err := os.ReadFile(localPath)
+	if err != nil {
 		return nil, err, true
 	}
 	return githubContentsFile(path, string(content)), nil, true

@@ -50,7 +50,7 @@ Finish readiness is recomputed from GitHub evidence and Gira configuration.
 | Pull request state, draft state, base/head refs, mergeability | GitHub PR |
 | Closing reference | Linked PR body or GitHub closing reference evidence |
 | Checks | GitHub check runs/status rollups |
-| Review state | GitHub review decision and blockers |
+| Review state and policy | GitHub review decision/reviews plus finish-review policy read from the exact current PR base commit |
 | Acceptance criteria and telemetry | Ticket body/status report |
 | Finish receipt | GitHub issue comment after accepted apply |
 
@@ -106,6 +106,7 @@ Important nested fields:
 | `pull_request.head_ref_name` | PR head branch. |
 | `pull_request.base_ref_name` | PR base branch. |
 | `pull_request.head_sha` | Exact head commit when GitHub exposes it. |
+| `pull_request.base_sha` | Exact current base commit used to resolve finish-review policy and recorded-review bindings. |
 | `pull_request.merge_commit_sha` | Exact merge commit for a verified merged PR. |
 | `pull_request.closing_reference` | Whether the selected PR closes the ticket. |
 | `checks.status` | `passed`, `pending`, `failed`, `missing`, or equivalent normalized status. |
@@ -116,6 +117,9 @@ Important nested fields:
 | `checks.missing` | True when no check evidence is available. |
 | `review.status` | Normalized review status. |
 | `review.decision` | Raw or normalized review decision. |
+| `review.policy.value` | Policy committed at the PR base SHA; local candidate configuration is never authoritative. |
+| `review.policy.source` | Exact base SHA and config path used for the policy decision. |
+| `review.evidence.source` | Native GitHub approval or a trusted recorder's versioned review receipt. |
 | `evidence.closing_reference` | Whether closure evidence exists. |
 | `evidence.branch_trusted` | Whether branch binding is trusted. |
 | `evidence.finish_ready` | Whether status computation believes finish is ready. |
@@ -133,6 +137,13 @@ The blocker list is intentionally compact and stable.
 | `checks_pending` | One or more checks are still running or queued. |
 | `draft` | The linked PR is still a draft. |
 | `review` | Review state blocks finish. |
+| `review_policy_not_configured` | The exact PR base has no readable explicit finish-review policy. |
+| `review_policy_invalid` | The committed policy or its source cannot be validated. |
+| `review_evidence_unavailable` | Required base/head or review evidence could not be read completely. |
+| `review_changes_requested` | At least one reviewer has an active `CHANGES_REQUESTED` review. |
+| `recorded_review_stale` | A receipt exists, but it does not bind to the current PR head and base. |
+| `recorded_review_invalid` | A trusted recorder submitted a malformed or unresolved receipt. |
+| `recorded_review_blocked` | A trusted receipt contains an unresolved blocking finding. |
 | `pr_binding` | Multiple plausible closing PRs are ambiguous, or the only candidate is closed without merge evidence. |
 | `final_status_unavailable` | Gira could not compute the final ticket status. |
 
@@ -149,6 +160,7 @@ taxonomy.
 - checks are not failing or pending;
 - draft status does not block finish;
 - review status does not block finish;
+- an explicit review policy is readable from the exact current PR base commit;
 - branch and PR evidence satisfy policy;
 - no explicit finish blockers remain.
 
@@ -166,6 +178,11 @@ When several PRs contain a closing reference, Gira resolves them conservatively:
 Finish preserves the selected PR number across merge and final status
 resolution. Before writing a successful receipt, Gira fetches that exact PR and
 requires its merged state, closing relationship, head SHA, and merge commit SHA.
+For the recorded-review lane, Gira also rechecks the base binding and current
+receipt immediately before merge, passes the reviewed head SHA as the merge
+precondition, and requires the immutable base policy. GitHub's merge API does
+not expose a corresponding base-SHA precondition, so a base movement detected
+by Gira blocks before the merge request.
 
 ## `finish-receipt/v1`
 

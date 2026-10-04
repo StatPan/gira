@@ -63,6 +63,7 @@ type WorkFinishReadinessPullRequest struct {
 	HeadRefName      string `json:"head_ref_name,omitempty"`
 	BaseRefName      string `json:"base_ref_name,omitempty"`
 	HeadSHA          string `json:"head_sha,omitempty"`
+	BaseSHA          string `json:"base_sha,omitempty"`
 	MergeCommitSHA   string `json:"merge_commit_sha,omitempty"`
 	ClosingReference bool   `json:"closing_reference"`
 }
@@ -124,6 +125,7 @@ type WorkFinishReceiptPR struct {
 	State            string `json:"state,omitempty"`
 	Merged           bool   `json:"merged"`
 	HeadSHA          string `json:"head_sha,omitempty"`
+	BaseSHA          string `json:"base_sha,omitempty"`
 	MergeCommitSHA   string `json:"merge_commit_sha,omitempty"`
 	ClosingReference bool   `json:"closing_reference"`
 }
@@ -320,7 +322,7 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		}
 	}
 
-	policy := loadFinishReviewPolicy(repo)
+	policy := resolveFinishReviewPolicy(repo, status, runner)
 	review := finishReviewEvidence(repo, status, policy, runner)
 	result.ReviewPolicy = policy
 	result.ReviewEvidence = review
@@ -372,7 +374,13 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		}
 		return finishWithLocalSync(repo, issueNumber, runner, result, true, &status, &status, options)
 	}
-	if err := finishMergePR(repo, status, runner, &result); err != nil {
+	if policy.Value == FinishReviewPolicyRecordedIndependent {
+		if err := finishRecordedReviewMerge(repo, issueNumber, status, policy, runner, &result); err != nil {
+			result.Blockers = appendUniqueStrings(result.Blockers, "review_evidence_unavailable")
+			result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: "recorded review revalidation failed"})
+			return finishWithStatus(repo, issueNumber, runner, result, &status, fmt.Errorf("ticket finish blocked: %w", err))
+		}
+	} else if err := finishMergePR(repo, status, runner, &result, false); err != nil {
 		return result, err
 	}
 	result.Merged = true
@@ -405,13 +413,57 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 	return finishWithLocalSync(repo, issueNumber, runner, result, true, &status, &status, options)
 }
 
-func finishMergePR(repo RepoRef, status DevPRStatusResult, runner CommandRunner, result *WorkFinishResult) error {
-	if _, err := runner.Run("gh", "pr", "merge", fmt.Sprintf("%d", status.PRNumber), "--repo", repo.FullName(), "--squash", "--delete-branch"); err != nil {
+func finishRecordedReviewMerge(repo RepoRef, issueNumber int, status DevPRStatusResult, policy FinishReviewPolicy, runner CommandRunner, result *WorkFinishResult) error {
+	if err := revalidateRecordedReviewBeforeMerge(repo, issueNumber, status, policy, runner); err != nil {
+		return fmt.Errorf("recorded review revalidation failed: %w", err)
+	}
+	return finishMergePR(repo, status, runner, result, true)
+}
+
+func revalidateRecordedReviewBeforeMerge(repo RepoRef, issueNumber int, reviewed DevPRStatusResult, reviewedPolicy FinishReviewPolicy, runner CommandRunner) error {
+	fresh, err := DevPRStatus(repo, issueNumber, runner)
+	if err != nil {
+		return fmt.Errorf("refresh PR metadata: %w", err)
+	}
+	if fresh.PRNumber != reviewed.PRNumber || !strings.EqualFold(strings.TrimSpace(fresh.State), "OPEN") || fresh.IsDraft || !fresh.ClosingReference || !fresh.Binding.Trusted ||
+		!strings.EqualFold(strings.TrimSpace(fresh.HeadSHA), strings.TrimSpace(reviewed.HeadSHA)) ||
+		!strings.EqualFold(strings.TrimSpace(fresh.BaseSHA), strings.TrimSpace(reviewed.BaseSHA)) ||
+		!strings.EqualFold(strings.TrimSpace(fresh.Binding.BaseRef), strings.TrimSpace(reviewed.Binding.BaseRef)) {
+		return fmt.Errorf("PR identity, head, base, draft, state, closing reference, or branch binding changed since review")
+	}
+	for _, blocker := range fresh.Blockers {
+		if blocker != "review" {
+			return fmt.Errorf("PR has a current non-review blocker: %s", blocker)
+		}
+	}
+	freshPolicy := resolveFinishReviewPolicy(repo, fresh, runner)
+	if freshPolicy.ValidationError != "" || freshPolicy.Value != reviewedPolicy.Value || freshPolicy.Source != reviewedPolicy.Source {
+		return fmt.Errorf("committed review policy changed or could not be revalidated")
+	}
+	evidence := finishReviewEvidence(repo, fresh, freshPolicy, runner)
+	if evidence.Blocker != "" || (evidence.Status != "independent_recorded" && evidence.Status != "approved") {
+		return fmt.Errorf("current recorded review is not satisfied: %s", evidence.Blocker)
+	}
+	return nil
+}
+
+func finishMergePR(repo RepoRef, status DevPRStatusResult, runner CommandRunner, result *WorkFinishResult, pinHead bool) error {
+	args := []string{"pr", "merge", fmt.Sprintf("%d", status.PRNumber), "--repo", repo.FullName(), "--squash", "--delete-branch"}
+	if pinHead {
+		args = append(args, "--match-head-commit", strings.TrimSpace(status.HeadSHA))
+	}
+	if _, err := runner.Run("gh", args...); err != nil {
 		if !finishGraphQLRateLimitError(err) {
 			return fmt.Errorf("merge PR: %w", err)
 		}
 		diagnostic := finishMergeRateLimitDiagnostic(repo, runner)
-		fallbackDetail, fallbackErr := finishMergePRViaREST(repo, status.PRNumber, runner)
+		var fallbackDetail string
+		var fallbackErr error
+		if pinHead {
+			fallbackDetail, fallbackErr = finishMergePRViaRESTForStatus(repo, status, runner)
+		} else {
+			fallbackDetail, fallbackErr = finishMergePRViaREST(repo, status.PRNumber, runner)
+		}
 		if fallbackErr != nil {
 			if result != nil {
 				result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge_fallback", Status: "blocked", Detail: strings.TrimSpace("GraphQL merge rate limit; " + diagnostic + "; " + fallbackErr.Error())})
@@ -448,6 +500,14 @@ func finishMergeRateLimitDiagnostic(repo RepoRef, runner CommandRunner) string {
 }
 
 func finishMergePRViaREST(repo RepoRef, prNumber int, runner CommandRunner) (string, error) {
+	return finishMergePRViaRESTExpected(repo, prNumber, nil, runner)
+}
+
+func finishMergePRViaRESTForStatus(repo RepoRef, status DevPRStatusResult, runner CommandRunner) (string, error) {
+	return finishMergePRViaRESTExpected(repo, status.PRNumber, &status, runner)
+}
+
+func finishMergePRViaRESTExpected(repo RepoRef, prNumber int, expected *DevPRStatusResult, runner CommandRunner) (string, error) {
 	output, err := runner.Run("gh", "api", fmt.Sprintf("repos/%s/pulls/%d", repo.FullName(), prNumber))
 	if err != nil {
 		return "", fmt.Errorf("inspect PR via REST: %w", err)
@@ -459,6 +519,10 @@ func finishMergePRViaREST(repo RepoRef, prNumber int, runner CommandRunner) (str
 		Head           struct {
 			SHA string `json:"sha"`
 		} `json:"head"`
+		Base struct {
+			Ref string `json:"ref"`
+			SHA string `json:"sha"`
+		} `json:"base"`
 	}
 	if err := json.Unmarshal(output, &pr); err != nil {
 		return "", fmt.Errorf("parse REST PR JSON: %w", err)
@@ -478,6 +542,14 @@ func finishMergePRViaREST(repo RepoRef, prNumber int, runner CommandRunner) (str
 	headSHA := strings.TrimSpace(pr.Head.SHA)
 	if headSHA == "" {
 		return "", fmt.Errorf("PR #%d REST head SHA is empty", prNumber)
+	}
+	if expected != nil {
+		if !strings.EqualFold(headSHA, strings.TrimSpace(expected.HeadSHA)) ||
+			!strings.EqualFold(strings.TrimSpace(pr.Base.SHA), strings.TrimSpace(expected.BaseSHA)) ||
+			!strings.EqualFold(strings.TrimSpace(pr.Base.Ref), strings.TrimSpace(expected.Binding.BaseRef)) {
+			return "", fmt.Errorf("PR #%d changed its reviewed head or base before REST merge", prNumber)
+		}
+		headSHA = strings.TrimSpace(expected.HeadSHA)
 	}
 	if _, err := runner.Run("gh", "api", "-X", "PUT", fmt.Sprintf("repos/%s/pulls/%d/merge", repo.FullName(), prNumber), "-f", "merge_method=squash", "-f", "sha="+headSHA); err != nil {
 		return "", fmt.Errorf("REST squash merge PR #%d with expected_head_sha=%s: %w", prNumber, headSHA, err)
@@ -857,6 +929,7 @@ func buildWorkFinishReadiness(result WorkFinishResult) WorkFinishReadinessReport
 			HeadRefName:      status.PullRequest.HeadRefName,
 			BaseRefName:      status.PullRequest.BaseRefName,
 			HeadSHA:          status.PullRequest.HeadSHA,
+			BaseSHA:          status.PullRequest.BaseSHA,
 			MergeCommitSHA:   status.PullRequest.MergeCommitSHA,
 			ClosingReference: status.PullRequest.ClosingReference,
 		}
@@ -990,7 +1063,7 @@ func buildWorkFinishReceipt(result WorkFinishResult) WorkFinishReceipt {
 		FinishedAt:       finishReceiptNow().Format(time.RFC3339),
 		Repository:       readiness.Repository,
 		Issue:            readiness.Issue,
-		PullRequest:      WorkFinishReceiptPR{Number: readiness.PullRequest.Number, URL: readiness.PullRequest.URL, State: readiness.PullRequest.State, Merged: result.Merged || result.AlreadyDone || strings.EqualFold(readiness.PullRequest.State, "MERGED"), HeadSHA: readiness.PullRequest.HeadSHA, MergeCommitSHA: readiness.PullRequest.MergeCommitSHA, ClosingReference: readiness.PullRequest.ClosingReference},
+		PullRequest:      WorkFinishReceiptPR{Number: readiness.PullRequest.Number, URL: readiness.PullRequest.URL, State: readiness.PullRequest.State, Merged: result.Merged || result.AlreadyDone || strings.EqualFold(readiness.PullRequest.State, "MERGED"), HeadSHA: readiness.PullRequest.HeadSHA, BaseSHA: readiness.PullRequest.BaseSHA, MergeCommitSHA: readiness.PullRequest.MergeCommitSHA, ClosingReference: readiness.PullRequest.ClosingReference},
 		ChecksSummary:    readiness.Checks,
 		ReviewSummary:    readiness.Review,
 		EvidenceSummary:  readiness.Evidence,

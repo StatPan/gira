@@ -278,7 +278,7 @@ func goalFinishRunnerWithGoalComments(goalComments string, childComments string,
 		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{"number":101}]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": goalComments,
 		"gh api repos/StatPan/gira/issues/101":                  childIssue,
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": childPRs,
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 101 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid,baseRefOid --limit 20": childPRs,
 		"gh issue view 101 --repo StatPan/gira --json comments":      childComments,
 		"gh label list --repo StatPan/gira --json name --limit 1000": `[{"name":"status:done"}]`,
 	}}

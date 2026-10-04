@@ -207,23 +207,24 @@ func evaluatePRReadinessWithPolicy(input prReadinessInput, policy ResolvedOperat
 		))
 	}
 
-	if input.ReviewPolicy != nil && input.ReviewPolicy.Value == FinishReviewPolicyNone {
-		// The repository explicitly chose a non-blocking review policy.
-	} else if input.ReviewEvidence != nil && input.ReviewEvidence.Blocker != "" {
+	reviewEvidenceSatisfied := input.ReviewEvidence != nil && (input.ReviewEvidence.Status == "approved" || input.ReviewEvidence.Status == "not_required" || input.ReviewEvidence.Status == "independent_recorded")
+	if input.ReviewEvidence != nil && input.ReviewEvidence.Blocker != "" {
 		report.Findings = append(report.Findings, prReadinessFinding(
 			"error",
 			input.ReviewEvidence.Blocker,
 			"Review evidence does not satisfy the configured finish policy.",
 			input.ReviewEvidence.Remediation,
 		))
-	} else if input.ReviewStatus == "blocked" {
+	} else if input.ReviewPolicy != nil && input.ReviewPolicy.Value == FinishReviewPolicyNone {
+		// The repository explicitly chose a non-blocking review policy.
+	} else if !reviewEvidenceSatisfied && input.ReviewStatus == "blocked" {
 		report.Findings = append(report.Findings, prReadinessFinding(
 			"error",
 			"review_blocked",
 			"Review state is blocking the PR.",
 			"Address requested changes or review blockers before finish.",
 		))
-	} else if input.ReviewStatus == "missing" || input.ReviewStatus == "unknown" || strings.TrimSpace(input.ReviewDecision) == "" || strings.EqualFold(input.ReviewDecision, "REVIEW_REQUIRED") {
+	} else if !reviewEvidenceSatisfied && (input.ReviewStatus == "missing" || input.ReviewStatus == "unknown" || strings.TrimSpace(input.ReviewDecision) == "" || strings.EqualFold(input.ReviewDecision, "REVIEW_REQUIRED")) {
 		severity, kind, action := "info", "missing_review", "Request review or capture reviewer judgment before finish if policy requires it."
 		if input.ReviewPolicy != nil && input.ReviewPolicy.Value == FinishReviewPolicyMissing {
 			severity, kind, action = "error", "review_policy_not_configured", "Set finish_review_policy: required or none in .gira/config.yaml."

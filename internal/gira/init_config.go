@@ -16,10 +16,19 @@ type InitConfig struct {
 	DeliveryPolicy     string                 `yaml:"delivery_policy" toml:"delivery_policy" json:"delivery_policy,omitempty"`
 	BranchPolicy       *BranchPolicyConfig    `yaml:"branch_policy" toml:"branch_policy" json:"branch_policy,omitempty"`
 	FinishReviewPolicy string                 `yaml:"finish_review_policy" toml:"finish_review_policy" json:"finish_review_policy,omitempty"`
+	RecordedReview     *RecordedReviewConfig  `yaml:"recorded_review" toml:"recorded_review" json:"recorded_review,omitempty"`
 	Review             ReviewConfig           `yaml:"review" toml:"review" json:"review,omitempty"`
 	Workspace          WorkspaceConfig        `yaml:"workspace" toml:"workspace" json:"workspace"`
 	Portfolio          PortfolioConfig        `yaml:"portfolio" toml:"portfolio" json:"portfolio"`
 	Profiles           map[string]InitProfile `yaml:"profiles" toml:"profiles" json:"profiles"`
+}
+
+// RecordedReviewConfig declares which authenticated GitHub accounts may record
+// an independent review receipt and the development target that may use it.
+// The values are repository policy and must be read from the PR base commit.
+type RecordedReviewConfig struct {
+	AllowedRecorders    []string `yaml:"allowed_recorders" toml:"allowed_recorders" json:"allowed_recorders"`
+	AllowedBaseBranches []string `yaml:"allowed_base_branches" toml:"allowed_base_branches" json:"allowed_base_branches"`
 }
 
 // ReviewConfig keeps optional, checkout-local review commands. Commands are
@@ -73,7 +82,10 @@ func LoadInitConfig(path string) (InitConfig, error) {
 	if err != nil {
 		return InitConfig{}, fmt.Errorf("read init config %q: %w", path, err)
 	}
+	return parseInitConfigContent(path, content)
+}
 
+func parseInitConfigContent(path string, content []byte) (InitConfig, error) {
 	var cfg InitConfig
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
@@ -103,8 +115,8 @@ func LoadInitConfig(path string) (InitConfig, error) {
 	if err := validateLocalReviewChecks(path, cfg.Review.LocalChecks); err != nil {
 		return InitConfig{}, err
 	}
-	if value := strings.TrimSpace(cfg.FinishReviewPolicy); value != "" && !strings.EqualFold(value, "required") && !strings.EqualFold(value, "none") {
-		return InitConfig{}, fmt.Errorf("invalid init config %q: finish_review_policy must be required or none", path)
+	if err := validateFinishReviewPolicyConfig(path, cfg); err != nil {
+		return InitConfig{}, err
 	}
 	if strings.TrimSpace(cfg.Workspace.InboxRepo) != "" {
 		if _, err := ParseRepoRef(cfg.Workspace.InboxRepo); err != nil {
@@ -156,6 +168,62 @@ func LoadInitConfig(path string) (InitConfig, error) {
 		}
 	}
 	return cfg, nil
+}
+
+func validateFinishReviewPolicyConfig(path string, cfg InitConfig) error {
+	value := strings.ToLower(strings.TrimSpace(cfg.FinishReviewPolicy))
+	if value != "" && value != FinishReviewPolicyRequired && value != FinishReviewPolicyNone && value != FinishReviewPolicyRecordedIndependent {
+		return fmt.Errorf("invalid init config %q: finish_review_policy must be %q, %q, or %q", path, FinishReviewPolicyRequired, FinishReviewPolicyNone, FinishReviewPolicyRecordedIndependent)
+	}
+	if value != FinishReviewPolicyRecordedIndependent {
+		if cfg.RecordedReview != nil {
+			return fmt.Errorf("invalid init config %q: recorded_review requires finish_review_policy: %s", path, FinishReviewPolicyRecordedIndependent)
+		}
+		return nil
+	}
+	if cfg.RecordedReview == nil {
+		return fmt.Errorf("invalid init config %q: recorded_review is required when finish_review_policy is %s", path, FinishReviewPolicyRecordedIndependent)
+	}
+	if cfg.BranchPolicy == nil || strings.TrimSpace(cfg.BranchPolicy.DevelopmentBase) == "" || strings.TrimSpace(cfg.BranchPolicy.ProductionBase) == "" {
+		return fmt.Errorf("invalid init config %q: recorded review requires explicit branch_policy.development_base and branch_policy.production_base", path)
+	}
+	developmentBase := strings.TrimSpace(cfg.BranchPolicy.DevelopmentBase)
+	productionBase := strings.TrimSpace(cfg.BranchPolicy.ProductionBase)
+	if strings.EqualFold(developmentBase, productionBase) {
+		return fmt.Errorf("invalid init config %q: recorded review development and production bases must differ", path)
+	}
+	if len(cfg.RecordedReview.AllowedBaseBranches) != 1 || !strings.EqualFold(strings.TrimSpace(cfg.RecordedReview.AllowedBaseBranches[0]), developmentBase) {
+		return fmt.Errorf("invalid init config %q: recorded_review.allowed_base_branches must contain only branch_policy.development_base %q", path, developmentBase)
+	}
+	seenRecorders := map[string]struct{}{}
+	for index, raw := range cfg.RecordedReview.AllowedRecorders {
+		recorder := strings.TrimSpace(raw)
+		if !validGitHubLogin(recorder) {
+			return fmt.Errorf("invalid init config %q: recorded_review.allowed_recorders[%d] must be a GitHub login", path, index)
+		}
+		key := strings.ToLower(recorder)
+		if _, exists := seenRecorders[key]; exists {
+			return fmt.Errorf("invalid init config %q: recorded_review.allowed_recorders contains duplicate login %q", path, recorder)
+		}
+		seenRecorders[key] = struct{}{}
+	}
+	if len(seenRecorders) == 0 {
+		return fmt.Errorf("invalid init config %q: recorded_review.allowed_recorders must include at least one GitHub login", path)
+	}
+	return nil
+}
+
+func validGitHubLogin(login string) bool {
+	if login == "" || len(login) > 39 || login[0] == '-' || login[len(login)-1] == '-' {
+		return false
+	}
+	for _, char := range login {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func validateLocalReviewChecks(path string, checks []LocalReviewCheck) error {

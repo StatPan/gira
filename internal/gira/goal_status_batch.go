@@ -20,8 +20,19 @@ type goalStatusRepositorySnapshot struct {
 
 type goalStatusRepositoryPolicies struct {
 	Branch    *ResolvedBranchPolicy
-	Review    FinishReviewPolicy
 	Operation ResolvedOperationPolicy
+}
+
+type goalStatusReviewPolicyCache map[string]FinishReviewPolicy
+
+func (cache goalStatusReviewPolicyCache) resolve(repo RepoRef, status DevPRStatusResult, runner CommandRunner) FinishReviewPolicy {
+	key := strings.ToLower(repo.FullName()) + "|" + strings.ToLower(strings.TrimSpace(status.BaseSHA))
+	if policy, ok := cache[key]; ok {
+		return policy
+	}
+	policy := resolveFinishReviewPolicy(repo, status, runner)
+	cache[key] = policy
+	return policy
 }
 
 // A single alias query also requests bounded timeline, review, and check
@@ -57,7 +68,7 @@ func goalStatusIssueSnapshot(repo RepoRef, childNumbers []int, runner CommandRun
 	}
 	aliases := make([]string, 0, len(numbers))
 	for _, number := range numbers {
-		aliases = append(aliases, fmt.Sprintf("issue%d: issue(number: %d) { number title state body labels(first: 100) { nodes { name } pageInfo { hasNextPage } } milestone { title } timelineItems(first: 100, itemTypes: [CROSS_REFERENCED_EVENT]) { nodes { ... on CrossReferencedEvent { source { ... on PullRequest { number title body state url isDraft mergeStateStatus reviewDecision headRefName baseRefName headRefOid mergeCommit { oid } reviews(first: 100) { nodes { state commit { oid } } pageInfo { hasNextPage } } statusCheckRollup { contexts(first: 100) { nodes { ... on CheckRun { name status conclusion detailsUrl completedAt } ... on StatusContext { context state targetUrl description } } pageInfo { hasNextPage } } } } } } } pageInfo { hasNextPage } } }", number, number))
+		aliases = append(aliases, fmt.Sprintf("issue%d: issue(number: %d) { number title state body labels(first: 100) { nodes { name } pageInfo { hasNextPage } } milestone { title } timelineItems(first: 100, itemTypes: [CROSS_REFERENCED_EVENT]) { nodes { ... on CrossReferencedEvent { source { ... on PullRequest { number title body state url isDraft mergeStateStatus reviewDecision headRefName baseRefName headRefOid baseRefOid mergeCommit { oid } reviews(first: 100) { nodes { state commit { oid } } pageInfo { hasNextPage } } statusCheckRollup { contexts(first: 100) { nodes { ... on CheckRun { name status conclusion detailsUrl completedAt } ... on StatusContext { context state targetUrl description } } pageInfo { hasNextPage } } } } } } pageInfo { hasNextPage } } }", number, number))
 	}
 	query := fmt.Sprintf("query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { %s } }", strings.Join(aliases, " "))
 	out, err := runner.Run("gh", "api", "graphql", "-f", "owner="+repo.Owner, "-f", "name="+repo.Name, "-f", "query="+query)
@@ -174,6 +185,7 @@ type goalStatusGraphQLPR struct {
 	HeadRefName    string `json:"headRefName"`
 	BaseRefName    string `json:"baseRefName"`
 	HeadRefOID     string `json:"headRefOid"`
+	BaseRefOID     string `json:"baseRefOid"`
 	MergeCommit    *struct {
 		OID string `json:"oid"`
 	} `json:"mergeCommit"`
@@ -221,7 +233,7 @@ func goalStatusGraphQLPRSummary(pr goalStatusGraphQLPR) prSummary {
 		Number: pr.Number, Title: pr.Title, Body: pr.Body, State: state,
 		URL: pr.URL, ReviewDecision: strings.ToUpper(strings.TrimSpace(pr.ReviewDecision)),
 		IsDraft: pr.IsDraft, MergeState: strings.ToUpper(strings.TrimSpace(pr.MergeState)),
-		HeadRefName: pr.HeadRefName, BaseRefName: pr.BaseRefName, HeadRefOID: pr.HeadRefOID,
+		HeadRefName: pr.HeadRefName, BaseRefName: pr.BaseRefName, HeadRefOID: pr.HeadRefOID, BaseRefOID: pr.BaseRefOID,
 	}
 	if pr.MergeCommit != nil {
 		summary.MergeCommit = &struct {
@@ -336,16 +348,28 @@ func containsInt(values []int, value int) bool {
 	return false
 }
 
-func goalStatusChildFromSnapshot(ref goalChildRef, snapshot goalStatusRepositorySnapshot, policies goalStatusRepositoryPolicies) (GoalStatusChild, error) {
+func goalStatusChildFromSnapshot(ref goalChildRef, snapshot goalStatusRepositorySnapshot, policies goalStatusRepositoryPolicies, reviewPolicies goalStatusReviewPolicyCache, runner CommandRunner) (GoalStatusChild, error) {
 	issue, ok := snapshot.Issues[ref.Number]
 	if !ok {
 		return GoalStatusChild{}, fmt.Errorf("issue #%d is missing from repository snapshot", ref.Number)
 	}
 	prStatus := goalStatusPRForIssue(ref.Repo, issue, snapshot.PRs, snapshot.PRsIncomplete[ref.Number], policies.Branch)
-	review := goalStatusReviewEvidenceForPR(issue, prStatus, snapshot, policies.Review)
-	workStatus := workStatusFromIssueAndPRWithPreparedReview(ref.Repo, issue.Number, issue, prStatus, policies.Operation, policies.Review, review)
+	reviewPolicy := FinishReviewPolicy{Value: FinishReviewPolicyNotEvaluated, Source: "goal_status_not_finish_eligible"}
+	var review *FinishReviewEvidence
+	if goalStatusReviewPolicyEligible(issue, prStatus) {
+		reviewPolicy = reviewPolicies.resolve(ref.Repo, prStatus, runner)
+		review = goalStatusReviewEvidenceForPR(issue, prStatus, snapshot, reviewPolicy)
+	}
+	workStatus := workStatusFromIssueAndPRWithPreparedReview(ref.Repo, issue.Number, issue, prStatus, policies.Operation, reviewPolicy, review)
 	child := goalStatusChildFromWorkStatus(ref.Repo, ref.RelationSource, workStatus)
 	return child, nil
+}
+
+func goalStatusReviewPolicyEligible(issue devStartIssue, status DevPRStatusResult) bool {
+	if status.PRNumber == 0 || !strings.EqualFold(strings.TrimSpace(status.State), "OPEN") || !strings.EqualFold(displayStatus(managedStatusFromLabels(issue.Labels)), "In review") {
+		return false
+	}
+	return len(removeString(status.Blockers, "review")) == 0
 }
 
 func goalStatusReviewEvidenceForPR(issue devStartIssue, status DevPRStatusResult, snapshot goalStatusRepositorySnapshot, policy FinishReviewPolicy) *FinishReviewEvidence {
@@ -362,10 +386,19 @@ func goalStatusReviewEvidenceForPR(issue devStartIssue, status DevPRStatusResult
 		evidence.Status = "not_required"
 		return &evidence
 	}
-	if policy.Value == FinishReviewPolicyMissing {
+	if policy.ValidationError != "" || policy.Value == FinishReviewPolicyMissing {
 		evidence.Status = "blocked"
 		evidence.Blocker = "review_policy_not_configured"
-		evidence.Remediation = "Set finish_review_policy: required or none in .gira/config.yaml."
+		if policy.ValidationError != "" {
+			evidence.Blocker = "review_policy_invalid"
+		}
+		evidence.Remediation = "Restore a valid finish-review policy at the exact PR base commit and retry."
+		return &evidence
+	}
+	if policy.Value == FinishReviewPolicyRecordedIndependent {
+		evidence.Status = "blocked"
+		evidence.Blocker = "review_evidence_unavailable"
+		evidence.Remediation = "Recorded-review details are not present in the bounded goal snapshot; use ticket status to verify the full review receipt."
 		return &evidence
 	}
 	if evidence.Decision != "APPROVED" {

@@ -58,7 +58,7 @@ branch_policy:
 `)
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-progress"}]}`),
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": []byte(`[]`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid,baseRefOid --limit 20": []byte(`[]`),
 		"git ls-remote --exit-code --heads origin dev":                                              []byte("abc\trefs/heads/dev"),
 		"git branch --show-current":                                                                 []byte("issue-126-work-command\n"),
 		"git rev-parse --abbrev-ref --symbolic-full-name @{u}":                                      []byte("origin/issue-126-work-command\n"),
@@ -66,7 +66,7 @@ branch_policy:
 		"gh api repos/StatPan/gira/issues/126/labels/status:in-progress -X DELETE":                  nil,
 		"gh api repos/StatPan/gira/issues/126/labels -X POST -f labels[]=status:in-review":          nil,
 	}, queues: map[string][][]byte{
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": {
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid,baseRefOid --limit 20": {
 			[]byte(`[]`),
 			[]byte(`[{"number":201,"title":"feat: Work command","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/201","reviewDecision":"","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-126-work-command","baseRefName":"dev","headRefOid":"head220","statusCheckRollup":[]}]`),
 		},
@@ -132,7 +132,7 @@ func TestOpenWorkPRFailsBeforeMutationWhenRecordedBaseIsMissing(t *testing.T) {
 	runner := &workRunner{
 		outputs: map[string][]byte{
 			"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","body":` + strconv.Quote(body) + `,"labels":[{"name":"status:in-progress"}]}`),
-			"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": []byte(`[]`),
+			"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid,baseRefOid --limit 20": []byte(`[]`),
 		},
 		errs: map[string]error{
 			"git ls-remote --exit-code --heads origin dev": errors.New("exit status 2"),
@@ -155,7 +155,7 @@ func TestGetWorkStatusReportsRecordedDevActualMainWithoutRetargeting(t *testing.
 	body := RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "dev", BaseSource: "branch_policy.global_repo_registry.dev"})
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","body":` + strconv.Quote(body) + `,"labels":[{"name":"status:in-review"}]}`),
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": []byte(`[{"number":201,"title":"feat: work","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/201","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-126-work-command","baseRefName":"main","headRefOid":"head220","statusCheckRollup":[]}]`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 126 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid,baseRefOid --limit 20": []byte(`[{"number":201,"title":"feat: work","body":"Closes #126","state":"OPEN","url":"https://github.com/StatPan/gira/pull/201","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"issue-126-work-command","baseRefName":"main","headRefOid":"head220","statusCheckRollup":[]}]`),
 	}}
 
 	result, err := GetWorkStatus(repo, 126, runner)

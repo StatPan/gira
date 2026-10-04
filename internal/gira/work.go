@@ -175,6 +175,7 @@ type TicketStatusPullRequest struct {
 	ReviewDecision   string `json:"review_decision"`
 	IsDraft          bool   `json:"is_draft"`
 	HeadSHA          string `json:"head_sha,omitempty"`
+	BaseSHA          string `json:"base_sha,omitempty"`
 	MergeCommitSHA   string `json:"merge_commit_sha,omitempty"`
 	ClosingReference bool   `json:"closing_reference"`
 }
@@ -1156,11 +1157,12 @@ func workStatusFromIssueAndPRWithReviewEvidence(repo RepoRef, issueNumber int, i
 
 func workStatusFromIssueAndPRWithReviewEvidenceAndPolicy(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult, runner CommandRunner, operationPolicy ResolvedOperationPolicy) WorkStatusResult {
 	applyDevPRBindingPolicy(&prStatus, issueNumber, devPRBindingPolicyFromIssue(issue, nil, repo))
-	reviewPolicy := loadFinishReviewPolicy(repo)
+	reviewPolicy := FinishReviewPolicy{Value: FinishReviewPolicyNotEvaluated, Source: "ticket_status_not_finish_eligible"}
 	var review *FinishReviewEvidence
 	status := displayStatus(managedStatusFromLabels(issue.Labels))
 	nextAction := nextWorkAction(issue.State, status, prStatus)
 	if runner != nil && prStatus.PRNumber > 0 && strings.EqualFold(status, "In review") && (nextAction == "merge_when_policy_allows" || containsString(prStatus.Blockers, "review")) {
+		reviewPolicy = resolveFinishReviewPolicy(repo, prStatus, runner)
 		evidence := finishReviewEvidence(repo, prStatus, reviewPolicy, runner)
 		review = &evidence
 	}
@@ -1174,13 +1176,13 @@ func workStatusFromIssueAndPRWithPreparedReview(repo RepoRef, issueNumber int, i
 	status := displayStatus(managedStatusFromLabels(issue.Labels))
 	nextAction := nextWorkAction(issue.State, status, prStatus)
 	if review != nil && prStatus.PRNumber > 0 && strings.EqualFold(status, "In review") && (nextAction == "merge_when_policy_allows" || containsString(prStatus.Blockers, "review")) {
-		if reviewPolicy.Value == FinishReviewPolicyNone {
+		if reviewPolicy.Value == FinishReviewPolicyNone || review.Blocker != "" || review.Status == "approved" || review.Status == "independent_recorded" {
 			prStatus.Blockers = removeString(prStatus.Blockers, "review")
 			nextAction = nextWorkAction(issue.State, status, prStatus)
-		} else if review.Blocker != "" {
-			prStatus.Blockers = removeString(prStatus.Blockers, "review")
-			prStatus.Blockers = appendUniqueStrings(prStatus.Blockers, review.Blocker)
-			nextAction = nextWorkAction(issue.State, status, prStatus)
+			if review.Blocker != "" {
+				prStatus.Blockers = appendUniqueStrings(prStatus.Blockers, review.Blocker)
+				nextAction = nextWorkAction(issue.State, status, prStatus)
+			}
 		}
 	}
 	branchPolicy := ticketStatusBranchPolicy(issue, prStatus)
@@ -1311,6 +1313,7 @@ func ticketStatusPullRequest(pr DevPRStatusResult) *TicketStatusPullRequest {
 		ReviewDecision:   valueOrUnknown(pr.ReviewDecision),
 		IsDraft:          pr.IsDraft,
 		HeadSHA:          pr.HeadSHA,
+		BaseSHA:          pr.BaseSHA,
 		MergeCommitSHA:   pr.MergeCommitSHA,
 		ClosingReference: pr.ClosingReference,
 	}
@@ -1348,10 +1351,19 @@ func ticketStatusReviewStatusWithEvidence(pr DevPRStatusResult, review *FinishRe
 	if pr.PRNumber == 0 {
 		return "missing"
 	}
+	if review != nil && review.Blocker != "" {
+		return "blocked"
+	}
 	if review != nil && review.Status == "not_required" {
 		return "not_required"
 	}
-	if containsString(pr.Blockers, "review") || (review != nil && review.Blocker != "") {
+	if review != nil && review.Status == "approved" {
+		return "approved"
+	}
+	if review != nil && review.Status == "independent_recorded" {
+		return "independent_recorded"
+	}
+	if containsString(pr.Blockers, "review") {
 		return "blocked"
 	}
 	if strings.EqualFold(pr.ReviewDecision, "APPROVED") {
@@ -1565,7 +1577,7 @@ func nextWorkAction(issueState string, status string, pr DevPRStatusResult) stri
 			return "correct_pr_base"
 		case "draft":
 			return "mark_pr_ready"
-		case "review", "review_policy_not_configured", "review_required_but_absent", "review_evidence_unavailable", "review_approval_stale":
+		case "review", "review_policy_not_configured", "review_policy_invalid", "review_required_but_absent", "review_evidence_unavailable", "review_approval_stale", "review_changes_requested", "recorded_review_target_not_allowed", "recorded_review_invalid", "recorded_review_blocked", "recorded_review_stale":
 			return "address_review"
 		case "checks", "checks_pending":
 			return "wait_for_checks"

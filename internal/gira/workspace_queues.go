@@ -247,7 +247,7 @@ func workspaceReviewNeededReasons(status WorkStatusResult) []string {
 	if status.ReviewPolicy != nil && status.ReviewPolicy.Value == FinishReviewPolicyNone {
 		return nil
 	}
-	if len(status.Blockers) > 0 || status.ChecksStatus == "failed" || status.ChecksStatus == "failing" || status.ReviewStatus == "approved" {
+	if len(status.Blockers) > 0 || status.ChecksStatus == "failed" || status.ChecksStatus == "failing" || status.ReviewStatus == "approved" || status.ReviewStatus == "not_required" || status.ReviewStatus == "independent_recorded" {
 		return nil
 	}
 	if status.PullRequest != nil && strings.EqualFold(status.PullRequest.ReviewDecision, "APPROVED") {
@@ -260,7 +260,7 @@ func workspaceReviewNeededReasons(status WorkStatusResult) []string {
 	if status.ReviewStatus == "" || status.ReviewStatus == "missing" || status.ReviewStatus == "unknown" || status.ReviewStatus == "review_required" {
 		reasons = append(reasons, "review_required")
 	}
-	if status.PullRequest != nil && strings.EqualFold(status.PullRequest.ReviewDecision, "REVIEW_REQUIRED") {
+	if status.ReviewStatus != "independent_recorded" && status.PullRequest != nil && strings.EqualFold(status.PullRequest.ReviewDecision, "REVIEW_REQUIRED") {
 		reasons = append(reasons, "review_required")
 	}
 	if status.PRReadiness != nil && status.PRReadiness.NextAction == "request_review" {
@@ -289,7 +289,7 @@ func workspaceFinishReadyReasons(status WorkStatusResult) []string {
 	if status.ChecksStatus != "" && status.ChecksStatus != "passed" {
 		return nil
 	}
-	if status.ReviewStatus != "" && status.ReviewStatus != "approved" && status.ReviewStatus != "not_required" {
+	if status.ReviewStatus != "" && status.ReviewStatus != "approved" && status.ReviewStatus != "not_required" && status.ReviewStatus != "independent_recorded" {
 		return nil
 	}
 	return reasons

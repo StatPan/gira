@@ -6,6 +6,13 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Added an opt-in recorded-independent-review lane for development PRs when
+  the immutable PR base enables it. Ticket status and finish now resolve every
+  review policy from the exact PR base commit, including legacy `required` and
+  `none` settings; a missing or unreadable committed policy blocks instead of
+  falling back to local candidate config. Recorded receipts are inspectable
+  operator attestations, not authenticated AI identity.
+
 ## v3.2.0 - 2026-09-29
 
 - Added opt-in `--detail` to `gira ticket checks` and `gira ticket wait`.

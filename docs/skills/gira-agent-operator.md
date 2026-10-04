@@ -66,8 +66,7 @@ change units, and milestones phase boundaries.
      `gira ticket self-review --diff-summary --dry-run`, then `--apply` after
      the rendered PR check note is reviewed. This does not replace required
      human or branch-protection review.
-   - Finish uses committed PR-base policy; self-review is not approval.
-     Recorded review: [policy](../finish-review-policy.md).
+   - Review policy: [contract](../finish-review-policy.md).
 6. Finish.
    - Prefer `gira ticket finish --dry-run`.
    - Apply only after the dry-run is clean: `gira ticket finish --apply`.

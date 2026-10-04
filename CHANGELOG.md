@@ -6,6 +6,8 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Fixed ticket finish to honor verified current-head native or recorded review
+  evidence without clearing unrelated blockers.
 - Added an opt-in recorded-independent-review lane for development PRs when
   the immutable PR base enables it. Ticket status and finish now resolve every
   review policy from the exact PR base commit, including legacy `required` and

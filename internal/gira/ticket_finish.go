@@ -327,7 +327,7 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 	result.ReviewPolicy = policy
 	result.ReviewEvidence = review
 	statusBlockers := mergeBlockers(status.Blockers)
-	if policy.Value == FinishReviewPolicyNone || review.Blocker != "" {
+	if policy.Value == FinishReviewPolicyNone || review.Blocker != "" || review.Status == "approved" || review.Status == "independent_recorded" {
 		statusBlockers = removeString(statusBlockers, "review")
 	}
 	result.Blockers = appendUniqueStrings(result.Blockers, statusBlockers...)

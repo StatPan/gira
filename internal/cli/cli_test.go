@@ -8557,20 +8557,20 @@ func TestExportDashboardWorkspaceApplyWritesArtifacts(t *testing.T) {
 		}
 		report := gira.WorkspaceReport{Workspace: workspace, Queues: queues, FetchedAt: "2026-05-31T09:00:00Z"}
 		return gira.DashboardExportPlan{
-				Command:       "export dashboard",
-				DryRun:        dryRun,
-				Workspace:     &workspace,
-				OutputRoot:    outputRoot,
-				SchemaVersion: gira.DashboardExportSchemaVersion,
-				SnapshotAt:    "2026-05-31T09:00:00Z",
-				Artifacts:     gira.DashboardExportWorkspaceArtifacts(),
-				Counts:        gira.DashboardExportCounts{WorkspaceRepos: 1, WorkspaceQueueItems: 1},
-			}, gira.DashboardExportBundle{
-				Manifest:           gira.DashboardExportManifest{SchemaVersion: gira.DashboardExportSchemaVersion, SnapshotAt: "2026-05-31T09:00:00Z", Workspace: &workspace, Artifacts: gira.DashboardExportWorkspaceArtifacts()},
-				WorkspaceStatus:    &report,
-				WorkspaceQueues:    &queues,
-				WorkspaceDashboard: &dashboard,
-			}, nil
+			Command:       "export dashboard",
+			DryRun:        dryRun,
+			Workspace:     &workspace,
+			OutputRoot:    outputRoot,
+			SchemaVersion: gira.DashboardExportSchemaVersion,
+			SnapshotAt:    "2026-05-31T09:00:00Z",
+			Artifacts:     gira.DashboardExportWorkspaceArtifacts(),
+			Counts:        gira.DashboardExportCounts{WorkspaceRepos: 1, WorkspaceQueueItems: 1},
+		}, gira.DashboardExportBundle{
+			Manifest:           gira.DashboardExportManifest{SchemaVersion: gira.DashboardExportSchemaVersion, SnapshotAt: "2026-05-31T09:00:00Z", Workspace: &workspace, Artifacts: gira.DashboardExportWorkspaceArtifacts()},
+			WorkspaceStatus:    &report,
+			WorkspaceQueues:    &queues,
+			WorkspaceDashboard: &dashboard,
+		}, nil
 	}
 
 	outputRoot := filepath.Join(t.TempDir(), "workspace-dashboard")
@@ -9805,7 +9805,7 @@ func TestDevPRStatusJSON(t *testing.T) {
 	original := devCommandRunner
 	t.Cleanup(func() { devCommandRunner = original })
 	devCommandRunner = devCLIRunner{outputs: map[string][]byte{
-		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 60 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid --limit 20": []byte(`[{"number":99,"title":"x","body":"Closes #60","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
+		"gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 60 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid,baseRefOid --limit 20": []byte(`[{"number":99,"title":"x","body":"Closes #60","state":"OPEN","url":"u","reviewDecision":"APPROVED","isDraft":false,"mergeStateStatus":"CLEAN","headRefOid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","baseRefOid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]`),
 	}}
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"dev", "pr", "status", "--repo", "StatPan/gira", "--issue", "60", "--json"}, &stdout, &stderr)

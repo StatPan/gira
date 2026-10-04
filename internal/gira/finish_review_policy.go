@@ -588,7 +588,7 @@ func validateIndependentReviewReceiptHistory(repo RepoRef, prNumber int, policy 
 	if (receipt.Reviewer.Kind != "human" && receipt.Reviewer.Kind != "ai") || (receipt.Implementer.Kind != "human" && receipt.Implementer.Kind != "ai") || strings.TrimSpace(receipt.Reviewer.RunRef) == "" || strings.TrimSpace(receipt.Implementer.RunRef) == "" || strings.EqualFold(strings.TrimSpace(receipt.Reviewer.RunRef), strings.TrimSpace(receipt.Implementer.RunRef)) {
 		return fmt.Errorf("reviewer and implementer run references are missing or not distinct")
 	}
-	if strings.TrimSpace(receipt.Verdict) != "GO" && strings.TrimSpace(receipt.Verdict) != "BLOCKED" {
+	if receipt.Verdict != "GO" && receipt.Verdict != "BLOCKED" {
 		return fmt.Errorf("review verdict is invalid")
 	}
 	if len(receipt.EvidenceRefs) == 0 || !validEvidenceRefs(receipt.EvidenceRefs) || !nonEmptyStrings(receipt.Limitations) {

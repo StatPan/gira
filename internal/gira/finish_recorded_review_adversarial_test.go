@@ -114,7 +114,9 @@ func TestQARecordedReviewRejectsStaleAndForeignBindings(t *testing.T) {
 	for i, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			receipt := qaIndependentReceipt(status, "qa-recorder")
-			test.mutate(&receipt)
+			if test.mutate != nil {
+				test.mutate(&receipt)
+			}
 			commit := test.commitSHA
 			if commit == "" {
 				commit = status.HeadSHA
@@ -142,6 +144,9 @@ func TestQARecordedReviewRejectsMalformedOrIncompleteReceipts(t *testing.T) {
 		{name: "same reviewer and implementer", mutate: func(r *IndependentReviewReceipt) { r.Implementer.ID = r.Reviewer.ID }},
 		{name: "non-inspectable evidence reference", mutate: func(r *IndependentReviewReceipt) { r.EvidenceRefs = []string{"file:///tmp/private-review"} }},
 		{name: "BLOCKED without an open blocker", mutate: func(r *IndependentReviewReceipt) { r.Verdict = "BLOCKED" }},
+		{name: "BLOCKED with trailing whitespace is not canonical", mutate: func(r *IndependentReviewReceipt) { r.Verdict = "BLOCKED " }},
+		{name: "BLOCKED with leading whitespace is not canonical", mutate: func(r *IndependentReviewReceipt) { r.Verdict = " BLOCKED" }},
+		{name: "GO with trailing whitespace is not canonical", mutate: func(r *IndependentReviewReceipt) { r.Verdict = "GO " }},
 		{name: "GO with open blocking finding", mutate: func(r *IndependentReviewReceipt) {
 			r.Findings = []IndependentReviewFinding{{ID: "finding-open", Severity: "blocking", Status: "open", Summary: "A blocking issue remains.", EvidenceRefs: []string{"https://evidence.example.invalid/findings/open"}}}
 		}},

@@ -163,14 +163,16 @@ func TestRestCheckRunsLatestAttemptPerWorkflowJob(t *testing.T) {
 func TestTicketStatusAndFinishUseCurrentRerunChecks(t *testing.T) {
 	useFinishReviewPolicy(t, FinishReviewPolicyRequired)
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	const baseSHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	outputs := map[string][]byte{
-		"gh api repos/StatPan/gira/issues/219":                           []byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`),
-		"gh api repos/StatPan/gira/issues/219/timeline --paginate":       []byte(`[{"source":{"issue":{"number":220,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/220"}}}}]`),
-		"gh api repos/StatPan/gira/pulls/220":                            []byte(`{"number":220,"body":"Closes #219","state":"open","html_url":"https://github.com/StatPan/gira/pull/220","mergeable_state":"clean","head":{"ref":"issue-219-finish","sha":"head123"},"base":{"ref":"main"}}`),
-		"gh api repos/StatPan/gira/pulls/220/reviews --paginate":         []byte(`[{"state":"APPROVED","submitted_at":"2026-09-26T09:00:00Z"}]`),
-		"gh api repos/StatPan/gira/pulls/220/reviews --paginate --slurp": []byte(`[[{"state":"APPROVED","commit_id":"head123"}]]`),
-		"gh api repos/StatPan/gira/actions/runs/100":                     []byte(`{"workflow_id":42,"head_sha":"head123"}`),
-		"gh api repos/StatPan/gira/commits/head123/status":               []byte(`{"statuses":[]}`),
+		"gh api repos/StatPan/gira/issues/219":                                                []byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`),
+		"gh api repos/StatPan/gira/issues/219/timeline --paginate":                            []byte(`[{"source":{"issue":{"number":220,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/220"}}}}]`),
+		"gh api repos/StatPan/gira/pulls/220":                                                 []byte(`{"number":220,"body":"Closes #219","state":"open","html_url":"https://github.com/StatPan/gira/pull/220","mergeable_state":"clean","head":{"ref":"issue-219-finish","sha":"head123"},"base":{"ref":"main","sha":"` + baseSHA + `"}}`),
+		"gh api repos/StatPan/gira/contents/.gira/config.yaml --method GET -f ref=" + baseSHA: githubContentsFile(".gira/config.yaml", "repo: StatPan/gira\nfinish_review_policy: required\nprofiles:\n  default:\n    labels: []\n"),
+		"gh api repos/StatPan/gira/pulls/220/reviews --paginate":                              []byte(`[{"state":"APPROVED","submitted_at":"2026-09-26T09:00:00Z"}]`),
+		"gh api repos/StatPan/gira/pulls/220/reviews --paginate --slurp":                      []byte(`[[{"state":"APPROVED","commit_id":"head123"}]]`),
+		"gh api repos/StatPan/gira/actions/runs/100":                                          []byte(`{"workflow_id":42,"head_sha":"head123"}`),
+		"gh api repos/StatPan/gira/commits/head123/status":                                    []byte(`{"statuses":[]}`),
 	}
 	var runs strings.Builder
 	runs.WriteString(`{"check_runs":[`)

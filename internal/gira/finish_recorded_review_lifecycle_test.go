@@ -30,20 +30,20 @@ type recordedFinishLifecycleSnapshot struct {
 // keeping GitHub responses deterministic. Tests may change revalidation to
 // model evidence changing between the initial read and the guarded merge.
 type recordedFinishLifecycleRunner struct {
-	root         string
-	initial      recordedFinishLifecycleSnapshot
-	revalidation recordedFinishLifecycleSnapshot
-	issueState   string
-	issueLabels  []string
-	merged       bool
-	pullReads    int
-	policyReads  int
+	root           string
+	initial        recordedFinishLifecycleSnapshot
+	revalidation   recordedFinishLifecycleSnapshot
+	issueState     string
+	issueLabels    []string
+	merged         bool
+	pullReads      int
+	policyReads    int
 	rawReviewReads int
-	receiptReads int
-	calls        []string
-	mergeCalls   []string
-	mutations    []string
-	mu           sync.Mutex
+	receiptReads   int
+	calls          []string
+	mergeCalls     []string
+	mutations      []string
+	mu             sync.Mutex
 }
 
 func newRecordedFinishLifecycleRunner(t *testing.T) *recordedFinishLifecycleRunner {
@@ -183,7 +183,7 @@ func (r *recordedFinishLifecycleRunner) pullResponse() ([]byte, error) {
 			"merge_commit_sha": "cccccccccccccccccccccccccccccccccccccccc", "html_url": "https://github.com/StatPan/gira/pull/220",
 			"mergeable_state": "unknown", "head": map[string]string{"ref": r.initial.HeadRef, "sha": r.initial.HeadSHA},
 			"base": map[string]string{"ref": r.initial.BaseRef, "sha": r.initial.BaseSHA},
-		}), nil
+		})
 	}
 	r.pullReads++
 	snapshot := r.activeSnapshot()
@@ -192,7 +192,7 @@ func (r *recordedFinishLifecycleRunner) pullResponse() ([]byte, error) {
 		"draft": snapshot.Draft, "mergeable_state": "clean",
 		"head": map[string]string{"ref": snapshot.HeadRef, "sha": snapshot.HeadSHA},
 		"base": map[string]string{"ref": snapshot.BaseRef, "sha": snapshot.BaseSHA},
-	}), nil
+	})
 }
 
 func (r *recordedFinishLifecycleRunner) reviewsResponse(slurp bool) ([]byte, error) {

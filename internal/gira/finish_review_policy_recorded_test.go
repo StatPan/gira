@@ -147,6 +147,18 @@ func TestRecordedReviewMergeRevalidatesAndPreservesNativeApproval(t *testing.T) 
 			t.Fatalf("merge must be pinned to the reviewed head: got %v want %q", runner.mergeCalls, want)
 		}
 	})
+
+	t.Run("case-only base-ref drift prevents merge", func(t *testing.T) {
+		runner := &recordedReviewLifecycleRunner{root: root, headSHA: reviewedHead, baseSHA: baseSHA, baseRef: "Dev", reviews: []finishReview{approved}}
+		status := recordedReviewLifecycleStatus(reviewedHead, baseSHA)
+		err := finishRecordedReviewMerge(repo, 219, status, policy, reviewedHead, runner, &WorkFinishResult{})
+		if err == nil || !strings.Contains(err.Error(), "changed since review") {
+			t.Fatalf("case-only base-ref drift should block the pre-merge recheck, got %v", err)
+		}
+		if len(runner.mergeCalls) != 0 {
+			t.Fatalf("case-only base-ref drift must not issue a merge: %v", runner.mergeCalls)
+		}
+	})
 }
 
 func recordedReviewLifecycleStatus(headSHA, baseSHA string) DevPRStatusResult {
@@ -166,15 +178,24 @@ func recordedReviewLifecycleStatus(headSHA, baseSHA string) DevPRStatusResult {
 }
 
 type recordedReviewLifecycleRunner struct {
-	root       string
-	headSHA    string
-	baseSHA    string
-	reviews    []finishReview
-	mergeCalls []string
+	root          string
+	headSHA       string
+	baseSHA       string
+	baseRef       string
+	reviews       []finishReview
+	mergeCalls    []string
+	calls         []string
+	pullResponses [][]byte
+	pullErrors    []error
+	pullReads     int
+	mergeErr      error
+	issueBody     string
+	issueClosed   bool
 }
 
 func (r *recordedReviewLifecycleRunner) Run(name string, args ...string) ([]byte, error) {
 	key := name + " " + strings.Join(args, " ")
+	r.calls = append(r.calls, key)
 	switch {
 	case key == "gh issue view 219 --repo StatPan/gira --json number,title,body":
 		return []byte(`{"number":219,"title":"Finish","body":""}`), nil
@@ -185,10 +206,22 @@ func (r *recordedReviewLifecycleRunner) Run(name string, args ...string) ([]byte
 	case key == "gh api repos/StatPan/gira/issues/219/timeline --paginate":
 		return []byte(`[{"source":{"issue":{"number":220,"body":"Closes #219","pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/220"}}}}]`), nil
 	case key == "gh api repos/StatPan/gira/pulls/220":
+		index := r.pullReads
+		r.pullReads++
+		if index < len(r.pullErrors) && r.pullErrors[index] != nil {
+			return nil, r.pullErrors[index]
+		}
+		if index < len(r.pullResponses) {
+			return r.pullResponses[index], nil
+		}
+		baseRef := r.baseRef
+		if baseRef == "" {
+			baseRef = "dev"
+		}
 		pull, err := json.Marshal(map[string]any{
 			"number": 220, "body": "Closes #219", "state": "open", "html_url": "https://github.com/StatPan/gira/pull/220",
 			"mergeable_state": "clean", "head": map[string]string{"ref": "issue-219-finish", "sha": r.headSHA},
-			"base": map[string]string{"ref": "dev", "sha": r.baseSHA},
+			"base": map[string]string{"ref": baseRef, "sha": r.baseSHA},
 		})
 		return pull, err
 	case key == "gh api repos/StatPan/gira/pulls/220/reviews --paginate":
@@ -201,11 +234,29 @@ func (r *recordedReviewLifecycleRunner) Run(name string, args ...string) ([]byte
 		return []byte(`{"statuses":[{"state":"success"}]}`), nil
 	case strings.HasPrefix(key, "gh api repos/StatPan/gira/contents/.gira/config.yaml --method GET -f ref="):
 		return githubContentsFile(".gira/config.yaml", recordedPolicyYAML()), nil
+	case key == "gh api repos/StatPan/gira/issues/219":
+		body := r.issueBody
+		if body == "" {
+			body = "Finish issue"
+		}
+		state := "open"
+		if r.issueClosed {
+			state = "closed"
+		}
+		issue, err := json.Marshal(map[string]any{"number": 219, "title": "Finish", "state": state, "body": body, "labels": []any{}})
+		return issue, err
 	case key == "gh api repos/StatPan/gira/pulls/220/reviews --paginate --slurp":
 		return json.Marshal([][]finishReview{r.reviews})
 	case strings.HasPrefix(key, "gh pr merge 220 "):
 		r.mergeCalls = append(r.mergeCalls, key)
+		return nil, r.mergeErr
+	case strings.HasPrefix(key, "gh issue close "):
+		r.issueClosed = true
 		return nil, nil
+	case strings.HasPrefix(key, "gh issue comment "), strings.HasPrefix(key, "gh issue edit "):
+		return nil, nil
+	case key == "gh label list --repo StatPan/gira --json name --limit 1000":
+		return []byte(`[]`), nil
 	default:
 		return nil, fmt.Errorf("unexpected lifecycle fixture call: %s", key)
 	}

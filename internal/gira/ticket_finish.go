@@ -517,66 +517,90 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 	nativeMergedVerified := false
 	if policy.Value == FinishReviewPolicyRecordedIndependent {
 		if err := finishRecordedReviewMerge(repo, issueNumber, status, policy, result.HeadConstraint.ExpectedHeadSHA, runner, &result); err != nil {
-			current, statusErr := DevPRStatus(repo, issueNumber, runner)
-			if statusErr == nil {
-				result.HeadConstraint.ObservedPreMergeHeadSHA = strings.TrimSpace(current.HeadSHA)
-				if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, result.HeadConstraint.ExpectedHeadSHA, initialStatus, current, "recorded-review merge revalidation"); reason != "" {
-					return blockFinishHeadConstraint(repo, issueNumber, runner, result, current, blocker, reason)
+			var requestErr *finishMergeRequestError
+			if errors.As(err, &requestErr) {
+				current, verified, reconcileErr := reconcileFinishMergeRequestFailure(repo, issueNumber, initialStatus, result.HeadConstraint.ExpectedHeadSHA, status, runner, &result, err)
+				if reconcileErr != nil {
+					return finishWithStatus(repo, issueNumber, runner, result, &current, reconcileErr)
 				}
+				status = current
+				nativeMergedVerified = verified
+			} else {
+				current, statusErr := DevPRStatus(repo, issueNumber, runner)
+				result.MergeRequestStatus = "not_requested"
+				result.Blockers = appendUniqueStrings(result.Blockers, "review_evidence_unavailable")
+				result.HeadConstraint.State = "review_revalidation_failed"
+				result.HeadConstraint.MismatchReason = err.Error()
+				result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: "recorded review revalidation failed before merge dispatch"})
+				if statusErr != nil || current.PRNumber <= 0 || strings.TrimSpace(current.State) == "" || strings.EqualFold(current.State, "UNKNOWN") {
+					current = unknownFinishPRStatus(status)
+					result.PRState = current.State
+					result.Blockers = appendUniqueStrings(result.Blockers, "expected_head_verification_unavailable")
+					result.HeadConstraint.MismatchReason = fmt.Sprintf("recorded-review revalidation failed before merge dispatch (%v) and current native PR identity is unavailable (%v)", err, statusErr)
+				} else {
+					result.HeadConstraint.ObservedPreMergeHeadSHA = strings.TrimSpace(current.HeadSHA)
+					if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, result.HeadConstraint.ExpectedHeadSHA, initialStatus, current, "recorded-review merge revalidation"); reason != "" {
+						return blockFinishHeadConstraint(repo, issueNumber, runner, result, current, blocker, reason)
+					}
+					status = current
+					result.PRState = current.State
+					if strings.EqualFold(current.State, "MERGED") {
+						verifiedStatus, verifyErr := verifyMergedDevPR(repo, issueNumber, current.PRNumber, current, runner)
+						result.Merged = true
+						if strings.TrimSpace(verifiedStatus.State) != "" && !strings.EqualFold(verifiedStatus.State, "UNKNOWN") {
+							result.Merged = strings.EqualFold(verifiedStatus.State, "MERGED")
+						}
+						result.HeadConstraint.ObservedPostMergeHeadSHA = strings.TrimSpace(verifiedStatus.HeadSHA)
+						if verifyErr != nil {
+							result.MergeRequestStatus = "not_requested_native_unverified"
+							result.HeadConstraint.State = "reconciliation_failed"
+							result.HeadConstraint.MismatchReason = verifyErr.Error()
+							result.Blockers = appendUniqueStrings(result.Blockers, "pr_binding")
+							status = verifiedStatus
+						} else {
+							result.MergeRequestStatus = "not_requested_native_merged"
+							status = verifiedStatus
+							if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, result.HeadConstraint.ExpectedHeadSHA, initialStatus, verifiedStatus, "native merged-state readback after pre-dispatch failure"); reason != "" {
+								return blockFinishHeadConstraint(repo, issueNumber, runner, result, verifiedStatus, blocker, reason)
+							}
+						}
+					}
+				}
+				return finishWithStatus(repo, issueNumber, runner, result, &status, fmt.Errorf("ticket finish blocked: %w", err))
 			}
-			result.Blockers = appendUniqueStrings(result.Blockers, "review_evidence_unavailable")
-			result.HeadConstraint.State = "reconciliation_failed"
-			result.HeadConstraint.MismatchReason = err.Error()
-			result.MergeRequestStatus = "not_requested"
-			if statusErr != nil {
-				result.Blockers = appendUniqueStrings(result.Blockers, "expected_head_verification_unavailable")
-				result.HeadConstraint.MismatchReason = fmt.Sprintf("recorded-review revalidation failed (%v) and native PR readback failed (%v)", err, statusErr)
-			}
-			result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: "recorded review revalidation failed"})
-			return finishWithStatus(repo, issueNumber, runner, result, &status, fmt.Errorf("ticket finish blocked: %w", err))
 		}
 	} else if err := finishMergePR(repo, status, runner, &result, options.ExpectedHeadSHA); err != nil {
 		if options.ExpectedHeadSHA == "" {
 			return result, err
 		}
-		current, readErr := DevPRStatus(repo, issueNumber, runner)
-		if readErr != nil {
-			result.HeadConstraint.State = "reconciliation_failed"
-			result.HeadConstraint.MismatchReason = fmt.Sprintf("merge request failed (%v) and native PR state is unavailable (%v)", err, readErr)
-			result.Blockers = appendUniqueStrings(result.Blockers, "merge_state_unavailable")
-			return finishWithStatus(repo, issueNumber, runner, result, nil, fmt.Errorf("ticket finish blocked: %s", result.HeadConstraint.MismatchReason))
-		}
-		if !strings.EqualFold(current.State, "MERGED") {
-			result.MergeRequestStatus = "rejected"
-			if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, options.ExpectedHeadSHA, initialStatus, current, "after rejected merge request"); reason != "" {
-				result.HeadConstraint.ObservedPostMergeHeadSHA = strings.TrimSpace(current.HeadSHA)
-				return blockFinishHeadConstraint(repo, issueNumber, runner, result, current, blocker, reason)
-			}
-			result.HeadConstraint.State = "merge_failed"
+		var requestErr *finishMergeRequestError
+		if !errors.As(err, &requestErr) {
+			current, readErr := DevPRStatus(repo, issueNumber, runner)
+			result.MergeRequestStatus = "not_requested"
+			result.HeadConstraint.State = "pre_dispatch_failed"
 			result.HeadConstraint.MismatchReason = err.Error()
-			result.Blockers = appendUniqueStrings(result.Blockers, "merge_failed")
-			result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "failed", Detail: err.Error()})
-			return finishWithStatus(repo, issueNumber, runner, result, &current, fmt.Errorf("ticket finish blocked: merge request failed: %w", err))
+			if readErr != nil || current.PRNumber <= 0 || strings.TrimSpace(current.State) == "" || strings.EqualFold(current.State, "UNKNOWN") {
+				current = unknownFinishPRStatus(status)
+				result.PRState = current.State
+				result.HeadConstraint.MismatchReason = fmt.Sprintf("merge request was not dispatched (%v) and current native PR identity is unavailable (%v)", err, readErr)
+				result.Blockers = appendUniqueStrings(result.Blockers, "expected_head_verification_unavailable")
+			} else {
+				result.PRState = current.State
+				result.HeadConstraint.ObservedPreMergeHeadSHA = strings.TrimSpace(current.HeadSHA)
+				if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, options.ExpectedHeadSHA, initialStatus, current, "before merge dispatch"); reason != "" {
+					return blockFinishHeadConstraint(repo, issueNumber, runner, result, current, blocker, reason)
+				}
+				result.Blockers = appendUniqueStrings(result.Blockers, "merge_failed")
+			}
+			result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: "merge request failed before backend dispatch"})
+			return finishWithStatus(repo, issueNumber, runner, result, &current, fmt.Errorf("ticket finish blocked before merge dispatch: %w", err))
 		}
-		result.MergeRequestStatus = "ambiguous_native_merged"
-		verified, verifyErr := verifyMergedDevPR(repo, issueNumber, current.PRNumber, current, runner)
-		if verifyErr != nil {
-			result.MergeRequestStatus = "ambiguous_native_unverified"
-			result.Blockers = appendUniqueStrings(result.Blockers, "pr_binding")
-			result.HeadConstraint.State = "reconciliation_failed"
-			result.HeadConstraint.MismatchReason = verifyErr.Error()
-			return finishWithStatus(repo, issueNumber, runner, result, &current, verifyErr)
+		current, verified, reconcileErr := reconcileFinishMergeRequestFailure(repo, issueNumber, initialStatus, options.ExpectedHeadSHA, status, runner, &result, err)
+		if reconcileErr != nil {
+			return finishWithStatus(repo, issueNumber, runner, result, &current, reconcileErr)
 		}
-		status = verified
-		nativeMergedVerified = true
-		result.PRState = verified.State
-		result.Merged = true
-		result.MergeRequestStatus = "ambiguous_native_verified"
-		result.HeadConstraint.ObservedPostMergeHeadSHA = strings.TrimSpace(verified.HeadSHA)
-		if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, options.ExpectedHeadSHA, initialStatus, verified, "native merged-state readback after ambiguous request"); reason != "" {
-			return blockFinishHeadConstraint(repo, issueNumber, runner, result, verified, blocker, reason)
-		}
-		result.HeadConstraint.State = "merged_verified"
+		status = current
+		nativeMergedVerified = verified
 	}
 	if result.MergeRequestStatus == "" {
 		result.MergeRequestStatus = "accepted"
@@ -585,6 +609,12 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 	if !nativeMergedVerified {
 		verifiedStatus, err = verifyMergedDevPR(repo, issueNumber, status.PRNumber, status, runner)
 		if err != nil {
+			status = verifiedStatus
+			result.PRState = status.State
+			result.Merged = strings.EqualFold(status.State, "MERGED")
+			if result.HeadConstraint != nil {
+				result.HeadConstraint.ObservedPostMergeHeadSHA = strings.TrimSpace(status.HeadSHA)
+			}
 			result.Blockers = appendUniqueStrings(result.Blockers, "pr_binding")
 			if result.HeadConstraint != nil {
 				result.HeadConstraint.State = "reconciliation_failed"
@@ -604,8 +634,17 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 	}
 	if result.HeadConstraint != nil {
 		result.HeadConstraint.ObservedPostMergeHeadSHA = strings.TrimSpace(status.HeadSHA)
-		if options.ExpectedHeadSHA != "" {
-			if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, options.ExpectedHeadSHA, initialStatus, status, "native merged-state readback"); reason != "" {
+		expectedHeadSHA := strings.TrimSpace(result.HeadConstraint.ExpectedHeadSHA)
+		if expectedHeadSHA == "" {
+			expectedHeadSHA = strings.TrimSpace(options.ExpectedHeadSHA)
+		}
+		if expectedHeadSHA != "" {
+			if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, expectedHeadSHA, initialStatus, status, "native merged-state readback"); reason != "" {
+				if blocker == "expected_head_mismatch" {
+					result.MergeRequestStatus = "accepted_native_head_mismatch"
+				} else {
+					result.MergeRequestStatus = "accepted_native_identity_mismatch"
+				}
 				return blockFinishHeadConstraint(repo, issueNumber, runner, result, status, blocker, reason)
 			}
 			result.HeadConstraint.State = "merged_verified"
@@ -649,13 +688,120 @@ func validateFinishHeadIdentity(repo RepoRef, issueNumber int, expectedHeadSHA s
 	if initial.Binding.BaseRef == "" || observed.Binding.BaseRef == "" {
 		return "pr_base_mismatch", fmt.Sprintf("%s: target base branch identity is unavailable", phase)
 	}
-	if !strings.EqualFold(strings.TrimSpace(initial.Binding.BaseRef), strings.TrimSpace(observed.Binding.BaseRef)) {
+	if strings.TrimSpace(initial.Binding.BaseRef) != strings.TrimSpace(observed.Binding.BaseRef) {
 		return "pr_base_mismatch", fmt.Sprintf("%s: target base branch changed from %s to %s", phase, initial.Binding.BaseRef, observed.Binding.BaseRef)
 	}
 	if !observed.ClosingReference || !observed.Binding.Trusted {
 		return "pr_binding", fmt.Sprintf("%s: PR closing reference or trusted branch binding is unavailable", phase)
 	}
 	return "", ""
+}
+
+type finishMergeRequestError struct {
+	err error
+}
+
+func (err *finishMergeRequestError) Error() string {
+	if err == nil || err.err == nil {
+		return "merge request failed"
+	}
+	return err.err.Error()
+}
+
+func (err *finishMergeRequestError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.err
+}
+
+func unknownFinishPRStatus(previous DevPRStatusResult) DevPRStatusResult {
+	previous.State = "UNKNOWN"
+	previous.Mergeable = ""
+	previous.ReviewDecision = ""
+	previous.IsDraft = false
+	previous.Binding = DevPRBinding{Source: "unavailable", Blockers: []string{"pr_binding"}}
+	previous.Blockers = []string{"merge_state_unavailable"}
+	previous.Checks = nil
+	previous.ChecksUnavailable = true
+	previous.Ready = false
+	previous.HeadSHA = ""
+	previous.BaseSHA = ""
+	previous.MergeCommitSHA = ""
+	previous.ClosingReference = false
+	return previous
+}
+
+func reconcileFinishMergeRequestFailure(repo RepoRef, issueNumber int, initial DevPRStatusResult, expectedHeadSHA string, previous DevPRStatusResult, runner CommandRunner, result *WorkFinishResult, requestErr error) (DevPRStatusResult, bool, error) {
+	current, readErr := DevPRStatus(repo, issueNumber, runner)
+	if readErr != nil || current.PRNumber <= 0 || strings.TrimSpace(current.State) == "" || strings.EqualFold(current.State, "UNKNOWN") {
+		current = unknownFinishPRStatus(previous)
+		result.PRState = current.State
+		result.MergeRequestStatus = "ambiguous_native_unverified"
+		result.HeadConstraint.State = "reconciliation_failed"
+		result.HeadConstraint.MismatchReason = fmt.Sprintf("merge request was dispatched (%v) but current native PR identity is unavailable (%v)", requestErr, readErr)
+		result.Blockers = appendUniqueStrings(result.Blockers, "merge_state_unavailable", "expected_head_verification_unavailable")
+		result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: "merge request was dispatched; native merged state could not be verified"})
+		return current, false, fmt.Errorf("ticket finish blocked: %s", result.HeadConstraint.MismatchReason)
+	}
+	result.PRState = current.State
+	result.HeadConstraint.ObservedPostMergeHeadSHA = strings.TrimSpace(current.HeadSHA)
+	if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, expectedHeadSHA, initial, current, "native readback after dispatched merge request"); reason != "" {
+		result.MergeRequestStatus = "ambiguous_native_identity_mismatch"
+		result.Merged = strings.EqualFold(current.State, "MERGED")
+		result.HeadConstraint.MismatchReason = reason
+		if blocker == "expected_head_mismatch" {
+			result.HeadConstraint.State = "mismatch"
+		} else {
+			result.HeadConstraint.State = "identity_mismatch"
+		}
+		result.Blockers = appendUniqueStrings(result.Blockers, blocker)
+		result.Actions = append(result.Actions, WorkFinishAction{Action: "head:verify", Status: "blocked", Detail: reason})
+		result.NextStep = finishHeadMismatchNextStep(repo, issueNumber, result.HeadConstraint, blocker)
+		return current, false, fmt.Errorf("ticket finish blocked: %s: %s", blocker, reason)
+	}
+	if !strings.EqualFold(current.State, "MERGED") {
+		result.MergeRequestStatus = "ambiguous_native_not_merged"
+		result.HeadConstraint.State = "merge_failed"
+		result.HeadConstraint.MismatchReason = fmt.Sprintf("merge request was dispatched but native readback is %s: %v", valueOrUnknown(current.State), requestErr)
+		result.Blockers = appendUniqueStrings(result.Blockers, "merge_failed")
+		result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "failed", Detail: result.HeadConstraint.MismatchReason})
+		return current, false, fmt.Errorf("ticket finish blocked: %s", result.HeadConstraint.MismatchReason)
+	}
+	result.MergeRequestStatus = "ambiguous_native_merged"
+	result.Merged = true
+	verified, verifyErr := verifyMergedDevPR(repo, issueNumber, current.PRNumber, current, runner)
+	result.PRState = verified.State
+	result.Merged = true
+	if strings.TrimSpace(verified.State) != "" && !strings.EqualFold(verified.State, "UNKNOWN") {
+		result.Merged = strings.EqualFold(verified.State, "MERGED")
+	}
+	result.HeadConstraint.ObservedPostMergeHeadSHA = strings.TrimSpace(verified.HeadSHA)
+	if verifyErr != nil {
+		result.MergeRequestStatus = "ambiguous_native_unverified"
+		result.HeadConstraint.State = "reconciliation_failed"
+		result.HeadConstraint.MismatchReason = fmt.Sprintf("native PR reported MERGED after dispatched request but immutable merge identity could not be verified: %v", verifyErr)
+		result.Blockers = appendUniqueStrings(result.Blockers, "pr_binding")
+		result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: result.HeadConstraint.MismatchReason})
+		return verified, false, fmt.Errorf("ticket finish blocked: %s", result.HeadConstraint.MismatchReason)
+	}
+	if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, expectedHeadSHA, initial, verified, "native merged-state readback after ambiguous request"); reason != "" {
+		result.MergeRequestStatus = "ambiguous_native_head_mismatch"
+		result.Merged = true
+		result.HeadConstraint.MismatchReason = reason
+		if blocker == "expected_head_mismatch" {
+			result.HeadConstraint.State = "mismatch"
+		} else {
+			result.HeadConstraint.State = "identity_mismatch"
+		}
+		result.Blockers = appendUniqueStrings(result.Blockers, blocker)
+		result.Actions = append(result.Actions, WorkFinishAction{Action: "head:verify", Status: "blocked", Detail: reason})
+		result.NextStep = finishHeadMismatchNextStep(repo, issueNumber, result.HeadConstraint, blocker)
+		return verified, false, fmt.Errorf("ticket finish blocked: %s: %s", blocker, reason)
+	}
+	result.HeadConstraint.State = "merged_verified"
+	result.MergeRequestStatus = "ambiguous_native_verified"
+	return verified, true, nil
 }
 
 func blockFinishHeadConstraint(repo RepoRef, issueNumber int, runner CommandRunner, result WorkFinishResult, status DevPRStatusResult, blocker string, reason string) (WorkFinishResult, error) {
@@ -723,7 +869,7 @@ func revalidateRecordedReviewBeforeMerge(repo RepoRef, issueNumber int, reviewed
 	if fresh.PRNumber != reviewed.PRNumber || !strings.EqualFold(strings.TrimSpace(fresh.State), "OPEN") || fresh.IsDraft || !fresh.ClosingReference || !fresh.Binding.Trusted ||
 		!strings.EqualFold(strings.TrimSpace(fresh.HeadSHA), strings.TrimSpace(reviewed.HeadSHA)) ||
 		!strings.EqualFold(strings.TrimSpace(fresh.BaseSHA), strings.TrimSpace(reviewed.BaseSHA)) ||
-		!strings.EqualFold(strings.TrimSpace(fresh.Binding.BaseRef), strings.TrimSpace(reviewed.Binding.BaseRef)) {
+		strings.TrimSpace(fresh.Binding.BaseRef) != strings.TrimSpace(reviewed.Binding.BaseRef) {
 		return fmt.Errorf("PR identity, head, base, draft, state, closing reference, or branch binding changed since review")
 	}
 	for _, blocker := range fresh.Blockers {
@@ -756,7 +902,7 @@ func finishMergePR(repo RepoRef, status DevPRStatusResult, runner CommandRunner,
 	}
 	if _, err := runner.Run("gh", args...); err != nil {
 		if !finishGraphQLRateLimitError(err) {
-			return fmt.Errorf("merge PR: %w", err)
+			return &finishMergeRequestError{err: fmt.Errorf("merge PR: %w", err)}
 		}
 		diagnostic := finishMergeRateLimitDiagnostic(repo, runner)
 		var fallbackDetail string
@@ -775,7 +921,7 @@ func finishMergePR(repo RepoRef, status DevPRStatusResult, runner CommandRunner,
 			if result != nil {
 				result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge_fallback", Status: "blocked", Detail: strings.TrimSpace("GraphQL merge rate limit; " + diagnostic + "; " + fallbackErr.Error())})
 			}
-			return fmt.Errorf("merge PR: GraphQL rate limit; %s; REST fallback failed: %w", diagnostic, fallbackErr)
+			return &finishMergeRequestError{err: fmt.Errorf("merge PR: GraphQL rate limit; %s; REST fallback failed: %w", diagnostic, fallbackErr)}
 		}
 		if result != nil {
 			result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge_fallback", Status: "applied", Detail: strings.TrimSpace(fallbackDetail + "; " + diagnostic)})
@@ -853,7 +999,7 @@ func finishMergePRViaRESTExpected(repo RepoRef, prNumber int, expected *DevPRSta
 	if expected != nil {
 		if !strings.EqualFold(headSHA, strings.TrimSpace(expected.HeadSHA)) ||
 			!strings.EqualFold(strings.TrimSpace(pr.Base.SHA), strings.TrimSpace(expected.BaseSHA)) ||
-			!strings.EqualFold(strings.TrimSpace(pr.Base.Ref), strings.TrimSpace(expected.Binding.BaseRef)) {
+			strings.TrimSpace(pr.Base.Ref) != strings.TrimSpace(expected.Binding.BaseRef) {
 			return "", fmt.Errorf("PR #%d changed its reviewed head or base before REST merge", prNumber)
 		}
 		headSHA = strings.TrimSpace(expected.HeadSHA)

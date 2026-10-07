@@ -265,7 +265,7 @@ func recordedIndependentReviewEvidence(repo RepoRef, status DevPRStatusResult, p
 		return blockedFinishReview(evidence, "review_changes_requested", "Resolve every active CHANGES_REQUESTED review before finish.")
 	}
 	baseRef := strings.TrimSpace(status.Binding.BaseRef)
-	if baseRef == "" || !containsFold(policy.RecordedReview.AllowedBaseBranches, baseRef) {
+	if baseRef == "" || !containsExactTrimmed(policy.RecordedReview.AllowedBaseBranches, baseRef) {
 		if evidence.Decision == "APPROVED" && hasCurrentHeadApproval(reviews, evidence.HeadSHA) {
 			evidence.Status = "approved"
 			evidence.Source = "github_approval"
@@ -469,7 +469,7 @@ func evaluateIndependentReviewReceipts(repo RepoRef, status DevPRStatusResult, p
 		lastReviewerID = strings.TrimSpace(receipt.Reviewer.ID)
 		current := strings.EqualFold(strings.TrimSpace(receipt.HeadSHA), strings.TrimSpace(status.HeadSHA)) &&
 			strings.EqualFold(strings.TrimSpace(receipt.BaseSHA), strings.TrimSpace(status.BaseSHA)) &&
-			strings.EqualFold(strings.TrimSpace(receipt.BaseRef), strings.TrimSpace(status.Binding.BaseRef))
+			strings.TrimSpace(receipt.BaseRef) == strings.TrimSpace(status.Binding.BaseRef)
 		if current && validateIndependentReviewReceipt(repo, status, policy, login, receipt) != nil {
 			unresolvedMalformed[review.ID] = strings.ToLower(login)
 			latest = independentReviewEvaluation{Blocker: "recorded_review_invalid", Remediation: "Replace the malformed recorded review with a valid versioned receipt that explicitly supersedes its review ID."}
@@ -635,7 +635,7 @@ func validateIndependentReviewReceipt(repo RepoRef, status DevPRStatusResult, po
 	if err := validateIndependentReviewReceiptHistory(repo, status.PRNumber, policy, recorder, receipt); err != nil {
 		return err
 	}
-	if !strings.EqualFold(strings.TrimSpace(receipt.HeadSHA), strings.TrimSpace(status.HeadSHA)) || !strings.EqualFold(strings.TrimSpace(receipt.BaseSHA), strings.TrimSpace(status.BaseSHA)) || !strings.EqualFold(strings.TrimSpace(receipt.BaseRef), strings.TrimSpace(status.Binding.BaseRef)) {
+	if !strings.EqualFold(strings.TrimSpace(receipt.HeadSHA), strings.TrimSpace(status.HeadSHA)) || !strings.EqualFold(strings.TrimSpace(receipt.BaseSHA), strings.TrimSpace(status.BaseSHA)) || strings.TrimSpace(receipt.BaseRef) != strings.TrimSpace(status.Binding.BaseRef) {
 		return fmt.Errorf("receipt head or base does not match current pull request")
 	}
 	return nil
@@ -669,6 +669,16 @@ func nonEmptyStrings(values []string) bool {
 func containsFold(values []string, target string) bool {
 	for _, value := range values {
 		if strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(target)) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsExactTrimmed(values []string, target string) bool {
+	target = strings.TrimSpace(target)
+	for _, value := range values {
+		if strings.TrimSpace(value) == target {
 			return true
 		}
 	}

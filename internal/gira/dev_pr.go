@@ -516,25 +516,30 @@ func fetchRESTPull(repo RepoRef, prNumber int, runner CommandRunner) (restPull, 
 func verifyMergedDevPR(repo RepoRef, issueNumber int, prNumber int, previous DevPRStatusResult, runner CommandRunner) (DevPRStatusResult, error) {
 	pr, ok := fetchRESTPull(repo, prNumber, runner)
 	if !ok {
-		return previous, fmt.Errorf("verify merged PR #%d: current GitHub PR state is unavailable", prNumber)
+		return unknownFinishPRStatus(previous), fmt.Errorf("verify merged PR #%d: current GitHub PR state is unavailable", prNumber)
 	}
+	observed := previous
+	observed.PRNumber = pr.Number
+	observed.PRURL = pr.HTMLURL
+	observed.State = restPRState(pr)
+	observed.IsDraft = pr.Draft
+	observed.HeadSHA = strings.TrimSpace(pr.Head.SHA)
+	observed.BaseSHA = strings.TrimSpace(pr.Base.SHA)
+	observed.MergeCommitSHA = strings.TrimSpace(pr.MergeCommitSHA)
+	observed.ClosingReference = hasClosingKeyword(pr.Body, issueNumber)
+	observed.Binding = validateDevPRBinding(issueNumber, restPullSummary(pr), devPRBindingPolicy{})
+	observed.Blockers = append([]string(nil), observed.Binding.Blockers...)
+	observed.Ready = false
 	if pr.Number != prNumber || !hasClosingKeyword(pr.Body, issueNumber) {
-		return previous, fmt.Errorf("verify merged PR #%d: PR number or closing relationship does not match ticket #%d", prNumber, issueNumber)
+		return observed, fmt.Errorf("verify merged PR #%d: PR number or closing relationship does not match ticket #%d", prNumber, issueNumber)
 	}
 	if !strings.EqualFold(restPRState(pr), "MERGED") || strings.TrimSpace(pr.MergeCommitSHA) == "" || strings.TrimSpace(pr.Head.SHA) == "" {
-		return previous, fmt.Errorf("verify merged PR #%d: merged state, merge commit SHA, and head SHA are required", prNumber)
+		return observed, fmt.Errorf("verify merged PR #%d: merged state, merge commit SHA, and head SHA are required", prNumber)
 	}
-	verified := previous
-	verified.PRNumber = pr.Number
-	verified.PRURL = pr.HTMLURL
-	verified.State = "MERGED"
-	verified.HeadSHA = strings.TrimSpace(pr.Head.SHA)
-	verified.MergeCommitSHA = strings.TrimSpace(pr.MergeCommitSHA)
-	verified.ClosingReference = true
-	verified.Binding = validateDevPRBinding(issueNumber, restPullSummary(pr), devPRBindingPolicy{})
-	verified.Blockers = nil
-	verified.Ready = true
-	return verified, nil
+	observed.State = "MERGED"
+	observed.Blockers = nil
+	observed.Ready = true
+	return observed, nil
 }
 
 func restPRState(pr restPull) string {

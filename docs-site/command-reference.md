@@ -2084,17 +2084,25 @@ Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
 ## `ticket finish`
 
-Merge the linked PR when policy allows; Draft PRs stop after ready transition and require a new finish preview.
+Merge the linked PR when policy allows; optionally bind finish to one full PR head SHA. Draft PRs stop after ready transition and require a new finish preview.
 
 Discovery tier: `managed_delivery`.
 
 Usage:
 
 ```bash
-gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--sync-local]
+gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--expect-head FULL_SHA] [--sync-local]
 ```
 
 Since: `v1.0.0`
+
+Flags:
+
+- `--expect-head`: Require this full 40-character PR head SHA through refresh, merge, and native reconciliation; this pins the head, not the base.
+- `--sync-local`: Opt in to syncing the local PR base branch after finish.
+- `--dry-run`: Preview finish gates and planned mutations without applying them.
+- `--apply`: Apply the ready transition or merge only after the current finish gates pass.
+- `--json`: Emit the structured finish result and machine-readable receipt.
 
 Examples:
 
@@ -2104,7 +2112,13 @@ Examples:
 gira ticket finish --dry-run
 ```
 
-Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
+- Bind finish to a reviewed PR head
+
+```bash
+gira ticket finish 42 --expect-head 0123456789abcdef0123456789abcdef01234567 --dry-run
+```
+
+Documented in: `README.md`, `docs/finish-readiness-contract.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
 ## `ticket handoff`
 

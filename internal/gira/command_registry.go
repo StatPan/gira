@@ -1402,15 +1402,23 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
-			Path:        []string{"ticket", "finish"},
-			Summary:     "Merge the linked PR when policy allows; Draft PRs stop after ready transition and require a new finish preview.",
-			Usage:       "gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--sync-local]",
-			Since:       "v1.0.0",
-			Docs:        []string{"README.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
+			Path:    []string{"ticket", "finish"},
+			Summary: "Merge the linked PR when policy allows; optionally bind finish to one full PR head SHA. Draft PRs stop after ready transition and require a new finish preview.",
+			Usage:   "gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--expect-head FULL_SHA] [--sync-local]",
+			Since:   "v1.0.0",
+			Flags: []FlagSpec{
+				{Name: "--expect-head", Summary: "Require this full 40-character PR head SHA through refresh, merge, and native reconciliation; this pins the head, not the base."},
+				{Name: "--sync-local", Summary: "Opt in to syncing the local PR base branch after finish."},
+				{Name: "--dry-run", Summary: "Preview finish gates and planned mutations without applying them."},
+				{Name: "--apply", Summary: "Apply the ready transition or merge only after the current finish gates pass."},
+				{Name: "--json", Summary: "Emit the structured finish result and machine-readable receipt."},
+			},
+			Docs:        []string{"README.md", "docs/finish-readiness-contract.md", "docs-site/ticket-workflow.md", "docs/dogfood.md"},
 			GuideTopics: []string{"ticket", "agent"},
 			GuideOrder:  60,
 			Examples: []CommandExample{
 				{Summary: "Preview finish", Command: "gira ticket finish --dry-run"},
+				{Summary: "Bind finish to a reviewed PR head", Command: "gira ticket finish 42 --expect-head 0123456789abcdef0123456789abcdef01234567 --dry-run"},
 			},
 		},
 		{

@@ -24,24 +24,21 @@ change units, and milestones phase boundaries.
 ## Standard Agent Flow
 
 1. Inspect state.
-   - Run `gh auth status`.
-   - Run `gira status --repo OWNER/REPO` or inspect the specific issue.
-   - Confirm the issue exists, is open, and is ready for implementation.
-   - Treat `ticket-readiness/v1` findings from `gira ticket status --json`
-     or `gira ticket new --dry-run` as the work-order gate before worker
-     handoff. Refine tickets with missing goal, scope, acceptance criteria,
-     required labels, doctor impact, or evidence expectations before starting
-     implementation.
+   - Run `gh auth status` and `gira status --repo OWNER/REPO`, or inspect the
+     issue.
+   - Confirm it is open and ready. Treat `ticket-readiness/v1` from
+     `gira ticket status --json` or `gira ticket new --dry-run` as the handoff
+     gate; fix missing goal, scope, acceptance, labels, doctor impact, or
+     evidence first.
 2. Start ticket.
-   - Auto default; use `--branch VALUE` for a deterministic choice; dry-run first.
-   - Use one feature branch per issue.
-   - After checkout, infer ticket context; pass explicit IDs only outside it.
+   - Auto is the default; use `--branch VALUE` for a deterministic choice and
+     dry-run first.
+   - Use one feature branch per issue. After checkout, infer ticket context;
+     pass IDs only outside it.
 3. Implement bounded scope.
-   - Keep changes limited to the issue goal and acceptance criteria.
-   - For feature or workflow changes, record the intended doctor impact in the
-     issue or PR: new check, existing check update, or explicit no-op.
-   - Do not revert user changes or unrelated local work.
-   - Run the relevant local tests and checks.
+   - Keep changes within the issue goal and acceptance criteria. Record doctor
+     impact as a new check, update, or no-op.
+   - Preserve user and unrelated work; run relevant local tests and checks.
 4. Open or validate PR.
    - Prefer `gira ticket pr --dry-run` from the ticket branch.
    - Apply with `gira ticket pr --apply`.
@@ -68,10 +65,11 @@ change units, and milestones phase boundaries.
      human or branch-protection review.
    - [Policy](../finish-review-policy.md).
 6. Finish.
-   - Prefer `gira ticket finish --dry-run`.
-   - Apply only after the dry-run is clean: `gira ticket finish --apply`.
-   - Completion requires a merged linked PR and the issue closed by GitHub or
-     Gira lifecycle handling.
+   - Preview with `gira ticket finish --dry-run`; apply only when clean.
+   - For recorded approval on one PR head, reuse `--expect-head FULL_SHA` in
+     preview and apply. Unknown refreshed PR state or drift blocks; never retry
+     at latest. The pin covers head, not base.
+   - Complete after the linked PR merges and GitHub or Gira closes the issue.
 
 <!-- gira:agent-skill:start -->
 ## Registry-Backed Lifecycle Command Guidance
@@ -91,7 +89,7 @@ This generated section contains command facts for the agent lifecycle. Update `i
 - `gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr]`: Close a ticket as superseded and create a linked replacement ticket.
 - `gira ticket checks [TICKET] [--repo OWNER/REPO] [--detail] [--json]`: Show linked PR checks, review blockers, and next action.
 - `gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--detail] [--json]`: Wait for pending linked PR checks without merging.
-- `gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--sync-local]`: Merge the linked PR when policy allows; Draft PRs stop after ready transition and require a new finish preview.
+- `gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--expect-head FULL_SHA] [--sync-local]`: Merge the linked PR when policy allows; optionally bind finish to one full PR head SHA. Draft PRs stop after ready transition and require a new finish preview.
 - `gira ticket status [TICKET] [--repo OWNER/REPO] [--json|--html --output PATH]`: Report ticket status, linked PR blockers, and next action.
 - `gira config storage [--repo OWNER/REPO] [--config-root PATH] [--json]`: Show local storage roots, durability, privacy, and rebuild boundaries.
 - `gira dispatch goal [GOAL] [--repo OWNER/REPO] [--role implementer] [--profile default] [--json|--compact-json|--prompt]`: Build an official dispatch packet from a goal issue, goal handoff, and next safe child ticket worker handoff.

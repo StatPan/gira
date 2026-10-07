@@ -14,6 +14,10 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
   Goal planning, selection, graph mutation, PM replan, and both finish apply
   paths now stop on incomplete evidence. This reporting change does not repair
   unrelated remote acquisition or policy failures.
+- Added `gira ticket finish --expect-head FULL_SHA` to keep a caller-reviewed PR
+  head fixed through checks refresh, merge request, REST fallback, and native
+  merged-state reconciliation. The finish receipt records the expected and
+  observed heads and backend pin; this guards the PR head, not the target base.
 - Fixed ticket finish to honor verified current-head native or recorded review
   evidence without clearing unrelated blockers.
 - Added an opt-in recorded-independent-review lane for development PRs when

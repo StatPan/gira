@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-const DispatchPacketSchemaVersion = "dispatch-packet/v1"
-const DispatchCompactSchemaVersion = "dispatch-compact/v1"
+const DispatchPacketSchemaVersion = "dispatch-packet/v2"
+const DispatchCompactSchemaVersion = "dispatch-compact/v2"
 const DefaultDispatchContextBudget = 12000
 
 type DispatchGoalInput struct {
@@ -126,10 +126,15 @@ type DispatchCompactWorkOrder struct {
 }
 
 type DispatchCompactState struct {
-	Counts                  map[string]int `json:"counts,omitempty"`
-	Blockers                []string       `json:"blockers,omitempty"`
-	HandoffReceiptPresent   bool           `json:"handoff_receipt_present"`
-	RemainingAutonomousWork int            `json:"remaining_autonomous_work"`
+	Counts                       map[string]int            `json:"counts,omitempty"`
+	DiscoveryComplete            bool                      `json:"discovery_complete"`
+	StatusComplete               bool                      `json:"status_complete"`
+	AcquisitionFailures          []GoalStatusFailure       `json:"acquisition_failures,omitempty"`
+	UnknownChildren              []GoalStatusChildIdentity `json:"unknown_children,omitempty"`
+	Blockers                     []string                  `json:"blockers,omitempty"`
+	HandoffReceiptPresent        bool                      `json:"handoff_receipt_present"`
+	KnownRemainingAutonomousWork int                       `json:"known_remaining_autonomous_work"`
+	RemainingAutonomousWork      *int                      `json:"remaining_autonomous_work"`
 }
 
 type DispatchCompactLinkedPR struct {
@@ -188,11 +193,11 @@ func BuildDispatchCompactPacket(packet DispatchPacket, contextBudget int) Dispat
 	if packet.GoalHandoff != nil {
 		compact.Goal = dispatchCompactGoal(*packet.GoalHandoff)
 		compact.State = dispatchCompactState(packet.GoalHandoff.GoalStatus)
-		if packet.GoalHandoff.SelectedTicket != nil {
+		if packet.GoalHandoff.GoalStatus.DiscoveryComplete && packet.GoalHandoff.GoalStatus.StatusComplete && packet.GoalHandoff.SelectedTicket != nil {
 			compact.SelectedTicket = dispatchCompactTicket(*packet.GoalHandoff.SelectedTicket, packet.WorkerHandoff)
 		}
 	}
-	if packet.WorkerHandoff != nil {
+	if packet.WorkerHandoff != nil && (packet.GoalHandoff == nil || (packet.GoalHandoff.GoalStatus.DiscoveryComplete && packet.GoalHandoff.GoalStatus.StatusComplete)) {
 		compact.WorkOrder = dispatchCompactWorkOrder(*packet.WorkerHandoff)
 		compact.LinkedPR = dispatchCompactLinkedPR(packet.WorkerHandoff.LinkedPR)
 	}
@@ -249,6 +254,13 @@ func FormatDispatchPrompt(packet DispatchPacket, contextBudget int) string {
 }
 
 func dispatchPacketFromGoalHandoff(repo RepoRef, handoff GoalHandoffReport) DispatchPacket {
+	if !handoff.GoalStatus.DiscoveryComplete || !handoff.GoalStatus.StatusComplete {
+		handoff.SelectedTicket = nil
+		handoff.GoalNext.SelectedTicket = nil
+		handoff.WorkerHandoff = nil
+		handoff.NextAction = "resolve_blockers"
+		handoff.NextSafeCommand = fmt.Sprintf("gira goal status --repo %s --goal %d --json", handoff.Repo, handoff.Goal.Number)
+	}
 	report := DispatchPacket{
 		Command:       "dispatch goal",
 		SchemaVersion: DispatchPacketSchemaVersion,
@@ -283,7 +295,7 @@ func dispatchAuthorityFromGoalHandoff(handoff GoalHandoffReport) []DispatchRefer
 		URL:           handoff.Goal.URL,
 		SchemaVersion: handoff.SchemaVersion,
 	}}
-	if handoff.SelectedTicket != nil {
+	if handoff.GoalStatus.DiscoveryComplete && handoff.GoalStatus.StatusComplete && handoff.SelectedTicket != nil {
 		authority = append(authority, DispatchReference{
 			Kind:          "selected_ticket",
 			Repo:          dispatchSelectedRepo(handoff),
@@ -305,7 +317,7 @@ func dispatchReferencesFromGoalHandoff(handoff GoalHandoffReport) []DispatchRefe
 		Title:  handoff.Goal.Title,
 		URL:    handoff.Goal.URL,
 	}}
-	if handoff.SelectedTicket != nil {
+	if handoff.GoalStatus.DiscoveryComplete && handoff.GoalStatus.StatusComplete && handoff.SelectedTicket != nil {
 		refs = append(refs, DispatchReference{
 			Kind:   "selected_ticket_issue",
 			Repo:   dispatchSelectedRepo(handoff),
@@ -314,7 +326,7 @@ func dispatchReferencesFromGoalHandoff(handoff GoalHandoffReport) []DispatchRefe
 			URL:    handoff.SelectedTicket.URL,
 		})
 	}
-	if handoff.WorkerHandoff != nil && handoff.WorkerHandoff.LinkedPR != nil && handoff.WorkerHandoff.LinkedPR.Available {
+	if handoff.GoalStatus.DiscoveryComplete && handoff.GoalStatus.StatusComplete && handoff.WorkerHandoff != nil && handoff.WorkerHandoff.LinkedPR != nil && handoff.WorkerHandoff.LinkedPR.Available {
 		refs = append(refs, DispatchReference{
 			Kind:   "linked_pr",
 			Repo:   handoff.WorkerHandoff.Repo,
@@ -335,7 +347,11 @@ func dispatchInstructionFromGoalHandoff(handoff GoalHandoffReport) DispatchInstr
 		},
 		StopConditions: append([]string(nil), handoff.GoalContext.StopConditions...),
 	}
-	if handoff.SelectedTicket != nil {
+	if !handoff.GoalStatus.DiscoveryComplete || !handoff.GoalStatus.StatusComplete {
+		instruction.AllowedActions = []string{"Inspect the goal status report and its bounded acquisition failures."}
+		instruction.StopConditions = appendUniqueStrings(instruction.StopConditions, "resolve incomplete child discovery or status before planning, selecting, or finishing work")
+	}
+	if handoff.GoalStatus.DiscoveryComplete && handoff.GoalStatus.StatusComplete && handoff.SelectedTicket != nil {
 		instruction.SelectedWork = fmt.Sprintf("%s#%d %s", dispatchSelectedRepo(handoff), handoff.SelectedTicket.Number, strings.TrimSpace(handoff.SelectedTicket.Title))
 	}
 	if handoff.WorkerHandoff != nil {
@@ -383,10 +399,15 @@ func dispatchCompactGoal(handoff GoalHandoffReport) DispatchCompactGoal {
 
 func dispatchCompactState(status GoalStatusReport) DispatchCompactState {
 	return DispatchCompactState{
-		Counts:                  copyStringIntMap(status.Counts),
-		Blockers:                append([]string(nil), status.Blockers...),
-		HandoffReceiptPresent:   status.HandoffReceiptPresent,
-		RemainingAutonomousWork: status.RemainingAutonomousWork,
+		Counts:                       copyStringIntMap(status.Counts),
+		DiscoveryComplete:            status.DiscoveryComplete,
+		StatusComplete:               status.StatusComplete,
+		AcquisitionFailures:          append([]GoalStatusFailure(nil), status.AcquisitionFailures...),
+		UnknownChildren:              goalStatusUnknownChildIdentities(status.Children),
+		Blockers:                     append([]string(nil), status.Blockers...),
+		HandoffReceiptPresent:        status.HandoffReceiptPresent,
+		KnownRemainingAutonomousWork: status.KnownRemainingAutonomousWork,
+		RemainingAutonomousWork:      status.RemainingAutonomousWork,
 	}
 }
 

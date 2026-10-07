@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,7 +36,7 @@ func TestBuildGoalDossierReportSummarizesGoalState(t *testing.T) {
 	if report.SelectedTicket == nil || report.SelectedTicket.Number != 101 || report.NextAction != "start_child" {
 		t.Fatalf("unexpected next selection: %+v", report)
 	}
-	if report.Evidence.ChildCount != 2 || report.Evidence.RemainingAutonomousWork != 1 || report.Evidence.Checks.Total != 2 {
+	if report.Evidence.ChildCount != 2 || !goalStatusRemainingIs(report.Evidence.RemainingAutonomousWork, 1) || report.Evidence.Checks.Total != 2 {
 		t.Fatalf("unexpected evidence summary: %+v", report.Evidence)
 	}
 	if report.Measurement == nil || report.Measurement.Summary.Validated != 1 || report.Sources[len(report.Sources)-1].SchemaVersion != PMMeasurementReportSchemaVersion {
@@ -44,7 +45,7 @@ func TestBuildGoalDossierReportSummarizesGoalState(t *testing.T) {
 	if !strings.Contains(FormatGoalReport(report), "outcomes: validated=1") || !strings.Contains(RenderGoalReportHTML(report), "outcomes validated") {
 		t.Fatal("goal report views omitted measurement evidence")
 	}
-	for _, want := range []string{"goal report: #100 children=2 remaining=1 next=start_child", "children: ready=1 done=1", "selected: #101 next_ready_child"} {
+	for _, want := range []string{"goal report: #100 children=2 known_remaining=1 remaining=1 discovery_complete=true status_complete=true next=start_child", "children: ready=1 done=1", "selected: #101 next_ready_child"} {
 		if !strings.Contains(FormatGoalReport(report), want) {
 			t.Fatalf("formatted report missing %q:\n%s", want, FormatGoalReport(report))
 		}
@@ -71,6 +72,55 @@ func TestBuildGoalDossierReportCarriesStopConditions(t *testing.T) {
 	}
 }
 
+func TestGoalDossierPreservesUnknownStateAcrossJSONTextAndHTML(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	status := GoalStatusReport{
+		Command: "goal status", SchemaVersion: GoalStatusSchemaVersion, Repo: repo.FullName(),
+		Goal: GoalStatusIssue{Number: 100, Title: "Goal", State: "open", Status: "Ready"},
+		Children: []GoalStatusChild{
+			{Repo: repo.FullName(), Number: 201, Title: "Known work", State: "open", Status: "Ready", Category: "ready", StatusAvailable: true, URL: "https://github.com/StatPan/gira/issues/201"},
+			{Repo: repo.FullName(), Number: 202, State: "open", Status: "unknown", Category: "unknown", StatusAvailable: false, NextAction: "inspect_child", URL: "https://github.com/StatPan/gira/issues/202"},
+		},
+		DiscoveryComplete: false, StatusComplete: false,
+		Counts:   map[string]int{"total": 2, "known": 1, "unknown": 1, "ready": 1},
+		Blockers: []string{"child_discovery_incomplete", "child_202_status_unavailable"},
+		AcquisitionFailures: []GoalStatusFailure{
+			{Repository: repo.FullName(), Source: "github_sub_issues", Stage: goalStatusFailureStageChildDiscovery, Code: "transport_unknown", AffectedCount: 1, AffectedCountComplete: false},
+			{Repository: repo.FullName(), Source: "repository_snapshot", Stage: goalStatusFailureStageSnapshotTransport, Code: "transport_unknown", AffectedCount: 1, AffectedCountComplete: true},
+		},
+		KnownRemainingAutonomousWork: 1, RemainingAutonomousWork: nil,
+	}
+	next := BuildGoalNextReportFromStatus(repo, status)
+	report := BuildGoalDossierReportFromStatus(status, next)
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal dossier: %v", err)
+	}
+	for _, want := range []string{`"remaining_autonomous_work":null`, `"discovery_complete":false`, `"status_complete":false`, `"status_available":false`, `"number":202`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("dossier JSON missing %s: %s", want, encoded)
+		}
+	}
+	if report.SelectedTicket != nil {
+		t.Fatalf("dossier selected work from incomplete status: %+v", report.SelectedTicket)
+	}
+	textReport := FormatGoalReport(report)
+	for _, want := range []string{"children=2 known_remaining=1 remaining=unknown", "discovery_complete=false status_complete=false", "children: ready=1 unknown=1", "acquisition failure: StatPan/gira:child_discovery:transport_unknown:1"} {
+		if !strings.Contains(textReport, want) {
+			t.Fatalf("text dossier missing %q:\n%s", want, textReport)
+		}
+	}
+	htmlReport := RenderGoalReportHTML(report)
+	for _, want := range []string{"<span>discovery complete</span>", "<span>status complete</span>", "<strong>unknown</strong>", "#202", "remaining</span>", "child_discovery:transport_unknown:1"} {
+		if !strings.Contains(htmlReport, want) {
+			t.Fatalf("HTML dossier missing %q", want)
+		}
+	}
+	if strings.Contains(htmlReport, "Selected ticket") || strings.Contains(htmlReport, "plan_children") {
+		t.Fatalf("HTML dossier rendered actionable work from incomplete status: %s", htmlReport)
+	}
+}
+
 func TestRenderGoalReportHTMLEscapesUnsafeTextAndLinks(t *testing.T) {
 	selected := GoalNextCandidate{
 		Number:   102,
@@ -92,31 +142,37 @@ func TestRenderGoalReportHTMLEscapesUnsafeTextAndLinks(t *testing.T) {
 		},
 		Children: []GoalStatusChild{
 			{
-				Number:       101,
-				Title:        `Child <b>x</b>`,
-				State:        "open",
-				Status:       "Ready",
-				Category:     "ready",
-				URL:          "javascript:evil()",
-				ChecksStatus: "passed",
-				ReviewStatus: "approved",
-				NextAction:   "start_child",
-				NextStep:     "gira ticket start <unsafe>",
+				Number:          101,
+				Title:           `Child <b>x</b>`,
+				State:           "open",
+				Status:          "Ready",
+				Category:        "ready",
+				URL:             "javascript:evil()",
+				ChecksStatus:    "passed",
+				ReviewStatus:    "approved",
+				NextAction:      "start_child",
+				NextStep:        "gira ticket start <unsafe>",
+				StatusAvailable: true,
 			},
 		},
-		Counts:                  map[string]int{"total": 1, "ready": 1},
-		NextAction:              "start_child",
-		NextStep:                "gira goal next <unsafe>",
-		RemainingAutonomousWork: 1,
+		Counts:                       map[string]int{"total": 1, "known": 1, "ready": 1},
+		DiscoveryComplete:            true,
+		StatusComplete:               true,
+		NextAction:                   "start_child",
+		NextStep:                     "gira goal next <unsafe>",
+		KnownRemainingAutonomousWork: 1,
+		RemainingAutonomousWork:      goalStatusRemainingPointer(1),
 	}, GoalNextReport{
-		Command:        "goal next",
-		SchemaVersion:  GoalNextSchemaVersion,
-		Repo:           "StatPan/gira",
-		Goal:           GoalStatusIssue{Number: 100},
-		SelectedTicket: &selected,
-		Counts:         map[string]int{"total": 1, "ready": 1},
-		NextAction:     "start_child",
-		NextStep:       "gira ticket start <unsafe>",
+		Command:           "goal next",
+		SchemaVersion:     GoalNextSchemaVersion,
+		Repo:              "StatPan/gira",
+		Goal:              GoalStatusIssue{Number: 100},
+		SelectedTicket:    &selected,
+		Counts:            map[string]int{"total": 1, "ready": 1},
+		DiscoveryComplete: true,
+		StatusComplete:    true,
+		NextAction:        "start_child",
+		NextStep:          "gira ticket start <unsafe>",
 	})
 
 	html := RenderGoalReportHTML(report)

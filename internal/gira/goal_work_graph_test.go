@@ -2,6 +2,7 @@ package gira
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -17,6 +18,7 @@ type workGraphRunner struct {
 	comments      []string
 	createdBodies []string
 	parentLinks   int
+	graphqlErr    error
 }
 
 func (r *workGraphRunner) Run(name string, args ...string) ([]byte, error) {
@@ -45,6 +47,9 @@ func (r *workGraphRunner) Run(name string, args ...string) ([]byte, error) {
 	case strings.HasPrefix(call, "gh pr list --repo OWNER/repo") && strings.Contains(call, " 101 "):
 		return []byte(`[]`), nil
 	case strings.HasPrefix(call, "gh api graphql "):
+		if r.graphqlErr != nil {
+			return nil, r.graphqlErr
+		}
 		return []byte(`{"data":{"repository":{"issue101":{"number":101,"title":"[Task] Existing evidence","state":"OPEN","body":"## Goal\nExisting","labels":{"nodes":[{"name":"type:task"},{"name":"status:ready"}],"pageInfo":{"hasNextPage":false}},"timelineItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}}}}}`), nil
 	case strings.HasPrefix(call, "gh issue create --repo OWNER/repo --title "):
 		r.creates++
@@ -114,6 +119,21 @@ func TestPMWorkGraphCompilesMixedProfilesAndExplicitActions(t *testing.T) {
 	compactJSON, _ := json.Marshal(compact)
 	if len(compactJSON) >= len(fullJSON)/2 || strings.Contains(string(compactJSON), "Resolve rollout policy") {
 		t.Fatalf("compact repeats graph bodies: full=%d compact=%d", len(fullJSON), len(compactJSON))
+	}
+}
+
+func TestPMWorkGraphDoesNotCompileOrApplyFromUnavailableGoalStatus(t *testing.T) {
+	source := PMWorkGraphSource{SchemaVersion: PMWorkGraphSourceSchemaVersion, Nodes: []PMWorkGraphNode{{ID: "build", Title: "Build bounded slice", Purpose: "Deliver selected behavior", Profile: "delivery", ParentOutcome: "goal:100", Size: "small", Verification: []PMWorkGraphVerification{{Method: "focused tests", Evidence: "passing checks"}}}}}
+	runner := &workGraphRunner{body: workGraphGoalBody(t, source), child: true, graphqlErr: errors.New("snapshot token secret")}
+	report, err := BuildPMWorkGraphReport(PMWorkGraphInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Goal: 100, Apply: true, ExpectedPlanID: "pwg-approved"}, runner)
+	if err != nil {
+		t.Fatalf("BuildPMWorkGraphReport: %v", err)
+	}
+	if report.DiscoveryComplete != true || report.StatusComplete || report.Matched || len(report.Nodes) != 0 || len(report.Actions) != 0 || report.NextStep != "gira goal status 100 --repo OWNER/repo --json" {
+		t.Fatalf("work graph lowered despite unavailable child status: %+v", report)
+	}
+	if runner.creates != 0 || len(runner.comments) != 0 {
+		t.Fatalf("incomplete work graph performed writes: creates=%d comments=%d", runner.creates, len(runner.comments))
 	}
 }
 
@@ -253,16 +273,17 @@ type resumableWorkGraphIssue struct {
 }
 
 type resumableWorkGraphRunner struct {
-	body         string
-	issues       map[int]resumableWorkGraphIssue
-	linked       map[int]bool
-	comments     []string
-	creates      int
-	parentLinks  int
-	failCreateOn int
-	failLinkOn   int
-	failSearch   bool
-	failComments bool
+	body          string
+	issues        map[int]resumableWorkGraphIssue
+	linked        map[int]bool
+	comments      []string
+	creates       int
+	parentLinks   int
+	failCreateOn  int
+	failLinkOn    int
+	failSearch    bool
+	failComments  bool
+	commentsReads int
 }
 
 func newResumableWorkGraphRunner(body string) *resumableWorkGraphRunner {
@@ -289,7 +310,8 @@ func (r *resumableWorkGraphRunner) Run(name string, args ...string) ([]byte, err
 		}
 		return json.Marshal(rows)
 	case call == "gh issue view 100 --repo OWNER/repo --json comments":
-		if r.failComments {
+		r.commentsReads++
+		if r.failComments && r.commentsReads > 3 {
 			return nil, fmt.Errorf("injected comments read failure")
 		}
 		items := make([]map[string]string, 0, len(r.comments))
@@ -299,6 +321,31 @@ func (r *resumableWorkGraphRunner) Run(name string, args ...string) ([]byte, err
 		return json.Marshal(map[string]any{"comments": items})
 	case call == "gh issue view 100 --repo OWNER/repo --json number,title,body,url,comments":
 		return []byte(fmt.Sprintf(`{"number":100,"title":"Typed goal","body":%q,"url":"https://example/100","comments":[]}`, r.body)), nil
+	case strings.HasPrefix(call, "gh api graphql "):
+		issues := map[string]any{}
+		for number, linked := range r.linked {
+			if !linked {
+				continue
+			}
+			issue := r.issues[number]
+			issues[fmt.Sprintf("issue%d", number)] = map[string]any{
+				"number": number,
+				"title":  issue.Title,
+				"state":  "OPEN",
+				"body":   issue.Body,
+				"labels": map[string]any{
+					"nodes":    []map[string]string{{"name": "type:task"}, {"name": "status:ready"}},
+					"pageInfo": map[string]bool{"hasNextPage": false},
+				},
+				"milestone": nil,
+				"timelineItems": map[string]any{
+					"totalCount": 0,
+					"nodes":      []any{},
+					"pageInfo":   map[string]bool{"hasNextPage": false},
+				},
+			}
+		}
+		return json.Marshal(map[string]any{"data": map[string]any{"repository": issues}})
 	case call == "gh api repos/OWNER/repo/labels --paginate --slurp -X GET -f per_page=100":
 		return []byte(`[[{"name":"type:task"},{"name":"status:ready"},{"name":"priority:p2"}]]`), nil
 	case strings.HasPrefix(call, "gh api repos/OWNER/repo/issues/") && strings.HasSuffix(call, " -H Accept: application/vnd.github+json"):
@@ -454,9 +501,11 @@ func TestPMWorkGraphApplyFailsClosedWhenProgressReadFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	runner.commentsReads = 0
 	runner.failComments = true
-	if _, err := BuildPMWorkGraphReport(PMWorkGraphInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Goal: 100, Apply: true, ExpectedPlanID: preview.PlanID}, runner); err == nil || runner.creates != 0 {
-		t.Fatalf("progress read failure was not fail-closed: creates=%d err=%v", runner.creates, err)
+	applied, err := BuildPMWorkGraphReport(PMWorkGraphInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Goal: 100, Apply: true, ExpectedPlanID: preview.PlanID}, runner)
+	if err == nil || runner.creates != 0 || runner.commentsReads != 4 || !applied.DiscoveryComplete || !applied.StatusComplete {
+		t.Fatalf("progress read failure was not fail-closed: creates=%d comments_reads=%d preview_plan=%q applied=%#v err=%v", runner.creates, runner.commentsReads, preview.PlanID, applied, err)
 	}
 }
 

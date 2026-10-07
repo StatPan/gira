@@ -97,8 +97,8 @@ Flags:
 - `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
 - `--role`: Handoff role: planner, implementer, or reviewer. Default: implementer.
 - `--profile`: Handoff profile: default or python. Default: default.
-- `--json`: Emit stable dispatch-packet/v1 JSON.
-- `--compact-json`: Emit compact dispatch-compact/v1 JSON without full issue bodies or role packets.
+- `--json`: Emit stable dispatch-packet/v2 JSON.
+- `--compact-json`: Emit compact dispatch-compact/v2 JSON without full issue bodies or role packets.
 - `--prompt`: Emit a compact prompt for direct LLM handoff.
 - `--context-budget`: Maximum compact context size in characters. Default: 12000.
 
@@ -236,7 +236,7 @@ Flags:
 - `--dry-run`: Preview readiness and receipt without mutation.
 - `--apply`: Apply an explicit done close or human_review handoff mutation.
 - `--terminal`: Explicit terminal recommendation override for apply: done, human_review, blocked, superseded, or abandoned.
-- `--json`: Emit stable goal-finish-readiness/v1 JSON.
+- `--json`: Emit stable goal-finish-readiness/v2 JSON.
 
 Examples:
 
@@ -271,8 +271,8 @@ Flags:
 - `--dry-run`: Preview fingerprinted lowering without mutation.
 - `--apply`: Lower create/supersede actions and post an idempotent receipt.
 - `--expect-plan`: Required approved dry-run pm-work-graph fingerprint for apply.
-- `--json`: Emit full pm-work-graph-report/v1.
-- `--compact-json`: Emit body-free pm-work-graph-compact/v1.
+- `--json`: Emit full pm-work-graph-report/v2.
+- `--compact-json`: Emit body-free pm-work-graph-compact/v2.
 
 Examples:
 
@@ -318,7 +318,7 @@ Flags:
 - `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
 - `--role`: Handoff role: planner, implementer, or reviewer. Default: implementer.
 - `--profile`: Handoff profile: default or python. Default: default.
-- `--json`: Emit stable goal-handoff/v1 JSON with worker-handoff/v1 embedded when a child is selected.
+- `--json`: Emit stable goal-handoff/v2 JSON with worker-handoff/v1 embedded when a child is selected.
 
 Examples:
 
@@ -399,7 +399,7 @@ Flags:
 
 - `--repo`: Target GitHub repo in OWNER/REPO format.
 - `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
-- `--json`: Emit stable goal-next/v1 JSON.
+- `--json`: Emit stable goal-next/v2 JSON.
 
 Examples:
 
@@ -433,9 +433,9 @@ Flags:
 - `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
 - `--dry-run`: Preview proposed child tickets, including target_repo, without mutation.
 - `--apply`: Create reviewed child tickets in their target repos from the proposed plan.
-- `--compact-json`: Emit compact goal-plan-compact/v1 JSON; compact apply requires --expect-plan from dry-run.
+- `--compact-json`: Emit compact goal-plan-compact/v2 JSON; compact apply requires --expect-plan from dry-run.
 - `--expect-plan`: Required dry-run plan ID for --compact-json --apply.
-- `--json`: Emit stable goal-plan/v1 JSON.
+- `--json`: Emit stable goal-plan/v2 JSON.
 
 Examples:
 
@@ -474,7 +474,7 @@ Flags:
 - `--repo`: Target GitHub repo in OWNER/REPO format.
 - `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
 - `--view`: Derived PM view: operator, human, ai, stakeholder, or audit. Default: operator.
-- `--json`: Emit stable goal-dossier/v1 JSON.
+- `--json`: Emit stable goal-dossier/v2 JSON.
 - `--html`: Write a static local HTML report.
 - `--output`: Output path for --html.
 
@@ -512,7 +512,7 @@ Flags:
 
 - `--repo`: Target GitHub repo in OWNER/REPO format.
 - `--goal`: Goal issue number. Can also be numeric positional; inferred when omitted.
-- `--json`: Emit stable goal-status/v1 JSON.
+- `--json`: Emit stable goal-status/v2 JSON.
 
 Examples:
 
@@ -1197,7 +1197,7 @@ Flags:
 
 - `--repo`: Target GitHub repo.
 - `--ticket`: Goal issue holding typed PM and work graph state.
-- `--json`: Emit full pm-observe-report/v1 JSON with source reports.
+- `--json`: Emit full pm-observe-report/v2 JSON with source reports.
 
 Examples:
 
@@ -1349,7 +1349,7 @@ Flags:
 - `--expect-plan`: Approved pmr-* dry-run fingerprint required by apply.
 - `--override`: Explicit human override, including unblock:#N.
 - `--rationale`: Durable product rationale required with an override.
-- `--json`: Emit stable pm-replan-report/v1 JSON.
+- `--json`: Emit stable pm-replan-report/v2 JSON.
 
 Examples:
 

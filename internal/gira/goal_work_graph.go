@@ -14,8 +14,8 @@ import (
 
 const (
 	PMWorkGraphSourceSchemaVersion  = "pm-work-graph-source/v1"
-	PMWorkGraphReportSchemaVersion  = "pm-work-graph-report/v1"
-	PMWorkGraphCompactSchemaVersion = "pm-work-graph-compact/v1"
+	PMWorkGraphReportSchemaVersion  = "pm-work-graph-report/v2"
+	PMWorkGraphCompactSchemaVersion = "pm-work-graph-compact/v2"
 )
 
 const (
@@ -93,27 +93,30 @@ type PMWorkGraphInput struct {
 }
 
 type PMWorkGraphReport struct {
-	Command         string                  `json:"command"`
-	SchemaVersion   string                  `json:"schema_version"`
-	Mode            string                  `json:"mode"`
-	ReadOnly        bool                    `json:"read_only"`
-	Repo            string                  `json:"repo"`
-	Goal            GoalStatusIssue         `json:"goal"`
-	PMIRDigest      string                  `json:"pm_ir_digest"`
-	PMIRDiagnostics []PMCompileDiagnostic   `json:"pm_ir_diagnostics,omitempty"`
-	CandidateWork   []string                `json:"candidate_work"`
-	DiscoverySchema string                  `json:"discovery_schema"`
-	OutcomeRefs     []string                `json:"outcome_refs"`
-	Nodes           []PMWorkGraphNode       `json:"nodes"`
-	Order           []string                `json:"order"`
-	Actions         []PMWorkGraphAction     `json:"actions"`
-	Diagnostics     []PMWorkGraphDiagnostic `json:"diagnostics"`
-	PlanID          string                  `json:"plan_id"`
-	ExpectedPlanID  string                  `json:"expected_plan_id,omitempty"`
-	Matched         bool                    `json:"matched"`
-	Idempotent      bool                    `json:"idempotent"`
-	Created         []GoalPlanChild         `json:"created,omitempty"`
-	NextStep        string                  `json:"next_step"`
+	Command             string                  `json:"command"`
+	SchemaVersion       string                  `json:"schema_version"`
+	Mode                string                  `json:"mode"`
+	ReadOnly            bool                    `json:"read_only"`
+	Repo                string                  `json:"repo"`
+	Goal                GoalStatusIssue         `json:"goal"`
+	DiscoveryComplete   bool                    `json:"discovery_complete"`
+	StatusComplete      bool                    `json:"status_complete"`
+	AcquisitionFailures []GoalStatusFailure     `json:"acquisition_failures,omitempty"`
+	PMIRDigest          string                  `json:"pm_ir_digest"`
+	PMIRDiagnostics     []PMCompileDiagnostic   `json:"pm_ir_diagnostics,omitempty"`
+	CandidateWork       []string                `json:"candidate_work"`
+	DiscoverySchema     string                  `json:"discovery_schema"`
+	OutcomeRefs         []string                `json:"outcome_refs"`
+	Nodes               []PMWorkGraphNode       `json:"nodes"`
+	Order               []string                `json:"order"`
+	Actions             []PMWorkGraphAction     `json:"actions"`
+	Diagnostics         []PMWorkGraphDiagnostic `json:"diagnostics"`
+	PlanID              string                  `json:"plan_id"`
+	ExpectedPlanID      string                  `json:"expected_plan_id,omitempty"`
+	Matched             bool                    `json:"matched"`
+	Idempotent          bool                    `json:"idempotent"`
+	Created             []GoalPlanChild         `json:"created,omitempty"`
+	NextStep            string                  `json:"next_step"`
 }
 
 type PMWorkGraphCompactNode struct {
@@ -125,19 +128,22 @@ type PMWorkGraphCompactNode struct {
 	PayloadSHA256     string   `json:"payload_sha256,omitempty"`
 }
 type PMWorkGraphCompactReport struct {
-	Command        string                   `json:"command"`
-	SchemaVersion  string                   `json:"schema_version"`
-	Mode           string                   `json:"mode"`
-	Repo           string                   `json:"repo"`
-	Goal           int                      `json:"goal"`
-	PlanID         string                   `json:"plan_id"`
-	ExpectedPlanID string                   `json:"expected_plan_id,omitempty"`
-	Matched        bool                     `json:"matched"`
-	Idempotent     bool                     `json:"idempotent"`
-	Nodes          []PMWorkGraphCompactNode `json:"nodes"`
-	Diagnostics    []PMWorkGraphDiagnostic  `json:"diagnostics"`
-	Created        []GoalPlanChild          `json:"created,omitempty"`
-	DetailCommand  string                   `json:"detail_command"`
+	Command             string                   `json:"command"`
+	SchemaVersion       string                   `json:"schema_version"`
+	Mode                string                   `json:"mode"`
+	Repo                string                   `json:"repo"`
+	Goal                int                      `json:"goal"`
+	DiscoveryComplete   bool                     `json:"discovery_complete"`
+	StatusComplete      bool                     `json:"status_complete"`
+	AcquisitionFailures []GoalStatusFailure      `json:"acquisition_failures,omitempty"`
+	PlanID              string                   `json:"plan_id"`
+	ExpectedPlanID      string                   `json:"expected_plan_id,omitempty"`
+	Matched             bool                     `json:"matched"`
+	Idempotent          bool                     `json:"idempotent"`
+	Nodes               []PMWorkGraphCompactNode `json:"nodes"`
+	Diagnostics         []PMWorkGraphDiagnostic  `json:"diagnostics"`
+	Created             []GoalPlanChild          `json:"created,omitempty"`
+	DetailCommand       string                   `json:"detail_command"`
 }
 
 func BuildPMWorkGraphReport(input PMWorkGraphInput, runner CommandRunner) (PMWorkGraphReport, error) {
@@ -171,6 +177,17 @@ func BuildPMWorkGraphReport(input PMWorkGraphInput, runner CommandRunner) (PMWor
 		return report, err
 	}
 	report.Goal = status.Goal
+	report.DiscoveryComplete = status.DiscoveryComplete
+	report.StatusComplete = status.StatusComplete
+	report.AcquisitionFailures = append([]GoalStatusFailure(nil), status.AcquisitionFailures...)
+	if !status.DiscoveryComplete || !status.StatusComplete {
+		if report.ExpectedPlanID != "" {
+			report.Matched = false
+		}
+		report.Diagnostics = append(report.Diagnostics, workGraphDiagnostic("error", PMWorkGraphInvalidDiscovery, "", "child discovery or status is incomplete", "inspect the bounded acquisition failures and rerun goal status before graph planning or mutation"))
+		report.NextStep = fmt.Sprintf("gira goal status %d --repo %s --json", goalNumber, input.Repo.FullName())
+		return report, nil
+	}
 	source, parseErr := parsePMWorkGraphSource(goal.Body)
 	if input.Apply && pmWorkGraphReceiptPresent(input.Repo, goalNumber, report.ExpectedPlanID, runner) {
 		report.PlanID = report.ExpectedPlanID
@@ -970,7 +987,7 @@ func pmWorkGraphReceiptPresent(repo RepoRef, goal int, plan string, runner Comma
 }
 
 func BuildPMWorkGraphCompact(report PMWorkGraphReport) PMWorkGraphCompactReport {
-	compact := PMWorkGraphCompactReport{Command: report.Command, SchemaVersion: PMWorkGraphCompactSchemaVersion, Mode: report.Mode, Repo: report.Repo, Goal: report.Goal.Number, PlanID: report.PlanID, ExpectedPlanID: report.ExpectedPlanID, Matched: report.Matched, Idempotent: report.Idempotent, Nodes: []PMWorkGraphCompactNode{}, Diagnostics: report.Diagnostics, Created: report.Created, DetailCommand: fmt.Sprintf("gira goal graph %d --repo %s --json", report.Goal.Number, report.Repo)}
+	compact := PMWorkGraphCompactReport{Command: report.Command, SchemaVersion: PMWorkGraphCompactSchemaVersion, Mode: report.Mode, Repo: report.Repo, Goal: report.Goal.Number, DiscoveryComplete: report.DiscoveryComplete, StatusComplete: report.StatusComplete, AcquisitionFailures: append([]GoalStatusFailure(nil), report.AcquisitionFailures...), PlanID: report.PlanID, ExpectedPlanID: report.ExpectedPlanID, Matched: report.Matched, Idempotent: report.Idempotent, Nodes: []PMWorkGraphCompactNode{}, Diagnostics: report.Diagnostics, Created: report.Created, DetailCommand: fmt.Sprintf("gira goal graph %d --repo %s --json", report.Goal.Number, report.Repo)}
 	actionByID := map[string]string{}
 	for _, a := range report.Actions {
 		actionByID[a.NodeID] = a.Action
@@ -996,7 +1013,7 @@ func BuildPMWorkGraphCompact(report PMWorkGraphReport) PMWorkGraphCompactReport 
 
 func FormatPMWorkGraph(report PMWorkGraphReport) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "goal graph: #%d mode=%s nodes=%d plan=%s matched=%t diagnostics=%d\n", report.Goal.Number, report.Mode, len(report.Nodes), report.PlanID, report.Matched, len(report.Diagnostics))
+	fmt.Fprintf(&b, "goal graph: #%d mode=%s nodes=%d discovery_complete=%t status_complete=%t plan=%s matched=%t diagnostics=%d\n", report.Goal.Number, report.Mode, len(report.Nodes), report.DiscoveryComplete, report.StatusComplete, report.PlanID, report.Matched, len(report.Diagnostics))
 	for _, d := range report.Diagnostics {
 		fmt.Fprintf(&b, "- %s %s %s: %s\n", d.Severity, d.Code, d.NodeID, d.Reason)
 	}

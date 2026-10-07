@@ -38,23 +38,26 @@ type PMReplanOverride struct {
 }
 
 type PMReplanReport struct {
-	Command              string             `json:"command"`
-	SchemaVersion        string             `json:"schema_version"`
-	Mode                 string             `json:"mode"`
-	Repo                 string             `json:"repo"`
-	Ticket               int                `json:"ticket"`
-	PlanID               string             `json:"plan_id"`
-	ExpectedPlanID       string             `json:"expected_plan_id,omitempty"`
-	Matched              bool               `json:"matched"`
-	Idempotent           bool               `json:"idempotent"`
-	RecommendationDigest string             `json:"recommendation_digest"`
-	Changed              bool               `json:"changed"`
-	ChangeReason         string             `json:"change_reason"`
-	Mutations            []PMReplanMutation `json:"mutations"`
-	ResidualActions      []PMObserveAction  `json:"residual_actions"`
-	Override             *PMReplanOverride  `json:"override,omitempty"`
-	Observe              *PMObserveReport   `json:"observe,omitempty"`
-	NextStep             string             `json:"next_step"`
+	Command              string              `json:"command"`
+	SchemaVersion        string              `json:"schema_version"`
+	Mode                 string              `json:"mode"`
+	Repo                 string              `json:"repo"`
+	Ticket               int                 `json:"ticket"`
+	PlanID               string              `json:"plan_id"`
+	ExpectedPlanID       string              `json:"expected_plan_id,omitempty"`
+	Matched              bool                `json:"matched"`
+	Idempotent           bool                `json:"idempotent"`
+	RecommendationDigest string              `json:"recommendation_digest"`
+	Changed              bool                `json:"changed"`
+	ChangeReason         string              `json:"change_reason"`
+	DiscoveryComplete    bool                `json:"discovery_complete"`
+	StatusComplete       bool                `json:"status_complete"`
+	AcquisitionFailures  []GoalStatusFailure `json:"acquisition_failures,omitempty"`
+	Mutations            []PMReplanMutation  `json:"mutations"`
+	ResidualActions      []PMObserveAction   `json:"residual_actions"`
+	Override             *PMReplanOverride   `json:"override,omitempty"`
+	Observe              *PMObserveReport    `json:"observe,omitempty"`
+	NextStep             string              `json:"next_step"`
 }
 
 func BuildPMReplanReport(input PMReplanInput, runner CommandRunner) (PMReplanReport, error) {
@@ -79,18 +82,30 @@ func BuildPMReplanReport(input PMReplanInput, runner CommandRunner) (PMReplanRep
 	if override != "" && len(rationale) < 12 {
 		return report, fmt.Errorf("override rationale must explain the product judgment")
 	}
-	if input.Apply && pmReplanReceiptPresent(input.Repo, input.Ticket, report.ExpectedPlanID, runner) {
-		report.PlanID, report.Idempotent = report.ExpectedPlanID, true
-		report.NextStep = fmt.Sprintf("gira pm observe --repo %s --ticket %d --json", report.Repo, report.Ticket)
-		return report, nil
-	}
 	observe, err := BuildPMObserveReport(PMObserveInput{Repo: input.Repo, Ticket: input.Ticket}, runner)
 	if err != nil {
 		return report, err
 	}
 	report.Observe = &observe
+	if observe.GoalStatus != nil {
+		report.DiscoveryComplete = observe.GoalStatus.DiscoveryComplete
+		report.StatusComplete = observe.GoalStatus.StatusComplete
+		report.AcquisitionFailures = append([]GoalStatusFailure(nil), observe.GoalStatus.AcquisitionFailures...)
+	}
 	report.RecommendationDigest = observe.Change.CurrentDigest
 	report.Changed, report.ChangeReason = observe.Change.Changed, observe.Change.Reason
+	if !report.DiscoveryComplete || !report.StatusComplete {
+		if report.ExpectedPlanID != "" {
+			report.Matched = false
+		}
+		report.NextStep = observe.NextStep
+		return report, nil
+	}
+	if input.Apply && pmReplanReceiptPresent(input.Repo, input.Ticket, report.ExpectedPlanID, runner) {
+		report.PlanID, report.Idempotent = report.ExpectedPlanID, true
+		report.NextStep = fmt.Sprintf("gira pm observe --repo %s --ticket %d --json", report.Repo, report.Ticket)
+		return report, nil
+	}
 	if observe.WorkGraph != nil {
 		for _, action := range observe.WorkGraph.Actions {
 			capability := "issue:create"
@@ -319,7 +334,7 @@ func renderPMReplanReceipt(report PMReplanReport) string {
 
 func FormatPMReplan(report PMReplanReport) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "pm replan: #%d mode=%s plan=%s matched=%t mutations=%d residual=%d\n", report.Ticket, report.Mode, report.PlanID, report.Matched, len(report.Mutations), len(report.ResidualActions))
+	fmt.Fprintf(&b, "pm replan: #%d mode=%s discovery_complete=%t status_complete=%t plan=%s matched=%t mutations=%d residual=%d\n", report.Ticket, report.Mode, report.DiscoveryComplete, report.StatusComplete, report.PlanID, report.Matched, len(report.Mutations), len(report.ResidualActions))
 	for _, a := range report.Mutations {
 		fmt.Fprintf(&b, "- %s %s status=%s reason=%s\n", a.Action, a.Target, a.Status, a.Reason)
 	}

@@ -7,24 +7,27 @@ import (
 	"fmt"
 )
 
-const GoalPlanCompactSchemaVersion = "goal-plan-compact/v1"
+const GoalPlanCompactSchemaVersion = "goal-plan-compact/v2"
 
 type GoalPlanCompactReport struct {
-	Command        string                   `json:"command"`
-	SchemaVersion  string                   `json:"schema_version"`
-	Mode           string                   `json:"mode"`
-	PlanID         string                   `json:"plan_id"`
-	ExpectedPlanID string                   `json:"expected_plan_id,omitempty"`
-	Matched        bool                     `json:"matched"`
-	Source         GoalPlanCompactSource    `json:"source"`
-	Defaults       *GoalPlanCompactDefaults `json:"defaults,omitempty"`
-	Proposals      []GoalPlanCompactTicket  `json:"proposals,omitempty"`
-	Receipt        *GoalPlanCompactReceipt  `json:"receipt,omitempty"`
-	StopConditions []string                 `json:"stop_conditions,omitempty"`
-	Warnings       []string                 `json:"warnings,omitempty"`
-	NextAction     string                   `json:"next_action"`
-	NextStep       string                   `json:"next_step"`
-	DetailCommand  string                   `json:"detail_command"`
+	Command             string                   `json:"command"`
+	SchemaVersion       string                   `json:"schema_version"`
+	Mode                string                   `json:"mode"`
+	PlanID              string                   `json:"plan_id"`
+	ExpectedPlanID      string                   `json:"expected_plan_id,omitempty"`
+	Matched             bool                     `json:"matched"`
+	Source              GoalPlanCompactSource    `json:"source"`
+	DiscoveryComplete   bool                     `json:"discovery_complete"`
+	StatusComplete      bool                     `json:"status_complete"`
+	AcquisitionFailures []GoalStatusFailure      `json:"acquisition_failures,omitempty"`
+	Defaults            *GoalPlanCompactDefaults `json:"defaults,omitempty"`
+	Proposals           []GoalPlanCompactTicket  `json:"proposals,omitempty"`
+	Receipt             *GoalPlanCompactReceipt  `json:"receipt,omitempty"`
+	StopConditions      []string                 `json:"stop_conditions,omitempty"`
+	Warnings            []string                 `json:"warnings,omitempty"`
+	NextAction          string                   `json:"next_action"`
+	NextStep            string                   `json:"next_step"`
+	DetailCommand       string                   `json:"detail_command"`
 }
 
 type GoalPlanCompactSource struct {
@@ -56,7 +59,11 @@ type GoalPlanCompactReceipt struct {
 }
 
 func BuildGoalPlanCompactReport(report GoalPlanReport, mode string, expected string) GoalPlanCompactReport {
-	compact := GoalPlanCompactReport{Command: "goal plan", SchemaVersion: GoalPlanCompactSchemaVersion, Mode: mode, ExpectedPlanID: expected, Matched: expected == "" || expected == goalPlanFingerprint(report), Source: GoalPlanCompactSource{Repo: report.Repo, Goal: report.Goal.Number, Title: report.Goal.Title}, StopConditions: append([]string(nil), report.StopConditions...), Warnings: append([]string(nil), report.Warnings...), NextAction: report.NextAction, NextStep: report.NextStep, DetailCommand: fmt.Sprintf("gira goal plan --repo %s --goal %d --dry-run --json", report.Repo, report.Goal.Number)}
+	compact := GoalPlanCompactReport{Command: "goal plan", SchemaVersion: GoalPlanCompactSchemaVersion, Mode: mode, ExpectedPlanID: expected, Matched: expected == "" || expected == goalPlanFingerprint(report), Source: GoalPlanCompactSource{Repo: report.Repo, Goal: report.Goal.Number, Title: report.Goal.Title}, DiscoveryComplete: report.DiscoveryComplete, StatusComplete: report.StatusComplete, AcquisitionFailures: append([]GoalStatusFailure(nil), report.AcquisitionFailures...), StopConditions: append([]string(nil), report.StopConditions...), Warnings: append([]string(nil), report.Warnings...), NextAction: report.NextAction, NextStep: report.NextStep, DetailCommand: fmt.Sprintf("gira goal plan --repo %s --goal %d --dry-run --json", report.Repo, report.Goal.Number)}
+	if !report.DiscoveryComplete || !report.StatusComplete {
+		compact.Matched = false
+		return compact
+	}
 	compact.PlanID = goalPlanFingerprint(report)
 	if mode == "apply" {
 		if !compact.Matched {

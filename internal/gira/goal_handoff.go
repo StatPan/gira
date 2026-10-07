@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const GoalHandoffSchemaVersion = "goal-handoff/v1"
+const GoalHandoffSchemaVersion = "goal-handoff/v2"
 
 type GoalHandoffInput struct {
 	Repo    RepoRef `json:"repo"`

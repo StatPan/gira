@@ -18,8 +18,14 @@ type goalStatusFixtureRunner struct {
 
 func (r goalStatusFixtureRunner) Run(name string, args ...string) ([]byte, error) {
 	key := strings.TrimSpace(name + " " + strings.Join(args, " "))
+	if err, ok := r.errors[key]; ok {
+		return nil, err
+	}
 	if response, ok := r.responses[key]; ok {
 		return []byte(response), nil
+	}
+	if strings.HasPrefix(key, "gh api repos/") && strings.Contains(key, "/issues/") && strings.Contains(key, "/sub_issues -X GET ") {
+		return []byte(`[]`), nil
 	}
 	if strings.HasPrefix(key, "gh api graphql ") {
 		return r.graphQLIssueSnapshot(key)
@@ -117,4 +123,12 @@ func commandField(command string, field string) string {
 		value = value[:end]
 	}
 	return value
+}
+
+func goalStatusRemainingIs(value *int, want int) bool {
+	return value != nil && *value == want
+}
+
+func goalStatusRemainingPointer(value int) *int {
+	return &value
 }

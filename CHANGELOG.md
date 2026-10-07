@@ -6,6 +6,14 @@ Gira uses SemVer tags. User-facing features normally increment the minor version
 
 ## Unreleased
 
+- Fixed Goal child batch query nesting and upgraded Goal status/selection,
+  planning, finish, dossier, dispatch, and PM observe/replan contracts to v2.
+  Reports retain discovered identities when snapshots or operation policy are
+  unavailable, expose bounded acquisition failures and completeness flags, and
+  set overall remaining work to `null` until discovery and status are complete.
+  Goal planning, selection, graph mutation, PM replan, and both finish apply
+  paths now stop on incomplete evidence. This reporting change does not repair
+  unrelated remote acquisition or policy failures.
 - Fixed ticket finish to honor verified current-head native or recorded review
   evidence without clearing unrelated blockers.
 - Added an opt-in recorded-independent-review lane for development PRs when

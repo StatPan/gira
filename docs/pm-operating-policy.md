@@ -141,16 +141,16 @@ useful but does not yet satisfy the complete PM policy.
 
 | PM stage | Current surface | Contract | Coverage | V3 gap |
 | --- | --- | --- | --- | --- |
-| Hydrate | `pm bootstrap`, `pm context`, `ticket handoff`, `goal handoff`, `dispatch goal` | `pm-bootstrap/v1`, `pm-context/v1`, `worker-handoff/v1`, `goal-handoff/v1`, dispatch packet | supported | bootstrap binds policy, role, authority, source refs, fingerprints, and next protocol action without hidden thread memory |
+| Hydrate | `pm bootstrap`, `pm context`, `ticket handoff`, `goal handoff`, `dispatch goal` | `pm-bootstrap/v1`, `pm-context/v1`, `worker-handoff/v1`, `goal-handoff/v2`, dispatch packet | supported | bootstrap binds policy, role, authority, source refs, fingerprints, and next protocol action without hidden thread memory |
 | Compile | `pm compile`, `pm spec` | `pm-ir/v1`, `pm-compile-report/v1`, `gira-pm-task-packet/v1`, `gira-pm-task-packet/v2` | partial | deterministic intent diagnostics and profile-aware packets are implemented; automatic IR projection remains follow-up work |
 | Discover | `pm record`, `pm discovery` | `pm-ledger-record/v1`, `pm-discovery-graph/v1` | supported | connect the graph to portfolio measurement and automatic replanning in later slices |
 | Decide | `pm record`, decision policy helpers and queue resolution from #839 | `pm-ledger-record/v1`, `pm-record-report/v1`, `decision-policy/v1` | partial | append-safe decision state exists; option comparison and Goal routing integration remain follow-up work |
-| Plan | `pm spec`, `goal plan --compact-json`, `goal graph` | `pm-task-profile/v1`, `pm-profile-promotion/v1`, `gira-pm-task-packet/v2`, `goal-plan/v1`, `goal-plan-compact/v1`, `pm-work-graph-report/v1`, `pm-work-graph-compact/v1` | supported | keep graph compilation deterministic without embedding an LLM planner |
+| Plan | `pm spec`, `goal plan --compact-json`, `goal graph` | `pm-task-profile/v1`, `pm-profile-promotion/v1`, `gira-pm-task-packet/v2`, `goal-plan/v2`, `goal-plan-compact/v2`, `pm-work-graph-report/v2`, `pm-work-graph-compact/v2` | supported | keep graph compilation deterministic without embedding an LLM planner |
 | Execute | ticket lifecycle and queue take | readiness, approval, start, PR, checks, finish schemas | supported | consume typed PM profiles without weakening lifecycle gates |
-| Observe | `pm observe`, `pm measure`, `goal status`, `goal report`, PM QA, workspace queues | `pm-observe-report/v1`, `pm-measurement-report/v1`, `goal-status/v1`, `goal-dossier/v1`, `gira-pm-qa/v1`, `workspace-queues/v1` | supported | portfolio aggregation remains follow-up work |
-| Replan | `pm observe`, `pm replan` | `pm-observe-report/v1`, `pm-replan-report/v1` | supported | connect future portfolio-wide triggers without adding a background daemon or implicit mutation |
+| Observe | `pm observe`, `pm measure`, `goal status`, `goal report`, PM QA, workspace queues | `pm-observe-report/v2`, `pm-measurement-report/v1`, `goal-status/v2`, `goal-dossier/v2`, `gira-pm-qa/v1`, `workspace-queues/v1` | supported | portfolio aggregation remains follow-up work |
+| Replan | `pm observe`, `pm replan` | `pm-observe-report/v2`, `pm-replan-report/v2` | supported | connect future portfolio-wide triggers without adding a background daemon or implicit mutation |
 | Validate | `pm qa`, `pm accept` | `gira-pm-qa/v1`, `pm-acceptance-result/v1`, `pm-acceptance-report/v1` | supported | retain engineering review as a separate branch-protection responsibility |
-| Report | `goal report --view operator|human|ai|stakeholder|audit`, workspace and release reports | `goal-dossier/v1`, `goal-pm-view/v1`, source schema refs | supported | portfolio aggregation and hosted presentation remain outside this local derived-view slice |
+| Report | `goal report --view operator|human|ai|stakeholder|audit`, workspace and release reports | `goal-dossier/v2`, `goal-pm-view/v1`, source schema refs | supported | portfolio aggregation and hosted presentation remain outside this local derived-view slice |
 | Adapter | generic MCP CLI parity plus focused bootstrap, compile, observe, replan-plan, validate, and report reads | MCP tool envelopes over CLI; `pm-conformance-report/v1` | supported | model judgment remains host responsibility and is reported separately from protocol compliance |
 
 ### PM harness bootstrap and conformance

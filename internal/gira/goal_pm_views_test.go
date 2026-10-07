@@ -74,7 +74,7 @@ func TestGoalPMHumanAIStakeholderAndAuditContracts(t *testing.T) {
 
 func TestGoalPMHTMLViewEscapesSummariesAndOmitsStakeholderTickets(t *testing.T) {
 	view := GoalPMView{SchemaVersion: GoalPMViewSchemaVersion, Kind: "stakeholder", StateDigest: "sha256:x", Summaries: []string{"Outcome <script>alert(1)</script>"}}
-	report := BuildGoalDossierReportFromStatus(GoalStatusReport{Repo: "OWNER/repo", Goal: GoalStatusIssue{Number: 100, Title: "Goal"}, Children: []GoalStatusChild{{Number: 101, Title: "Implementation secret", Category: "in_progress"}}, Counts: map[string]int{"total": 1}}, GoalNextReport{})
+	report := BuildGoalDossierReportFromStatus(GoalStatusReport{Repo: "OWNER/repo", Goal: GoalStatusIssue{Number: 100, Title: "Goal"}, Children: []GoalStatusChild{{Number: 101, Title: "Implementation secret", Category: "in_progress", StatusAvailable: true}}, Counts: map[string]int{"total": 1, "known": 1}, DiscoveryComplete: true, StatusComplete: true, RemainingAutonomousWork: goalStatusRemainingPointer(1), KnownRemainingAutonomousWork: 1}, GoalNextReport{})
 	report.PMView = &view
 	report.ChildGroups = nil
 	html := RenderGoalReportHTML(report)
@@ -90,7 +90,7 @@ func goalPMViewFixture() (PMCompileReport, PMObserveReport) {
 		{Current: true, CommentURL: "https://example/decision-new", Record: PMLedgerRecord{ID: "decision.new", Kind: "decision", Text: "Use reversible policy", Status: "review_due", Supersedes: "decision.old", SourceRefs: []string{"issue:2"}, RecordedAt: "2026-07-18T02:00:00Z"}},
 	}}
 	measurement := PMMeasurementReport{Summary: PMMeasurementSummary{Outcomes: 1, NotValidated: 1}}
-	status := GoalStatusReport{Goal: GoalStatusIssue{Number: 100}, Children: []GoalStatusChild{{Number: 101, Title: "Build bounded slice", State: "closed", Category: "done"}, {Number: 102, Title: "Observe rollout", State: "open", Category: "in_progress"}}}
+	status := GoalStatusReport{Goal: GoalStatusIssue{Number: 100}, Children: []GoalStatusChild{{Number: 101, Title: "Build bounded slice", State: "closed", Category: "done", StatusAvailable: true}, {Number: 102, Title: "Observe rollout", State: "open", Category: "in_progress", StatusAvailable: true}}, Counts: map[string]int{"total": 2, "known": 2}, DiscoveryComplete: true, StatusComplete: true, RemainingAutonomousWork: goalStatusRemainingPointer(1), KnownRemainingAutonomousWork: 1}
 	largeEvidence := strings.Repeat("bounded source evidence ", 400)
 	state := PMObserveState{Context: context, Discovery: PMDiscoveryReport{Summary: PMDiscoverySummary{ByKind: map[string]int{"outcome": 1}}, Nodes: []PMDiscoveryNode{{ID: "outcome.activation", Kind: "outcome", Text: largeEvidence, Current: true}}}, Measurement: measurement, WorkGraph: PMWorkGraphReport{PlanID: "pwg-1", Nodes: []PMWorkGraphNode{{ID: "build", Title: "Build bounded slice"}, {ID: "observe", Title: "Observe rollout"}}}, GoalStatus: status, PriorPlanID: "pmr-old", PriorDigest: "sha256:old"}
 	observe := BuildPMObserveFromState(PMObserveInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Ticket: 100}, state)

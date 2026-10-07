@@ -47,7 +47,7 @@ spread across CLI commands:
 | See what needs human review | `ticket review`, PR readiness | Review queue with PR links and review packet links |
 | See what can finish | `ticket status`, `finish-readiness/v1` | Finish-ready queue with `ticket finish --dry-run` commands |
 | See what is blocked or failing | `ticket status`, checks, blockers | Blocked and failed-check sections |
-| See goal progress | `goal-status/v1`, `goal-dossier/v1` | Goal cards and goal HTML reports |
+| See goal progress | `goal-status/v2`, `goal-dossier/v2` | Goal cards and goal HTML reports |
 | See dashboard export health | `dashboard_export/v1alpha1` manifest and warnings | Manifest summary and warnings page |
 
 ## Operator Flow

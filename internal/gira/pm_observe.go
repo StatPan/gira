@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	PMObserveSchemaVersion = "pm-observe-report/v1"
-	PMReplanSchemaVersion  = "pm-replan-report/v1"
+	PMObserveSchemaVersion = "pm-observe-report/v2"
+	PMReplanSchemaVersion  = "pm-replan-report/v2"
 )
 
 const pmReplanReceiptMarker = "<!-- gira:pm-replan-receipt/v1 -->"
@@ -44,6 +44,9 @@ type PMObserveSnapshot struct {
 	ContextDigest      string `json:"context_digest"`
 	GraphPlanID        string `json:"graph_plan_id"`
 	Children           int    `json:"children"`
+	UnknownChildren    int    `json:"unknown_children"`
+	DiscoveryComplete  bool   `json:"discovery_complete"`
+	StatusComplete     bool   `json:"status_complete"`
 	OpenChildren       int    `json:"open_children"`
 	BlockedChildren    int    `json:"blocked_children"`
 	CurrentRecords     int    `json:"current_records"`
@@ -175,7 +178,10 @@ func BuildPMObserveFromState(input PMObserveInput, state PMObserveState) PMObser
 	report.Diagnostics = append(report.Diagnostics, state.Measurement.Diagnostics...)
 	report.Snapshot.ContextDigest = pmObserveContextDigest(state.Context)
 	report.Snapshot.GraphPlanID = state.WorkGraph.PlanID
-	report.Snapshot.Children = len(state.GoalStatus.Children)
+	report.Snapshot.Children = state.GoalStatus.Counts["total"]
+	report.Snapshot.UnknownChildren = state.GoalStatus.Counts["unknown"]
+	report.Snapshot.DiscoveryComplete = state.GoalStatus.DiscoveryComplete
+	report.Snapshot.StatusComplete = state.GoalStatus.StatusComplete
 	report.Snapshot.CurrentRecords = state.Context.Summary.Current
 	report.Snapshot.OutcomeRecords = state.Discovery.Summary.ByKind["outcome"]
 	report.Snapshot.MeasurementNodes = state.Measurement.Summary.Measurements
@@ -201,6 +207,12 @@ func BuildPMObserveFromState(input PMObserveInput, state PMObserveState) PMObser
 		if latest.OutcomeState == "inconclusive" {
 			report.Diagnoses = append(report.Diagnoses, pmObserveDiagnosis("PMO015_OUTCOME_INCONCLUSIVE", "warning", latest.ID, "latest product outcome evidence is inconclusive", "acceptance:"+latest.ID))
 		}
+	}
+	if !state.GoalStatus.DiscoveryComplete {
+		report.Diagnoses = append(report.Diagnoses, pmObserveDiagnosis("PMO017_CHILD_DISCOVERY_INCOMPLETE", "error", "goal:"+strconv.Itoa(input.Ticket), "child discovery is incomplete", fmt.Sprintf("gira goal status --repo %s --goal %d --json", input.Repo.FullName(), input.Ticket)))
+	}
+	if !state.GoalStatus.StatusComplete {
+		report.Diagnoses = append(report.Diagnoses, pmObserveDiagnosis("PMO016_CHILD_STATUS_UNAVAILABLE", "error", "goal:"+strconv.Itoa(input.Ticket), "one or more discovered child statuses are unavailable", fmt.Sprintf("gira goal status --repo %s --goal %d --json", input.Repo.FullName(), input.Ticket)))
 	}
 	for _, item := range state.Context.Records {
 		if !item.Current {
@@ -261,11 +273,18 @@ func BuildPMObserveFromState(input PMObserveInput, state PMObserveState) PMObser
 	default:
 		report.Change.Reason = "recommendation is unchanged"
 	}
-	report.NextStep = fmt.Sprintf("gira pm replan --repo %s --ticket %d --dry-run --json", input.Repo.FullName(), input.Ticket)
+	if !state.GoalStatus.DiscoveryComplete || !state.GoalStatus.StatusComplete {
+		report.NextStep = fmt.Sprintf("gira goal status --repo %s --goal %d --json", input.Repo.FullName(), input.Ticket)
+	} else {
+		report.NextStep = fmt.Sprintf("gira pm replan --repo %s --ticket %d --dry-run --json", input.Repo.FullName(), input.Ticket)
+	}
 	return report
 }
 
 func pmObserveActions(diagnoses []PMObserveDiagnosis, state PMObserveState) []PMObserveAction {
+	if !state.GoalStatus.DiscoveryComplete || !state.GoalStatus.StatusComplete {
+		return []PMObserveAction{{Kind: "inspect", Target: "goal:" + strconv.Itoa(state.GoalStatus.Goal.Number), Reason: "resolve incomplete child discovery or status before making a work-graph recommendation", Capability: "issue:read", Residual: false, Rank: 0}}
+	}
 	byKey := map[string]PMObserveAction{}
 	add := func(kind, target, reason, capability string, residual bool, rank int) {
 		key := kind + "\x00" + target

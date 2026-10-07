@@ -58,7 +58,7 @@ func TestPMOperatingPolicyCoverageMapNamesCurrentContracts(t *testing.T) {
 		"`gira-pm-task-packet/v2`",
 		"`gira-pm-task-packet/v1`",
 		"`decision-policy/v1`",
-		"`goal-plan-compact/v1`",
+		"`goal-plan-compact/v2`",
 		"`workspace-queues/v1`",
 		"`gira-pm-qa/v1`",
 		"tool access does not activate or prove PM protocol conformance",

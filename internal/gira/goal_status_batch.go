@@ -54,7 +54,7 @@ func goalStatusRepositorySnapshotFor(repo RepoRef, childNumbers []int, runner Co
 	}
 	for _, number := range childNumbers {
 		if _, ok := issues[number]; !ok {
-			return goalStatusRepositorySnapshot{}, true, fmt.Errorf("issue #%d is missing from repository snapshot", number)
+			return goalStatusRepositorySnapshot{}, true, newGoalStatusAcquisitionError(goalStatusFailureStageSnapshotIncomplete, "missing_issue", fmt.Errorf("issue #%d is missing from repository snapshot", number))
 		}
 	}
 	return goalStatusRepositorySnapshot{Issues: issues, PRs: prs, PRsIncomplete: incompletePRs, Reviews: reviews, ReviewsIncomplete: reviewsIncomplete}, true, nil
@@ -64,16 +64,12 @@ func goalStatusIssueSnapshot(repo RepoRef, childNumbers []int, runner CommandRun
 	numbers := append([]int(nil), childNumbers...)
 	sort.Ints(numbers)
 	if len(numbers) > goalStatusRepositoryChildLimit {
-		return nil, nil, nil, nil, nil, true, fmt.Errorf("repository has %d goal children; snapshot limit is %d", len(numbers), goalStatusRepositoryChildLimit)
+		return nil, nil, nil, nil, nil, true, newGoalStatusAcquisitionError(goalStatusFailureStageSnapshotLimit, "child_limit_exceeded", fmt.Errorf("repository has %d goal children; snapshot limit is %d", len(numbers), goalStatusRepositoryChildLimit))
 	}
-	aliases := make([]string, 0, len(numbers))
-	for _, number := range numbers {
-		aliases = append(aliases, fmt.Sprintf("issue%d: issue(number: %d) { number title state body labels(first: 100) { nodes { name } pageInfo { hasNextPage } } milestone { title } timelineItems(first: 100, itemTypes: [CROSS_REFERENCED_EVENT]) { nodes { ... on CrossReferencedEvent { source { ... on PullRequest { number title body state url isDraft mergeStateStatus reviewDecision headRefName baseRefName headRefOid baseRefOid mergeCommit { oid } reviews(first: 100) { nodes { state commit { oid } } pageInfo { hasNextPage } } statusCheckRollup { contexts(first: 100) { nodes { ... on CheckRun { name status conclusion detailsUrl completedAt } ... on StatusContext { context state targetUrl description } } pageInfo { hasNextPage } } } } } } pageInfo { hasNextPage } } }", number, number))
-	}
-	query := fmt.Sprintf("query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { %s } }", strings.Join(aliases, " "))
+	query := goalStatusIssueSnapshotQuery(numbers)
 	out, err := runner.Run("gh", "api", "graphql", "-f", "owner="+repo.Owner, "-f", "name="+repo.Name, "-f", "query="+query)
 	if err != nil {
-		return nil, nil, nil, nil, nil, false, err
+		return nil, nil, nil, nil, nil, false, goalStatusRunnerFailure(goalStatusFailureStageSnapshotTransport, err)
 	}
 	var payload struct {
 		Data struct {
@@ -84,10 +80,10 @@ func goalStatusIssueSnapshot(repo RepoRef, childNumbers []int, runner CommandRun
 		} `json:"errors"`
 	}
 	if err := json.Unmarshal(out, &payload); err != nil {
-		return nil, nil, nil, nil, nil, true, fmt.Errorf("parse issue snapshot JSON: %w", err)
+		return nil, nil, nil, nil, nil, true, newGoalStatusAcquisitionError(goalStatusFailureStageSnapshotParse, "invalid_json", err)
 	}
 	if len(payload.Errors) > 0 {
-		return nil, nil, nil, nil, nil, true, fmt.Errorf("issue snapshot GraphQL error: %s", payload.Errors[0].Message)
+		return nil, nil, nil, nil, nil, true, goalStatusGraphQLFailure(payload.Errors[0].Message)
 	}
 	issues := map[int]devStartIssue{}
 	prs := []prSummary{}
@@ -101,7 +97,7 @@ func goalStatusIssueSnapshot(repo RepoRef, childNumbers []int, runner CommandRun
 			continue
 		}
 		if raw.Labels.PageInfo.HasNextPage {
-			return nil, nil, nil, nil, nil, true, fmt.Errorf("labels for issue #%d exceed the snapshot limit", raw.Number)
+			return nil, nil, nil, nil, nil, true, newGoalStatusAcquisitionError(goalStatusFailureStageSnapshotLimit, "labels_truncated", nil)
 		}
 		body := ""
 		if raw.Body != nil {
@@ -119,8 +115,8 @@ func goalStatusIssueSnapshot(repo RepoRef, childNumbers []int, runner CommandRun
 			Number: raw.Number, Title: raw.Title, State: strings.ToLower(raw.State),
 			Body: body, Labels: labels, Milestone: milestone,
 		}
-		if raw.TimelineItems.PageInfo.HasNextPage {
-			incompletePRs[raw.Number] = true
+		if raw.TimelineItems.PageInfo.HasNextPage || raw.TimelineItems.TotalCount >= 100 {
+			return nil, nil, nil, nil, nil, true, newGoalStatusAcquisitionError(goalStatusFailureStageSnapshotLimit, "timeline_truncated", nil)
 		}
 		for _, timeline := range raw.TimelineItems.Nodes {
 			if timeline.Source == nil || timeline.Source.Number <= 0 {
@@ -131,19 +127,31 @@ func goalStatusIssueSnapshot(repo RepoRef, childNumbers []int, runner CommandRun
 				reviews[prNumber] = append([]goalStatusGraphQLReview(nil), timeline.Source.Reviews.Nodes...)
 			}
 			if timeline.Source.Reviews.PageInfo.HasNextPage {
-				reviewsIncomplete[prNumber] = true
+				return nil, nil, nil, nil, nil, true, newGoalStatusAcquisitionError(goalStatusFailureStageSnapshotLimit, "reviews_truncated", nil)
 			}
 			if seenPRs[timeline.Source.Number] {
 				continue
 			}
 			seenPRs[timeline.Source.Number] = true
 			prs = append(prs, goalStatusGraphQLPRSummary(*timeline.Source))
-		}
-		if raw.TimelineItems.TotalCount >= 100 {
-			incompletePRs[raw.Number] = true
+			if timeline.Source.StatusCheckRollup.Contexts.PageInfo.HasNextPage {
+				return nil, nil, nil, nil, nil, true, newGoalStatusAcquisitionError(goalStatusFailureStageSnapshotLimit, "checks_truncated", nil)
+			}
 		}
 	}
 	return issues, prs, incompletePRs, reviews, reviewsIncomplete, true, nil
+}
+
+const goalStatusIssueAliasSelection = `issue%d: issue(number: %d) { number title state body labels(first: 100) { nodes { name } pageInfo { hasNextPage } } milestone { title } timelineItems(first: 100, itemTypes: [CROSS_REFERENCED_EVENT]) { nodes { ... on CrossReferencedEvent { source { ... on PullRequest { number title body state url isDraft mergeStateStatus reviewDecision headRefName baseRefName headRefOid baseRefOid mergeCommit { oid } reviews(first: 100) { nodes { state commit { oid } } pageInfo { hasNextPage } } statusCheckRollup { contexts(first: 100) { nodes { ... on CheckRun { name status conclusion detailsUrl completedAt } ... on StatusContext { context state targetUrl description } } pageInfo { hasNextPage } } } } } } } pageInfo { hasNextPage } } }`
+
+func goalStatusIssueSnapshotQuery(childNumbers []int) string {
+	numbers := append([]int(nil), childNumbers...)
+	sort.Ints(numbers)
+	aliases := make([]string, 0, len(numbers))
+	for _, number := range numbers {
+		aliases = append(aliases, fmt.Sprintf(goalStatusIssueAliasSelection, number, number))
+	}
+	return fmt.Sprintf("query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { %s } }", strings.Join(aliases, " "))
 }
 
 type goalStatusGraphQLIssue struct {

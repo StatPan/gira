@@ -31,6 +31,7 @@ func TestDispatchPacketFromGoalHandoffWrapsWorkerContext(t *testing.T) {
 		Profile:         AgentPromptProfileDefault,
 		Goal:            GoalStatusIssue{Number: 521, Title: "Dispatch goal", State: "open", Status: "Ready", URL: "https://github.com/StatPan/backlog/issues/521"},
 		GoalContext:     GoalHandoffContext{Objective: "Issue official AI work orders", StopConditions: []string{"unclear acceptance"}},
+		GoalStatus:      GoalStatusReport{Counts: map[string]int{"total": 1, "known": 1, "ready": 1}, DiscoveryComplete: true, StatusComplete: true, RemainingAutonomousWork: goalStatusRemainingPointer(1)},
 		SelectedTicket:  &selected,
 		WorkerHandoff:   &worker,
 		NextAction:      "handoff_child",
@@ -73,6 +74,7 @@ func TestDispatchPacketFromGoalHandoffCarriesStopReasons(t *testing.T) {
 		Role:            AgentPromptRoleImplementer,
 		Profile:         AgentPromptProfileDefault,
 		Goal:            GoalStatusIssue{Number: 521, Title: "Dispatch goal", State: "open", Status: "Ready"},
+		GoalStatus:      GoalStatusReport{Counts: map[string]int{"total": 0}, DiscoveryComplete: true, StatusComplete: true, RemainingAutonomousWork: goalStatusRemainingPointer(0)},
 		StopReasons:     []string{"no_child_tickets"},
 		NextAction:      "plan_children",
 		NextSafeCommand: "gira goal plan --repo StatPan/backlog --goal 521 --dry-run",
@@ -81,6 +83,37 @@ func TestDispatchPacketFromGoalHandoffCarriesStopReasons(t *testing.T) {
 	packet := dispatchPacketFromGoalHandoff(repo, handoff)
 	if packet.WorkerHandoff != nil || !containsString(packet.StopReasons, "no_child_tickets") || packet.NextAction != "plan_children" {
 		t.Fatalf("unexpected stop packet: %+v", packet)
+	}
+}
+
+func TestDispatchPacketSuppressesSelectionForIncompleteGoalStatus(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "backlog"}
+	selected := GoalNextCandidate{Repo: "StatPan/gira", Number: 573, Title: "Unavailable child"}
+	worker := TicketHandoffReport{Repo: "StatPan/gira", Issue: 573, Title: selected.Title}
+	handoff := GoalHandoffReport{
+		Repo:            repo.FullName(),
+		Goal:            GoalStatusIssue{Number: 521},
+		GoalStatus:      GoalStatusReport{Counts: map[string]int{"total": 1, "unknown": 1}, DiscoveryComplete: true, StatusComplete: false, Children: []GoalStatusChild{{Repo: "StatPan/gira", Number: 573, Title: selected.Title, StatusAvailable: false}}},
+		SelectedTicket:  &selected,
+		WorkerHandoff:   &worker,
+		NextAction:      "handoff_child",
+		NextSafeCommand: "gira ticket start --repo StatPan/gira --ticket 573 --apply",
+	}
+
+	packet := dispatchPacketFromGoalHandoff(repo, handoff)
+	if packet.Instruction.SelectedWork != "" || packet.WorkerHandoff != nil || packet.NextAction != "resolve_blockers" || packet.NextSafeCommand != "gira goal status --repo StatPan/backlog --goal 521 --json" {
+		t.Fatalf("dispatch exposed work from an incomplete goal snapshot: %+v", packet)
+	}
+	if !strings.Contains(strings.Join(packet.Instruction.AllowedActions, " "), "Inspect the goal status") {
+		t.Fatalf("dispatch did not restrict incomplete-state actions: %+v", packet.Instruction)
+	}
+	compact := BuildDispatchCompactPacket(packet, 1200)
+	if compact.SelectedTicket != nil || compact.WorkOrder.Goal != "" || compact.LinkedPR != nil || compact.State.RemainingAutonomousWork != nil || len(compact.State.UnknownChildren) != 1 {
+		t.Fatalf("compact dispatch lost incomplete state or selected unknown work: %+v", compact)
+	}
+	prompt := FormatDispatchPrompt(packet, 1200)
+	if strings.Contains(prompt, selected.Title) || strings.Contains(prompt, "## Selected Work") || !strings.Contains(prompt, "Inspect the goal status report") || !strings.Contains(prompt, "gira goal status") {
+		t.Fatalf("dispatch prompt exposed work or hid the read-only stop: %s", prompt)
 	}
 }
 
@@ -113,7 +146,7 @@ func TestBuildDispatchCompactPacketDropsVerboseWorkerPayload(t *testing.T) {
 		Profile:         AgentPromptProfileDefault,
 		Goal:            GoalStatusIssue{Number: 521, Title: "Dispatch goal", State: "open", Status: "Ready"},
 		GoalContext:     GoalHandoffContext{Objective: "Reduce token waste", Scope: strings.Repeat("goal scope ", 300), StopConditions: []string{"unclear selected ticket"}},
-		GoalStatus:      GoalStatusReport{Counts: map[string]int{"ready": 1, "total": 1}, RemainingAutonomousWork: 1},
+		GoalStatus:      GoalStatusReport{Counts: map[string]int{"ready": 1, "known": 1, "total": 1}, DiscoveryComplete: true, StatusComplete: true, RemainingAutonomousWork: goalStatusRemainingPointer(1), KnownRemainingAutonomousWork: 1},
 		SelectedTicket:  &selected,
 		WorkerHandoff:   &worker,
 		NextAction:      "handoff_child",

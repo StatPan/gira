@@ -19,7 +19,7 @@ Local files/cache = configuration, bindings, and acceleration
 | --- | --- | --- | --- |
 | GitHub labels | `status:ready`, `status:in-progress`, `status:in-review`, `status:blocked`, `status:done`, `type:*`, `priority:*`, `area:*`, `agent:*`, optional `lane:*` | Small public taxonomy that humans can scan in GitHub. | GitHub issue labels. |
 | GitHub issue/PR state | Open or closed issue, linked PR, draft PR, merged PR, reviews, checks, milestones, assignees, comments. | Durable execution evidence. | GitHub issue, PR, check, review, milestone, and comment APIs. |
-| Gira computed JSON | `ticket_readiness`, `pr_readiness`, `finish-readiness/v1`, `workspace-queues/v1`, `queue-list/v1`, `queue-next/v1`, `queue-handoff/v1`, `queue-take/v1`, `goal-next/v1`, `config-storage-report/v1`, `blockers`, `reason_codes`, `next_action`, `next_step`, `remaining_autonomous_work`. | High-cardinality operating state for agents, adapters, dashboards, and CLI decisions. | Recomputed from GitHub evidence and Gira config. |
+| Gira computed JSON | `ticket_readiness`, `pr_readiness`, `finish-readiness/v1`, `workspace-queues/v1`, `queue-list/v1`, `queue-next/v1`, `queue-handoff/v1`, `queue-take/v1`, `goal-status/v2`, `goal-next/v2`, `config-storage-report/v1`, `blockers`, `reason_codes`, `next_action`, `next_step`, nullable `remaining_autonomous_work`. | High-cardinality operating state for agents, adapters, dashboards, and CLI decisions. | Recomputed from GitHub evidence and Gira config. |
 | Receipt/comment state | `finish-receipt/v1`, `goal-finish-receipt/v1`, supersede decision notes, worker handoff notes, progress notes. | Durable audit trail that explains why a transition or handoff happened. | GitHub issue or PR comments. |
 | Local or global config | `.gira/config.yaml`, global repo registry, workspace registry, branch policy defaults, provider config pointers. | Operator configuration and repo/workspace selection. | Local files unless explicitly committed as repo-local contract. |
 | Local cache/state | Workspace status cache, API budget-friendly snapshots, recent command state, checkout path metadata. | Speed and ergonomics only. | Disposable local cache; never the authoritative workflow state. |
@@ -63,8 +63,14 @@ Computed state is where Gira can be expressive without polluting GitHub labels.
 | `finish-readiness/v1` | Ticket status, linked PR, checks, review, labels, branch trust, telemetry. | `ticket finish --dry-run`. |
 | `workspace-queues/v1` | Workspace issue summaries plus targeted ticket status details. | Multi-repo operator queues and future UI dashboards. |
 | `queue-list/v1`, `queue-next/v1`, `queue-handoff/v1`, `queue-take/v1` | `workspace-queues/v1`, [`worker-handoff/v1`](worker-handoff-contract.md) readiness, and delegated ticket-start dry-runs. | CLI task selection, adapter handoff, and safe work start. |
-| `goal-status/v1` and `goal-next/v1` | Goal issue, child issue links, child ticket state, PR evidence, receipts. | Long-running agent delegation and stop decisions. |
+| `goal-status/v2`, `goal-next/v2`, `goal-plan/v2`, and `goal-finish-readiness/v2` | Goal issue, discovered child identities, child ticket state, PR evidence, receipts, and bounded acquisition failures. | Long-running agent delegation and stop decisions; incomplete identity/status evidence remains explicit and blocks selection or finish. |
 | Adapter capability and approval reports | Command registry, dry-run result, planned actions. | Durable agent runtimes and approval gates. |
+
+Goal report v2 uses `remaining_autonomous_work: null` when child discovery or a
+required child status is incomplete. `known_remaining_autonomous_work` counts
+only validated states; it cannot stand in for the unknown total. Bounded
+`acquisition_failures` identify the failed stage and affected observed child
+refs without exposing raw provider output.
 
 Computed state can have many values because it is not a GitHub taxonomy. It can
 name precise blockers such as `missing_linked_pr`, `checks_failed`,

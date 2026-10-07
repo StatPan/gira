@@ -534,8 +534,10 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 				result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: "recorded review revalidation failed before merge dispatch"})
 				if statusErr != nil || current.PRNumber <= 0 || strings.TrimSpace(current.State) == "" || strings.EqualFold(current.State, "UNKNOWN") {
 					current = unknownFinishPRStatus(status)
+					status = current
 					result.PRState = current.State
 					result.Blockers = appendUniqueStrings(result.Blockers, "expected_head_verification_unavailable")
+					result.HeadConstraint.ObservedPreMergeHeadSHA = ""
 					result.HeadConstraint.MismatchReason = fmt.Sprintf("recorded-review revalidation failed before merge dispatch (%v) and current native PR identity is unavailable (%v)", err, statusErr)
 				} else {
 					result.HeadConstraint.ObservedPreMergeHeadSHA = strings.TrimSpace(current.HeadSHA)

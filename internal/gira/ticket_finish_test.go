@@ -1728,6 +1728,74 @@ func TestFinishWorkRecordedPreDispatchRevalidationFailureIsNotRequested(t *testi
 	assertFinishBlockedSideEffects(t, runner.calls, posts, result)
 }
 
+func TestFinishWorkRecordedPreDispatchFailureWithUnavailableReadbackClearsNestedPRState(t *testing.T) {
+	tests := []struct {
+		name           string
+		expectedHead   string
+		expectedSource string
+	}{
+		{name: "caller expected head", expectedHead: finishExpectedHeadSHA, expectedSource: "caller"},
+		{name: "legacy recorded expected head", expectedSource: "recorded_review"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner, posts := newRecordedFinishRunner(t, true)
+			runner.pullResponses = [][]byte{
+				recordedFinishPR(finishExpectedHeadSHA, finishBaseSHA, "dev", false, ""),
+			}
+			runner.pullErrors = []error{
+				nil,
+				fmt.Errorf("recorded pre-dispatch PR refresh unavailable"),
+				fmt.Errorf("follow-up native PR status unavailable"),
+			}
+
+			result, err := FinishWorkWithOptions(
+				RepoRef{Owner: "StatPan", Name: "gira"},
+				219,
+				false,
+				0,
+				WorkFinishOptions{ExpectedHeadSHA: tt.expectedHead, SyncLocal: true},
+				runner,
+			)
+			if err == nil || result.MergeRequestStatus != "not_requested" || result.PRState != "UNKNOWN" {
+				t.Fatalf("unavailable pre-dispatch readback must remain unrequested and unknown, result=%+v err=%v", result, err)
+			}
+			if len(runner.mergeCalls) != 0 {
+				t.Fatalf("pre-dispatch failure issued a backend merge: %v", runner.mergeCalls)
+			}
+			if result.HeadConstraint == nil || result.HeadConstraint.ExpectedHeadSHA != finishExpectedHeadSHA || result.HeadConstraint.ExpectedSource != tt.expectedSource {
+				t.Fatalf("immutable expected head was not preserved separately: %+v", result.HeadConstraint)
+			}
+			if result.HeadConstraint.ObservedPreMergeHeadSHA != "" || result.HeadConstraint.ObservedPostMergeHeadSHA != "" {
+				t.Fatalf("unavailable readback retained stale observed heads: %+v", result.HeadConstraint)
+			}
+			if result.FinalStatus.PRState != "UNKNOWN" || result.FinalStatus.PullRequest == nil || result.FinalStatus.PullRequest.State != "UNKNOWN" {
+				t.Fatalf("final status retained stale PR state: %+v", result.FinalStatus)
+			}
+			if result.FinalStatus.PullRequest.HeadSHA != "" || result.FinalStatus.PullRequest.BaseSHA != "" || result.FinalStatus.PullRequest.MergeCommitSHA != "" || result.FinalStatus.PullRequest.HeadRefName != "unknown" || result.FinalStatus.PullRequest.BaseRefName != "unknown" {
+				t.Fatalf("final status retained stale PR identity: %+v", result.FinalStatus.PullRequest)
+			}
+			if result.FinalStatus.Branch == nil || result.FinalStatus.Branch.Trusted || result.FinalStatus.Branch.Current != "unknown" {
+				t.Fatalf("final status retained a trusted current branch binding: %+v", result.FinalStatus.Branch)
+			}
+			readinessPR := result.Readiness.PullRequest
+			if readinessPR.State != "UNKNOWN" || readinessPR.HeadSHA != "" || readinessPR.BaseSHA != "" || readinessPR.MergeCommitSHA != "" || readinessPR.HeadRefName != "unknown" || readinessPR.BaseRefName != "unknown" || readinessPR.ClosingReference {
+				t.Fatalf("readiness retained stale PR evidence: %+v", readinessPR)
+			}
+			receiptPR := result.Receipt.PullRequest
+			if receiptPR.State != "UNKNOWN" || receiptPR.HeadSHA != "" || receiptPR.BaseSHA != "" || receiptPR.MergeCommitSHA != "" || receiptPR.ClosingReference || receiptPR.Merged {
+				t.Fatalf("receipt retained stale PR evidence: %+v", receiptPR)
+			}
+			for _, call := range runner.calls {
+				if strings.HasPrefix(call, "gh issue edit ") {
+					t.Fatalf("blocked finish attempted label convergence: %v", runner.calls)
+				}
+			}
+			assertFinishBlockedSideEffects(t, runner.calls, posts, result)
+		})
+	}
+}
+
 func TestFinishWorkRecordedPostMergeWrongOrMissingHeadBlocksAllCompletionEffects(t *testing.T) {
 	tests := []struct {
 		name                 string

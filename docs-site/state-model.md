@@ -18,7 +18,7 @@ Local files/cache = configuration, bindings, and acceleration
 | --- | --- | --- |
 | GitHub labels | `status:ready`, `status:in-progress`, `status:in-review`, `status:blocked`, `status:done`, `type:*`, `priority:*`, `area:*`, `agent:*` | Public state humans can scan in GitHub. |
 | GitHub evidence | Issues, PRs, checks, reviews, milestones, comments, closing references. | Durable proof of work and completion. |
-| Gira JSON | `ticket_readiness`, `pr_readiness`, `finish-readiness/v1`, `workspace-queues/v1`, `queue-*`, `goal-next/v1`, blockers, next steps. | Rich computed state for CLI, agents, adapters, and future UI. |
+| Gira JSON | `ticket_readiness`, `pr_readiness`, `finish-readiness/v1`, `workspace-queues/v1`, `queue-*`, `goal-status/v2`, `goal-next/v2`, blockers, next steps. | Rich computed state for CLI, agents, adapters, and future UI. |
 | Receipts | `finish-receipt/v1`, `goal-finish-receipt/v1`, supersede notes, handoff notes. | Durable audit comments explaining a decision. |
 | Local config/cache | Workspace registry, repo registry, branch policy records, cache. | Ergonomics and performance, not hidden completion state. |
 

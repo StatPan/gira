@@ -189,6 +189,24 @@ explicitly, preserve the other source as migration evidence, then remove it in
 a reviewed follow-up. This prevents two planning engines from silently creating
 overlapping child tickets.
 
+### Incomplete Child Evidence
+
+`goal-status/v2` preserves every discovered child identity even when the
+repository snapshot or operation policy cannot produce an actionable status.
+`discovery_complete` and `status_complete` are separate booleans;
+`counts.total` covers discovered refs and `counts.known + counts.unknown` equals
+that total. `known_remaining_autonomous_work` includes only validated child
+states. `remaining_autonomous_work` is `null` unless both discovery and status
+are complete, so missing evidence cannot appear as zero work.
+
+An incomplete snapshot produces identity-only unknown rows and bounded,
+per-repository acquisition failures with a stage and allowlisted code. No raw
+provider output is included. Goal status, next, report, dispatch, and finish
+retain the incomplete state; planning, selection, graph mutation, PM replan,
+and both done and human-review finish apply stop until the evidence is
+available. Only complete discovery with zero children may recommend
+`plan_children`.
+
 ### Active Observe and Replan Loop
 
 `gira pm observe` reads the current Goal, typed ledger/discovery graph, work
@@ -326,7 +344,7 @@ The compact dry-run contains proposal summaries and payload hashes. A matching
 compact apply emits only a mutation receipt; it does not repeat those proposals.
 If GitHub state changes between the two commands, apply stops before mutation
 with `plan_changed` and instructs the caller to run dry-run again. `--json`
-remains the complete `goal-plan/v1` automation format for callers that need the
+remains the complete `goal-plan/v2` automation format for callers that need the
 full ticket packets.
 
 ## GitHub State Mapping

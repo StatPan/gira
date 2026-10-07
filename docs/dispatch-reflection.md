@@ -32,7 +32,7 @@ agent, then close the loop with evidence.
 
 ## Consolidation Direction
 
-The next control-plane layer is `dispatch-packet/v1`.
+The current control-plane layer is `dispatch-packet/v2`.
 
 ```text
 goal / ticket / queue / workspace

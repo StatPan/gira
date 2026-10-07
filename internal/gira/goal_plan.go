@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const GoalPlanSchemaVersion = "goal-plan/v1"
+const GoalPlanSchemaVersion = "goal-plan/v2"
 
 type GoalPlanInput struct {
 	Repo   RepoRef `json:"repo"`
@@ -17,21 +17,24 @@ type GoalPlanInput struct {
 }
 
 type GoalPlanReport struct {
-	Command           string           `json:"command"`
-	SchemaVersion     string           `json:"schema_version"`
-	Repo              string           `json:"repo"`
-	DryRun            bool             `json:"dry_run"`
-	Apply             bool             `json:"apply,omitempty"`
-	Goal              GoalStatusIssue  `json:"goal"`
-	ProposedTickets   []GoalPlanTicket `json:"proposed_tickets"`
-	SkippedCandidates []GoalPlanSkip   `json:"skipped_candidates,omitempty"`
-	ExistingChildren  []GoalPlanChild  `json:"existing_children,omitempty"`
-	CreatedChildren   []GoalPlanChild  `json:"created_children,omitempty"`
-	Actions           []GoalPlanAction `json:"actions,omitempty"`
-	StopConditions    []string         `json:"stop_conditions,omitempty"`
-	Warnings          []string         `json:"warnings,omitempty"`
-	NextAction        string           `json:"next_action"`
-	NextStep          string           `json:"next_step"`
+	Command             string              `json:"command"`
+	SchemaVersion       string              `json:"schema_version"`
+	Repo                string              `json:"repo"`
+	DryRun              bool                `json:"dry_run"`
+	Apply               bool                `json:"apply,omitempty"`
+	Goal                GoalStatusIssue     `json:"goal"`
+	DiscoveryComplete   bool                `json:"discovery_complete"`
+	StatusComplete      bool                `json:"status_complete"`
+	AcquisitionFailures []GoalStatusFailure `json:"acquisition_failures,omitempty"`
+	ProposedTickets     []GoalPlanTicket    `json:"proposed_tickets"`
+	SkippedCandidates   []GoalPlanSkip      `json:"skipped_candidates,omitempty"`
+	ExistingChildren    []GoalPlanChild     `json:"existing_children,omitempty"`
+	CreatedChildren     []GoalPlanChild     `json:"created_children,omitempty"`
+	Actions             []GoalPlanAction    `json:"actions,omitempty"`
+	StopConditions      []string            `json:"stop_conditions,omitempty"`
+	Warnings            []string            `json:"warnings,omitempty"`
+	NextAction          string              `json:"next_action"`
+	NextStep            string              `json:"next_step"`
 }
 
 type GoalPlanTicket struct {
@@ -107,16 +110,30 @@ func BuildGoalPlanReport(input GoalPlanInput, runner CommandRunner) (GoalPlanRep
 		return GoalPlanReport{}, err
 	}
 	report := GoalPlanReport{
-		Command:       "goal plan",
-		SchemaVersion: GoalPlanSchemaVersion,
-		Repo:          input.Repo.FullName(),
-		DryRun:        input.DryRun,
-		Apply:         input.Apply,
-		Goal:          status.Goal,
-		NextAction:    "create_child_tickets",
-		NextStep:      fmt.Sprintf("gira goal plan --repo %s --goal %d --apply", input.Repo.FullName(), input.Goal),
+		Command:             "goal plan",
+		SchemaVersion:       GoalPlanSchemaVersion,
+		Repo:                input.Repo.FullName(),
+		DryRun:              input.DryRun,
+		Apply:               input.Apply,
+		Goal:                status.Goal,
+		DiscoveryComplete:   status.DiscoveryComplete,
+		StatusComplete:      status.StatusComplete,
+		AcquisitionFailures: append([]GoalStatusFailure(nil), status.AcquisitionFailures...),
+		NextAction:          "create_child_tickets",
+		NextStep:            fmt.Sprintf("gira goal plan --repo %s --goal %d --apply", input.Repo.FullName(), input.Goal),
 	}
 	report.ExistingChildren = goalPlanChildren(status.Children)
+	if !status.DiscoveryComplete || !status.StatusComplete {
+		if !status.DiscoveryComplete {
+			report.StopConditions = append(report.StopConditions, "child_discovery_incomplete")
+		}
+		if !status.StatusComplete {
+			report.StopConditions = append(report.StopConditions, "child_status_incomplete")
+		}
+		report.NextAction = "resolve_blockers"
+		report.NextStep = status.NextStep
+		return report, nil
+	}
 	objective := goalPlanObjective(goal.Body)
 	scope := goalPlanScope(goal.Body)
 	if emptyReadinessSection(objective) {
@@ -516,12 +533,15 @@ func goalPlanFuzzyTitleMatch(candidate []string, existing []string) bool {
 
 func FormatGoalPlan(report GoalPlanReport) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "goal plan: #%d proposed=%d created=%d skipped=%d stops=%d\n", report.Goal.Number, len(report.ProposedTickets), len(report.CreatedChildren), len(report.SkippedCandidates), len(report.StopConditions))
+	fmt.Fprintf(&b, "goal plan: #%d discovery_complete=%t status_complete=%t proposed=%d created=%d skipped=%d stops=%d\n", report.Goal.Number, report.DiscoveryComplete, report.StatusComplete, len(report.ProposedTickets), len(report.CreatedChildren), len(report.SkippedCandidates), len(report.StopConditions))
 	if len(report.StopConditions) > 0 {
 		fmt.Fprintf(&b, "stop: %s\n", strings.Join(report.StopConditions, ","))
 	}
 	if len(report.Warnings) > 0 {
 		fmt.Fprintf(&b, "warnings: %s\n", strings.Join(report.Warnings, ","))
+	}
+	for _, failure := range report.AcquisitionFailures {
+		fmt.Fprintf(&b, "acquisition failure: %s\n", goalStatusFailureSummary(failure))
 	}
 	for _, child := range report.CreatedChildren {
 		ref := fmt.Sprintf("#%d", child.Number)

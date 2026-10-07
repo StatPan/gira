@@ -25,7 +25,7 @@ for agents, subagents, and humans to share a common basis for trust.
 
 ## Packet Contract
 
-The first stable schema is `dispatch-packet/v1`.
+The current stable schema is `dispatch-packet/v2`.
 
 Core fields:
 
@@ -45,7 +45,7 @@ notes, branch policy, PR context, and review guidance.
 
 ## Compact Context
 
-Full `dispatch-packet/v1` output is the audit/debug form. Agent handoff should
+Full `dispatch-packet/v2` output is the audit/debug form. Agent handoff should
 prefer one of the budgeted forms:
 
 ```bash
@@ -53,11 +53,16 @@ gira dispatch goal --compact-json --context-budget 8000
 gira dispatch goal --prompt --context-budget 8000
 ```
 
-Compact output uses `dispatch-compact/v1`. It keeps authority, selected work,
+Compact output uses `dispatch-compact/v2`. It keeps authority, selected work,
 objective, acceptance, required evidence, stop conditions, linked PR summary,
 and the next safe command. It deliberately omits full issue bodies, role
 packets, complete child graphs, and verbose check details. Those remain
 available through references when audit detail is needed.
+
+When the embedded goal status reports incomplete discovery or child status,
+dispatch v2 retains the bounded acquisition failures and unknown child
+identities, clears any selected ticket or worker packet, and permits inspection
+only. The next safe command is a read-only goal status report.
 
 ## Goal Dispatch
 
@@ -71,7 +76,7 @@ It performs this read-only chain:
 goal status
   -> goal next
   -> goal handoff
-  -> dispatch-packet/v1
+  -> dispatch-packet/v2
 ```
 
 If a child ticket is selected, the packet embeds `worker-handoff/v1`. If no
@@ -87,7 +92,7 @@ The preferred larger-task loop becomes:
 
 ```bash
 gira dispatch goal --repo OWNER/backlog --role implementer --json
-# give dispatch-packet/v1 to an agent
+# give dispatch-packet/v2 to an agent
 # agent works only inside the selected child ticket
 gira ticket checks
 gira ticket finish --dry-run

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const GoalFinishReadinessSchemaVersion = "goal-finish-readiness/v1"
+const GoalFinishReadinessSchemaVersion = "goal-finish-readiness/v2"
 const GoalFinishReceiptSchemaVersion = "goal-finish-receipt/v1"
 
 type GoalFinishInput struct {
@@ -53,7 +53,11 @@ type GoalFinishReadiness struct {
 	Ready                  bool                      `json:"ready"`
 	TerminalRecommendation string                    `json:"terminal_recommendation"`
 	Counts                 map[string]int            `json:"counts"`
-	RemainingOpenWork      int                       `json:"remaining_open_work"`
+	DiscoveryComplete      bool                      `json:"discovery_complete"`
+	StatusComplete         bool                      `json:"status_complete"`
+	AcquisitionFailures    []GoalStatusFailure       `json:"acquisition_failures,omitempty"`
+	KnownRemainingOpenWork int                       `json:"known_remaining_open_work"`
+	RemainingOpenWork      *int                      `json:"remaining_open_work"`
 	Children               []GoalFinishChildEvidence `json:"children"`
 	Blockers               []string                  `json:"blockers"`
 	Warnings               []string                  `json:"warnings,omitempty"`
@@ -68,6 +72,7 @@ type GoalFinishChildEvidence struct {
 	State             string   `json:"state"`
 	Status            string   `json:"status"`
 	Category          string   `json:"category"`
+	StatusAvailable   bool     `json:"status_available"`
 	PRNumber          int      `json:"pr_number,omitempty"`
 	PRURL             string   `json:"pr_url,omitempty"`
 	PRState           string   `json:"pr_state,omitempty"`
@@ -124,10 +129,6 @@ func BuildGoalFinishReport(input GoalFinishInput, runner CommandRunner) (GoalFin
 	}
 	readiness := buildGoalFinishReadiness(input.Repo, status, terminal, runner)
 	receipt := buildGoalFinishReceipt(readiness)
-	plan, err := goalFinishActions(input, readiness, runner)
-	if err != nil {
-		return GoalFinishReport{}, err
-	}
 	report := GoalFinishReport{
 		Command:    "goal finish",
 		Repo:       input.Repo.FullName(),
@@ -136,10 +137,18 @@ func BuildGoalFinishReport(input GoalFinishInput, runner CommandRunner) (GoalFin
 		Apply:      input.Apply,
 		Readiness:  readiness,
 		Receipt:    receipt,
-		Actions:    plan.Actions,
+		Actions:    []GoalFinishAction{},
 		NextAction: readiness.NextAction,
 		NextStep:   readiness.NextStep,
 	}
+	if !status.DiscoveryComplete || !status.StatusComplete {
+		return report, nil
+	}
+	plan, err := goalFinishActions(input, readiness, runner)
+	if err != nil {
+		return GoalFinishReport{}, err
+	}
+	report.Actions = plan.Actions
 	if input.Apply {
 		report, err = applyGoalFinish(input, readiness, receipt, plan, report, runner)
 	}
@@ -157,22 +166,51 @@ func validGoalTerminalRecommendation(value string) bool {
 
 func buildGoalFinishReadiness(repo RepoRef, status GoalStatusReport, terminal string, runner CommandRunner) GoalFinishReadiness {
 	readiness := GoalFinishReadiness{
-		SchemaVersion:     GoalFinishReadinessSchemaVersion,
-		Repository:        repo.FullName(),
-		Goal:              status.Goal,
-		Counts:            copyStringIntMap(status.Counts),
-		RemainingOpenWork: status.RemainingAutonomousWork,
-		Children:          []GoalFinishChildEvidence{},
-		Blockers:          []string{},
-		Warnings:          []string{},
+		SchemaVersion:          GoalFinishReadinessSchemaVersion,
+		Repository:             repo.FullName(),
+		Goal:                   status.Goal,
+		Counts:                 copyStringIntMap(status.Counts),
+		DiscoveryComplete:      status.DiscoveryComplete,
+		StatusComplete:         status.StatusComplete,
+		AcquisitionFailures:    append([]GoalStatusFailure(nil), status.AcquisitionFailures...),
+		KnownRemainingOpenWork: status.KnownRemainingAutonomousWork,
+		RemainingOpenWork:      status.RemainingAutonomousWork,
+		Children:               []GoalFinishChildEvidence{},
+		Blockers:               []string{},
+		Warnings:               []string{},
 	}
 	readiness.HandoffReceiptPresent = goalFinishGoalReceiptPresent(repo, status.Goal.Number, runner)
+	if !status.DiscoveryComplete {
+		readiness.Blockers = appendUniqueStrings(readiness.Blockers, "child_discovery_incomplete")
+	}
+	if !status.StatusComplete {
+		readiness.Blockers = appendUniqueStrings(readiness.Blockers, "child_status_incomplete")
+	}
+	if !status.DiscoveryComplete || !status.StatusComplete {
+		for _, child := range status.Children {
+			evidence := GoalFinishChildEvidence{
+				Number: child.Number, Title: child.Title, State: child.State, Status: child.Status,
+				Category: child.Category, StatusAvailable: child.StatusAvailable,
+				PRNumber: child.PRNumber, PRURL: child.PRURL, PRState: child.PRState,
+				ChecksStatus: child.ChecksStatus, ReviewStatus: child.ReviewStatus, URL: child.URL,
+			}
+			if !child.StatusAvailable {
+				evidence.Blockers = []string{fmt.Sprintf("child_%d_status_unavailable", child.Number)}
+			}
+			readiness.Children = append(readiness.Children, evidence)
+			readiness.Blockers = appendUniqueStrings(readiness.Blockers, evidence.Blockers...)
+		}
+		readiness.TerminalRecommendation = goalTerminalRecommendation(terminal, readiness)
+		readiness.Ready = false
+		readiness.NextAction, readiness.NextStep = goalFinishNextStep(repo, readiness)
+		return readiness
+	}
 	for _, child := range status.Children {
 		evidence := goalFinishChildEvidence(repo, child, runner)
 		readiness.Children = append(readiness.Children, evidence)
 		readiness.Blockers = appendUniqueStrings(readiness.Blockers, evidence.Blockers...)
 	}
-	if len(status.Children) == 0 {
+	if status.DiscoveryComplete && status.StatusComplete && status.Counts["total"] == 0 {
 		readiness.Blockers = appendUniqueStrings(readiness.Blockers, "no_child_tickets")
 	}
 	readiness.TerminalRecommendation = goalTerminalRecommendation(terminal, readiness)
@@ -182,24 +220,29 @@ func buildGoalFinishReadiness(repo RepoRef, status GoalStatusReport, terminal st
 }
 
 func goalFinishChildEvidence(repo RepoRef, child GoalStatusChild, runner CommandRunner) GoalFinishChildEvidence {
-	receipt := goalFinishChildReceiptEvidence(repo, child.Number, runner)
 	evidence := GoalFinishChildEvidence{
-		Number:            child.Number,
-		Title:             child.Title,
-		State:             child.State,
-		Status:            child.Status,
-		Category:          child.Category,
-		PRNumber:          child.PRNumber,
-		PRURL:             child.PRURL,
-		PRState:           child.PRState,
-		ChecksStatus:      child.ChecksStatus,
-		ReviewStatus:      child.ReviewStatus,
-		ReceiptPresent:    receipt.Present,
-		PlanningOnly:      receipt.PlanningOnly,
-		PRNotRequired:     receipt.PRNotRequired,
-		ChecksNotRequired: receipt.ChecksNotRequired,
-		URL:               child.URL,
+		Number:          child.Number,
+		Title:           child.Title,
+		State:           child.State,
+		Status:          child.Status,
+		Category:        child.Category,
+		StatusAvailable: child.StatusAvailable,
+		PRNumber:        child.PRNumber,
+		PRURL:           child.PRURL,
+		PRState:         child.PRState,
+		ChecksStatus:    child.ChecksStatus,
+		ReviewStatus:    child.ReviewStatus,
+		URL:             child.URL,
 	}
+	if !child.StatusAvailable {
+		evidence.Blockers = []string{fmt.Sprintf("child_%d_status_unavailable", child.Number)}
+		return evidence
+	}
+	receipt := goalFinishChildReceiptEvidence(repo, child.Number, runner)
+	evidence.ReceiptPresent = receipt.Present
+	evidence.PlanningOnly = receipt.PlanningOnly
+	evidence.PRNotRequired = receipt.PRNotRequired
+	evidence.ChecksNotRequired = receipt.ChecksNotRequired
 	if child.PRNumber > 0 {
 		evidence.Evidence = append(evidence.Evidence, "linked_pr")
 	}
@@ -364,7 +407,7 @@ func goalTerminalRecommendation(requested string, readiness GoalFinishReadiness)
 		return "done"
 	}
 	for _, blocker := range readiness.Blockers {
-		if strings.Contains(blocker, "blocked") {
+		if strings.Contains(blocker, "blocked") || blocker == "child_discovery_incomplete" || blocker == "child_status_incomplete" {
 			return "blocked"
 		}
 	}
@@ -374,6 +417,9 @@ func goalTerminalRecommendation(requested string, readiness GoalFinishReadiness)
 func goalFinishNextStep(repo RepoRef, readiness GoalFinishReadiness) (string, string) {
 	if readiness.Ready {
 		return "finish_goal", fmt.Sprintf("gira goal finish --repo %s --goal %d --terminal done --apply", repo.FullName(), readiness.Goal.Number)
+	}
+	if !readiness.DiscoveryComplete || !readiness.StatusComplete {
+		return "resolve_blockers", fmt.Sprintf("gira goal status --repo %s --goal %d --json", repo.FullName(), readiness.Goal.Number)
 	}
 	switch readiness.TerminalRecommendation {
 	case "superseded", "abandoned":
@@ -605,9 +651,12 @@ func renderGoalFinishReceipt(receipt GoalFinishReceipt) string {
 
 func FormatGoalFinish(report GoalFinishReport) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "goal finish: #%d ready=%t terminal=%s blockers=%d\n", report.Goal, report.Readiness.Ready, report.Readiness.TerminalRecommendation, len(report.Readiness.Blockers))
+	fmt.Fprintf(&b, "goal finish: #%d ready=%t terminal=%s discovery_complete=%t status_complete=%t remaining=%s blockers=%d\n", report.Goal, report.Readiness.Ready, report.Readiness.TerminalRecommendation, report.Readiness.DiscoveryComplete, report.Readiness.StatusComplete, goalStatusRemainingText(report.Readiness.RemainingOpenWork), len(report.Readiness.Blockers))
 	if len(report.Readiness.Blockers) > 0 {
 		fmt.Fprintf(&b, "blockers: %s\n", strings.Join(report.Readiness.Blockers, ","))
+	}
+	for _, failure := range report.Readiness.AcquisitionFailures {
+		fmt.Fprintf(&b, "acquisition failure: %s\n", goalStatusFailureSummary(failure))
 	}
 	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
 	return b.String()

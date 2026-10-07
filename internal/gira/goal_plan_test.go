@@ -83,6 +83,28 @@ func TestBuildGoalPlanReportMissingDirectionStops(t *testing.T) {
 	}
 }
 
+func TestBuildGoalPlanReportDoesNotProposeFromUnavailableChildStatus(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &goalStatusCountingRunner{responses: map[string]string{
+		"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"Goal","state":"open","body":"<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=201 -->","labels":[{"name":"type:epic"}]}`,
+		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
+	}}
+	report, err := BuildGoalPlanReport(GoalPlanInput{Repo: repo, Goal: 100, DryRun: true}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalPlanReport: %v", err)
+	}
+	if report.DiscoveryComplete != true || report.StatusComplete || report.NextAction != "resolve_blockers" || len(report.ProposedTickets) != 0 || len(report.ExistingChildren) != 1 {
+		t.Fatalf("goal plan proposed work from an unavailable child snapshot: %+v", report)
+	}
+	if got := runner.countPrefix("gh issue create"); got != 0 {
+		t.Fatalf("plan created a child despite unavailable status: %d calls", got)
+	}
+	formatted := FormatGoalPlan(report)
+	if !strings.Contains(formatted, "discovery_complete=true status_complete=false") || !strings.Contains(formatted, "acquisition failure:") || strings.Contains(formatted, "- [") {
+		t.Fatalf("text goal plan lost unknown-state evidence or exposed proposals: %s", formatted)
+	}
+}
+
 func TestBuildGoalPlanReportDedupesExistingChildren(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := goalPlanRunner(
@@ -171,7 +193,8 @@ func TestBuildGoalPlanReportApplyCreatesChildren(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &goalPlanApplyRunner{
 		responses: map[string]string{
-			"gh api repos/StatPan/gira/issues/100":                       goalPlanGoalJSON(100, goalPlanBody("## Goal\nShip goal mode\n\n## Scope\nCLI goal planning\n\n## Goal Plan\n- Add goal plan JSON\n- Add goal plan text\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
+			"gh api repos/StatPan/gira/issues/100": goalPlanGoalJSON(100, goalPlanBody("## Goal\nShip goal mode\n\n## Scope\nCLI goal planning\n\n## Goal Plan\n- Add goal plan JSON\n- Add goal plan text\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
+			"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[]`,
 			"gh issue view 100 --repo StatPan/gira --json comments":      `{"comments":[]}`,
 			"gh label list --repo StatPan/gira --json name --limit 1000": goalPlanLabelListJSON("type:task", "status:ready", "priority:p1", "area:backend"),
 		},
@@ -205,7 +228,8 @@ func TestBuildGoalPlanReportApplyCreatesCrossRepoChildrenAndLinksParent(t *testi
 	repo := RepoRef{Owner: "StatPan", Name: "backlog"}
 	runner := &goalPlanApplyRunner{
 		responses: map[string]string{
-			"gh api repos/StatPan/backlog/issues/100":                       goalPlanGoalJSONForRepo(100, "StatPan/backlog", goalPlanBody("## Goal\nShip cross repo goal\n\n## Scope\nCoordinate repos\n\n## Goal Plan\n- StatPan/gira: Add goal status routing\n- Add inbox docs\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
+			"gh api repos/StatPan/backlog/issues/100": goalPlanGoalJSONForRepo(100, "StatPan/backlog", goalPlanBody("## Goal\nShip cross repo goal\n\n## Scope\nCoordinate repos\n\n## Goal Plan\n- StatPan/gira: Add goal status routing\n- Add inbox docs\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
+			"gh api repos/StatPan/backlog/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[]`,
 			"gh issue view 100 --repo StatPan/backlog --json comments":      `{"comments":[]}`,
 			"gh label list --repo StatPan/gira --json name --limit 1000":    goalPlanLabelListJSON("type:task", "status:ready", "priority:p1", "area:backend"),
 			"gh label list --repo StatPan/backlog --json name --limit 1000": goalPlanLabelListJSON("type:task", "status:ready", "priority:p1", "area:backend"),
@@ -248,7 +272,8 @@ func TestBuildGoalPlanReportApplyStopsWithoutMutation(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := &goalPlanApplyRunner{
 		responses: map[string]string{
-			"gh api repos/StatPan/gira/issues/100":                  goalPlanGoalJSON(100, "## Goal\nShip goal mode\n", []string{"type:epic", "status:ready"}),
+			"gh api repos/StatPan/gira/issues/100": goalPlanGoalJSON(100, "## Goal\nShip goal mode\n", []string{"type:epic", "status:ready"}),
+			"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[]`,
 			"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
 		},
 	}

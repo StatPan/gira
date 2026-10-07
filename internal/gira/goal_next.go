@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const GoalNextSchemaVersion = "goal-next/v1"
+const GoalNextSchemaVersion = "goal-next/v2"
 
 type GoalNextInput struct {
 	Repo RepoRef `json:"repo"`
@@ -13,18 +13,22 @@ type GoalNextInput struct {
 }
 
 type GoalNextReport struct {
-	Command                 string              `json:"command"`
-	SchemaVersion           string              `json:"schema_version"`
-	Repo                    string              `json:"repo"`
-	Goal                    GoalStatusIssue     `json:"goal"`
-	Counts                  map[string]int      `json:"counts"`
-	SelectedTicket          *GoalNextCandidate  `json:"selected_ticket,omitempty"`
-	SkippedCandidates       []GoalNextCandidate `json:"skipped_candidates,omitempty"`
-	Blockers                []string            `json:"blockers,omitempty"`
-	StopReasons             []string            `json:"stop_reasons,omitempty"`
-	NextAction              string              `json:"next_action"`
-	NextStep                string              `json:"next_step"`
-	RemainingAutonomousWork int                 `json:"remaining_autonomous_work"`
+	Command                      string              `json:"command"`
+	SchemaVersion                string              `json:"schema_version"`
+	Repo                         string              `json:"repo"`
+	Goal                         GoalStatusIssue     `json:"goal"`
+	Counts                       map[string]int      `json:"counts"`
+	DiscoveryComplete            bool                `json:"discovery_complete"`
+	StatusComplete               bool                `json:"status_complete"`
+	AcquisitionFailures          []GoalStatusFailure `json:"acquisition_failures,omitempty"`
+	SelectedTicket               *GoalNextCandidate  `json:"selected_ticket,omitempty"`
+	SkippedCandidates            []GoalNextCandidate `json:"skipped_candidates,omitempty"`
+	Blockers                     []string            `json:"blockers,omitempty"`
+	StopReasons                  []string            `json:"stop_reasons,omitempty"`
+	NextAction                   string              `json:"next_action"`
+	NextStep                     string              `json:"next_step"`
+	KnownRemainingAutonomousWork int                 `json:"known_remaining_autonomous_work"`
+	RemainingAutonomousWork      *int                `json:"remaining_autonomous_work"`
 }
 
 type GoalNextCandidate struct {
@@ -53,13 +57,30 @@ func BuildGoalNextReport(input GoalNextInput, runner CommandRunner) (GoalNextRep
 
 func BuildGoalNextReportFromStatus(repo RepoRef, status GoalStatusReport) GoalNextReport {
 	report := GoalNextReport{
-		Command:                 "goal next",
-		SchemaVersion:           GoalNextSchemaVersion,
-		Repo:                    repo.FullName(),
-		Goal:                    status.Goal,
-		Counts:                  copyStringIntMap(status.Counts),
-		Blockers:                append([]string(nil), status.Blockers...),
-		RemainingAutonomousWork: status.RemainingAutonomousWork,
+		Command:                      "goal next",
+		SchemaVersion:                GoalNextSchemaVersion,
+		Repo:                         repo.FullName(),
+		Goal:                         status.Goal,
+		Counts:                       copyStringIntMap(status.Counts),
+		DiscoveryComplete:            status.DiscoveryComplete,
+		StatusComplete:               status.StatusComplete,
+		AcquisitionFailures:          append([]GoalStatusFailure(nil), status.AcquisitionFailures...),
+		Blockers:                     append([]string(nil), status.Blockers...),
+		KnownRemainingAutonomousWork: status.KnownRemainingAutonomousWork,
+		RemainingAutonomousWork:      status.RemainingAutonomousWork,
+	}
+	if !status.DiscoveryComplete || !status.StatusComplete {
+		report.StopReasons = []string{}
+		if !status.DiscoveryComplete {
+			report.StopReasons = append(report.StopReasons, "child_discovery_incomplete")
+		}
+		if !status.StatusComplete {
+			report.StopReasons = append(report.StopReasons, "child_status_incomplete")
+		}
+		report.NextAction = "resolve_blockers"
+		report.NextStep = fmt.Sprintf("gira goal status --repo %s --goal %d --json", repo.FullName(), status.Goal.Number)
+		report.SkippedCandidates = goalNextSkippedCandidates(status.Children, nil)
+		return report
 	}
 	if goalStatusIssueDone(status.Goal) {
 		report.StopReasons = []string{"goal_done"}
@@ -67,7 +88,7 @@ func BuildGoalNextReportFromStatus(repo RepoRef, status GoalStatusReport) GoalNe
 		report.NextStep = "goal is done"
 		return report
 	}
-	if len(status.Children) == 0 {
+	if status.Counts["total"] == 0 {
 		report.StopReasons = []string{"no_child_tickets"}
 		report.NextAction = "plan_children"
 		report.NextStep = fmt.Sprintf("gira goal plan --repo %s --goal %d --dry-run", repo.FullName(), status.Goal.Number)
@@ -90,7 +111,7 @@ func BuildGoalNextReportFromStatus(repo RepoRef, status GoalStatusReport) GoalNe
 		return report
 	}
 	report.SkippedCandidates = goalNextSkippedCandidates(status.Children, nil)
-	if status.RemainingAutonomousWork == 0 {
+	if status.RemainingAutonomousWork != nil && *status.RemainingAutonomousWork == 0 {
 		if status.HandoffReceiptPresent {
 			report.StopReasons = []string{"human_review_handoff_present"}
 			report.NextAction = "human_review"
@@ -264,6 +285,9 @@ func FormatGoalNext(report GoalNextReport) string {
 	}
 	if len(report.Blockers) > 0 {
 		fmt.Fprintf(&b, "blockers: %s\n", strings.Join(report.Blockers, ","))
+	}
+	for _, failure := range report.AcquisitionFailures {
+		fmt.Fprintf(&b, "acquisition failure: %s\n", goalStatusFailureSummary(failure))
 	}
 	fmt.Fprintf(&b, "next step: %s\n", report.NextStep)
 	return b.String()

@@ -2,6 +2,7 @@ package gira
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"sync"
@@ -88,6 +89,50 @@ func TestPMObserveDeterministicDiagnosisOrderingAndEvidenceChange(t *testing.T) 
 	}
 }
 
+func TestPMObserveBlocksRecommendationsWhenGoalChildStateIsIncomplete(t *testing.T) {
+	input := PMObserveInput{Repo: RepoRef{Owner: "StatPan", Name: "gira"}, Ticket: 100}
+	state := PMObserveState{
+		GoalStatus: GoalStatusReport{
+			Goal:                GoalStatusIssue{Number: 100},
+			Children:            []GoalStatusChild{{Repo: "StatPan/gira", Number: 201, Title: "Unknown child", State: "unknown", Status: "unknown", Category: "unknown", StatusAvailable: false}},
+			Counts:              map[string]int{"total": 1, "unknown": 1},
+			DiscoveryComplete:   true,
+			StatusComplete:      false,
+			AcquisitionFailures: []GoalStatusFailure{{Repository: "StatPan/gira", Source: "repository_snapshot", Stage: goalStatusFailureStageSnapshotTransport, Code: "transport_unknown", AffectedCount: 1, AffectedCountComplete: true}},
+		},
+		WorkGraph: PMWorkGraphReport{Actions: []PMWorkGraphAction{{NodeID: "build", Action: "create", Status: "planned"}}},
+	}
+	observe := BuildPMObserveFromState(input, state)
+	if observe.Snapshot.Children != 1 || observe.Snapshot.UnknownChildren != 1 || observe.Snapshot.StatusComplete || observe.NextStep != "gira goal status --repo StatPan/gira --goal 100 --json" {
+		t.Fatalf("observe lost incomplete goal state: %+v", observe)
+	}
+	if len(observe.Actions) != 1 || observe.Actions[0].Kind != "inspect" || observe.Actions[0].Capability != "issue:read" {
+		t.Fatalf("observe proposed mutation while child status was unknown: %+v", observe.Actions)
+	}
+}
+
+func TestPMReplanStopsWithoutMutationWhenGoalChildStatusIsUnavailable(t *testing.T) {
+	source := PMWorkGraphSource{SchemaVersion: PMWorkGraphSourceSchemaVersion, Nodes: []PMWorkGraphNode{{ID: "build", Title: "Build bounded slice", Purpose: "Deliver verified behavior", Profile: "delivery", ParentOutcome: "goal:100", Size: "small", Verification: []PMWorkGraphVerification{{Method: "go test ./...", Evidence: "passing tests"}}}}}
+	runner := &workGraphRunner{body: workGraphGoalBody(t, source), child: true, graphqlErr: errors.New("private provider detail must not escape")}
+	report, err := BuildPMReplanReport(PMReplanInput{Repo: RepoRef{Owner: "OWNER", Name: "repo"}, Ticket: 100, Apply: true, ExpectedPlanID: "pmr-approved"}, runner)
+	if err != nil {
+		t.Fatalf("BuildPMReplanReport: %v", err)
+	}
+	if !report.DiscoveryComplete || report.StatusComplete || report.Matched || report.PlanID != "" || len(report.Mutations) != 0 || len(report.ResidualActions) != 0 {
+		t.Fatalf("PM replan acted from unavailable child status: %+v", report)
+	}
+	if runner.creates != 0 || runner.parentLinks != 0 || len(runner.comments) != 0 {
+		t.Fatalf("PM replan wrote despite unavailable status: creates=%d links=%d comments=%d", runner.creates, runner.parentLinks, len(runner.comments))
+	}
+	encoded, marshalErr := json.Marshal(report)
+	if marshalErr != nil {
+		t.Fatalf("marshal replan: %v", marshalErr)
+	}
+	if strings.Contains(string(encoded), "private provider detail") || !strings.Contains(string(encoded), `"remaining_autonomous_work":null`) {
+		t.Fatalf("PM replan leaked raw provider failure or lost nullable remaining: %s", encoded)
+	}
+}
+
 func TestPMObserveCoversExpiredDecisionScopeDriftAndPartialContinuation(t *testing.T) {
 	state := pmObserveFixtureState("supported")
 	state.Context.Records = append(state.Context.Records, PMContextRecord{Current: true, Record: PMLedgerRecord{ID: "decision.old", Kind: "decision", Status: "review_due"}})
@@ -163,7 +208,7 @@ func pmObserveFixtureState(assumptionStatus string) PMObserveState {
 	measurement := PMMeasurementReport{Summary: PMMeasurementSummary{Outcomes: 1, Measurements: 1, Validated: 1}}
 	node := PMWorkGraphNode{ID: "build", Title: "Build bounded slice"}
 	graph := PMWorkGraphReport{PlanID: "pwg-stable", Nodes: []PMWorkGraphNode{node}, Actions: []PMWorkGraphAction{{NodeID: "build", Action: "reuse", ExistingIssue: 101}}}
-	status := GoalStatusReport{Goal: GoalStatusIssue{Number: 100}, Children: []GoalStatusChild{{Number: 101, Title: goalPlanTicketTitle(node.Title), State: "open", Status: "In progress"}}}
+	status := GoalStatusReport{Goal: GoalStatusIssue{Number: 100}, Children: []GoalStatusChild{{Number: 101, Title: goalPlanTicketTitle(node.Title), State: "open", Status: "In progress", StatusAvailable: true}}, Counts: map[string]int{"total": 1, "known": 1}, DiscoveryComplete: true, StatusComplete: true, RemainingAutonomousWork: goalStatusRemainingPointer(1), KnownRemainingAutonomousWork: 1}
 	return PMObserveState{Context: context, Discovery: discovery, Measurement: measurement, WorkGraph: graph, GoalStatus: status}
 }
 

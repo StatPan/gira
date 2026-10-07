@@ -6872,7 +6872,7 @@ func TestGoalStatusJSONUsesInjectedBuilder(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"command": "goal status"`, `"schema_version": "goal-status/v1"`, `"next_action": "plan_children"`} {
+	for _, want := range []string{`"command": "goal status"`, `"schema_version": "goal-status/v2"`, `"next_action": "plan_children"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("goal status JSON missing %q:\n%s", want, stdout.String())
 		}
@@ -6998,20 +6998,24 @@ func TestGoalDossierJSONUsesInjectedBuilder(t *testing.T) {
 			t.Fatalf("unexpected goal dossier input: %+v repo=%s", input, input.Repo.FullName())
 		}
 		selected := gira.GoalNextCandidate{Number: 573, Title: "Next", Category: "ready", Reason: "next_ready_child", NextStep: "gira ticket start --repo StatPan/gira --ticket 573 --apply"}
+		remaining := 1
 		return gira.GoalDossierReport{
-			Command:                 "goal dossier",
-			SchemaVersion:           gira.GoalDossierSchemaVersion,
-			Repo:                    input.Repo.FullName(),
-			GeneratedAt:             "2026-05-31T00:00:00Z",
-			Goal:                    gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 3.0", State: "open", Status: "Ready"},
-			Counts:                  map[string]int{"total": 1, "ready": 1},
-			ChildGroups:             []gira.GoalDossierChildGroup{{Category: "ready", Count: 1, Children: []gira.GoalStatusChild{{Number: 573, Title: "Next", Category: "ready", Status: "Ready"}}}},
-			SelectedTicket:          &selected,
-			NextAction:              "start_child",
-			NextStep:                selected.NextStep,
-			RemainingAutonomousWork: 1,
-			Evidence:                gira.GoalDossierEvidenceSummary{Sources: []string{"goal_status", "goal_next"}, ChildCount: 1, RemainingAutonomousWork: 1},
-			Sources:                 []gira.GoalDossierSource{{Name: "goal_status", SchemaVersion: gira.GoalStatusSchemaVersion}},
+			Command:                      "goal dossier",
+			SchemaVersion:                gira.GoalDossierSchemaVersion,
+			Repo:                         input.Repo.FullName(),
+			GeneratedAt:                  "2026-05-31T00:00:00Z",
+			Goal:                         gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 3.0", State: "open", Status: "Ready"},
+			Counts:                       map[string]int{"total": 1, "ready": 1},
+			DiscoveryComplete:            true,
+			StatusComplete:               true,
+			ChildGroups:                  []gira.GoalDossierChildGroup{{Category: "ready", Count: 1, Children: []gira.GoalStatusChild{{Number: 573, Title: "Next", Category: "ready", Status: "Ready"}}}},
+			SelectedTicket:               &selected,
+			NextAction:                   "start_child",
+			NextStep:                     selected.NextStep,
+			KnownRemainingAutonomousWork: 1,
+			RemainingAutonomousWork:      &remaining,
+			Evidence:                     gira.GoalDossierEvidenceSummary{Sources: []string{"goal_status", "goal_next"}, ChildCount: 1, DiscoveryComplete: true, StatusComplete: true, KnownRemainingAutonomousWork: 1, RemainingAutonomousWork: &remaining},
+			Sources:                      []gira.GoalDossierSource{{Name: "goal_status", SchemaVersion: gira.GoalStatusSchemaVersion}},
 		}, nil
 	}
 
@@ -7020,7 +7024,7 @@ func TestGoalDossierJSONUsesInjectedBuilder(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"command": "goal dossier"`, `"schema_version": "goal-dossier/v1"`, `"child_groups"`, `"selected_ticket"`} {
+	for _, want := range []string{`"command": "goal dossier"`, `"schema_version": "goal-dossier/v2"`, `"child_groups"`, `"selected_ticket"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("goal dossier JSON missing %q:\n%s", want, stdout.String())
 		}
@@ -7035,20 +7039,24 @@ func TestGoalReportJSONUsesInjectedBuilder(t *testing.T) {
 			t.Fatalf("unexpected goal report input: %+v repo=%s", input, input.Repo.FullName())
 		}
 		selected := gira.GoalNextCandidate{Number: 573, Title: "Next", Category: "ready", Reason: "next_ready_child", NextStep: "gira ticket start --repo StatPan/gira --ticket 573 --apply"}
+		remaining := 1
 		return gira.GoalDossierReport{
-			Command:                 "goal dossier",
-			SchemaVersion:           gira.GoalDossierSchemaVersion,
-			Repo:                    input.Repo.FullName(),
-			GeneratedAt:             "2026-05-31T00:00:00Z",
-			Goal:                    gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 3.0", State: "open", Status: "Ready"},
-			Counts:                  map[string]int{"total": 1, "ready": 1},
-			ChildGroups:             []gira.GoalDossierChildGroup{{Category: "ready", Count: 1, Children: []gira.GoalStatusChild{{Number: 573, Title: "Next", Category: "ready", Status: "Ready"}}}},
-			SelectedTicket:          &selected,
-			NextAction:              "start_child",
-			NextStep:                selected.NextStep,
-			RemainingAutonomousWork: 1,
-			Evidence:                gira.GoalDossierEvidenceSummary{Sources: []string{"goal_status", "goal_next"}, ChildCount: 1, RemainingAutonomousWork: 1},
-			Sources:                 []gira.GoalDossierSource{{Name: "goal_status", SchemaVersion: gira.GoalStatusSchemaVersion}},
+			Command:                      "goal dossier",
+			SchemaVersion:                gira.GoalDossierSchemaVersion,
+			Repo:                         input.Repo.FullName(),
+			GeneratedAt:                  "2026-05-31T00:00:00Z",
+			Goal:                         gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 3.0", State: "open", Status: "Ready"},
+			Counts:                       map[string]int{"total": 1, "ready": 1},
+			DiscoveryComplete:            true,
+			StatusComplete:               true,
+			ChildGroups:                  []gira.GoalDossierChildGroup{{Category: "ready", Count: 1, Children: []gira.GoalStatusChild{{Number: 573, Title: "Next", Category: "ready", Status: "Ready"}}}},
+			SelectedTicket:               &selected,
+			NextAction:                   "start_child",
+			NextStep:                     selected.NextStep,
+			KnownRemainingAutonomousWork: 1,
+			RemainingAutonomousWork:      &remaining,
+			Evidence:                     gira.GoalDossierEvidenceSummary{Sources: []string{"goal_status", "goal_next"}, ChildCount: 1, DiscoveryComplete: true, StatusComplete: true, KnownRemainingAutonomousWork: 1, RemainingAutonomousWork: &remaining},
+			Sources:                      []gira.GoalDossierSource{{Name: "goal_status", SchemaVersion: gira.GoalStatusSchemaVersion}},
 		}, nil
 	}
 
@@ -7057,7 +7065,7 @@ func TestGoalReportJSONUsesInjectedBuilder(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"command": "goal report"`, `"schema_version": "goal-dossier/v1"`, `"child_groups"`, `"selected_ticket"`} {
+	for _, want := range []string{`"command": "goal report"`, `"schema_version": "goal-dossier/v2"`, `"child_groups"`, `"selected_ticket"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("goal report JSON missing %q:\n%s", want, stdout.String())
 		}
@@ -7164,7 +7172,7 @@ func TestGoalNextJSONUsesInjectedBuilder(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"command": "goal next"`, `"schema_version": "goal-next/v1"`, `"selected_ticket"`} {
+	for _, want := range []string{`"command": "goal next"`, `"schema_version": "goal-next/v2"`, `"selected_ticket"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("goal next JSON missing %q:\n%s", want, stdout.String())
 		}
@@ -7214,7 +7222,7 @@ func TestGoalHandoffJSONUsesInjectedBuilder(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"command": "goal handoff"`, `"schema_version": "goal-handoff/v1"`, `"worker_handoff"`, `"schema_version": "worker-handoff/v1"`} {
+	for _, want := range []string{`"command": "goal handoff"`, `"schema_version": "goal-handoff/v2"`, `"worker_handoff"`, `"schema_version": "worker-handoff/v1"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("goal handoff JSON missing %q:\n%s", want, stdout.String())
 		}
@@ -7249,7 +7257,7 @@ func TestDispatchGoalJSONAllowsInferredGoal(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"command": "dispatch goal"`, `"schema_version": "dispatch-packet/v1"`, `"source"`, `"authority"`, `"selected_work": "StatPan/gira#573 Add dispatch"`} {
+	for _, want := range []string{`"command": "dispatch goal"`, `"schema_version": "dispatch-packet/v2"`, `"source"`, `"authority"`, `"selected_work": "StatPan/gira#573 Add dispatch"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("dispatch goal JSON missing %q:\n%s", want, stdout.String())
 		}
@@ -7271,7 +7279,7 @@ func TestDispatchGoalCompactJSONUsesInjectedBuilder(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"schema_version": "dispatch-compact/v1"`, `"selected_ticket"`, `"acceptance"`, `"next_safe_command"`} {
+	for _, want := range []string{`"schema_version": "dispatch-compact/v2"`, `"selected_ticket"`, `"acceptance"`, `"next_safe_command"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("compact dispatch JSON missing %q:\n%s", want, stdout.String())
 		}
@@ -7318,6 +7326,7 @@ func TestDispatchGoalRejectsMultipleOutputFormats(t *testing.T) {
 
 func dispatchGoalCLITestPacket(input gira.DispatchGoalInput) gira.DispatchPacket {
 	selected := gira.GoalNextCandidate{Repo: "StatPan/gira", Number: 573, Title: "Compact dispatch", State: "open", Status: "Ready", Category: "ready", URL: "https://github.com/StatPan/gira/issues/573"}
+	remaining := 1
 	worker := gira.TicketHandoffReport{
 		SchemaVersion: gira.WorkerHandoffSchemaVersion,
 		Role:          input.Role,
@@ -7342,7 +7351,7 @@ func dispatchGoalCLITestPacket(input gira.DispatchGoalInput) gira.DispatchPacket
 		Profile:         input.Profile,
 		Goal:            gira.GoalStatusIssue{Number: 521, Title: "Dispatch goal", State: "open", Status: "Ready"},
 		GoalContext:     gira.GoalHandoffContext{Objective: "Reduce token waste", StopConditions: []string{"unclear selected work"}},
-		GoalStatus:      gira.GoalStatusReport{Counts: map[string]int{"ready": 1, "total": 1}, RemainingAutonomousWork: 1},
+		GoalStatus:      gira.GoalStatusReport{Counts: map[string]int{"ready": 1, "known": 1, "total": 1}, DiscoveryComplete: true, StatusComplete: true, KnownRemainingAutonomousWork: 1, RemainingAutonomousWork: &remaining},
 		SelectedTicket:  &selected,
 		WorkerHandoff:   &worker,
 		NextAction:      "handoff_child",
@@ -7391,7 +7400,7 @@ func TestGoalPlanJSONUsesInjectedBuilder(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"command": "goal plan"`, `"schema_version": "goal-plan/v1"`, `"proposed_tickets"`} {
+	for _, want := range []string{`"command": "goal plan"`, `"schema_version": "goal-plan/v2"`, `"proposed_tickets"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("goal plan JSON missing %q:\n%s", want, stdout.String())
 		}
@@ -7501,12 +7510,14 @@ func TestGoalPlanCompactApplyRequiresExpectedPlan(t *testing.T) {
 
 func goalPlanCLITestReport(input gira.GoalPlanInput) gira.GoalPlanReport {
 	return gira.GoalPlanReport{
-		Command:       "goal plan",
-		SchemaVersion: gira.GoalPlanSchemaVersion,
-		Repo:          input.Repo.FullName(),
-		DryRun:        input.DryRun,
-		Apply:         input.Apply,
-		Goal:          gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 2.0", State: "open", Status: "Ready"},
+		Command:           "goal plan",
+		SchemaVersion:     gira.GoalPlanSchemaVersion,
+		Repo:              input.Repo.FullName(),
+		DryRun:            input.DryRun,
+		Apply:             input.Apply,
+		Goal:              gira.GoalStatusIssue{Number: input.Goal, Title: "Gira 2.0", State: "open", Status: "Ready"},
+		DiscoveryComplete: true,
+		StatusComplete:    true,
 		ProposedTickets: []gira.GoalPlanTicket{
 			{Title: "[Task] Add plan", TargetRepo: input.Repo.FullName(), Type: "task", Goal: "Add plan", Scope: "CLI", Acceptance: []string{"works"}, ExpectedEvidence: []string{"go test ./..."}, Body: "compact fixture"},
 		},
@@ -7563,7 +7574,7 @@ func TestGoalFinishJSONUsesInjectedBuilder(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"command": "goal finish"`, `"schema_version": "goal-finish-readiness/v1"`, `"terminal_recommendation": "human_review"`} {
+	for _, want := range []string{`"command": "goal finish"`, `"schema_version": "goal-finish-readiness/v2"`, `"terminal_recommendation": "human_review"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("goal finish JSON missing %q:\n%s", want, stdout.String())
 		}

@@ -412,15 +412,15 @@ Usage:
   gira dispatch goal [GOAL] [--repo OWNER/REPO] [--role implementer] [--profile default] [--json|--compact-json|--prompt]
 
 Commands:
-  goal  Build a dispatch-packet/v1 from a Goal Mode issue and next safe child ticket
+  goal  Build a dispatch-packet/v2 from a Goal Mode issue and next safe child ticket
 
 Flags:
   --repo string     Target GitHub repo in OWNER/REPO format. Defaults to .gira config or git origin
   --goal int        Goal issue number. Can also be numeric positional; inferred when omitted
   --role string     Handoff role: planner, implementer, or reviewer. Default: implementer
   --profile string  Handoff profile: default or python. Default: default
-  --json            Emit stable dispatch-packet/v1 JSON
-  --compact-json    Emit compact dispatch-compact/v1 JSON for LLM context
+  --json            Emit stable dispatch-packet/v2 JSON
+  --compact-json    Emit compact dispatch-compact/v2 JSON for LLM context
   --prompt          Emit a compact prompt for direct LLM handoff
   --context-budget int Maximum compact context size in characters. Default: 12000
   -h, --help        Show help

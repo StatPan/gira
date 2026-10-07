@@ -25,7 +25,7 @@ The stable 2.0 contract areas are:
 | --- | --- |
 | State-aware ticket runtime | Current ticket/PR resolution, structured ticket status JSON, action-oriented next steps, role packets, review packets, and lifecycle dry-run/apply commands. |
 | Evidence-based finish and audit | Ticket readiness, PR readiness, finish readiness, finish receipts, telemetry/provenance guidance, and workflow drift audit reports. |
-| Goal mode | `goal-status/v1`, `goal-next/v1`, `goal-plan/v1`, `goal-finish-readiness/v1`, and idempotent human-review handoff receipts over child ticket graphs. |
+| Goal mode | `goal-status/v2`, `goal-next/v2`, `goal-plan/v2`, `goal-finish-readiness/v2`, and idempotent human-review handoff receipts over child ticket graphs. |
 | Workspace health | `workspace-queues/v1` in `workspace status --json`, covering agent-ready, review-needed, finish-ready, blocked, failed-check, and human-decision queues. |
 | Agent adapter boundary | Command capability metadata, schema-versioned JSON surfaces, and shared `gira-approval-plan/v1` approval evidence for matching Gira apply boundaries. |
 

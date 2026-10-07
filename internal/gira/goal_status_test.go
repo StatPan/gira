@@ -19,7 +19,7 @@ func TestBuildGoalStatusReportNoChildrenPlansChildren(t *testing.T) {
 	if report.SchemaVersion != GoalStatusSchemaVersion || report.Goal.Number != 100 || report.PlanningEngine != "unconfigured" {
 		t.Fatalf("unexpected report metadata: %+v", report)
 	}
-	if len(report.Children) != 0 || report.NextAction != "plan_children" || report.RemainingAutonomousWork != 0 {
+	if len(report.Children) != 0 || report.NextAction != "plan_children" || !goalStatusRemainingIs(report.RemainingAutonomousWork, 0) || !report.DiscoveryComplete || !report.StatusComplete {
 		t.Fatalf("unexpected no-child report: %+v", report)
 	}
 	if !strings.Contains(FormatGoalStatus(report), "next=plan_children") {
@@ -77,10 +77,11 @@ func TestDiscoverGoalChildRefsMergesNativeAndTypedEvidence(t *testing.T) {
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"Created child tickets: #102 and #103\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=101 -->\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=103 -->"}]}`,
 	}}
 
-	refs, err := discoverGoalChildRefs(repo, devStartIssue{Number: 100, Body: "## Child tickets\n- #101\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=103 -->"}, runner)
-	if err != nil {
-		t.Fatalf("discoverGoalChildRefs error: %v", err)
+	discovery := discoverGoalChildRefs(repo, devStartIssue{Number: 100, Body: "## Child tickets\n- #101\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=103 -->"}, runner)
+	if !discovery.Complete {
+		t.Fatalf("discovery unexpectedly incomplete: %+v", discovery)
 	}
+	refs := discovery.Refs
 	if len(refs) != 3 {
 		t.Fatalf("child refs = %+v, want 3 unique refs", refs)
 	}
@@ -109,7 +110,7 @@ func TestBuildGoalStatusReportSummarizesMixedChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildGoalStatusReport error: %v", err)
 	}
-	if len(report.Children) != 2 || report.Counts["ready"] != 1 || report.Counts["done"] != 1 || report.RemainingAutonomousWork != 1 {
+	if len(report.Children) != 2 || report.Counts["ready"] != 1 || report.Counts["done"] != 1 || !goalStatusRemainingIs(report.RemainingAutonomousWork, 1) {
 		t.Fatalf("unexpected child summary: %+v", report)
 	}
 	if len(report.Blockers) != 0 || len(report.Children[0].Blockers) != 0 || len(report.Children[1].Blockers) != 0 {
@@ -159,7 +160,7 @@ func TestBuildGoalStatusReportAllDoneFromGoalBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildGoalStatusReport error: %v", err)
 	}
-	if report.Counts["done"] != 2 || report.RemainingAutonomousWork != 0 || report.NextAction != "finish_goal" {
+	if report.Counts["done"] != 2 || !goalStatusRemainingIs(report.RemainingAutonomousWork, 0) || report.NextAction != "finish_goal" {
 		t.Fatalf("unexpected all-done summary: %+v", report)
 	}
 }
@@ -177,7 +178,7 @@ func TestBuildGoalStatusReportAllDoneWithHandoffStopsForHumanReview(t *testing.T
 	if err != nil {
 		t.Fatalf("BuildGoalStatusReport error: %v", err)
 	}
-	if !report.HandoffReceiptPresent || report.RemainingAutonomousWork != 0 || report.NextAction != "human_review" {
+	if !report.HandoffReceiptPresent || !goalStatusRemainingIs(report.RemainingAutonomousWork, 0) || report.NextAction != "human_review" {
 		t.Fatalf("unexpected handoff summary: %+v", report)
 	}
 	if !strings.Contains(report.NextStep, "goal-finish-receipt/v1") {
@@ -198,7 +199,7 @@ func TestBuildGoalStatusReportClosedDoneGoalIsDone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildGoalStatusReport error: %v", err)
 	}
-	if !report.HandoffReceiptPresent || report.RemainingAutonomousWork != 0 || report.NextAction != "done" || report.NextStep != "goal is done" {
+	if !report.HandoffReceiptPresent || !goalStatusRemainingIs(report.RemainingAutonomousWork, 0) || report.NextAction != "done" || report.NextStep != "goal is done" {
 		t.Fatalf("closed done goal should be terminal done: %+v", report)
 	}
 }
@@ -249,10 +250,11 @@ func TestDiscoverGoalChildRefsIgnoresLegacyParentAndProseReferences(t *testing.T
 		"gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100": `[{"number":101,"title":"Native","state":"open"}]`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[{"body":"Goal planning says #102 is next. Parent: #100. StatPan/gira#103."}]}`,
 	}}
-	refs, err := discoverGoalChildRefs(repo, devStartIssue{Number: 100, Body: "## Child tickets\n- #102\nGrounding-gap parent: #160\nParent: #100"}, runner)
-	if err != nil {
-		t.Fatalf("discoverGoalChildRefs error: %v", err)
+	discovery := discoverGoalChildRefs(repo, devStartIssue{Number: 100, Body: "## Child tickets\n- #102\nGrounding-gap parent: #160\nParent: #100"}, runner)
+	if !discovery.Complete {
+		t.Fatalf("discovery unexpectedly incomplete: %+v", discovery)
 	}
+	refs := discovery.Refs
 	if len(refs) != 1 || refs[0].Number != 101 || refs[0].RelationSource != GoalChildRelationSourceGitHubSubIssue {
 		t.Fatalf("legacy/prose references must be ignored: %+v", refs)
 	}

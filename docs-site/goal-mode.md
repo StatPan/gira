@@ -31,7 +31,7 @@ gira goal plan 521 --repo OWNER/app --dry-run --json
 Use the plan when a goal issue has enough scope and acceptance detail to split
 into bounded tickets. Same-repo children remain the default. To route a child
 into another execution repo, prefix a plan item with `OWNER/REPO:` or
-`target_repo: OWNER/REPO -`. The `goal-plan/v1` output includes `target_repo`
+`target_repo: OWNER/REPO -`. The `goal-plan/v2` output includes `target_repo`
 for every proposed child. If the goal requires a human decision or the target
 repo is ambiguous, the report stops with an explicit reason instead of
 inventing work.
@@ -59,9 +59,18 @@ Inspect the current goal graph:
 gira goal status 521 --repo OWNER/app --json
 ```
 
-The `goal-status/v1` report includes the goal issue, child ticket counts,
+The `goal-status/v2` report includes the goal issue, child ticket counts,
 blockers, remaining autonomous work, handoff receipt presence, and the next safe
 action. It is the read-only summary to use before starting a new child ticket.
+
+`discovery_complete` and `status_complete` distinguish a true empty goal from
+incomplete child evidence. Each observed child identity remains in `children`
+even when its status is unavailable; those rows set `status_available` to
+false and count toward `unknown`. `known_remaining_autonomous_work` reports
+only validated child states. `remaining_autonomous_work` is `null` whenever
+discovery or a required child status is incomplete. In that state, goal status
+and selection recommend `resolve_blockers`; goal planning, graph apply, PM
+replan, and all goal finish apply paths stop before mutation.
 
 ## Report
 
@@ -72,7 +81,7 @@ gira goal report 521 --repo OWNER/app --json
 gira goal report 521 --repo OWNER/app --html --output out/gira/goal-521.html
 ```
 
-The `goal-dossier/v1` report packages the goal summary, grouped child tickets,
+The `goal-dossier/v2` report packages the goal summary, grouped child tickets,
 blockers, stop conditions, selected next child, evidence summary, and next safe
 step into one JSON contract or local HTML page. It is generated from existing
 Goal Mode state and does not become a source of truth. `gira goal dossier`
@@ -86,7 +95,7 @@ Select the next safe child ticket or stop:
 gira goal next 521 --repo OWNER/app --json
 ```
 
-`goal-next/v1` prefers actionable child tickets and returns stop reasons when
+`goal-next/v2` prefers actionable child tickets and returns stop reasons when
 work should not continue. If every child is done and a
 `goal-finish-receipt/v1` human-review handoff already exists, it stops at
 `human_review` instead of recommending another finish command.
@@ -107,6 +116,9 @@ gira goal finish 521 --repo OWNER/app --terminal done --apply --json
 
 This posts a `goal-finish-receipt/v1` done receipt, normalizes active status
 labels to `status:done`, and closes the goal when readiness is clean.
+An incomplete child graph cannot be completed through either the `done` or
+`human_review` apply path; inspect the bounded failure stage and rerun status
+after the missing evidence is restored.
 
 Use explicit human-review when blockers or historical evidence gaps need a
 maintainer handoff:

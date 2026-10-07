@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const GoalDossierSchemaVersion = "goal-dossier/v1"
+const GoalDossierSchemaVersion = "goal-dossier/v2"
 
 type GoalDossierInput struct {
 	Repo RepoRef `json:"repo"`
@@ -17,25 +17,29 @@ type GoalDossierInput struct {
 }
 
 type GoalDossierReport struct {
-	Command                 string                     `json:"command"`
-	SchemaVersion           string                     `json:"schema_version"`
-	Repo                    string                     `json:"repo"`
-	GeneratedAt             string                     `json:"generated_at"`
-	Goal                    GoalStatusIssue            `json:"goal"`
-	ChildGroups             []GoalDossierChildGroup    `json:"child_groups"`
-	Counts                  map[string]int             `json:"counts"`
-	Blockers                []string                   `json:"blockers,omitempty"`
-	StopConditions          []string                   `json:"stop_conditions,omitempty"`
-	NextAction              string                     `json:"next_action"`
-	NextStep                string                     `json:"next_step"`
-	SelectedTicket          *GoalNextCandidate         `json:"selected_ticket,omitempty"`
-	RemainingAutonomousWork int                        `json:"remaining_autonomous_work"`
-	HandoffReceiptPresent   bool                       `json:"handoff_receipt_present"`
-	Evidence                GoalDossierEvidenceSummary `json:"evidence"`
-	Sources                 []GoalDossierSource        `json:"sources"`
-	Measurement             *PMMeasurementReport       `json:"measurement,omitempty"`
-	PMView                  *GoalPMView                `json:"pm_view,omitempty"`
-	Diagnostics             []string                   `json:"diagnostics,omitempty"`
+	Command                      string                     `json:"command"`
+	SchemaVersion                string                     `json:"schema_version"`
+	Repo                         string                     `json:"repo"`
+	GeneratedAt                  string                     `json:"generated_at"`
+	Goal                         GoalStatusIssue            `json:"goal"`
+	ChildGroups                  []GoalDossierChildGroup    `json:"child_groups"`
+	Counts                       map[string]int             `json:"counts"`
+	DiscoveryComplete            bool                       `json:"discovery_complete"`
+	StatusComplete               bool                       `json:"status_complete"`
+	AcquisitionFailures          []GoalStatusFailure        `json:"acquisition_failures,omitempty"`
+	Blockers                     []string                   `json:"blockers,omitempty"`
+	StopConditions               []string                   `json:"stop_conditions,omitempty"`
+	NextAction                   string                     `json:"next_action"`
+	NextStep                     string                     `json:"next_step"`
+	SelectedTicket               *GoalNextCandidate         `json:"selected_ticket,omitempty"`
+	KnownRemainingAutonomousWork int                        `json:"known_remaining_autonomous_work"`
+	RemainingAutonomousWork      *int                       `json:"remaining_autonomous_work"`
+	HandoffReceiptPresent        bool                       `json:"handoff_receipt_present"`
+	Evidence                     GoalDossierEvidenceSummary `json:"evidence"`
+	Sources                      []GoalDossierSource        `json:"sources"`
+	Measurement                  *PMMeasurementReport       `json:"measurement,omitempty"`
+	PMView                       *GoalPMView                `json:"pm_view,omitempty"`
+	Diagnostics                  []string                   `json:"diagnostics,omitempty"`
 }
 
 type GoalDossierChildGroup struct {
@@ -45,13 +49,16 @@ type GoalDossierChildGroup struct {
 }
 
 type GoalDossierEvidenceSummary struct {
-	Sources                 []string                 `json:"sources"`
-	ChildCount              int                      `json:"child_count"`
-	RemainingAutonomousWork int                      `json:"remaining_autonomous_work"`
-	HandoffReceiptPresent   bool                     `json:"handoff_receipt_present"`
-	BlockerCount            int                      `json:"blocker_count"`
-	Checks                  GoalDossierChecksSummary `json:"checks"`
-	Reviews                 map[string]int           `json:"reviews,omitempty"`
+	Sources                      []string                 `json:"sources"`
+	ChildCount                   int                      `json:"child_count"`
+	DiscoveryComplete            bool                     `json:"discovery_complete"`
+	StatusComplete               bool                     `json:"status_complete"`
+	KnownRemainingAutonomousWork int                      `json:"known_remaining_autonomous_work"`
+	RemainingAutonomousWork      *int                     `json:"remaining_autonomous_work"`
+	HandoffReceiptPresent        bool                     `json:"handoff_receipt_present"`
+	BlockerCount                 int                      `json:"blocker_count"`
+	Checks                       GoalDossierChecksSummary `json:"checks"`
+	Reviews                      map[string]int           `json:"reviews,omitempty"`
 }
 
 type GoalDossierChecksSummary struct {
@@ -119,20 +126,24 @@ func BuildGoalDossierReport(input GoalDossierInput, runner CommandRunner) (GoalD
 
 func BuildGoalDossierReportFromStatus(status GoalStatusReport, next GoalNextReport) GoalDossierReport {
 	report := GoalDossierReport{
-		Command:                 "goal dossier",
-		SchemaVersion:           GoalDossierSchemaVersion,
-		Repo:                    status.Repo,
-		GeneratedAt:             time.Now().UTC().Format(time.RFC3339),
-		Goal:                    status.Goal,
-		ChildGroups:             goalDossierChildGroups(status.Children),
-		Counts:                  copyStringIntMap(status.Counts),
-		Blockers:                append([]string(nil), status.Blockers...),
-		StopConditions:          append([]string(nil), next.StopReasons...),
-		NextAction:              next.NextAction,
-		NextStep:                next.NextStep,
-		RemainingAutonomousWork: status.RemainingAutonomousWork,
-		HandoffReceiptPresent:   status.HandoffReceiptPresent,
-		Evidence:                goalDossierEvidence(status),
+		Command:                      "goal dossier",
+		SchemaVersion:                GoalDossierSchemaVersion,
+		Repo:                         status.Repo,
+		GeneratedAt:                  time.Now().UTC().Format(time.RFC3339),
+		Goal:                         status.Goal,
+		ChildGroups:                  goalDossierChildGroups(status.Children),
+		Counts:                       copyStringIntMap(status.Counts),
+		DiscoveryComplete:            status.DiscoveryComplete,
+		StatusComplete:               status.StatusComplete,
+		AcquisitionFailures:          append([]GoalStatusFailure(nil), status.AcquisitionFailures...),
+		Blockers:                     append([]string(nil), status.Blockers...),
+		StopConditions:               append([]string(nil), next.StopReasons...),
+		NextAction:                   next.NextAction,
+		NextStep:                     next.NextStep,
+		KnownRemainingAutonomousWork: status.KnownRemainingAutonomousWork,
+		RemainingAutonomousWork:      status.RemainingAutonomousWork,
+		HandoffReceiptPresent:        status.HandoffReceiptPresent,
+		Evidence:                     goalDossierEvidence(status),
 		Sources: []GoalDossierSource{
 			{Name: "goal_status", SchemaVersion: GoalStatusSchemaVersion},
 			{Name: "goal_next", SchemaVersion: GoalNextSchemaVersion},
@@ -182,13 +193,16 @@ func goalDossierChildGroups(children []GoalStatusChild) []GoalDossierChildGroup 
 
 func goalDossierEvidence(status GoalStatusReport) GoalDossierEvidenceSummary {
 	return GoalDossierEvidenceSummary{
-		Sources:                 []string{"goal_status", "goal_next"},
-		ChildCount:              len(status.Children),
-		RemainingAutonomousWork: status.RemainingAutonomousWork,
-		HandoffReceiptPresent:   status.HandoffReceiptPresent,
-		BlockerCount:            len(status.Blockers),
-		Checks:                  goalDossierChecks(status.Children),
-		Reviews:                 goalDossierReviews(status.Children),
+		Sources:                      []string{"goal_status", "goal_next"},
+		ChildCount:                   status.Counts["total"],
+		DiscoveryComplete:            status.DiscoveryComplete,
+		StatusComplete:               status.StatusComplete,
+		KnownRemainingAutonomousWork: status.KnownRemainingAutonomousWork,
+		RemainingAutonomousWork:      status.RemainingAutonomousWork,
+		HandoffReceiptPresent:        status.HandoffReceiptPresent,
+		BlockerCount:                 len(status.Blockers),
+		Checks:                       goalDossierChecks(status.Children),
+		Reviews:                      goalDossierReviews(status.Children),
 	}
 }
 
@@ -235,7 +249,7 @@ func FormatGoalDossier(report GoalDossierReport) string {
 
 func FormatGoalReport(report GoalDossierReport) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "goal report: #%d children=%d remaining=%d next=%s\n", report.Goal.Number, report.Counts["total"], report.RemainingAutonomousWork, report.NextAction)
+	fmt.Fprintf(&b, "goal report: #%d children=%d known_remaining=%d remaining=%s discovery_complete=%t status_complete=%t next=%s\n", report.Goal.Number, report.Counts["total"], report.KnownRemainingAutonomousWork, goalStatusRemainingText(report.RemainingAutonomousWork), report.DiscoveryComplete, report.StatusComplete, report.NextAction)
 	if len(report.ChildGroups) > 0 {
 		parts := []string{}
 		for _, group := range report.ChildGroups {
@@ -251,6 +265,9 @@ func FormatGoalReport(report GoalDossierReport) string {
 	}
 	if len(report.StopConditions) > 0 {
 		fmt.Fprintf(&b, "stop: %s\n", strings.Join(report.StopConditions, ","))
+	}
+	for _, failure := range report.AcquisitionFailures {
+		fmt.Fprintf(&b, "acquisition failure: %s\n", goalStatusFailureSummary(failure))
 	}
 	if report.Measurement != nil {
 		fmt.Fprintf(&b, "outcomes: validated=%d not_validated=%d limited=%d blocked=%d diagnostics=%d\n", report.Measurement.Summary.Validated, report.Measurement.Summary.NotValidated, report.Measurement.Summary.Limited, report.Measurement.Summary.Blocked, len(report.Measurement.Diagnostics))
@@ -392,6 +409,8 @@ code {
 	for _, pair := range goalReportCountPairs(report.Counts) {
 		fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>%s</span></div>\n", pair.count, goalReportHTMLText(pair.name))
 	}
+	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%t</strong><span>discovery complete</span></div>\n", report.DiscoveryComplete)
+	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%t</strong><span>status complete</span></div>\n", report.StatusComplete)
 	b.WriteString("</div>\n</section>\n")
 	if report.PMView != nil {
 		view := report.PMView
@@ -410,7 +429,14 @@ code {
 
 	b.WriteString("<section>\n<h2>Tickets</h2>\n")
 	if len(report.ChildGroups) == 0 {
-		b.WriteString("<p class=\"empty\">No child tickets.</p>\n")
+		switch {
+		case !report.DiscoveryComplete || !report.StatusComplete:
+			b.WriteString("<p class=\"warn\">Child discovery or status is incomplete. The visible count is the number of observed references.</p>\n")
+		case report.Counts["total"] == 0:
+			b.WriteString("<p class=\"empty\">No child tickets.</p>\n")
+		default:
+			b.WriteString("<p class=\"empty\">Child details are omitted in this view.</p>\n")
+		}
 	} else {
 		for _, group := range report.ChildGroups {
 			fmt.Fprintf(&b, "<h3>%s (%d)</h3>\n<div class=\"list\">\n", goalReportHTMLText(group.Category), group.Count)
@@ -433,10 +459,18 @@ code {
 
 	goalReportWriteStringListSection(&b, "Blockers", report.Blockers, "warn")
 	goalReportWriteStringListSection(&b, "Stop", report.StopConditions, "warn")
+	if len(report.AcquisitionFailures) > 0 {
+		b.WriteString("<section>\n<h2>Acquisition failures</h2>\n<div class=\"list\">\n")
+		for _, failure := range report.AcquisitionFailures {
+			fmt.Fprintf(&b, "<p class=\"item\">%s</p>\n", goalReportHTMLText(goalStatusFailureSummary(failure)))
+		}
+		b.WriteString("</div>\n</section>\n")
+	}
 
 	b.WriteString("<section>\n<h2>Evidence</h2>\n<div class=\"grid\">\n")
 	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>children</span></div>\n", report.Evidence.ChildCount)
-	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>remaining</span></div>\n", report.Evidence.RemainingAutonomousWork)
+	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>known remaining</span></div>\n", report.Evidence.KnownRemainingAutonomousWork)
+	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%s</strong><span>remaining</span></div>\n", goalReportHTMLText(goalStatusRemainingText(report.Evidence.RemainingAutonomousWork)))
 	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>blockers</span></div>\n", report.Evidence.BlockerCount)
 	fmt.Fprintf(&b, "<div class=\"metric\"><strong>%d</strong><span>checks failing</span></div>\n", report.Evidence.Checks.Failing)
 	if report.Measurement != nil {

@@ -43,8 +43,8 @@ func TestAgentContextBudgetBaseline(t *testing.T) {
 			MaxTokens: 804,
 		},
 		{
-			Name:      "goal_plan_v1_dry_run",
-			Content:   goalPlanV1BudgetFixture(t),
+			Name:      "goal_plan_v2_dry_run",
+			Content:   goalPlanV2BudgetFixture(t),
 			MaxBytes:  4318,
 			MaxTokens: 1123,
 		},
@@ -78,7 +78,7 @@ func readAgentContextBudgetDocument(t *testing.T, path ...string) string {
 	return string(content)
 }
 
-func goalPlanV1BudgetFixture(t *testing.T) string {
+func goalPlanV2BudgetFixture(t *testing.T) string {
 	t.Helper()
 	report := goalPlanBudgetReport(t)
 	encoded, err := json.MarshalIndent(report, "", "  ")
@@ -90,7 +90,7 @@ func goalPlanV1BudgetFixture(t *testing.T) string {
 
 func TestGoalPlanCompactBudget(t *testing.T) {
 	report := goalPlanBudgetReport(t)
-	legacy := goalPlanV1BudgetFixture(t)
+	fullReport := goalPlanV2BudgetFixture(t)
 	dry, err := json.Marshal(BuildGoalPlanCompactReport(report, "dry_run", ""))
 	if err != nil {
 		t.Fatal(err)
@@ -106,15 +106,15 @@ func TestGoalPlanCompactBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacyTokens, _ := encoder.Count(legacy)
+	fullTokens, _ := encoder.Count(fullReport)
 	dryTokens, _ := encoder.Count(string(dry))
 	receiptTokens, _ := encoder.Count(string(receipt))
-	t.Logf("goal-plan compact bytes dry=%d/%d receipt=%d/%d; tokens dry=%d/%d receipt=%d/%d", len(dry), len(legacy), len(receipt), len(legacy), dryTokens, legacyTokens, receiptTokens, legacyTokens)
-	if len(dry)*2 > len(legacy) || dryTokens*2 > legacyTokens {
-		t.Fatalf("compact dry-run exceeds 50%% budget: bytes=%d/%d tokens=%d/%d", len(dry), len(legacy), dryTokens, legacyTokens)
+	t.Logf("goal-plan compact bytes dry=%d/%d receipt=%d/%d; tokens dry=%d/%d receipt=%d/%d", len(dry), len(fullReport), len(receipt), len(fullReport), dryTokens, fullTokens, receiptTokens, fullTokens)
+	if len(dry)*2 > len(fullReport) || dryTokens*2 > fullTokens {
+		t.Fatalf("compact dry-run exceeds 50%% budget: bytes=%d/%d tokens=%d/%d", len(dry), len(fullReport), dryTokens, fullTokens)
 	}
-	if len(receipt)*4 > len(legacy) || receiptTokens*4 > legacyTokens {
-		t.Fatalf("compact apply receipt exceeds 25%% budget: bytes=%d/%d tokens=%d/%d", len(receipt), len(legacy), receiptTokens, legacyTokens)
+	if len(receipt)*4 > len(fullReport) || receiptTokens*4 > fullTokens {
+		t.Fatalf("compact apply receipt exceeds 25%% budget: bytes=%d/%d tokens=%d/%d", len(receipt), len(fullReport), receiptTokens, fullTokens)
 	}
 }
 
@@ -148,7 +148,7 @@ func goalPlanBudgetReport(t *testing.T) GoalPlanReport {
 	t.Helper()
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := goalPlanRunner(
-		goalPlanGoalJSON(100, goalPlanBody("## Goal\nShip goal mode\n\n## Scope\nCLI goal planning\n\n## Goal Plan\n- Add API\n- Add CLI\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
+		goalPlanGoalJSON(100, goalPlanBody("## Goal\nShip\n\n## Scope\nCLI\n\n## Goal Plan\n- API\n- CLI\n", ""), []string{"type:epic", "priority:p1", "area:backend", "status:ready"}),
 		`[]`,
 		`{"comments":[]}`,
 		nil,

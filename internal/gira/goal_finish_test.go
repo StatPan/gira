@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -173,6 +174,32 @@ func TestBuildGoalFinishReportHumanReviewApplyPostsReceipt(t *testing.T) {
 	}
 	if !report.Apply || len(report.Actions) != 1 || report.Actions[0].Status != "applied" || report.NextStep != "human review handoff receipt posted" {
 		t.Fatalf("unexpected apply report: %+v", report)
+	}
+}
+
+func TestBuildGoalFinishReportDoesNotPlanOrApplyHandoffWhenDiscoveryIsUnknown(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	nativeSubissues := "gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100"
+	runner := &goalStatusCountingRunner{
+		responses: map[string]string{
+			"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"Goal","state":"open","body":"","labels":[{"name":"type:epic"}]}`,
+			"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
+		},
+		errors: map[string]error{nativeSubissues: errors.New("subissue query unavailable")},
+	}
+	report, err := BuildGoalFinishReport(GoalFinishInput{Repo: repo, Goal: 100, Apply: true, Terminal: "human_review"}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalFinishReport: %v", err)
+	}
+	if report.NextAction != "resolve_blockers" || report.Readiness.DiscoveryComplete || len(report.Actions) != 0 {
+		t.Fatalf("finish should stop at incomplete discovery: %+v", report)
+	}
+	formatted := FormatGoalFinish(report)
+	if !strings.Contains(formatted, "discovery_complete=false") || !strings.Contains(formatted, "remaining=unknown") || !strings.Contains(formatted, "acquisition failure: StatPan/gira:child_discovery:transport_unknown") {
+		t.Fatalf("text finish lost incomplete-state evidence: %s", formatted)
+	}
+	if got := runner.countPrefix("gh issue comment "); got != 0 {
+		t.Fatalf("finish posted a receipt despite unknown child discovery: %d writes", got)
 	}
 }
 

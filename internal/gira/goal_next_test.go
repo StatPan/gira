@@ -76,6 +76,30 @@ func TestBuildGoalNextReportStopsForBlockedChild(t *testing.T) {
 	}
 }
 
+func TestBuildGoalNextReportDoesNotSelectKnownChildWhenAnotherStatusIsUnknown(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	status := goalNextTestStatus([]GoalStatusChild{
+		{Number: 201, Title: "Ready", State: "open", Status: "Ready", Category: "ready", NextAction: "start_work"},
+		{Number: 202, Title: "Unavailable", State: "unknown", Status: "unknown", Category: "unknown", StatusAvailable: false},
+	})
+	status.StatusComplete = false
+	status.Counts["known"] = 1
+	status.Counts["unknown"] = 1
+	status.RemainingAutonomousWork = nil
+
+	report := BuildGoalNextReportFromStatus(repo, status)
+	if report.SelectedTicket != nil || report.NextAction != "resolve_blockers" || report.RemainingAutonomousWork != nil || !containsString(report.StopReasons, "child_status_incomplete") {
+		t.Fatalf("goal next selected despite an unknown child status: %+v", report)
+	}
+	if len(report.SkippedCandidates) != 2 || report.SkippedCandidates[0].Reason != "not_eligible" || report.SkippedCandidates[1].Reason != "unknown_status" {
+		t.Fatalf("unknown identity was not preserved in skipped candidates: %+v", report.SkippedCandidates)
+	}
+	formatted := FormatGoalNext(report)
+	if !strings.Contains(formatted, "stop=child_status_incomplete") || strings.Contains(formatted, "selected=#") || !strings.Contains(formatted, "next step: gira goal status") {
+		t.Fatalf("text goal next lost the incomplete-state stop: %s", formatted)
+	}
+}
+
 func TestBuildGoalNextReportSelectsInReviewBeforeReady(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	status := goalNextTestStatus([]GoalStatusChild{
@@ -130,7 +154,7 @@ func TestBuildGoalNextReportNoRemainingWorkFinishesGoal(t *testing.T) {
 	status := goalNextTestStatus([]GoalStatusChild{
 		{Number: 201, Title: "Done", State: "closed", Status: "Done", Category: "done", NextAction: "done"},
 	})
-	status.RemainingAutonomousWork = 0
+	status.RemainingAutonomousWork = goalStatusRemainingPointer(0)
 
 	report := BuildGoalNextReportFromStatus(repo, status)
 	if report.SelectedTicket != nil || report.NextAction != "finish_goal" || !containsString(report.StopReasons, "no_remaining_child_work") {
@@ -143,7 +167,7 @@ func TestBuildGoalNextReportNoRemainingWorkWithHandoffStopsForHumanReview(t *tes
 	status := goalNextTestStatus([]GoalStatusChild{
 		{Number: 201, Title: "Done", State: "closed", Status: "Done", Category: "done", NextAction: "done"},
 	})
-	status.RemainingAutonomousWork = 0
+	status.RemainingAutonomousWork = goalStatusRemainingPointer(0)
 	status.HandoffReceiptPresent = true
 
 	report := BuildGoalNextReportFromStatus(repo, status)
@@ -162,7 +186,7 @@ func TestBuildGoalNextReportClosedDoneGoalStopsAsDone(t *testing.T) {
 	})
 	status.Goal.State = "closed"
 	status.Goal.Status = "Done"
-	status.RemainingAutonomousWork = 0
+	status.RemainingAutonomousWork = goalStatusRemainingPointer(0)
 	status.HandoffReceiptPresent = true
 
 	report := BuildGoalNextReportFromStatus(repo, status)
@@ -174,21 +198,32 @@ func TestBuildGoalNextReportClosedDoneGoalStopsAsDone(t *testing.T) {
 func goalNextTestStatus(children []GoalStatusChild) GoalStatusReport {
 	counts := map[string]int{"total": len(children)}
 	remaining := 0
-	for _, child := range children {
-		counts[child.Category]++
-		if child.Category != "done" && child.Category != "closed_other" {
+	for i, child := range children {
+		if !children[i].StatusAvailable && goalStatusKnownCategory(child.Category) {
+			children[i].StatusAvailable = true
+		}
+		if goalStatusKnownCategory(child.Category) {
+			counts["known"]++
+			counts[child.Category]++
+		} else {
+			counts["unknown"]++
+		}
+		if child.Category == "ready" || child.Category == "in_progress" || child.Category == "in_review" || child.Category == "blocked" {
 			remaining++
 		}
 	}
 	return GoalStatusReport{
-		Command:                 "goal status",
-		SchemaVersion:           GoalStatusSchemaVersion,
-		Repo:                    "StatPan/gira",
-		Goal:                    GoalStatusIssue{Number: 100, Title: "Goal", State: "open", Status: "Ready"},
-		Children:                children,
-		Counts:                  counts,
-		NextAction:              "start_next_child",
-		NextStep:                "gira goal next --repo StatPan/gira --goal 100 --json",
-		RemainingAutonomousWork: remaining,
+		Command:                      "goal status",
+		SchemaVersion:                GoalStatusSchemaVersion,
+		Repo:                         "StatPan/gira",
+		Goal:                         GoalStatusIssue{Number: 100, Title: "Goal", State: "open", Status: "Ready"},
+		Children:                     children,
+		DiscoveryComplete:            true,
+		StatusComplete:               true,
+		Counts:                       counts,
+		NextAction:                   "start_next_child",
+		NextStep:                     "gira goal next --repo StatPan/gira --goal 100 --json",
+		KnownRemainingAutonomousWork: remaining,
+		RemainingAutonomousWork:      goalStatusRemainingPointer(remaining),
 	}
 }

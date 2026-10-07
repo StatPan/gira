@@ -1,6 +1,7 @@
 package gira
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -9,7 +10,7 @@ import (
 func TestBuildGoalHandoffReportEmbedsSelectedWorkerHandoff(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	goalBody := "## Goal\nShip goal-level LLM delegation\n\n## Direction\nKeep execution ticket-bounded.\n\n## Scope\nGoal and handoff commands.\n\n## Autonomy\nlane:agent for child implementation only.\n\n## Stop Conditions\n- unclear child acceptance\n\n## Child tickets\n- #201\n<!-- gira:goal-child-link/v1 repo=StatPan/gira issue=201 -->\n"
-	childBody := "## Goal\nAdd goal handoff\n\nParent: #100\n\n## Scope\nCLI and JSON report.\n\n## Acceptance Criteria\n- emits goal-handoff/v1\n- embeds worker-handoff/v1\n\n## Expected Evidence\n- go test ./internal/gira\n\n## Expected Delivery\nOpen a PR for review.\n\n" + RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default", BranchPolicyMode: BranchPolicyModeGitHubFlow, WorkBranch: "issue-201-goal-handoff"})
+	childBody := "## Goal\nAdd goal handoff\n\nParent: #100\n\n## Scope\nCLI and JSON report.\n\n## Acceptance Criteria\n- emits goal-handoff/v2\n- embeds worker-handoff/v1\n\n## Expected Evidence\n- go test ./internal/gira\n\n## Expected Delivery\nOpen a PR for review.\n\n" + RenderTicketLifecycleBlock(TicketLifecycleState{BaseBranch: "main", BaseSource: "branch_policy.default", BranchPolicyMode: BranchPolicyModeGitHubFlow, WorkBranch: "issue-201-goal-handoff"})
 	runner := goalStatusFixtureRunner{responses: map[string]string{
 		"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"LLM delegation goal","state":"open","body":` + strconv.Quote(goalBody) + `,"labels":[{"name":"type:epic"},{"name":"status:ready"},{"name":"lane:agent"}]}`,
 		"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
@@ -63,5 +64,27 @@ func TestBuildGoalHandoffReportStopsWithoutSelectedChild(t *testing.T) {
 	}
 	if !containsString(report.StopReasons, "no_child_tickets") {
 		t.Fatalf("stop reasons missing no_child_tickets: %+v", report.StopReasons)
+	}
+}
+
+func TestBuildGoalHandoffReportStopsWhenChildDiscoveryIsIncomplete(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	nativeSubissues := "gh api repos/StatPan/gira/issues/100/sub_issues -X GET -H Accept: application/vnd.github+json -H X-GitHub-Api-Version: 2026-03-10 -f per_page=100"
+	runner := &goalStatusCountingRunner{
+		responses: map[string]string{
+			"gh api repos/StatPan/gira/issues/100":                  `{"number":100,"title":"Goal","state":"open","body":"","labels":[{"name":"type:epic"}]}`,
+			"gh issue view 100 --repo StatPan/gira --json comments": `{"comments":[]}`,
+		},
+		errors: map[string]error{nativeSubissues: errors.New("subissue transport unavailable")},
+	}
+	report, err := BuildGoalHandoffReport(GoalHandoffInput{Repo: repo, Goal: 100, Role: AgentPromptRoleImplementer, Profile: AgentPromptProfileDefault}, runner)
+	if err != nil {
+		t.Fatalf("BuildGoalHandoffReport: %v", err)
+	}
+	if report.SchemaVersion != GoalHandoffSchemaVersion || report.GoalStatus.DiscoveryComplete || report.SelectedTicket != nil || report.WorkerHandoff != nil || report.NextAction != "resolve_blockers" {
+		t.Fatalf("handoff exposed a child from incomplete discovery: %+v", report)
+	}
+	if !strings.Contains(report.NextSafeCommand, "gira goal status") || !containsString(report.StopReasons, "child_discovery_incomplete") {
+		t.Fatalf("handoff did not direct a read-only recovery path: %+v", report)
 	}
 }

@@ -391,6 +391,9 @@ func workFinishApprovalCommand(result WorkFinishResult, mode string) string {
 	if strings.TrimSpace(result.Wait) != "" && result.Wait != "0s" {
 		args = append(args, "--wait", result.Wait)
 	}
+	if result.HeadConstraint != nil && result.HeadConstraint.ExpectedSource == "caller" && result.HeadConstraint.ExpectedHeadSHA != "" {
+		args = append(args, "--expect-head", result.HeadConstraint.ExpectedHeadSHA)
+	}
 	if result.SyncLocal {
 		args = append(args, "--sync-local")
 	}

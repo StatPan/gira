@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type finishRunner struct {
@@ -62,6 +63,37 @@ func (r *finishRunner) Run(name string, args ...string) ([]byte, error) {
 		}
 	}
 	return out, nil
+}
+
+const (
+	finishExpectedHeadSHA  = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	finishDifferentHeadSHA = "cccccccccccccccccccccccccccccccccccccccc"
+	finishBaseSHA          = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	finishPRListKey        = "gh pr list --repo StatPan/gira --state all --search repo:StatPan/gira is:pr 219 --json number,title,body,state,url,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,headRefName,baseRefName,headRefOid,baseRefOid --limit 20"
+)
+
+func finishHeadPRList(headSHA string, state string, draft bool, checkStatus string) []byte {
+	return []byte(fmt.Sprintf(`[{"number":220,"title":"Head-pinned finish","body":"Closes #219","state":%q,"url":"https://github.com/StatPan/gira/pull/220","reviewDecision":"APPROVED","isDraft":%t,"mergeStateStatus":"CLEAN","headRefName":"issue-219-finish","baseRefName":"main","headRefOid":%q,"baseRefOid":%q,"statusCheckRollup":[{"conclusion":"SUCCESS","status":%q}]}]`, state, draft, headSHA, finishBaseSHA, checkStatus))
+}
+
+func finishMergedPR(headSHA string) []byte {
+	return []byte(fmt.Sprintf(`{"number":220,"body":"Closes #219","state":"closed","merged_at":"2026-10-08T00:00:00Z","merge_commit_sha":"dddddddddddddddddddddddddddddddddddddddd","html_url":"https://github.com/StatPan/gira/pull/220","head":{"ref":"issue-219-finish","sha":%q},"base":{"ref":"main","sha":%q}}`, headSHA, finishBaseSHA))
+}
+
+func finishIssueResponses() [][]byte {
+	responses := make([][]byte, 8)
+	for i := range responses {
+		responses[i] = []byte(`{"number":219,"title":"Finish","state":"open","labels":[{"name":"status:in-review"}]}`)
+	}
+	return responses
+}
+
+func finishClosedIssueResponses() [][]byte {
+	responses := make([][]byte, 8)
+	for i := range responses {
+		responses[i] = []byte(`{"number":219,"title":"Finish","state":"closed","labels":[]}`)
+	}
+	return responses
 }
 
 func TestFinishWorkApplyMarksDraftReadyAndStopsBeforeMerge(t *testing.T) {
@@ -224,6 +256,253 @@ func TestFinishWorkApplyGraphQLRateLimitFallsBackToRESTMerge(t *testing.T) {
 	}
 	if result.Receipt.PullRequest.Number != 220 || result.Receipt.PullRequest.HeadSHA != "head220" || result.Receipt.PullRequest.MergeCommitSHA != "merge220" || !result.Receipt.PullRequest.ClosingReference {
 		t.Fatalf("finish receipt did not preserve verified PR evidence: %+v", result.Receipt.PullRequest)
+	}
+}
+
+func TestFinishWorkExpectedHeadRejectsInvalidSHAWithoutProviderCalls(t *testing.T) {
+	runner := &finishRunner{}
+	_, err := FinishWorkWithOptions(RepoRef{Owner: "StatPan", Name: "gira"}, 219, true, 0, WorkFinishOptions{ExpectedHeadSHA: "abc123"}, runner)
+	if err == nil || !strings.Contains(err.Error(), "full 40-character") {
+		t.Fatalf("expected strict full-SHA validation, got %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("invalid expected head must be rejected before provider calls, got %v", runner.calls)
+	}
+}
+
+func TestFinishWorkExpectedHeadMismatchBlocksBeforeMergeAndKeepsCallerSHA(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyRequired)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		finishPRListKey:                        {finishHeadPRList(finishDifferentHeadSHA, "OPEN", false, "COMPLETED")},
+		"gh api repos/StatPan/gira/issues/219": finishClosedIssueResponses(),
+	}, errs: map[string]error{}}
+
+	result, err := FinishWorkWithOptions(repo, 219, false, 0, WorkFinishOptions{ExpectedHeadSHA: finishExpectedHeadSHA}, runner)
+	if err == nil || !containsString(result.Blockers, "expected_head_mismatch") {
+		t.Fatalf("head mismatch should block apply, result=%+v err=%v", result, err)
+	}
+	if result.HeadConstraint == nil || result.HeadConstraint.ObservedInitialHeadSHA != finishDifferentHeadSHA || result.HeadConstraint.ExpectedHeadSHA != finishExpectedHeadSHA {
+		t.Fatalf("head mismatch evidence lost expected or observed SHA: %+v", result.HeadConstraint)
+	}
+	if !strings.Contains(result.NextStep, "--expect-head "+finishExpectedHeadSHA) || strings.Contains(result.NextStep, "--expect-head "+finishDifferentHeadSHA) {
+		t.Fatalf("mismatch next step must preserve the caller SHA: %q", result.NextStep)
+	}
+	for _, call := range runner.calls {
+		if strings.Contains(call, "gh pr merge") || strings.Contains(call, "gh issue close") || strings.Contains(call, "git checkout") {
+			t.Fatalf("head mismatch crossed a completion boundary: %v", runner.calls)
+		}
+	}
+}
+
+func TestFinishWorkExpectedHeadUsesSamePinThroughMergeAndNativeReceipt(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyNone)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		finishPRListKey: {
+			finishHeadPRList(finishExpectedHeadSHA, "OPEN", false, "COMPLETED"),
+			finishHeadPRList(finishExpectedHeadSHA, "OPEN", false, "COMPLETED"),
+		},
+		"gh pr merge 220 --repo StatPan/gira --squash --delete-branch --match-head-commit " + finishExpectedHeadSHA: {nil},
+		"gh api repos/StatPan/gira/pulls/220":  {finishMergedPR(finishExpectedHeadSHA)},
+		"gh api repos/StatPan/gira/issues/219": finishClosedIssueResponses(),
+	}, errs: map[string]error{}}
+
+	result, err := FinishWorkWithOptions(repo, 219, false, 0, WorkFinishOptions{ExpectedHeadSHA: finishExpectedHeadSHA}, runner)
+	if err != nil {
+		t.Fatalf("FinishWorkWithOptions error: %v", err)
+	}
+	if !result.Merged || result.MergeRequestStatus != "accepted_native_verified" || len(result.Blockers) != 0 {
+		t.Fatalf("expected accepted merge with native verification, got %+v", result)
+	}
+	if result.HeadConstraint == nil || result.HeadConstraint.State != "merged_verified" || result.HeadConstraint.ExpectedHeadSHA != finishExpectedHeadSHA || result.HeadConstraint.ObservedInitialHeadSHA != finishExpectedHeadSHA || result.HeadConstraint.ObservedPreMergeHeadSHA != finishExpectedHeadSHA || result.HeadConstraint.ObservedPostMergeHeadSHA != finishExpectedHeadSHA || result.HeadConstraint.PinMechanism != "gh_match_head_commit" {
+		t.Fatalf("expected exact head evidence at every finish boundary, got %+v", result.HeadConstraint)
+	}
+	if result.Receipt.MergeRequestStatus != "accepted_native_verified" || !strings.Contains(result.Receipt.RenderedBody, "- Merge request: accepted_native_verified") {
+		t.Fatalf("receipt omitted request outcome: %+v", result.Receipt)
+	}
+	if !containsCall(runner.calls, "gh pr merge 220 --repo StatPan/gira --squash --delete-branch --match-head-commit "+finishExpectedHeadSHA) {
+		t.Fatalf("merge was not pinned to caller SHA: %v", runner.calls)
+	}
+}
+
+func TestFinishWorkExpectedHeadDryRunKeepsSHAInApprovalAndReceiptNextStep(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyNone)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		finishPRListKey:                        {finishHeadPRList(finishExpectedHeadSHA, "OPEN", false, "COMPLETED")},
+		"gh api repos/StatPan/gira/issues/219": finishIssueResponses(),
+	}, errs: map[string]error{}}
+
+	result, err := FinishWorkWithOptions(repo, 219, true, 0, WorkFinishOptions{ExpectedHeadSHA: finishExpectedHeadSHA}, runner)
+	if err != nil {
+		t.Fatalf("FinishWorkWithOptions dry-run error: %v", err)
+	}
+	wantNext := "gira ticket finish --repo StatPan/gira --ticket 219 --expect-head " + finishExpectedHeadSHA + " --apply"
+	if result.NextStep != wantNext || result.Readiness.NextStep != wantNext || result.Receipt.FinalState.NextStep != wantNext || !strings.Contains(result.Receipt.RenderedBody, "- Next: "+wantNext) {
+		t.Fatalf("dry-run next step was not synchronized into receipt: result=%q readiness=%q receipt=%q body=%s", result.NextStep, result.Readiness.NextStep, result.Receipt.FinalState.NextStep, result.Receipt.RenderedBody)
+	}
+	wantApproval := "gira ticket finish 219 --repo StatPan/gira --expect-head " + finishExpectedHeadSHA + " --apply"
+	if result.Approval == nil || result.Approval.ApplyCommand != wantApproval {
+		t.Fatalf("dry-run approval omitted the immutable head: %+v", result.Approval)
+	}
+}
+
+func TestFinishWorkExpectedHeadDriftAfterDraftReadyStopsReadyOnly(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyNone)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		finishPRListKey: {
+			finishHeadPRList(finishExpectedHeadSHA, "OPEN", true, "COMPLETED"),
+			finishHeadPRList(finishDifferentHeadSHA, "OPEN", false, "COMPLETED"),
+		},
+		"gh pr ready 220 --repo StatPan/gira":  {nil},
+		"gh api repos/StatPan/gira/issues/219": finishIssueResponses(),
+	}, errs: map[string]error{}}
+
+	result, err := FinishWorkWithOptions(repo, 219, false, 0, WorkFinishOptions{ExpectedHeadSHA: finishExpectedHeadSHA}, runner)
+	if err == nil || !containsString(result.Blockers, "expected_head_mismatch") {
+		t.Fatalf("head drift after ready transition should block, result=%+v err=%v", result, err)
+	}
+	if result.HeadConstraint == nil || result.HeadConstraint.ObservedAfterReadySHA != finishDifferentHeadSHA || result.LocalSync.Reason != "ready_transition_only" {
+		t.Fatalf("ready-only drift evidence missing: constraint=%+v local=%+v", result.HeadConstraint, result.LocalSync)
+	}
+	if !containsCall(runner.calls, "gh pr ready 220 --repo StatPan/gira") || containsCall(runner.calls, "gh pr merge 220 --repo StatPan/gira --squash --delete-branch --match-head-commit "+finishExpectedHeadSHA) {
+		t.Fatalf("Draft flow exceeded ready-only boundary: %v", runner.calls)
+	}
+}
+
+func TestFinishWorkExpectedHeadDriftAfterChecksRefreshBlocks(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyNone)
+	oldInterval := finishChecksPollInterval
+	finishChecksPollInterval = time.Millisecond
+	t.Cleanup(func() { finishChecksPollInterval = oldInterval })
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		finishPRListKey: {
+			finishHeadPRList(finishExpectedHeadSHA, "OPEN", false, "IN_PROGRESS"),
+			finishHeadPRList(finishDifferentHeadSHA, "OPEN", false, "COMPLETED"),
+		},
+		"gh api repos/StatPan/gira/issues/219": finishIssueResponses(),
+	}, errs: map[string]error{}}
+
+	result, err := FinishWorkWithOptions(repo, 219, false, 2*time.Second, WorkFinishOptions{ExpectedHeadSHA: finishExpectedHeadSHA}, runner)
+	if err == nil || !containsString(result.Blockers, "expected_head_mismatch") {
+		t.Fatalf("head drift after checks refresh should block, result=%+v err=%v", result, err)
+	}
+	if result.HeadConstraint == nil || result.HeadConstraint.ObservedPreMergeHeadSHA != finishDifferentHeadSHA {
+		t.Fatalf("checks refresh did not preserve changed head observation: %+v", result.HeadConstraint)
+	}
+	if containsCall(runner.calls, "gh pr merge 220 --repo StatPan/gira --squash --delete-branch --match-head-commit "+finishExpectedHeadSHA) {
+		t.Fatalf("checks refresh drift reached merge request: %v", runner.calls)
+	}
+}
+
+func TestFinishWorkRESTFallbackRefusesChangedExpectedHeadWithoutUnpinnedRetry(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyNone)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	mergeCommand := "gh pr merge 220 --repo StatPan/gira --squash --delete-branch --match-head-commit " + finishExpectedHeadSHA
+	putCommand := "gh api -X PUT repos/StatPan/gira/pulls/220/merge -f merge_method=squash -f sha=" + finishExpectedHeadSHA
+	runner := &finishRunner{outputs: map[string][][]byte{
+		finishPRListKey: {
+			finishHeadPRList(finishExpectedHeadSHA, "OPEN", false, "COMPLETED"),
+			finishHeadPRList(finishExpectedHeadSHA, "OPEN", false, "COMPLETED"),
+			finishHeadPRList(finishDifferentHeadSHA, "OPEN", false, "COMPLETED"),
+		},
+		"gh api rate_limit":                    {[]byte(`{"resources":{"core":{"limit":5000,"remaining":4900,"used":100,"reset":1783069200},"graphql":{"limit":5000,"remaining":4900,"used":100,"reset":1783069200},"search":{"limit":30,"remaining":30,"used":0,"reset":1783069200}}}`)},
+		"gh api repos/StatPan/gira/pulls/220":  {[]byte(fmt.Sprintf(`{"state":"open","mergeable":true,"mergeable_state":"clean","head":{"sha":%q},"base":{"ref":"main","sha":%q}}`, finishDifferentHeadSHA, finishBaseSHA))},
+		"gh api repos/StatPan/gira/issues/219": finishIssueResponses(),
+	}, errs: map[string]error{
+		mergeCommand: fmt.Errorf("GraphQL: API rate limit exceeded"),
+	}}
+
+	result, err := FinishWorkWithOptions(repo, 219, false, 0, WorkFinishOptions{ExpectedHeadSHA: finishExpectedHeadSHA}, runner)
+	if err == nil || !containsString(result.Blockers, "expected_head_mismatch") {
+		t.Fatalf("REST fallback should reject changed head, result=%+v err=%v", result, err)
+	}
+	if !containsCall(runner.calls, mergeCommand) || containsCall(runner.calls, "gh pr merge 220 --repo StatPan/gira --squash --delete-branch") || containsCall(runner.calls, putCommand) {
+		t.Fatalf("fallback must not retry an unpinned merge or PUT a changed SHA: %v", runner.calls)
+	}
+	if result.HeadConstraint == nil || result.HeadConstraint.ObservedPostMergeHeadSHA != finishDifferentHeadSHA || result.HeadConstraint.ExpectedHeadSHA != finishExpectedHeadSHA {
+		t.Fatalf("REST fallback mismatch evidence missing: %+v", result.HeadConstraint)
+	}
+}
+
+func TestFinishWorkExpectedHeadRESTFallbackUsesExactExpectedSHA(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyNone)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	mergeCommand := "gh pr merge 220 --repo StatPan/gira --squash --delete-branch --match-head-commit " + finishExpectedHeadSHA
+	putCommand := "gh api -X PUT repos/StatPan/gira/pulls/220/merge -f merge_method=squash -f sha=" + finishExpectedHeadSHA
+	runner := &finishRunner{outputs: map[string][][]byte{
+		finishPRListKey: {
+			finishHeadPRList(finishExpectedHeadSHA, "OPEN", false, "COMPLETED"),
+			finishHeadPRList(finishExpectedHeadSHA, "OPEN", false, "COMPLETED"),
+		},
+		"gh api rate_limit": {[]byte(`{"resources":{"core":{"limit":5000,"remaining":4900,"used":100,"reset":1783069200},"graphql":{"limit":5000,"remaining":4900,"used":100,"reset":1783069200},"search":{"limit":30,"remaining":30,"used":0,"reset":1783069200}}}`)},
+		"gh api repos/StatPan/gira/pulls/220": {
+			[]byte(fmt.Sprintf(`{"state":"open","mergeable":true,"mergeable_state":"clean","head":{"sha":%q},"base":{"ref":"main","sha":%q}}`, finishExpectedHeadSHA, finishBaseSHA)),
+			finishMergedPR(finishExpectedHeadSHA),
+		},
+		putCommand:                             {[]byte(`{"sha":"dddddddddddddddddddddddddddddddddddddddd","merged":true,"message":"Pull Request successfully merged"}`)},
+		"gh api repos/StatPan/gira/issues/219": finishClosedIssueResponses(),
+	}, errs: map[string]error{
+		mergeCommand: fmt.Errorf("GraphQL: API rate limit exceeded"),
+	}}
+
+	result, err := FinishWorkWithOptions(repo, 219, false, 0, WorkFinishOptions{ExpectedHeadSHA: finishExpectedHeadSHA}, runner)
+	if err != nil {
+		t.Fatalf("pinned REST fallback error: %v", err)
+	}
+	if !result.Merged || result.MergeRequestStatus != "accepted_native_verified" || result.HeadConstraint.PinMechanism != "gh_match_head_commit+rest_sha_expected_head" {
+		t.Fatalf("pinned REST fallback evidence incomplete: %+v", result)
+	}
+	if !containsCall(runner.calls, putCommand) || containsCall(runner.calls, "gh api -X PUT repos/StatPan/gira/pulls/220/merge -f merge_method=squash -f sha="+finishDifferentHeadSHA) {
+		t.Fatalf("REST fallback did not send the immutable caller SHA: %v", runner.calls)
+	}
+}
+
+func TestFinishWorkAlreadyMergedWrongExpectedHeadBlocksCompletion(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyNone)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		finishPRListKey:                        {finishHeadPRList(finishDifferentHeadSHA, "MERGED", false, "COMPLETED")},
+		"gh api repos/StatPan/gira/pulls/220":  {finishMergedPR(finishDifferentHeadSHA)},
+		"gh api repos/StatPan/gira/issues/219": finishIssueResponses(),
+	}, errs: map[string]error{}}
+
+	result, err := FinishWorkWithOptions(repo, 219, false, 0, WorkFinishOptions{ExpectedHeadSHA: finishExpectedHeadSHA}, runner)
+	if err == nil || !containsString(result.Blockers, "expected_head_mismatch") || !result.Merged {
+		t.Fatalf("already-merged head mismatch should block convergence while reporting merged state, result=%+v err=%v", result, err)
+	}
+	if result.MergeRequestStatus != "already_merged_head_mismatch" || result.AlreadyDone || result.HeadConstraint.ObservedPostMergeHeadSHA != finishDifferentHeadSHA {
+		t.Fatalf("already-merged mismatch evidence incomplete: %+v", result)
+	}
+	for _, call := range runner.calls {
+		if strings.HasPrefix(call, "gh issue comment ") || strings.Contains(call, "gh issue close") || strings.Contains(call, "jira ") || strings.Contains(call, "git checkout") {
+			t.Fatalf("mismatched already-merged head reached completion side effects: %v", runner.calls)
+		}
+	}
+}
+
+func TestFinishWorkAlreadyMergedDryRunKeepsExpectedHeadInConvergenceStep(t *testing.T) {
+	useFinishReviewPolicy(t, FinishReviewPolicyNone)
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := &finishRunner{outputs: map[string][][]byte{
+		finishPRListKey:                        {finishHeadPRList(finishExpectedHeadSHA, "MERGED", false, "COMPLETED")},
+		"gh api repos/StatPan/gira/pulls/220":  {finishMergedPR(finishExpectedHeadSHA)},
+		"gh api repos/StatPan/gira/issues/219": finishIssueResponses(),
+	}, errs: map[string]error{}}
+
+	result, err := FinishWorkWithOptions(repo, 219, true, 0, WorkFinishOptions{ExpectedHeadSHA: finishExpectedHeadSHA}, runner)
+	if err != nil {
+		t.Fatalf("already-merged dry-run error: %v", err)
+	}
+	if !result.AlreadyDone || result.MergeRequestStatus != "already_merged_verified" || result.HeadConstraint.ObservedPostMergeHeadSHA != finishExpectedHeadSHA {
+		t.Fatalf("already-merged native head was not verified: %+v", result)
+	}
+	want := "gira ticket finish --repo StatPan/gira --ticket 219 --expect-head " + finishExpectedHeadSHA + " --apply"
+	if result.NextStep != want || result.Receipt.FinalState.NextStep != want || result.Approval == nil || !strings.Contains(result.Approval.ApplyCommand, "--expect-head "+finishExpectedHeadSHA) {
+		t.Fatalf("already-merged completion step dropped expected head: result=%+v approval=%+v", result.NextStep, result.Approval)
 	}
 }
 

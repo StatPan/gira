@@ -103,20 +103,37 @@ type WorkFinishClosingReference struct {
 }
 
 type WorkFinishReceipt struct {
-	SchemaVersion    string                      `json:"schema_version"`
-	FinishedAt       string                      `json:"finished_at"`
-	Repository       string                      `json:"repository"`
-	Issue            WorkFinishReadinessIssue    `json:"issue"`
-	PullRequest      WorkFinishReceiptPR         `json:"pull_request"`
-	ChecksSummary    WorkFinishReadinessChecks   `json:"checks_summary"`
-	ReviewSummary    WorkFinishReadinessReview   `json:"review_summary"`
-	EvidenceSummary  WorkFinishReadinessEvidence `json:"evidence_summary"`
-	TelemetrySummary *TicketStatusTelemetry      `json:"telemetry_summary,omitempty"`
-	LabelChanges     []string                    `json:"label_changes"`
-	FinalState       WorkFinishReceiptFinalState `json:"final_state"`
-	Warnings         []string                    `json:"warnings,omitempty"`
-	Target           string                      `json:"target"`
-	RenderedBody     string                      `json:"rendered_body"`
+	SchemaVersion      string                      `json:"schema_version"`
+	FinishedAt         string                      `json:"finished_at"`
+	Repository         string                      `json:"repository"`
+	Issue              WorkFinishReadinessIssue    `json:"issue"`
+	PullRequest        WorkFinishReceiptPR         `json:"pull_request"`
+	HeadConstraint     *WorkFinishHeadConstraint   `json:"head_constraint,omitempty"`
+	MergeRequestStatus string                      `json:"merge_request_status,omitempty"`
+	ChecksSummary      WorkFinishReadinessChecks   `json:"checks_summary"`
+	ReviewSummary      WorkFinishReadinessReview   `json:"review_summary"`
+	EvidenceSummary    WorkFinishReadinessEvidence `json:"evidence_summary"`
+	TelemetrySummary   *TicketStatusTelemetry      `json:"telemetry_summary,omitempty"`
+	LabelChanges       []string                    `json:"label_changes"`
+	FinalState         WorkFinishReceiptFinalState `json:"final_state"`
+	Warnings           []string                    `json:"warnings,omitempty"`
+	Target             string                      `json:"target"`
+	RenderedBody       string                      `json:"rendered_body"`
+}
+
+// WorkFinishHeadConstraint records the immutable PR-head identity supplied by
+// a caller or captured from recorded review evidence, along with every native
+// observation and backend pin used during finish.
+type WorkFinishHeadConstraint struct {
+	ExpectedHeadSHA          string `json:"expected_head_sha,omitempty"`
+	ExpectedSource           string `json:"expected_source,omitempty"`
+	ObservedInitialHeadSHA   string `json:"observed_initial_head_sha,omitempty"`
+	ObservedPreMergeHeadSHA  string `json:"observed_pre_merge_head_sha,omitempty"`
+	ObservedAfterReadySHA    string `json:"observed_after_ready_sha,omitempty"`
+	ObservedPostMergeHeadSHA string `json:"observed_post_merge_head_sha,omitempty"`
+	PinMechanism             string `json:"pin_mechanism,omitempty"`
+	State                    string `json:"state,omitempty"`
+	MismatchReason           string `json:"mismatch_reason,omitempty"`
 }
 
 type WorkFinishReceiptPR struct {
@@ -149,39 +166,43 @@ type WorkFinishJiraTransition struct {
 }
 
 type WorkFinishResult struct {
-	SchemaVersion    string                    `json:"schema_version,omitempty"`
-	Repo             string                    `json:"repo"`
-	Issue            int                       `json:"issue"`
-	JiraKey          string                    `json:"jira_key,omitempty"`
-	DryRun           bool                      `json:"dry_run"`
-	Wait             string                    `json:"wait"`
-	SyncLocal        bool                      `json:"sync_local,omitempty"`
-	PRLookupAttempts int                       `json:"pr_lookup_attempts,omitempty"`
-	PRNumber         int                       `json:"pr_number,omitempty"`
-	PRURL            string                    `json:"pr_url,omitempty"`
-	PRState          string                    `json:"pr_state,omitempty"`
-	Merged           bool                      `json:"merged"`
-	AlreadyDone      bool                      `json:"already_done"`
-	JiraTransition   *WorkFinishJiraTransition `json:"jira_transition,omitempty"`
-	Actions          []WorkFinishAction        `json:"actions"`
-	Blockers         []string                  `json:"blockers"`
-	Warnings         []string                  `json:"warnings,omitempty"`
-	ReviewPolicy     FinishReviewPolicy        `json:"review_policy,omitempty"`
-	ReviewEvidence   FinishReviewEvidence      `json:"review_evidence,omitempty"`
-	LocalSync        WorkFinishLocalSync       `json:"local_sync"`
-	FinalStatus      WorkStatusResult          `json:"final_status"`
-	Readiness        WorkFinishReadinessReport `json:"readiness"`
-	Receipt          WorkFinishReceipt         `json:"receipt"`
-	NextStep         string                    `json:"next_step"`
-	Approval         *ApprovalEvidence         `json:"approval,omitempty"`
+	SchemaVersion      string                    `json:"schema_version,omitempty"`
+	Repo               string                    `json:"repo"`
+	Issue              int                       `json:"issue"`
+	JiraKey            string                    `json:"jira_key,omitempty"`
+	DryRun             bool                      `json:"dry_run"`
+	Wait               string                    `json:"wait"`
+	SyncLocal          bool                      `json:"sync_local,omitempty"`
+	PRLookupAttempts   int                       `json:"pr_lookup_attempts,omitempty"`
+	PRNumber           int                       `json:"pr_number,omitempty"`
+	PRURL              string                    `json:"pr_url,omitempty"`
+	PRState            string                    `json:"pr_state,omitempty"`
+	Merged             bool                      `json:"merged"`
+	MergeRequestStatus string                    `json:"merge_request_status,omitempty"`
+	AlreadyDone        bool                      `json:"already_done"`
+	JiraTransition     *WorkFinishJiraTransition `json:"jira_transition,omitempty"`
+	Actions            []WorkFinishAction        `json:"actions"`
+	Blockers           []string                  `json:"blockers"`
+	Warnings           []string                  `json:"warnings,omitempty"`
+	ReviewPolicy       FinishReviewPolicy        `json:"review_policy,omitempty"`
+	ReviewEvidence     FinishReviewEvidence      `json:"review_evidence,omitempty"`
+	HeadConstraint     *WorkFinishHeadConstraint `json:"head_constraint,omitempty"`
+	LocalSync          WorkFinishLocalSync       `json:"local_sync"`
+	FinalStatus        WorkStatusResult          `json:"final_status"`
+	Readiness          WorkFinishReadinessReport `json:"readiness"`
+	Receipt            WorkFinishReceipt         `json:"receipt"`
+	NextStep           string                    `json:"next_step"`
+	Approval           *ApprovalEvidence         `json:"approval,omitempty"`
 }
 
 type WorkFinishOptions struct {
-	SyncLocal bool `json:"sync_local"`
+	SyncLocal       bool   `json:"sync_local"`
+	ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
 }
 
 var finishMissingPRRetryAttempts = 3
 var finishMissingPRRetryDelay = time.Second
+var finishChecksPollInterval = 5 * time.Second
 var finishReceiptNow = func() time.Time { return time.Now().UTC() }
 
 func EnsureWorkFinishResultSchema(result *WorkFinishResult) {
@@ -201,6 +222,9 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 	if issueNumber <= 0 {
 		return WorkFinishResult{}, fmt.Errorf("ticket must be > 0")
 	}
+	if options.ExpectedHeadSHA != "" && !IsFullCommitSHA(options.ExpectedHeadSHA) {
+		return WorkFinishResult{}, fmt.Errorf("--expect-head must be a full 40-character commit SHA")
+	}
 	result := WorkFinishResult{
 		SchemaVersion: WorkFinishResultSchemaVersion,
 		Repo:          repo.FullName(),
@@ -212,6 +236,14 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		Blockers:      []string{},
 		Warnings:      []string{},
 		NextStep:      fmt.Sprintf("gira ticket status --repo %s --ticket %d", repo.FullName(), issueNumber),
+	}
+	if options.ExpectedHeadSHA != "" {
+		result.HeadConstraint = &WorkFinishHeadConstraint{
+			ExpectedHeadSHA: options.ExpectedHeadSHA,
+			ExpectedSource:  "caller",
+			PinMechanism:    "planned_gh_match_head_commit",
+			State:           "pending",
+		}
 	}
 
 	var status DevPRStatusResult
@@ -228,7 +260,22 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 	result.PRNumber = status.PRNumber
 	result.PRURL = status.PRURL
 	result.PRState = status.State
+	initialStatus := status
 	result.Actions = append(result.Actions, WorkFinishAction{Action: "linked_pr:inspect", Status: "done", Detail: linkedPRDetail(status)})
+	if result.HeadConstraint != nil {
+		if status.PRNumber == 0 {
+			result.HeadConstraint.State = "not_verified"
+			result.HeadConstraint.MismatchReason = "no linked pull request was available for the expected-head comparison"
+		} else {
+			result.HeadConstraint.ObservedInitialHeadSHA = strings.TrimSpace(status.HeadSHA)
+			if !strings.EqualFold(status.State, "MERGED") {
+				if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, options.ExpectedHeadSHA, initialStatus, status, "initial intake"); reason != "" {
+					return blockFinishHeadConstraint(repo, issueNumber, runner, result, status, blocker, reason)
+				}
+				result.HeadConstraint.State = "matched"
+			}
+		}
+	}
 	jiraDone, err := inspectJiraDoneTransition(repo, issueNumber, dryRun, runner)
 	if err != nil {
 		return result, err
@@ -242,16 +289,33 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		result.Blockers = appendUniqueStrings(result.Blockers, jiraDone.Blockers...)
 		appendJiraDoneBlockedAction(&result, jiraDone)
 		result.NextStep = fmt.Sprintf("gira ticket pr --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+		if options.ExpectedHeadSHA != "" {
+			result.NextStep += "; then " + workFinishCommand(repo, issueNumber, options.ExpectedHeadSHA, "--dry-run")
+		}
 		return finishWithStatus(repo, issueNumber, runner, result, &status, nil)
 	}
 	if strings.EqualFold(status.State, "MERGED") {
 		status, err = verifyMergedDevPR(repo, issueNumber, status.PRNumber, status, runner)
 		if err != nil {
 			result.Blockers = appendUniqueStrings(result.Blockers, "pr_binding")
+			if result.HeadConstraint != nil {
+				result.HeadConstraint.State = "reconciliation_failed"
+				result.HeadConstraint.MismatchReason = err.Error()
+			}
 			return finishWithStatus(repo, issueNumber, runner, result, &status, err)
+		}
+		if result.HeadConstraint != nil {
+			result.HeadConstraint.ObservedPostMergeHeadSHA = strings.TrimSpace(status.HeadSHA)
+			if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, options.ExpectedHeadSHA, initialStatus, status, "already-merged reconciliation"); reason != "" {
+				result.Merged = true
+				result.MergeRequestStatus = "already_merged_head_mismatch"
+				return blockFinishHeadConstraint(repo, issueNumber, runner, result, status, blocker, reason)
+			}
+			result.HeadConstraint.State = "already_merged_verified"
 		}
 		result.AlreadyDone = true
 		result.Merged = true
+		result.MergeRequestStatus = "already_merged_verified"
 		result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "skipped", Detail: "PR is already merged"})
 		jiraDone, err = planJiraDoneTransition(repo, dryRun, jiraDone)
 		if err != nil {
@@ -285,10 +349,13 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		result.Actions = append(result.Actions, plannedOrAppliedAction("pr:ready", dryRun, fmt.Sprintf("mark PR #%d ready for review", status.PRNumber)))
 		result.Warnings = append(result.Warnings, "terminal finish requested for a Draft PR; this invocation stops after marking it ready and requires a new dry-run before merge")
 		if dryRun {
+			if result.HeadConstraint != nil {
+				result.HeadConstraint.State = "ready_transition_preview"
+			}
 			result.Blockers = mergeBlockers(status.Blockers)
 			result.Blockers = appendUniqueStrings(result.Blockers, jiraDone.Blockers...)
 			appendJiraDoneBlockedAction(&result, jiraDone)
-			result.NextStep = fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply; then rerun --dry-run before merge", repo.FullName(), issueNumber)
+			result.NextStep = fmt.Sprintf("%s; then rerun --dry-run before merge", workFinishCommand(repo, issueNumber, options.ExpectedHeadSHA, "--apply"))
 			return finishWithStatus(repo, issueNumber, runner, result, &status, nil)
 		}
 		if _, err := runner.Run("gh", "pr", "ready", fmt.Sprintf("%d", status.PRNumber), "--repo", repo.FullName()); err != nil {
@@ -296,17 +363,27 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		}
 		status, err = DevPRStatus(repo, issueNumber, runner)
 		if err != nil {
+			if result.HeadConstraint != nil {
+				result.HeadConstraint.State = "reconciliation_failed"
+				result.HeadConstraint.MismatchReason = "PR state could not be reread after the ready transition: " + err.Error()
+			}
 			return result, err
 		}
 		result.PRState = status.State
+		if result.HeadConstraint != nil {
+			result.HeadConstraint.ObservedAfterReadySHA = strings.TrimSpace(status.HeadSHA)
+			if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, options.ExpectedHeadSHA, initialStatus, status, "after ready transition"); reason != "" {
+				result.LocalSync = WorkFinishLocalSync{Skipped: true, Reason: "ready_transition_only"}
+				return blockFinishHeadConstraint(repo, issueNumber, runner, result, status, blocker, reason)
+			}
+			result.HeadConstraint.State = "ready_only"
+		}
 		result.Blockers = mergeBlockers(status.Blockers)
 		result.LocalSync = WorkFinishLocalSync{Skipped: true, Reason: "ready_transition_only"}
-		nextStep := fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
+		nextStep := workFinishCommand(repo, issueNumber, options.ExpectedHeadSHA, "--dry-run")
 		result.NextStep = nextStep
 		report, reportErr := finishWithStatus(repo, issueNumber, runner, result, &status, nil)
-		report.NextStep = nextStep
-		report.Readiness.NextStep = nextStep
-		report.Receipt.FinalState.NextStep = nextStep
+		setWorkFinishNextStep(&report, nextStep)
 		return report, reportErr
 	}
 
@@ -314,10 +391,17 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		result.Actions = append(result.Actions, WorkFinishAction{Action: "checks:wait", Status: "applied", Detail: wait.String()})
 		deadline := time.Now().Add(wait)
 		for containsString(status.Blockers, "checks_pending") && time.Now().Before(deadline) {
-			time.Sleep(5 * time.Second)
+			time.Sleep(finishChecksPollInterval)
 			status, err = DevPRStatus(repo, issueNumber, runner)
 			if err != nil {
 				return result, err
+			}
+			if result.HeadConstraint != nil {
+				result.HeadConstraint.ObservedPreMergeHeadSHA = strings.TrimSpace(status.HeadSHA)
+				if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, options.ExpectedHeadSHA, initialStatus, status, "after checks refresh"); reason != "" {
+					return blockFinishHeadConstraint(repo, issueNumber, runner, result, status, blocker, reason)
+				}
+				result.HeadConstraint.State = "matched"
 			}
 		}
 	}
@@ -350,7 +434,7 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 	if len(result.Blockers) > 0 {
 		appendJiraDoneBlockedAction(&result, jiraDone)
 		result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: strings.Join(result.Blockers, ",")})
-		result.NextStep = finishBlockedNextStep(repo, issueNumber, result.Blockers)
+		result.NextStep = finishBlockedNextStep(repo, issueNumber, result.Blockers, options.ExpectedHeadSHA)
 		report, reportErr := finishWithStatus(repo, issueNumber, runner, result, &status, nil)
 		if dryRun {
 			return report, reportErr
@@ -370,27 +454,163 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 		if jiraDone.Enabled {
 			result.Blockers = appendUniqueStrings(result.Blockers, "unmerged_pr")
 			appendJiraDoneBlockedAction(&result, jiraDone)
-			result.NextStep = fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+			result.NextStep = workFinishCommand(repo, issueNumber, options.ExpectedHeadSHA, "--apply")
 		}
 		return finishWithLocalSync(repo, issueNumber, runner, result, true, &status, &status, options)
 	}
+
+	if options.ExpectedHeadSHA != "" && policy.Value != FinishReviewPolicyRecordedIndependent {
+		fresh, refreshErr := DevPRStatus(repo, issueNumber, runner)
+		if refreshErr != nil {
+			result.HeadConstraint.State = "reconciliation_failed"
+			result.HeadConstraint.MismatchReason = "PR state could not be reread immediately before merge: " + refreshErr.Error()
+			result.Blockers = appendUniqueStrings(result.Blockers, "expected_head_verification_unavailable")
+			result.NextStep = workFinishCommand(repo, issueNumber, options.ExpectedHeadSHA, "--dry-run")
+			return finishWithStatus(repo, issueNumber, runner, result, &status, fmt.Errorf("ticket finish blocked: expected head could not be revalidated: %w", refreshErr))
+		}
+		result.HeadConstraint.ObservedPreMergeHeadSHA = strings.TrimSpace(fresh.HeadSHA)
+		if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, options.ExpectedHeadSHA, initialStatus, fresh, "immediately before merge"); reason != "" {
+			return blockFinishHeadConstraint(repo, issueNumber, runner, result, fresh, blocker, reason)
+		}
+		freshPolicy := resolveFinishReviewPolicy(repo, fresh, runner)
+		freshReview := finishReviewEvidence(repo, fresh, freshPolicy, runner)
+		freshBlockers := mergeBlockers(fresh.Blockers)
+		if freshPolicy.Value == FinishReviewPolicyNone || freshReview.Blocker != "" || freshReview.Status == "approved" || freshReview.Status == "independent_recorded" {
+			freshBlockers = removeString(freshBlockers, "review")
+		}
+		if freshReview.Blocker != "" {
+			freshBlockers = appendUniqueStrings(freshBlockers, freshReview.Blocker)
+		}
+		if freshPolicy.ValidationError != "" {
+			freshBlockers = appendUniqueStrings(freshBlockers, "review_evidence_unavailable")
+		}
+		if len(freshBlockers) > 0 {
+			result.Blockers = appendUniqueStrings(result.Blockers, freshBlockers...)
+			result.ReviewPolicy = freshPolicy
+			result.ReviewEvidence = freshReview
+			result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: strings.Join(result.Blockers, ",")})
+			result.NextStep = finishBlockedNextStep(repo, issueNumber, result.Blockers, options.ExpectedHeadSHA)
+			return finishWithStatus(repo, issueNumber, runner, result, &fresh, fmt.Errorf("ticket finish blocked: %s", strings.Join(result.Blockers, ", ")))
+		}
+		status = fresh
+		result.PRState = fresh.State
+		result.ReviewPolicy = freshPolicy
+		result.ReviewEvidence = freshReview
+		policy = freshPolicy
+		review = freshReview
+	}
 	if policy.Value == FinishReviewPolicyRecordedIndependent {
-		if err := finishRecordedReviewMerge(repo, issueNumber, status, policy, runner, &result); err != nil {
+		if result.HeadConstraint == nil {
+			result.HeadConstraint = &WorkFinishHeadConstraint{
+				ExpectedHeadSHA:         strings.TrimSpace(status.HeadSHA),
+				ExpectedSource:          "recorded_review",
+				ObservedInitialHeadSHA:  strings.TrimSpace(initialStatus.HeadSHA),
+				ObservedPreMergeHeadSHA: strings.TrimSpace(status.HeadSHA),
+				PinMechanism:            "planned_gh_match_head_commit",
+				State:                   "matched",
+			}
+		}
+		if expected := strings.TrimSpace(result.HeadConstraint.ExpectedHeadSHA); expected != "" && !strings.EqualFold(expected, strings.TrimSpace(review.HeadSHA)) {
+			return blockFinishHeadConstraint(repo, issueNumber, runner, result, status, "expected_head_mismatch", fmt.Sprintf("recorded review is bound to head %s while caller expected %s", valueOrUnknown(review.HeadSHA), expected))
+		}
+	}
+	nativeMergedVerified := false
+	if policy.Value == FinishReviewPolicyRecordedIndependent {
+		if err := finishRecordedReviewMerge(repo, issueNumber, status, policy, result.HeadConstraint.ExpectedHeadSHA, runner, &result); err != nil {
+			current, statusErr := DevPRStatus(repo, issueNumber, runner)
+			if statusErr == nil {
+				result.HeadConstraint.ObservedPreMergeHeadSHA = strings.TrimSpace(current.HeadSHA)
+				if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, result.HeadConstraint.ExpectedHeadSHA, initialStatus, current, "recorded-review merge revalidation"); reason != "" {
+					return blockFinishHeadConstraint(repo, issueNumber, runner, result, current, blocker, reason)
+				}
+			}
 			result.Blockers = appendUniqueStrings(result.Blockers, "review_evidence_unavailable")
+			result.HeadConstraint.State = "reconciliation_failed"
+			result.HeadConstraint.MismatchReason = err.Error()
+			result.MergeRequestStatus = "not_requested"
+			if statusErr != nil {
+				result.Blockers = appendUniqueStrings(result.Blockers, "expected_head_verification_unavailable")
+				result.HeadConstraint.MismatchReason = fmt.Sprintf("recorded-review revalidation failed (%v) and native PR readback failed (%v)", err, statusErr)
+			}
 			result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "blocked", Detail: "recorded review revalidation failed"})
 			return finishWithStatus(repo, issueNumber, runner, result, &status, fmt.Errorf("ticket finish blocked: %w", err))
 		}
-	} else if err := finishMergePR(repo, status, runner, &result, false); err != nil {
-		return result, err
+	} else if err := finishMergePR(repo, status, runner, &result, options.ExpectedHeadSHA); err != nil {
+		if options.ExpectedHeadSHA == "" {
+			return result, err
+		}
+		current, readErr := DevPRStatus(repo, issueNumber, runner)
+		if readErr != nil {
+			result.HeadConstraint.State = "reconciliation_failed"
+			result.HeadConstraint.MismatchReason = fmt.Sprintf("merge request failed (%v) and native PR state is unavailable (%v)", err, readErr)
+			result.Blockers = appendUniqueStrings(result.Blockers, "merge_state_unavailable")
+			return finishWithStatus(repo, issueNumber, runner, result, nil, fmt.Errorf("ticket finish blocked: %s", result.HeadConstraint.MismatchReason))
+		}
+		if !strings.EqualFold(current.State, "MERGED") {
+			result.MergeRequestStatus = "rejected"
+			if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, options.ExpectedHeadSHA, initialStatus, current, "after rejected merge request"); reason != "" {
+				result.HeadConstraint.ObservedPostMergeHeadSHA = strings.TrimSpace(current.HeadSHA)
+				return blockFinishHeadConstraint(repo, issueNumber, runner, result, current, blocker, reason)
+			}
+			result.HeadConstraint.State = "merge_failed"
+			result.HeadConstraint.MismatchReason = err.Error()
+			result.Blockers = appendUniqueStrings(result.Blockers, "merge_failed")
+			result.Actions = append(result.Actions, WorkFinishAction{Action: "pr:merge", Status: "failed", Detail: err.Error()})
+			return finishWithStatus(repo, issueNumber, runner, result, &current, fmt.Errorf("ticket finish blocked: merge request failed: %w", err))
+		}
+		result.MergeRequestStatus = "ambiguous_native_merged"
+		verified, verifyErr := verifyMergedDevPR(repo, issueNumber, current.PRNumber, current, runner)
+		if verifyErr != nil {
+			result.MergeRequestStatus = "ambiguous_native_unverified"
+			result.Blockers = appendUniqueStrings(result.Blockers, "pr_binding")
+			result.HeadConstraint.State = "reconciliation_failed"
+			result.HeadConstraint.MismatchReason = verifyErr.Error()
+			return finishWithStatus(repo, issueNumber, runner, result, &current, verifyErr)
+		}
+		status = verified
+		nativeMergedVerified = true
+		result.PRState = verified.State
+		result.Merged = true
+		result.MergeRequestStatus = "ambiguous_native_verified"
+		result.HeadConstraint.ObservedPostMergeHeadSHA = strings.TrimSpace(verified.HeadSHA)
+		if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, options.ExpectedHeadSHA, initialStatus, verified, "native merged-state readback after ambiguous request"); reason != "" {
+			return blockFinishHeadConstraint(repo, issueNumber, runner, result, verified, blocker, reason)
+		}
+		result.HeadConstraint.State = "merged_verified"
 	}
-	result.Merged = true
-	verifiedStatus, err := verifyMergedDevPR(repo, issueNumber, status.PRNumber, status, runner)
-	if err != nil {
-		result.Blockers = appendUniqueStrings(result.Blockers, "pr_binding")
-		return finishWithStatus(repo, issueNumber, runner, result, &status, err)
+	if result.MergeRequestStatus == "" {
+		result.MergeRequestStatus = "accepted"
+	}
+	verifiedStatus := status
+	if !nativeMergedVerified {
+		verifiedStatus, err = verifyMergedDevPR(repo, issueNumber, status.PRNumber, status, runner)
+		if err != nil {
+			result.Blockers = appendUniqueStrings(result.Blockers, "pr_binding")
+			if result.HeadConstraint != nil {
+				result.HeadConstraint.State = "reconciliation_failed"
+				result.HeadConstraint.MismatchReason = err.Error()
+			}
+			if result.MergeRequestStatus == "accepted" {
+				result.MergeRequestStatus = "accepted_native_unverified"
+			}
+			return finishWithStatus(repo, issueNumber, runner, result, &status, err)
+		}
 	}
 	status = verifiedStatus
 	result.PRState = status.State
+	result.Merged = true
+	if result.MergeRequestStatus == "accepted" {
+		result.MergeRequestStatus = "accepted_native_verified"
+	}
+	if result.HeadConstraint != nil {
+		result.HeadConstraint.ObservedPostMergeHeadSHA = strings.TrimSpace(status.HeadSHA)
+		if options.ExpectedHeadSHA != "" {
+			if blocker, reason := validateFinishHeadIdentity(repo, issueNumber, options.ExpectedHeadSHA, initialStatus, status, "native merged-state readback"); reason != "" {
+				return blockFinishHeadConstraint(repo, issueNumber, runner, result, status, blocker, reason)
+			}
+			result.HeadConstraint.State = "merged_verified"
+		}
+	}
 	jiraDone, err = planJiraDoneTransition(repo, dryRun, jiraDone)
 	if err != nil {
 		return result, err
@@ -413,11 +633,86 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 	return finishWithLocalSync(repo, issueNumber, runner, result, true, &status, &status, options)
 }
 
-func finishRecordedReviewMerge(repo RepoRef, issueNumber int, status DevPRStatusResult, policy FinishReviewPolicy, runner CommandRunner, result *WorkFinishResult) error {
+func validateFinishHeadIdentity(repo RepoRef, issueNumber int, expectedHeadSHA string, initial, observed DevPRStatusResult, phase string) (string, string) {
+	if observed.PRNumber <= 0 || initial.PRNumber <= 0 || observed.PRNumber != initial.PRNumber {
+		return "pr_binding", fmt.Sprintf("%s: linked PR identity changed from #%d to #%d", phase, initial.PRNumber, observed.PRNumber)
+	}
+	if observed.Repo != "" && !strings.EqualFold(observed.Repo, repo.FullName()) {
+		return "pr_binding", fmt.Sprintf("%s: PR repository changed from %s to %s", phase, repo.FullName(), observed.Repo)
+	}
+	if observed.Issue > 0 && observed.Issue != issueNumber {
+		return "pr_binding", fmt.Sprintf("%s: PR is bound to ticket #%d, not #%d", phase, observed.Issue, issueNumber)
+	}
+	if expectedHeadSHA != "" && !strings.EqualFold(strings.TrimSpace(observed.HeadSHA), expectedHeadSHA) {
+		return "expected_head_mismatch", fmt.Sprintf("%s: expected PR head %s but observed %s", phase, expectedHeadSHA, valueOrUnknown(observed.HeadSHA))
+	}
+	if initial.Binding.BaseRef == "" || observed.Binding.BaseRef == "" {
+		return "pr_base_mismatch", fmt.Sprintf("%s: target base branch identity is unavailable", phase)
+	}
+	if !strings.EqualFold(strings.TrimSpace(initial.Binding.BaseRef), strings.TrimSpace(observed.Binding.BaseRef)) {
+		return "pr_base_mismatch", fmt.Sprintf("%s: target base branch changed from %s to %s", phase, initial.Binding.BaseRef, observed.Binding.BaseRef)
+	}
+	if !observed.ClosingReference || !observed.Binding.Trusted {
+		return "pr_binding", fmt.Sprintf("%s: PR closing reference or trusted branch binding is unavailable", phase)
+	}
+	return "", ""
+}
+
+func blockFinishHeadConstraint(repo RepoRef, issueNumber int, runner CommandRunner, result WorkFinishResult, status DevPRStatusResult, blocker string, reason string) (WorkFinishResult, error) {
+	if result.HeadConstraint == nil {
+		result.HeadConstraint = &WorkFinishHeadConstraint{ExpectedSource: "caller"}
+	}
+	result.PRState = status.State
+	result.HeadConstraint.MismatchReason = reason
+	if blocker == "expected_head_mismatch" {
+		result.HeadConstraint.State = "mismatch"
+	} else {
+		result.HeadConstraint.State = "identity_mismatch"
+	}
+	result.Blockers = appendUniqueStrings(result.Blockers, blocker)
+	result.Actions = append(result.Actions, WorkFinishAction{Action: "head:verify", Status: "blocked", Detail: reason})
+	result.NextStep = finishHeadMismatchNextStep(repo, issueNumber, result.HeadConstraint, blocker)
+	var finishErr error
+	if !result.DryRun {
+		finishErr = fmt.Errorf("ticket finish blocked: %s: %s", blocker, reason)
+	}
+	return finishWithStatus(repo, issueNumber, runner, result, &status, finishErr)
+}
+
+func finishHeadMismatchNextStep(repo RepoRef, issueNumber int, evidence *WorkFinishHeadConstraint, blocker string) string {
+	if blocker == "expected_head_mismatch" {
+		expected := ""
+		if evidence != nil {
+			expected = evidence.ExpectedHeadSHA
+		}
+		return fmt.Sprintf("review the PR head drift and restore the caller-reviewed commit, then run %s", workFinishCommand(repo, issueNumber, expected, "--dry-run"))
+	}
+	expected := ""
+	if evidence != nil {
+		expected = evidence.ExpectedHeadSHA
+	}
+	return fmt.Sprintf("resolve the PR identity or target-base blocker, then run %s", workFinishCommand(repo, issueNumber, expected, "--dry-run"))
+}
+
+func workFinishCommand(repo RepoRef, issueNumber int, expectedHeadSHA string, mode string) string {
+	command := fmt.Sprintf("gira ticket finish --repo %s --ticket %d", repo.FullName(), issueNumber)
+	if expectedHeadSHA != "" {
+		command += " --expect-head " + expectedHeadSHA
+	}
+	if strings.TrimSpace(mode) != "" {
+		command += " " + strings.TrimSpace(mode)
+	}
+	return command
+}
+
+func finishRecordedReviewMerge(repo RepoRef, issueNumber int, status DevPRStatusResult, policy FinishReviewPolicy, expectedHeadSHA string, runner CommandRunner, result *WorkFinishResult) error {
 	if err := revalidateRecordedReviewBeforeMerge(repo, issueNumber, status, policy, runner); err != nil {
 		return fmt.Errorf("recorded review revalidation failed: %w", err)
 	}
-	return finishMergePR(repo, status, runner, result, true)
+	if result != nil && result.HeadConstraint != nil {
+		result.HeadConstraint.ObservedPreMergeHeadSHA = strings.TrimSpace(status.HeadSHA)
+	}
+	return finishMergePR(repo, status, runner, result, expectedHeadSHA)
 }
 
 func revalidateRecordedReviewBeforeMerge(repo RepoRef, issueNumber int, reviewed DevPRStatusResult, reviewedPolicy FinishReviewPolicy, runner CommandRunner) error {
@@ -447,10 +742,17 @@ func revalidateRecordedReviewBeforeMerge(repo RepoRef, issueNumber int, reviewed
 	return nil
 }
 
-func finishMergePR(repo RepoRef, status DevPRStatusResult, runner CommandRunner, result *WorkFinishResult, pinHead bool) error {
+func finishMergePR(repo RepoRef, status DevPRStatusResult, runner CommandRunner, result *WorkFinishResult, expectedHeadSHA string) error {
 	args := []string{"pr", "merge", fmt.Sprintf("%d", status.PRNumber), "--repo", repo.FullName(), "--squash", "--delete-branch"}
-	if pinHead {
-		args = append(args, "--match-head-commit", strings.TrimSpace(status.HeadSHA))
+	expectedHeadSHA = strings.TrimSpace(expectedHeadSHA)
+	if expectedHeadSHA != "" {
+		if !strings.EqualFold(expectedHeadSHA, strings.TrimSpace(status.HeadSHA)) {
+			return fmt.Errorf("refuse merge: expected head %s does not match selected PR head %s", expectedHeadSHA, valueOrUnknown(status.HeadSHA))
+		}
+		args = append(args, "--match-head-commit", expectedHeadSHA)
+		if result != nil && result.HeadConstraint != nil {
+			result.HeadConstraint.PinMechanism = "gh_match_head_commit"
+		}
 	}
 	if _, err := runner.Run("gh", args...); err != nil {
 		if !finishGraphQLRateLimitError(err) {
@@ -459,8 +761,13 @@ func finishMergePR(repo RepoRef, status DevPRStatusResult, runner CommandRunner,
 		diagnostic := finishMergeRateLimitDiagnostic(repo, runner)
 		var fallbackDetail string
 		var fallbackErr error
-		if pinHead {
-			fallbackDetail, fallbackErr = finishMergePRViaRESTForStatus(repo, status, runner)
+		if expectedHeadSHA != "" {
+			if result != nil && result.HeadConstraint != nil {
+				result.HeadConstraint.PinMechanism = "gh_match_head_commit+rest_sha_expected_head"
+			}
+			expectedStatus := status
+			expectedStatus.HeadSHA = expectedHeadSHA
+			fallbackDetail, fallbackErr = finishMergePRViaRESTForStatus(repo, expectedStatus, runner)
 		} else {
 			fallbackDetail, fallbackErr = finishMergePRViaREST(repo, status.PRNumber, runner)
 		}
@@ -716,9 +1023,24 @@ func finishWithLocalSync(repo RepoRef, issueNumber int, runner CommandRunner, re
 	}
 	report, err := finishWithStatus(repo, issueNumber, runner, result, knownPRStatus, nil)
 	if report.DryRun && mergePlanned && !report.AlreadyDone && len(report.Blockers) == 0 {
-		report.NextStep = fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+		setWorkFinishNextStep(&report, workFinishCommand(repo, issueNumber, options.ExpectedHeadSHA, "--apply"))
 	}
 	return report, err
+}
+
+func setWorkFinishNextStep(result *WorkFinishResult, nextStep string) {
+	if result == nil {
+		return
+	}
+	result.NextStep = nextStep
+	result.Readiness.NextStep = nextStep
+	result.Receipt.FinalState.NextStep = nextStep
+	if result.Receipt.SchemaVersion != "" {
+		result.Receipt.RenderedBody = renderWorkFinishReceipt(result.Receipt)
+	}
+	if result.DryRun {
+		result.Approval = WorkFinishApprovalEvidence(*result)
+	}
 }
 
 func setWorkFinishAction(actions []WorkFinishAction, action string, status string, detail string) {
@@ -849,7 +1171,11 @@ func finishWithStatus(repo RepoRef, issueNumber int, runner CommandRunner, resul
 		if len(result.Blockers) == 0 {
 			if hasWorkFinishAction(result.Actions, "ticket:close", "planned") {
 				result.FinalStatus.NextAction = "converge_completion_state"
-				result.NextStep = fmt.Sprintf("gira ticket finish --repo %s --ticket %d --apply", repo.FullName(), issueNumber)
+				expectedHeadSHA := ""
+				if result.HeadConstraint != nil && result.HeadConstraint.ExpectedSource == "caller" {
+					expectedHeadSHA = result.HeadConstraint.ExpectedHeadSHA
+				}
+				result.NextStep = workFinishCommand(repo, issueNumber, expectedHeadSHA, "--apply")
 				result.FinalStatus.NextStep = result.NextStep
 			} else {
 				result.NextStep = status.NextStep
@@ -1058,17 +1384,24 @@ func firstPositive(values ...int) int {
 
 func buildWorkFinishReceipt(result WorkFinishResult) WorkFinishReceipt {
 	readiness := result.Readiness
+	var headConstraint *WorkFinishHeadConstraint
+	if result.HeadConstraint != nil {
+		copy := *result.HeadConstraint
+		headConstraint = &copy
+	}
 	receipt := WorkFinishReceipt{
-		SchemaVersion:    "finish-receipt/v1",
-		FinishedAt:       finishReceiptNow().Format(time.RFC3339),
-		Repository:       readiness.Repository,
-		Issue:            readiness.Issue,
-		PullRequest:      WorkFinishReceiptPR{Number: readiness.PullRequest.Number, URL: readiness.PullRequest.URL, State: readiness.PullRequest.State, Merged: result.Merged || result.AlreadyDone || strings.EqualFold(readiness.PullRequest.State, "MERGED"), HeadSHA: readiness.PullRequest.HeadSHA, BaseSHA: readiness.PullRequest.BaseSHA, MergeCommitSHA: readiness.PullRequest.MergeCommitSHA, ClosingReference: readiness.PullRequest.ClosingReference},
-		ChecksSummary:    readiness.Checks,
-		ReviewSummary:    readiness.Review,
-		EvidenceSummary:  readiness.Evidence,
-		TelemetrySummary: result.FinalStatus.Telemetry,
-		LabelChanges:     finishReceiptLabelChanges(result.Actions),
+		SchemaVersion:      "finish-receipt/v1",
+		FinishedAt:         finishReceiptNow().Format(time.RFC3339),
+		Repository:         readiness.Repository,
+		Issue:              readiness.Issue,
+		PullRequest:        WorkFinishReceiptPR{Number: readiness.PullRequest.Number, URL: readiness.PullRequest.URL, State: readiness.PullRequest.State, Merged: result.Merged || result.AlreadyDone || strings.EqualFold(readiness.PullRequest.State, "MERGED"), HeadSHA: readiness.PullRequest.HeadSHA, BaseSHA: readiness.PullRequest.BaseSHA, MergeCommitSHA: readiness.PullRequest.MergeCommitSHA, ClosingReference: readiness.PullRequest.ClosingReference},
+		HeadConstraint:     headConstraint,
+		MergeRequestStatus: result.MergeRequestStatus,
+		ChecksSummary:      readiness.Checks,
+		ReviewSummary:      readiness.Review,
+		EvidenceSummary:    readiness.Evidence,
+		TelemetrySummary:   result.FinalStatus.Telemetry,
+		LabelChanges:       finishReceiptLabelChanges(result.Actions),
 		FinalState: WorkFinishReceiptFinalState{
 			IssueState:       readiness.Issue.State,
 			Status:           readiness.Issue.Status,
@@ -1127,6 +1460,22 @@ func renderWorkFinishReceipt(receipt WorkFinishReceipt) string {
 	fmt.Fprintf(&b, "- Finished at: %s\n", receipt.FinishedAt)
 	fmt.Fprintf(&b, "- Ticket: #%d gira_status=%s github_issue_state=%s\n", receipt.Issue.Number, valueOrUnknown(receipt.FinalState.GiraStatus), valueOrUnknown(receipt.FinalState.GitHubIssueState))
 	fmt.Fprintf(&b, "- Linked PR: %s state=%s merged=%t head=%s merge_commit=%s closing_reference=%t\n", pr, valueOrUnknown(receipt.PullRequest.State), receipt.PullRequest.Merged, valueOrUnknown(receipt.PullRequest.HeadSHA), valueOrUnknown(receipt.PullRequest.MergeCommitSHA), receipt.PullRequest.ClosingReference)
+	if receipt.MergeRequestStatus != "" {
+		fmt.Fprintf(&b, "- Merge request: %s\n", receipt.MergeRequestStatus)
+	}
+	if receipt.HeadConstraint != nil {
+		fmt.Fprintf(&b, "- Head constraint: state=%s source=%s expected=%s observed_initial=%s observed_pre_merge=%s observed_after_ready=%s observed_post_merge=%s pin=%s mismatch=%s\n",
+			valueOrUnknown(receipt.HeadConstraint.State),
+			valueOrUnknown(receipt.HeadConstraint.ExpectedSource),
+			valueOrUnknown(receipt.HeadConstraint.ExpectedHeadSHA),
+			valueOrUnknown(receipt.HeadConstraint.ObservedInitialHeadSHA),
+			valueOrUnknown(receipt.HeadConstraint.ObservedPreMergeHeadSHA),
+			valueOrUnknown(receipt.HeadConstraint.ObservedAfterReadySHA),
+			valueOrUnknown(receipt.HeadConstraint.ObservedPostMergeHeadSHA),
+			valueOrUnknown(receipt.HeadConstraint.PinMechanism),
+			valueOrUnknown(receipt.HeadConstraint.MismatchReason),
+		)
+	}
 	fmt.Fprintf(&b, "- Checks: %s total=%d passing=%d pending=%d failing=%d\n", valueOrUnknown(receipt.ChecksSummary.Status), receipt.ChecksSummary.Total, receipt.ChecksSummary.Passing, receipt.ChecksSummary.Pending, receipt.ChecksSummary.Failing)
 	fmt.Fprintf(&b, "- Review: %s policy=%s source=%s evidence=%s\n", valueOrUnknown(receipt.ReviewSummary.Status), valueOrUnknown(receipt.ReviewSummary.Policy.Value), valueOrUnknown(receipt.ReviewSummary.Policy.Source), valueOrUnknown(receipt.ReviewSummary.Evidence.Status))
 	fmt.Fprintf(&b, "- Evidence: %s\n", evidence)
@@ -1266,18 +1615,25 @@ func appendUniqueStrings(values []string, additions ...string) []string {
 	return values
 }
 
-func finishBlockedNextStep(repo RepoRef, issueNumber int, blockers []string) string {
+func finishBlockedNextStep(repo RepoRef, issueNumber int, blockers []string, expectedHeadSHA ...string) string {
+	expected := ""
+	if len(expectedHeadSHA) > 0 {
+		expected = expectedHeadSHA[0]
+	}
 	if containsString(blockers, "checks_pending") {
-		return "wait for required checks, then " + fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
+		return "wait for required checks, then " + workFinishCommand(repo, issueNumber, expected, "--dry-run")
 	}
 	if containsString(blockers, "checks") {
-		return "fix failing checks, then " + fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
+		return "fix failing checks, then " + workFinishCommand(repo, issueNumber, expected, "--dry-run")
 	}
 	if containsString(blockers, "review") {
-		return "resolve review requirements, then " + fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
+		return "resolve review requirements, then " + workFinishCommand(repo, issueNumber, expected, "--dry-run")
 	}
 	if containsString(blockers, "draft") {
-		return fmt.Sprintf("gira ticket finish --repo %s --ticket %d --dry-run", repo.FullName(), issueNumber)
+		return workFinishCommand(repo, issueNumber, expected, "--dry-run")
+	}
+	if expected != "" {
+		return workFinishCommand(repo, issueNumber, expected, "--dry-run")
 	}
 	return fmt.Sprintf("gira ticket status --repo %s --ticket %d", repo.FullName(), issueNumber)
 }
@@ -1326,6 +1682,19 @@ func FormatWorkFinish(result WorkFinishResult) string {
 		strings.Join(actions, ","),
 		result.NextStep,
 	)
+	if result.HeadConstraint != nil {
+		output += fmt.Sprintf("head constraint: state=%s expected=%s observed_pre_merge=%s observed_post_merge=%s pin=%s mismatch=%s\n",
+			valueOrUnknown(result.HeadConstraint.State),
+			valueOrUnknown(result.HeadConstraint.ExpectedHeadSHA),
+			valueOrUnknown(result.HeadConstraint.ObservedPreMergeHeadSHA),
+			valueOrUnknown(result.HeadConstraint.ObservedPostMergeHeadSHA),
+			valueOrUnknown(result.HeadConstraint.PinMechanism),
+			valueOrUnknown(result.HeadConstraint.MismatchReason),
+		)
+	}
+	if result.MergeRequestStatus != "" {
+		output += fmt.Sprintf("merge request: %s\n", result.MergeRequestStatus)
+	}
 	for _, warning := range result.Warnings {
 		output = "WARNING: " + warning + "\n" + output
 	}

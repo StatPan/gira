@@ -683,6 +683,12 @@ func isFullCommitSHA(value string) bool {
 	return err == nil
 }
 
+// IsFullCommitSHA reports whether value is a complete 40-character commit ID.
+// It intentionally does not trim whitespace or accept abbreviated object IDs.
+func IsFullCommitSHA(value string) bool {
+	return isFullCommitSHA(value)
+}
+
 type finishReview struct {
 	ID          int64  `json:"id"`
 	State       string `json:"state"`

@@ -74,6 +74,13 @@ handoff path.
 - Use `gira ticket checks` and `gira ticket wait` to distinguish pending from failed checks. Add `--detail` to see the Actions run, attempt, and current or failed step. Wait progress stays on stderr and does not change readiness.
 - Run `gira ticket finish --dry-run` before `--apply`; finish validates the linked PR, checks, review, base, labels, closing reference, and acceptance evidence.
 
+Pass `--expect-head FULL_SHA` when finish must stay bound to a specific
+caller-reviewed PR head. Gira checks that full SHA at intake, after a checks
+refresh or Draft ready transition, immediately before merge, and in native
+merged-state readback. The merge request and REST fallback use the same head
+SHA; a mismatch blocks issue closure, Jira completion, and local sync. The pin
+guards the PR head and does not make the target base atomic.
+
 The detailed readiness schemas and reports are in [Readiness And Audit](/readiness-audit).
 The generated [Command Reference](/command-reference) contains every flag,
 alias, example, and JSON contract. It is exhaustive reference, not the daily

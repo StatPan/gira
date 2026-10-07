@@ -955,7 +955,7 @@ Usage:
   gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr] [--json]
   gira ticket checks [TICKET] [--repo OWNER/REPO] [--detail] [--json]
   gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--detail] [--json]
-  gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--wait 0s] [--sync-local] [--json]
+  gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--expect-head SHA] [--wait 0s] [--sync-local] [--json]
   gira ticket status [TICKET] [--repo OWNER/REPO] [--json|--html --output PATH]
 
 Commands:
@@ -1003,6 +1003,7 @@ Flags:
   --apply          Apply branch, PR, and status label changes
   --draft          Create/keep PR as draft for ticket pr
   --wait duration  Optional pending-check wait for ticket finish. Default: 0s
+  --expect-head string Require this full 40-character PR head SHA throughout finish
   --timeout duration  Pending-check wait timeout for ticket wait. Default: 5m
   --interval duration  Poll interval for ticket wait. Default: 5s
   --detail         Show the Actions run, attempt, and current or failed step
@@ -7039,6 +7040,7 @@ func runTicketFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
 	apply := fs.Bool("apply", false, "Apply changes")
 	wait := fs.Duration("wait", 0, "Optional pending-check wait")
+	expectHead := fs.String("expect-head", "", "Require this full 40-character PR head SHA throughout finish")
 	syncLocal := fs.Bool("sync-local", false, "Opt in to syncing the local PR base branch after finish")
 	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
 	help := fs.Bool("help", false, "Show help")
@@ -7052,6 +7054,16 @@ func runTicketFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stdout, ticketHelp)
 		return 0
 	}
+	expectHeadProvided := false
+	fs.Visit(func(parsed *flag.Flag) {
+		if parsed.Name == "expect-head" {
+			expectHeadProvided = true
+		}
+	})
+	if expectHeadProvided && !gira.IsFullCommitSHA(*expectHead) {
+		fmt.Fprintln(stderr, "--expect-head must be a full 40-character commit SHA")
+		return 2
+	}
 	repo, ok := parseTicketRequiredFlags(*repoValue, 1, *dryRun, *apply, true, stderr)
 	if !ok {
 		_, _ = io.WriteString(stderr, ticketHelp)
@@ -7062,7 +7074,7 @@ func runTicketFinish(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, ticketHelp)
 		return 2
 	}
-	result, err := newWorkFinishResult(repo, ticketNumber, *dryRun, *wait, gira.WorkFinishOptions{SyncLocal: *syncLocal})
+	result, err := newWorkFinishResult(repo, ticketNumber, *dryRun, *wait, gira.WorkFinishOptions{SyncLocal: *syncLocal, ExpectedHeadSHA: *expectHead})
 	if result.Wait == "" {
 		result.Wait = wait.String()
 	}
@@ -7330,7 +7342,7 @@ func parseWorkRequiredFlags(repoValue string, issue int, dryRun bool, apply bool
 func extractTicketPositional(args []string, stderr io.Writer) ([]string, int, bool) {
 	cleaned := make([]string, 0, len(args))
 	positional := 0
-	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}, "--timeout": {}, "--interval": {}, "--replacement-title": {}, "--body": {}, "--body-file": {}, "--milestone": {}, "--label": {}, "--output": {}, "--set": {}, "--branch": {}}
+	valueFlags := map[string]struct{}{"--repo": {}, "--ticket": {}, "--issue": {}, "--wait": {}, "--expect-head": {}, "--timeout": {}, "--interval": {}, "--replacement-title": {}, "--body": {}, "--body-file": {}, "--milestone": {}, "--label": {}, "--output": {}, "--set": {}, "--branch": {}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		cleaned = append(cleaned, arg)
@@ -8159,6 +8171,25 @@ func formatTicketFinish(result gira.WorkFinishResult) string {
 		strings.Join(actions, ","),
 		ticketFinishNextStep(result),
 	)
+	if result.HeadConstraint != nil {
+		constraintValue := func(value string) string {
+			if strings.TrimSpace(value) == "" {
+				return "unknown"
+			}
+			return value
+		}
+		output += fmt.Sprintf("head constraint: state=%s expected=%s observed_pre_merge=%s observed_post_merge=%s pin=%s mismatch=%s\n",
+			constraintValue(result.HeadConstraint.State),
+			constraintValue(result.HeadConstraint.ExpectedHeadSHA),
+			constraintValue(result.HeadConstraint.ObservedPreMergeHeadSHA),
+			constraintValue(result.HeadConstraint.ObservedPostMergeHeadSHA),
+			constraintValue(result.HeadConstraint.PinMechanism),
+			constraintValue(result.HeadConstraint.MismatchReason),
+		)
+	}
+	if result.MergeRequestStatus != "" {
+		output += fmt.Sprintf("merge request: %s\n", result.MergeRequestStatus)
+	}
 	for _, warning := range result.Warnings {
 		output = "WARNING: " + warning + "\n" + output
 	}

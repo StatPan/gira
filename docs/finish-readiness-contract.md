@@ -21,6 +21,21 @@ Apply an approved finish:
 gira ticket finish TICKET --repo OWNER/REPO --apply --json
 ```
 
+When a caller has reviewed one exact PR head, pass its full 40-character SHA
+to both the dry-run and apply:
+
+```bash
+gira ticket finish TICKET --repo OWNER/REPO --expect-head FULL_SHA --dry-run --json
+gira ticket finish TICKET --repo OWNER/REPO --expect-head FULL_SHA --apply --json
+```
+
+The expected head is immutable for that invocation. Gira checks it at intake,
+after a checks refresh or Draft ready transition, immediately before merge,
+and in native merged-state readback. The merge request and rate-limit REST
+fallback use that same SHA. Drift or unavailable native reconciliation blocks
+issue closure, Jira completion, receipt posting, and local sync. This pins the
+PR head; it does not atomically pin the target base branch.
+
 `ticket finish` always expresses terminal merge intent; it is not a ready-only
 command. When the linked PR is still Draft, however, one invocation is bounded
 to the safe transition it previewed:
@@ -89,6 +104,8 @@ Required top-level fields:
 | `next_action` | Machine-readable next action. |
 | `next_step` | Human-oriented next command or remediation. |
 | `warnings` | Non-blocking concerns. |
+| `head_constraint` | Optional expected/observed head evidence, pin mechanism, verification state, and mismatch reason. |
+| `merge_request_status` | Optional merge request and native reconciliation outcome. |
 
 Important nested fields:
 
@@ -178,11 +195,12 @@ When several PRs contain a closing reference, Gira resolves them conservatively:
 Finish preserves the selected PR number across merge and final status
 resolution. Before writing a successful receipt, Gira fetches that exact PR and
 requires its merged state, closing relationship, head SHA, and merge commit SHA.
-For the recorded-review lane, Gira also rechecks the base binding and current
-receipt immediately before merge, passes the reviewed head SHA as the merge
-precondition, and requires the immutable base policy. GitHub's merge API does
-not expose a corresponding base-SHA precondition, so a base movement detected
-by Gira blocks before the merge request.
+An explicit `--expect-head` is checked at each finish boundary and passed
+unchanged as the merge precondition, independent of review policy. The
+recorded-review lane captures its reviewed head and also rechecks the base
+binding and current receipt immediately before merge. GitHub's merge API does
+not expose a corresponding base-SHA precondition, so Gira retains its existing
+base checks without claiming that the base is atomic.
 
 ## `finish-receipt/v1`
 
@@ -202,6 +220,8 @@ Required fields:
 | `pull_request.head_sha` | Verified delivered head commit. |
 | `pull_request.merge_commit_sha` | Verified GitHub merge commit. |
 | `pull_request.closing_reference` | Verified closing relationship to the ticket. |
+| `head_constraint` | Expected and observed PR head SHAs, pin mechanism, state, and mismatch reason when head pinning is used. |
+| `merge_request_status` | Accepted, ambiguous-but-native-verified, rejected, not-requested, or already-merged request outcome. |
 | `checks_summary` | Check aggregate at finish time. |
 | `review_summary` | Review aggregate at finish time. |
 | `evidence_summary` | Evidence used to accept finish. |

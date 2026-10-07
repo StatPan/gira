@@ -5445,6 +5445,52 @@ func TestTicketFinishSyncLocalFlagPassesOption(t *testing.T) {
 	}
 }
 
+func TestTicketFinishExpectHeadPassesOptionAndApprovalReplay(t *testing.T) {
+	const expectedHead = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	restore := newWorkFinishResult
+	t.Cleanup(func() { newWorkFinishResult = restore })
+	newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration, options gira.WorkFinishOptions) (gira.WorkFinishResult, error) {
+		if repo.FullName() != "StatPan/gira" || issue != 219 || !dryRun || options.ExpectedHeadSHA != expectedHead {
+			t.Fatalf("unexpected args repo=%s issue=%d dryRun=%t wait=%s options=%+v", repo.FullName(), issue, dryRun, wait, options)
+		}
+		return gira.WorkFinishResult{
+			Repo: repo.FullName(), Issue: issue, DryRun: true,
+			HeadConstraint: &gira.WorkFinishHeadConstraint{ExpectedHeadSHA: expectedHead, ExpectedSource: "caller"},
+			NextStep:       "gira ticket finish --repo StatPan/gira --ticket 219 --expect-head " + expectedHead + " --apply",
+		}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "finish", "219", "--repo", "StatPan/gira", "--expect-head", expectedHead, "--dry-run", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var report gira.WorkFinishResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode ticket finish JSON: %v\n%s", err, stdout.String())
+	}
+	wantApply := "gira ticket finish 219 --repo StatPan/gira --expect-head " + expectedHead + " --apply"
+	if report.Approval == nil || report.Approval.ApplyCommand != wantApply {
+		t.Fatalf("approval replay dropped or changed expected head: %+v", report.Approval)
+	}
+}
+
+func TestTicketFinishExpectHeadRejectsAbbreviatedSHABeforeCore(t *testing.T) {
+	called := false
+	restore := newWorkFinishResult
+	t.Cleanup(func() { newWorkFinishResult = restore })
+	newWorkFinishResult = func(repo gira.RepoRef, issue int, dryRun bool, wait time.Duration, options gira.WorkFinishOptions) (gira.WorkFinishResult, error) {
+		called = true
+		return gira.WorkFinishResult{}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"ticket", "finish", "219", "--repo", "StatPan/gira", "--expect-head", "abc123", "--dry-run"}, &stdout, &stderr)
+	if code != 2 || called || !strings.Contains(stderr.String(), "full 40-character") {
+		t.Fatalf("abbreviated SHA should be rejected before core execution: code=%d called=%t stdout=%q stderr=%q", code, called, stdout.String(), stderr.String())
+	}
+}
+
 func TestTicketFinishDryRunApprovalPreservesWait(t *testing.T) {
 	restore := newWorkFinishResult
 	t.Cleanup(func() { newWorkFinishResult = restore })

@@ -127,7 +127,7 @@ func TestRecordedReviewMergeRevalidatesAndPreservesNativeApproval(t *testing.T) 
 	t.Run("changed head prevents merge", func(t *testing.T) {
 		runner := &recordedReviewLifecycleRunner{root: root, headSHA: changedHead, baseSHA: baseSHA, reviews: []finishReview{approved}}
 		status := recordedReviewLifecycleStatus(reviewedHead, baseSHA)
-		err := finishRecordedReviewMerge(repo, 219, status, policy, runner, &WorkFinishResult{})
+		err := finishRecordedReviewMerge(repo, 219, status, policy, reviewedHead, runner, &WorkFinishResult{})
 		if err == nil || !strings.Contains(err.Error(), "changed since review") {
 			t.Fatalf("changed PR head should block the pre-merge recheck, got %v", err)
 		}
@@ -139,7 +139,7 @@ func TestRecordedReviewMergeRevalidatesAndPreservesNativeApproval(t *testing.T) 
 	t.Run("current native approval remains valid under recorded policy", func(t *testing.T) {
 		runner := &recordedReviewLifecycleRunner{root: root, headSHA: reviewedHead, baseSHA: baseSHA, reviews: []finishReview{approved}}
 		status := recordedReviewLifecycleStatus(reviewedHead, baseSHA)
-		if err := finishRecordedReviewMerge(repo, 219, status, policy, runner, &WorkFinishResult{}); err != nil {
+		if err := finishRecordedReviewMerge(repo, 219, status, policy, reviewedHead, runner, &WorkFinishResult{}); err != nil {
 			t.Fatalf("current native approval should satisfy recorded policy: %v", err)
 		}
 		want := "gh pr merge 220 --repo StatPan/gira --squash --delete-branch --match-head-commit " + reviewedHead

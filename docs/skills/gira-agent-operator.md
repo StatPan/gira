@@ -70,6 +70,9 @@ change units, and milestones phase boundaries.
 6. Finish.
    - Prefer `gira ticket finish --dry-run`.
    - Apply only after the dry-run is clean: `gira ticket finish --apply`.
+   - When approval is tied to one exact PR head, pass `--expect-head FULL_SHA`
+     to both commands. Keep that SHA unchanged through the apply; drift blocks
+     reconciliation and does not make the target base atomic.
    - Completion requires a merged linked PR and the issue closed by GitHub or
      Gira lifecycle handling.
 
@@ -91,7 +94,7 @@ This generated section contains command facts for the agent lifecycle. Update `i
 - `gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr]`: Close a ticket as superseded and create a linked replacement ticket.
 - `gira ticket checks [TICKET] [--repo OWNER/REPO] [--detail] [--json]`: Show linked PR checks, review blockers, and next action.
 - `gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--detail] [--json]`: Wait for pending linked PR checks without merging.
-- `gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--sync-local]`: Merge the linked PR when policy allows; Draft PRs stop after ready transition and require a new finish preview.
+- `gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--expect-head FULL_SHA] [--sync-local]`: Merge the linked PR when policy allows; optionally bind finish to one full PR head SHA. Draft PRs stop after ready transition and require a new finish preview.
 - `gira ticket status [TICKET] [--repo OWNER/REPO] [--json|--html --output PATH]`: Report ticket status, linked PR blockers, and next action.
 - `gira config storage [--repo OWNER/REPO] [--config-root PATH] [--json]`: Show local storage roots, durability, privacy, and rebuild boundaries.
 - `gira dispatch goal [GOAL] [--repo OWNER/REPO] [--role implementer] [--profile default] [--json|--compact-json|--prompt]`: Build an official dispatch packet from a goal issue, goal handoff, and next safe child ticket worker handoff.

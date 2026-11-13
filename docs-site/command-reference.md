@@ -2540,6 +2540,36 @@ gira ticket supersede 64 --replacement-title "Define release gate" --body-file r
 
 Documented in: `README.md`, `docs-site/ticket-workflow.md`, `docs/dogfood.md`
 
+## `ticket transition`
+
+Move a ticket to a status through a declared workflow transition.
+
+Discovery tier: `managed_delivery`.
+
+Usage:
+
+```bash
+gira ticket transition [TICKET] --to STATUS --dry-run|--apply [--repo OWNER/REPO] [--json]
+```
+
+Since: `v3.1.0`
+
+Flags:
+
+- `--to`: Target workflow status name.
+- `--dry-run`: Preview the status, close, or reopen actions.
+- `--apply`: Set the status label and close (completed) or reopen as the category requires.
+
+Examples:
+
+- Mark a released ticket done
+
+```bash
+gira ticket transition 42 --to done --dry-run
+```
+
+Documented in: `docs/workflow-model.md`
+
 ## `ticket view`
 
 Show a Gira operating card for the ticket, linked PR, blockers, and next action. Alias: gira ticket show.

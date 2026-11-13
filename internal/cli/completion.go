@@ -187,6 +187,7 @@ func ticketCompletionEntries() []completionEntry {
 		{Name: "pr", Description: "Create or validate a PR"},
 		{Name: "note", Description: "Post a structured note"},
 		{Name: "supersede", Description: "Supersede a ticket"},
+		{Name: "transition", Description: "Move a ticket along the workflow"},
 		{Name: "checks", Description: "Show PR checks"},
 		{Name: "wait", Description: "Wait for PR checks"},
 		{Name: "finish", Description: "Finish ticket work"},

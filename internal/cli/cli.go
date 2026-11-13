@@ -953,6 +953,7 @@ Usage:
   gira ticket pr [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--draft] [--json]
   gira ticket note [TICKET] "BODY" --dry-run|--apply [--repo OWNER/REPO] [--kind progress|blocker|decision|handoff|summary|check] [--target auto|issue|pr|both] [--body TEXT|--body-file PATH|-] [--json]
   gira ticket supersede [TICKET] --replacement-title TITLE --body-file PATH|- --dry-run|--apply [--repo OWNER/REPO] [--close-draft-pr] [--json]
+  gira ticket transition [TICKET] --to STATUS --dry-run|--apply [--repo OWNER/REPO] [--json]
   gira ticket checks [TICKET] [--repo OWNER/REPO] [--detail] [--json]
   gira ticket wait [TICKET] [--repo OWNER/REPO] [--timeout 5m] [--interval 5s] [--detail] [--json]
   gira ticket finish [TICKET] --dry-run|--apply [--repo OWNER/REPO] [--expect-head SHA] [--wait 0s] [--sync-local] [--json]
@@ -971,6 +972,7 @@ Commands:
   pr      Validate or create a linked PR with Closes #N and update review status on apply
   note    Post a structured context note to the issue, linked PR, or both
   supersede Close a ticket as superseded and create a linked replacement ticket
+  transition Move a ticket to a status through a declared workflow transition
   checks  Show linked PR checks, review blockers, and next action
   wait    Wait for pending linked PR checks without merging
   finish  Mark the linked PR ready when needed, merge safely, and report convergence
@@ -1833,6 +1835,10 @@ var newTicketNoteReport = func(input gira.TicketNoteInput) (gira.TicketNoteRepor
 
 var newTicketSelfReviewReport = func(input gira.TicketSelfReviewInput) (gira.TicketSelfReviewReport, error) {
 	return gira.BuildTicketSelfReviewReport(input, devCommandRunner)
+}
+
+var transitionTicket = func(input gira.TicketTransitionInput) (gira.TicketTransitionReport, error) {
+	return gira.TransitionTicket(input, nil)
 }
 
 var newTicketSupersedeReport = func(input gira.TicketSupersedeInput) (gira.TicketSupersedeReport, error) {
@@ -4532,6 +4538,8 @@ func runTicket(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runTicketNote(args[1:], stdout, stderr)
 	case "supersede":
 		return runTicketSupersede(args[1:], stdout, stderr)
+	case "transition":
+		return runTicketTransition(args[1:], stdout, stderr)
 	case "checks":
 		return runTicketChecks(args[1:], stdout, stderr)
 	case "wait":
@@ -6935,6 +6943,60 @@ func runTicketSupersede(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprint(stdout, gira.FormatTicketSupersede(result))
+	return 0
+}
+
+func runTicketTransition(args []string, stdout io.Writer, stderr io.Writer) int {
+	args, positionalTicket, positionalOK := extractTicketPositional(args, stderr)
+	if !positionalOK {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	fs := flag.NewFlagSet("ticket transition", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repoValue := fs.String("repo", "", "Target GitHub repo in OWNER/REPO format")
+	ticket := fs.Int("ticket", 0, "Ticket number")
+	to := fs.String("to", "", "Target workflow status")
+	dryRun := fs.Bool("dry-run", false, "Preview without mutation")
+	apply := fs.Bool("apply", false, "Apply changes")
+	jsonOutput := fs.Bool("json", false, "Emit stable JSON output")
+	help := fs.Bool("help", false, "Show help")
+	fs.BoolVar(help, "h", false, "Show help")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, ticketHelp)
+		return 0
+	}
+	if *dryRun == *apply {
+		fmt.Fprint(stderr, "exactly one of --dry-run/--apply is required\n\n")
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	repo, err := gira.ResolveRepoContext(*repoValue, repoContextRunner)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	ticketNumber, ok := resolveTicketContext(repo, *ticket, 0, positionalTicket, true, stderr)
+	if !ok {
+		_, _ = io.WriteString(stderr, ticketHelp)
+		return 2
+	}
+	result, err := transitionTicket(gira.TicketTransitionInput{Repo: repo, Ticket: ticketNumber, To: *to, DryRun: *dryRun})
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Fprintf(stdout, "%s\n", out)
+	} else if err == nil {
+		fmt.Fprint(stdout, gira.FormatTicketTransition(result))
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
 	return 0
 }
 

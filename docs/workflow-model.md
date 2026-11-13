@@ -206,9 +206,13 @@ existing commands do not yet run transition rules (phase 3). A release-evidence
 validator for the external `release` transition is not registered yet.
 
 - `ticket finish` merges and moves the ticket to `ready-for-release`; the issue
-  stays open because it is not in the Done category.
-- `done` requires release evidence that Gira does not produce; it is a declared
-  external transition, recorded through a receipt or a later phase command.
+  stays open because it is not in the Done category. GitHub auto-closes the
+  issue through the PR's closing reference, so finish reopens it and sets the
+  target label (`ticket:reopen`, `ticket:finish-target` actions).
+- `done` requires release evidence that Gira does not produce. After deploying,
+  run `gira ticket transition N --to done --dry-run` then `--apply`: it checks
+  the declared `release` path, sets the label, and closes as `completed`.
+  Moving out of a Done-category status reopens the issue.
 - Merge alone never counts as Done for this workflow.
 
 ## Source Of Truth Modes

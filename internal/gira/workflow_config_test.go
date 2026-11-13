@@ -103,3 +103,26 @@ func TestWorkflowDoctorDefaultAndCustom(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestWorkflowModelDocExampleValidates(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "workflow-model.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(data)
+	start := strings.Index(doc, "```yaml\nworkflow:")
+	if start < 0 {
+		t.Fatal("workflow yaml example not found")
+	}
+	block := doc[start+len("```yaml\n"):]
+	block = block[:strings.Index(block, "```")]
+	var cfg struct {
+		Workflow *Workflow `yaml:"workflow"`
+	}
+	if err := yaml.Unmarshal([]byte(block), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, findings := resolveWorkflow(cfg.Workflow); len(findings) != 0 {
+		t.Fatalf("doc example findings: %+v", findings)
+	}
+}

@@ -34,9 +34,12 @@ func (s *workflowSources) UnmarshalYAML(n *yaml.Node) error {
 }
 
 type WorkflowTransition struct {
-	Name string          `yaml:"name"`
-	From workflowSources `yaml:"from"`
-	To   string          `yaml:"to"`
+	Name       string          `yaml:"name"`
+	From       workflowSources `yaml:"from"`
+	To         string          `yaml:"to"`
+	Conditions []string        `yaml:"conditions"`
+	Validators []string        `yaml:"validators"`
+	Post       []string        `yaml:"post"`
 }
 type Workflow struct {
 	Statuses     []WorkflowStatus     `yaml:"statuses"`
@@ -51,16 +54,16 @@ func defaultWorkflow() Workflow {
 	}
 	w.Transitions = []WorkflowTransition{
 		{Name: "prepare", From: workflowSources{"backlog"}, To: "ready"},
-		{Name: "start", From: workflowSources{"ready"}, To: "in-progress"},
-		{Name: "review", From: workflowSources{"in-progress"}, To: "in-review"},
-		{Name: "draft", From: workflowSources{"in-review"}, To: "in-progress"},
-		{Name: "finish", From: workflowSources{"in-review"}, To: "done"},
+		{Name: "start", From: workflowSources{"ready"}, To: "in-progress", Conditions: []string{"open_issue", "ready_status", "clean_worktree"}, Validators: []string{"ticket_readiness", "branch_reuse_safety", "remote_branch_conflict"}, Post: []string{"create_or_reuse_branch", "set_status_label"}},
+		{Name: "review", From: workflowSources{"in-progress"}, To: "in-review", Conditions: []string{"branch_exists"}, Validators: []string{"closing_reference", "pr_base"}, Post: []string{"create_or_update_pr", "set_status_label"}},
+		{Name: "draft", From: workflowSources{"in-review"}, To: "in-progress", Post: []string{"set_status_label"}},
+		{Name: "finish", From: workflowSources{"in-review"}, To: "done", Conditions: []string{"linked_pr_selected"}, Validators: []string{"finish_readiness"}, Post: []string{"merge", "close_issue", "set_status_label", "finish_receipt", "local_sync", "jira_done"}},
 		{Name: "block", From: workflowSources{"backlog", "ready", "in-progress", "in-review"}, To: "blocked"},
 		{Name: "unblock", From: workflowSources{"blocked"}, To: "backlog"},
 		{Name: "unblock-ready", From: workflowSources{"blocked"}, To: "ready"},
 		{Name: "unblock-progress", From: workflowSources{"blocked"}, To: "in-progress"},
 		{Name: "unblock-review", From: workflowSources{"blocked"}, To: "in-review"},
-		{Name: "supersede", From: workflowSources{"any"}, To: "done"},
+		{Name: "supersede", From: workflowSources{"any"}, To: "done", Validators: []string{"replacement_ticket_created"}, Post: []string{"close_issue", "decision_note"}},
 	}
 	return w
 }
@@ -100,7 +103,21 @@ func resolveWorkflow(config *Workflow) (Workflow, []DoctorCheck) {
 			add("workflow_status_category", fmt.Sprintf("status %q has invalid category %q", s.Name, s.Category))
 		}
 	}
+	registry := defaultTransitionRegistry()
 	for _, t := range w.Transitions {
+		for _, group := range []struct {
+			kind  string
+			names []string
+			steps map[string]TransitionStep
+		}{
+			{"condition", t.Conditions, registry.Conditions}, {"validator", t.Validators, registry.Validators}, {"post", t.Post, registry.Post},
+		} {
+			for _, name := range group.names {
+				if _, ok := group.steps[name]; !ok {
+					add("workflow_unknown_step", fmt.Sprintf("transition %q has unknown %s %q", t.Name, group.kind, name))
+				}
+			}
+		}
 		if !names[t.To] || t.To == "" {
 			add("workflow_transition_to", fmt.Sprintf("transition %q has undeclared destination %q", t.Name, t.To))
 		}

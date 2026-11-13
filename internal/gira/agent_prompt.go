@@ -917,7 +917,7 @@ func plannerReadinessSignals(issue devStartIssue, acceptance []string) []string 
 	} else {
 		signals = append(signals, "issue_not_open")
 	}
-	status := managedStatusFromLabels(issue.Labels)
+	status := deriveStatus(issue.Labels).managed
 	if status == "" {
 		signals = append(signals, "missing_status_label")
 	} else {

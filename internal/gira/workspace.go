@@ -1006,7 +1006,7 @@ func workspaceInboxStatus(ticket PortfolioTicket, invalid map[int]struct{}) stri
 func workspaceRepoFromStatus(summary StatusSummary) WorkspaceRepo {
 	view := WorkspaceRepo{Repo: summary.Repo, Open: summary.Counts.Issues.Open, Blocked: summary.Counts.Issues.BlockedOpen, Stale: summary.Counts.Issues.StaleOpen}
 	for _, issue := range summary.Issues.Open {
-		status := statusFromLabels(issue.Labels)
+		status := deriveStatus(issue.Labels).raw
 		switch status {
 		case "ready":
 			view.Ready++
@@ -1025,7 +1025,7 @@ func workspaceRepoFromStatus(summary StatusSummary) WorkspaceRepo {
 }
 
 func workspaceBacklogFromIssue(repo string, issue IssueStats) WorkspaceBacklogItem {
-	status := statusFromLabels(issue.Labels)
+	status := deriveStatus(issue.Labels).raw
 	priority := ""
 	for _, label := range issue.Labels {
 		if strings.HasPrefix(label, "priority:") {
@@ -1077,7 +1077,7 @@ func workspaceQueueStatusFromIssue(repo string, issue IssueStats) WorkStatusResu
 	if issue.Milestone != nil {
 		milestone = *issue.Milestone
 	}
-	status := statusFromLabels(issue.Labels)
+	status := deriveStatus(issue.Labels).raw
 	result := WorkStatusResult{
 		Command:    "workspace status",
 		Repo:       repo,
@@ -1106,15 +1106,6 @@ func workspaceQueueSummaryNextAction(status string) string {
 	default:
 		return "inspect_status"
 	}
-}
-
-func statusFromLabels(labels []string) string {
-	for _, label := range labels {
-		if strings.HasPrefix(label, "status:") {
-			return strings.TrimPrefix(label, "status:")
-		}
-	}
-	return "open"
 }
 
 func sortWorkspaceBacklog(items []WorkspaceBacklogItem) {

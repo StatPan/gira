@@ -468,7 +468,7 @@ func milestoneTicket(issue normalizedIssue) MilestoneTicket {
 	if issue.Milestone != nil {
 		milestone = *issue.Milestone
 	}
-	status := statusFromLabels(issue.Labels)
+	status := deriveStatus(issue.Labels).raw
 	if strings.EqualFold(issue.State, "closed") && status == "open" {
 		status = "done"
 	}

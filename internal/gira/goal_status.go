@@ -80,7 +80,7 @@ func BuildGoalStatusReport(input GoalStatusInput, runner CommandRunner) (GoalSta
 	if goal.IsPR {
 		return GoalStatusReport{}, fmt.Errorf("goal #%d resolves to a pull request", goalNumber)
 	}
-	status := displayStatus(managedStatusFromLabels(goal.Labels))
+	status := displayStatus(deriveStatus(goal.Labels).managed)
 	report := GoalStatusReport{
 		Command:       "goal status",
 		SchemaVersion: GoalStatusSchemaVersion,

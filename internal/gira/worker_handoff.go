@@ -434,7 +434,7 @@ func ticketHandoffNextStep(repo RepoRef, issue devStartIssue, role string, readi
 	case AgentPromptRoleReviewer:
 		return "request_review", fmt.Sprintf("gira ticket review --repo %s --ticket %d --json", repo.FullName(), issue.Number)
 	default:
-		status := displayStatus(managedStatusFromLabels(issue.Labels))
+		status := displayStatus(deriveStatus(issue.Labels).managed)
 		if strings.EqualFold(status, "In progress") || strings.EqualFold(status, "In review") {
 			return "implement", fmt.Sprintf("gira ticket pr --repo %s --ticket %d --dry-run", repo.FullName(), issue.Number)
 		}

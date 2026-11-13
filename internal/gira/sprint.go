@@ -276,7 +276,7 @@ func SprintRolloverForClient(client StatusClient, runner CommandRunner, toMilest
 		if reason == "" {
 			continue
 		}
-		lifecycleStatus := statusFromLabels(issue.Labels)
+		lifecycleStatus := deriveStatus(issue.Labels).raw
 		item := SprintRolloverItem{IssueNumber: issue.Number, IssueTitle: issue.Title, FromMilestone: source.Title, LifecycleStatus: lifecycleStatus, CandidateReason: reason, NextStep: fmt.Sprintf("gira ticket status --repo %s --ticket %d", client.Repo().FullName(), issue.Number)}
 		report.Summary.Candidates++
 		if lifecycleStatus == "done" {

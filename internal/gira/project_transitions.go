@@ -715,7 +715,7 @@ func inferIssueStatus(issue ProjectTransitionIssue) string {
 	if strings.EqualFold(issue.State, "closed") {
 		return "Done"
 	}
-	status := managedStatusFromLabels(issue.Labels)
+	status := deriveStatus(issue.Labels).managed
 	if status != "" {
 		return status
 	}
@@ -736,40 +736,15 @@ func blockedRemovalTarget(issue ProjectTransitionIssue, prs []ProjectTransitionP
 }
 
 func previousNonBlockedStatus(labels []string) (string, bool) {
-	best := ""
-	bestScore := -1
+	var remaining []string
 	for _, label := range labels {
-		status, ok := mapStatusLabel(label)
-		if !ok || status == "Blocked" {
-			continue
-		}
-		score := statusPriority(status)
-		if score > bestScore {
-			best = status
-			bestScore = score
+		status, ok := statusByLabel(label)
+		if !ok || status.name != "Blocked" {
+			remaining = append(remaining, label)
 		}
 	}
-	if best == "" {
-		return "", false
-	}
-	return best, true
-}
-
-func managedStatusFromLabels(labels []string) string {
-	best := ""
-	bestScore := -1
-	for _, label := range labels {
-		status, ok := mapStatusLabel(label)
-		if !ok {
-			continue
-		}
-		score := statusPriority(status)
-		if score > bestScore {
-			bestScore = score
-			best = status
-		}
-	}
-	return best
+	status := deriveStatus(remaining).managed
+	return status, status != ""
 }
 
 func replaceIssueStatusLabel(repo RepoRef, issueNumber int, existingManaged []string, targetLabel string, runner CommandRunner) error {
@@ -790,69 +765,12 @@ func replaceIssueStatusLabel(repo RepoRef, issueNumber int, existingManaged []st
 func managedStatusLabels(labels []string) []string {
 	out := make([]string, 0)
 	for _, label := range labels {
-		if _, ok := mapStatusLabel(label); ok {
+		if _, ok := statusByLabel(label); ok {
 			out = append(out, label)
 		}
 	}
 	sort.Strings(out)
 	return out
-}
-
-func statusToLabel(status string) (string, bool) {
-	switch strings.TrimSpace(status) {
-	case "Backlog":
-		return "status:backlog", true
-	case "Ready":
-		return "status:ready", true
-	case "Blocked":
-		return "status:blocked", true
-	case "In progress":
-		return "status:in-progress", true
-	case "In review":
-		return "status:in-review", true
-	case "Done":
-		return "status:done", true
-	default:
-		return "", false
-	}
-}
-
-func mapStatusLabel(label string) (string, bool) {
-	switch strings.ToLower(strings.TrimSpace(label)) {
-	case "status:backlog":
-		return "Backlog", true
-	case "status:ready":
-		return "Ready", true
-	case "status:blocked":
-		return "Blocked", true
-	case "status:in-progress", "status:in_progress":
-		return "In progress", true
-	case "status:in-review", "status:in_review":
-		return "In review", true
-	case "status:done":
-		return "Done", true
-	default:
-		return "", false
-	}
-}
-
-func statusPriority(status string) int {
-	switch status {
-	case "Done":
-		return 6
-	case "In review":
-		return 5
-	case "In progress":
-		return 4
-	case "Blocked":
-		return 3
-	case "Ready":
-		return 2
-	case "Backlog":
-		return 1
-	default:
-		return 0
-	}
 }
 
 func hasBlockedLabel(labels []string) bool {

@@ -175,7 +175,7 @@ func normalizeTicketListRows(output []byte) ([]TicketListItem, error) {
 			Number:    row.Number,
 			State:     strings.ToLower(row.State),
 			Title:     row.Title,
-			Status:    statusFromLabels(labels),
+			Status:    deriveStatus(labels).raw,
 			Labels:    ticketListKeyLabels(labels),
 			Assignees: assignees,
 			Milestone: milestone,

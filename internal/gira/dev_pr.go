@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -1061,11 +1062,12 @@ func classifyDevPRCheck(status string, conclusion string) string {
 	return "unknown"
 }
 
+var closingReferencePattern = regexp.MustCompile(`(?i)(?:^|[^\pL\pM\pN_])(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]+#([0-9]+)`)
+
 func hasClosingKeyword(body string, issueNumber int) bool {
-	needle := "#" + strconv.Itoa(issueNumber)
-	lower := strings.ToLower(body)
-	for _, keyword := range []string{"close", "closes", "closed", "fix", "fixes", "fixed", "resolve", "resolves", "resolved"} {
-		if strings.Contains(lower, keyword+" "+needle) {
+	needle := strconv.Itoa(issueNumber)
+	for _, match := range closingReferencePattern.FindAllStringSubmatch(body, -1) {
+		if match[1] == needle {
 			return true
 		}
 	}

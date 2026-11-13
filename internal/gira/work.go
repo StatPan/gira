@@ -453,7 +453,7 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 		return WorkStartResult{}, fmt.Errorf("resolve operation policy for %s before ticket start: %w", repo.FullName(), err)
 	}
 	ticketReadiness := EvaluateTicketReadinessWithPolicy(issue.Body, issue.Labels, issue.State, operationPolicy)
-	status := displayStatus(managedStatusFromLabels(issue.Labels))
+	status := displayStatus(deriveStatus(issue.Labels).managed)
 	alreadyStarted := status == "In progress"
 	if alreadyStarted && !strings.EqualFold(issue.State, "open") {
 		return WorkStartResult{}, fmt.Errorf("issue #%d is not open", issue.Number)
@@ -803,7 +803,7 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 	if err != nil {
 		return WorkPRResult{}, err
 	}
-	status := displayStatus(managedStatusFromLabels(issue.Labels))
+	status := displayStatus(deriveStatus(issue.Labels).managed)
 	targetStatus := "In review"
 	if draft {
 		targetStatus = "In progress"
@@ -1159,7 +1159,7 @@ func workStatusFromIssueAndPRWithReviewEvidenceAndPolicy(repo RepoRef, issueNumb
 	applyDevPRBindingPolicy(&prStatus, issueNumber, devPRBindingPolicyFromIssue(issue, nil, repo))
 	reviewPolicy := FinishReviewPolicy{Value: FinishReviewPolicyNotEvaluated, Source: "ticket_status_not_finish_eligible"}
 	var review *FinishReviewEvidence
-	status := displayStatus(managedStatusFromLabels(issue.Labels))
+	status := displayStatus(deriveStatus(issue.Labels).managed)
 	nextAction := nextWorkAction(issue.State, status, prStatus)
 	if runner != nil && prStatus.PRNumber > 0 && strings.EqualFold(status, "In review") && (nextAction == "merge_when_policy_allows" || containsString(prStatus.Blockers, "review")) {
 		reviewPolicy = resolveFinishReviewPolicy(repo, prStatus, runner)
@@ -1173,7 +1173,7 @@ func workStatusFromIssueAndPRWithReviewEvidenceAndPolicy(repo RepoRef, issueNumb
 // ticket status while allowing callers that already fetched review evidence to
 // avoid repeating a provider read per child.
 func workStatusFromIssueAndPRWithPreparedReview(repo RepoRef, issueNumber int, issue devStartIssue, prStatus DevPRStatusResult, operationPolicy ResolvedOperationPolicy, reviewPolicy FinishReviewPolicy, review *FinishReviewEvidence) WorkStatusResult {
-	status := displayStatus(managedStatusFromLabels(issue.Labels))
+	status := displayStatus(deriveStatus(issue.Labels).managed)
 	nextAction := nextWorkAction(issue.State, status, prStatus)
 	if review != nil && prStatus.PRNumber > 0 && strings.EqualFold(status, "In review") && (nextAction == "merge_when_policy_allows" || containsString(prStatus.Blockers, "review")) {
 		if reviewPolicy.Value == FinishReviewPolicyNone || review.Blocker != "" || review.Status == "approved" || review.Status == "independent_recorded" {
@@ -1241,7 +1241,7 @@ func ticketReleaseImpactPtr(impact TicketReleaseImpact) *TicketReleaseImpact {
 func reviewPolicyPtr(policy FinishReviewPolicy) *FinishReviewPolicy { return &policy }
 
 func shouldRetryWorkStatusMissingPR(issue devStartIssue, prStatus DevPRStatusResult) bool {
-	return containsString(prStatus.Blockers, "missing_linked_pr") && strings.EqualFold(managedStatusFromLabels(issue.Labels), "In review")
+	return containsString(prStatus.Blockers, "missing_linked_pr") && strings.EqualFold(deriveStatus(issue.Labels).managed, "In review")
 }
 
 func ticketStatusBranch(issue devStartIssue, pr DevPRStatusResult) *TicketStatusBranch {

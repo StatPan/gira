@@ -349,26 +349,33 @@ func (c GHSyncClient) CreateIssue(issue BootstrapIssueDef) error {
 	return err
 }
 
-var DesiredLabels = []LabelDef{
-	{Name: "gira:bootstrap", Color: "5319E7", Description: "Created or managed by Gira bootstrap metadata sync."},
-	{Name: "type:epic", Color: "0E8A16", Description: "Large outcome that groups related implementation tasks."},
-	{Name: "type:task", Color: "1D76DB", Description: "Concrete implementation task."},
-	{Name: "type:chore", Color: "D4C5F9", Description: "Maintenance or process work."},
-	{Name: "type:bug", Color: "D73A4A", Description: "Defect report that should be reproduced and fixed."},
-	{Name: "type:story", Color: "A2EEEF", Description: "User-facing capability with acceptance criteria."},
-	{Name: "type:spike", Color: "FBCA04", Description: "Research or feasibility investigation with a bounded output."},
-	{Name: "agent:human", Color: "FBCA04", Description: "Owned by a human project lead."},
-	{Name: "agent:worker", Color: "BFDADC", Description: "Ready for an implementation worker."},
-	{Name: "status:ready", Color: "C2E0C6", Description: "Ready to start."},
-	{Name: "status:in-progress", Color: "1D76DB", Description: "Work has started on a branch or active implementation."},
-	{Name: "status:in-review", Color: "7057FF", Description: "A linked PR or review surface is active."},
-	{Name: "status:blocked", Color: "E99695", Description: "Blocked by an external dependency or decision."},
-	{Name: "status:done", Color: "0E8A16", Description: "Work is completed with merged, closed, or accepted completion evidence."},
-	{Name: "priority:p1", Color: "D93F0B", Description: "High priority work."},
-	{Name: "priority:p2", Color: "FBCA04", Description: "Medium priority work."},
-	{Name: "area:backend", Color: "0052CC", Description: "Backend, CLI, and core workflow implementation."},
-	{Name: "area:docs", Color: "0075CA", Description: "Documentation and process guidance."},
-	{Name: "area:ai", Color: "7057FF", Description: "AI and agent workflow behavior."},
+var DesiredLabels = desiredLabels()
+
+func desiredLabels() []LabelDef {
+	labels := []LabelDef{
+		{Name: "gira:bootstrap", Color: "5319E7", Description: "Created or managed by Gira bootstrap metadata sync."},
+		{Name: "type:epic", Color: "0E8A16", Description: "Large outcome that groups related implementation tasks."},
+		{Name: "type:task", Color: "1D76DB", Description: "Concrete implementation task."},
+		{Name: "type:chore", Color: "D4C5F9", Description: "Maintenance or process work."},
+		{Name: "type:bug", Color: "D73A4A", Description: "Defect report that should be reproduced and fixed."},
+		{Name: "type:story", Color: "A2EEEF", Description: "User-facing capability with acceptance criteria."},
+		{Name: "type:spike", Color: "FBCA04", Description: "Research or feasibility investigation with a bounded output."},
+		{Name: "agent:human", Color: "FBCA04", Description: "Owned by a human project lead."},
+		{Name: "agent:worker", Color: "BFDADC", Description: "Ready for an implementation worker."},
+	}
+	for _, status := range defaultStatuses {
+		if status.color != "" {
+			labels = append(labels, LabelDef{Name: status.label, Color: status.color, Description: status.description})
+		}
+	}
+	labels = append(labels, []LabelDef{
+		{Name: "priority:p1", Color: "D93F0B", Description: "High priority work."},
+		{Name: "priority:p2", Color: "FBCA04", Description: "Medium priority work."},
+		{Name: "area:backend", Color: "0052CC", Description: "Backend, CLI, and core workflow implementation."},
+		{Name: "area:docs", Color: "0075CA", Description: "Documentation and process guidance."},
+		{Name: "area:ai", Color: "7057FF", Description: "AI and agent workflow behavior."},
+	}...)
+	return labels
 }
 
 var DesiredMilestones = []MilestoneDef{

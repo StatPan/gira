@@ -374,7 +374,7 @@ func goalStatusChildFromSnapshot(ref goalChildRef, snapshot goalStatusRepository
 }
 
 func goalStatusReviewPolicyEligible(issue devStartIssue, status DevPRStatusResult) bool {
-	if status.PRNumber == 0 || !strings.EqualFold(strings.TrimSpace(status.State), "OPEN") || !strings.EqualFold(displayStatus(managedStatusFromLabels(issue.Labels)), "In review") {
+	if status.PRNumber == 0 || !strings.EqualFold(strings.TrimSpace(status.State), "OPEN") || !strings.EqualFold(displayStatus(deriveStatus(issue.Labels).managed), "In review") {
 		return false
 	}
 	return len(removeString(status.Blockers, "review")) == 0
@@ -384,7 +384,7 @@ func goalStatusReviewEvidenceForPR(issue devStartIssue, status DevPRStatusResult
 	if status.PRNumber == 0 {
 		return nil
 	}
-	workStatus := displayStatus(managedStatusFromLabels(issue.Labels))
+	workStatus := displayStatus(deriveStatus(issue.Labels).managed)
 	nextAction := nextWorkAction(issue.State, workStatus, status)
 	if !strings.EqualFold(workStatus, "In review") || (nextAction != "merge_when_policy_allows" && !containsString(status.Blockers, "review")) {
 		return nil

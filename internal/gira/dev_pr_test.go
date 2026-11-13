@@ -56,6 +56,81 @@ func TestOpenDevPR(t *testing.T) {
 	}
 }
 
+func TestHasClosingKeywordBoundaries(t *testing.T) {
+	for _, tt := range []struct {
+		body string
+		want bool
+	}{
+		{"The separately unresolved #1462 migration must precede later proof-writing collectors", false},
+		{"enclosed #1462", false}, {"prefixfixes #1462", false}, {"_resolved #1462", false},
+		{"éresolved #1462", false}, {"resolvedness #1462", false}, {"fixesX #1462", false},
+		{"Closes #14620", false}, {"Closes #146", false},
+		{"close #1462", true}, {"Closes #1462.", true}, {"CLOSED #1462", true},
+		{"fix #1462", true}, {"Fixes #1462,", true}, {"fixed #1462", true},
+		{"resolve #1462", true}, {"resolves #1462", true}, {"(ReSoLvEd\t#1462)", true},
+		{"fixes #14620 and closes #1462", true},
+	} {
+		t.Run(tt.body, func(t *testing.T) {
+			if got := hasClosingKeyword(tt.body, 1462); got != tt.want {
+				t.Errorf("hasClosingKeyword(%q, 1462) = %t, want %t", tt.body, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDevPRStatusClosingReferenceBoundaries(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := devPRRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/issues/1462/timeline --paginate": []byte(`[
+			{"source":{"issue":{"number":1463,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/1463"}}}},
+			{"source":{"issue":{"number":1464,"pull_request":{"url":"https://api.github.com/repos/StatPan/gira/pulls/1464"}}}}
+		]`),
+		"gh api repos/StatPan/gira/pulls/1463":                                                                          []byte(`{"number":1463,"body":"Closes #1461\nThe separately unresolved #1462 migration must precede later proof-writing collectors","state":"closed","merged_at":"2026-07-18T10:00:00Z","merge_commit_sha":"merge1463","head":{"ref":"issue-1461","sha":"head1463"},"base":{"ref":"main"}}`),
+		"gh api repos/StatPan/gira/pulls/1464":                                                                          []byte(`{"number":1464,"body":"Closes #1462","state":"open","draft":true,"mergeable_state":"blocked","head":{"ref":"issue-1462","sha":"head1464"},"base":{"ref":"main"}}`),
+		"gh api repos/StatPan/gira/pulls/1464/reviews --paginate":                                                       []byte(`[]`),
+		"gh api repos/StatPan/gira/branches/main/protection/required_pull_request_reviews":                              []byte(`{"required_approving_review_count":1}`),
+		"gh api repos/StatPan/gira/commits/head1464/check-runs -X GET -f per_page=100 -f filter=all --paginate --slurp": []byte(`{"check_runs":[{"name":"test","status":"queued","conclusion":""}]}`),
+		"gh api repos/StatPan/gira/commits/head1464/status":                                                             []byte(`{"statuses":[]}`),
+	}}
+	status, err := DevPRStatus(repo, 1462, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.PRNumber != 1464 || status.State != "OPEN" || status.Ready || !status.ClosingReference {
+		t.Fatalf("expected unfinished closing PR 1464: %+v", status)
+	}
+	for _, blocker := range []string{"draft", "review", "checks_pending"} {
+		if !containsString(status.Blockers, blocker) {
+			t.Errorf("missing %s blocker: %+v", blocker, status)
+		}
+	}
+
+	runner.outputs["gh api repos/StatPan/gira/pulls/1464"] = []byte(`{"number":1464,"body":"Closes #1462","state":"closed","merged_at":"2026-07-18T11:00:00Z","merge_commit_sha":"merge1464","head":{"ref":"issue-1462","sha":"head1464"},"base":{"ref":"main"}}`)
+	after, err := DevPRStatus(repo, 1462, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.PRNumber != 1464 || after.State != "MERGED" || !after.ClosingReference || after.Binding.Source == "ambiguous_multiple_merged_prs" {
+		t.Fatalf("expected only actual closing PR after merge: %+v", after)
+	}
+}
+
+func TestVerifyMergedDevPRClosingReferenceBoundaries(t *testing.T) {
+	repo := RepoRef{Owner: "StatPan", Name: "gira"}
+	runner := devPRRunner{outputs: map[string][]byte{
+		"gh api repos/StatPan/gira/pulls/1463": []byte(`{"number":1463,"body":"Closes #1461\nThe separately unresolved #1462 migration must precede later proof-writing collectors","state":"closed","merged_at":"2026-07-18T10:00:00Z","merge_commit_sha":"merge1463","head":{"ref":"issue-1461","sha":"head1463"}}`),
+		"gh api repos/StatPan/gira/pulls/1464": []byte(`{"number":1464,"body":"Closes #1462","state":"closed","merged_at":"2026-07-18T11:00:00Z","merge_commit_sha":"merge1464","head":{"ref":"issue-1462","sha":"head1464"}}`),
+	}}
+	bad, err := verifyMergedDevPR(repo, 1462, 1463, DevPRStatusResult{}, runner)
+	if err == nil || bad.ClosingReference || bad.Ready {
+		t.Fatalf("false relationship accepted: %+v, err=%v", bad, err)
+	}
+	good, err := verifyMergedDevPR(repo, 1462, 1464, DevPRStatusResult{}, runner)
+	if err != nil || !good.ClosingReference || !good.Ready || good.State != "MERGED" {
+		t.Fatalf("true delivery rejected: %+v, err=%v", good, err)
+	}
+}
+
 func TestDevPRStatusBlocked(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	runner := devPRRunner{outputs: map[string][]byte{

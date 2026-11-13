@@ -161,11 +161,12 @@ func resolveWorkflow(config *Workflow) (Workflow, []DoctorCheck) {
 	return w, findings
 }
 
-// Read only the current checkout's config, without changing other commands' parsing.
-func localWorkflowFindings(repo RepoRef) []DoctorCheck {
+// loadDeclaredWorkflow reads only the current checkout's matching config.
+// Findings must be checked before using the returned workflow.
+func loadDeclaredWorkflow(repo RepoRef) (Workflow, bool, []DoctorCheck) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return nil
+		return Workflow{}, false, nil
 	}
 	for {
 		path := filepath.Join(dir, ".gira", "config.yaml")
@@ -176,19 +177,19 @@ func localWorkflowFindings(repo RepoRef) []DoctorCheck {
 				Workflow *Workflow `yaml:"workflow"`
 			}
 			if err := yaml.Unmarshal(data, &cfg); err != nil {
-				return []DoctorCheck{{ID: "workflow_config_parse", Status: DoctorCheckFail, Detail: err.Error(), Remediation: "fix workflow in .gira/config.yaml", FindingClass: DoctorFindingEnvironment}}
+				return Workflow{}, false, []DoctorCheck{{ID: "workflow_config_parse", Status: DoctorCheckFail, Detail: err.Error(), Remediation: "fix workflow in .gira/config.yaml", FindingClass: DoctorFindingEnvironment}}
 			}
 			if cfg.Repo != "" && repo.FullName() != "/" {
 				configured, e := ParseRepoRef(cfg.Repo)
 				if e != nil || !sameRepoRef(configured, repo) {
-					return nil
+					return Workflow{}, false, nil
 				}
 			}
-			_, findings := resolveWorkflow(cfg.Workflow)
-			return findings
+			workflow, findings := resolveWorkflow(cfg.Workflow)
+			return workflow, cfg.Workflow != nil, findings
 		}
 		if !os.IsNotExist(readErr) {
-			return []DoctorCheck{{ID: "workflow_config_read", Status: DoctorCheckFail, Detail: readErr.Error(), Remediation: "make .gira/config.yaml readable", FindingClass: DoctorFindingEnvironment}}
+			return Workflow{}, false, []DoctorCheck{{ID: "workflow_config_read", Status: DoctorCheckFail, Detail: readErr.Error(), Remediation: "make .gira/config.yaml readable", FindingClass: DoctorFindingEnvironment}}
 		}
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 			break
@@ -199,5 +200,123 @@ func localWorkflowFindings(repo RepoRef) []DoctorCheck {
 		}
 		dir = parent
 	}
-	return nil
+	return defaultWorkflow(), false, nil
+}
+
+func localWorkflowFindings(repo RepoRef) []DoctorCheck {
+	_, _, findings := loadDeclaredWorkflow(repo)
+	return findings
+}
+
+// declaredStatusMove describes a lifecycle status change without running steps.
+// Callers must check findings even when declared is false, since malformed or
+// unreadable configuration may prevent determining whether a workflow exists.
+type declaredStatusMove struct {
+	from, to, label string
+	category        statusCategory
+	noOp            bool
+	blocker, detail string
+}
+
+func resolveDeclaredStatusMove(w Workflow, command string, labels []string) declaredStatusMove {
+	fallback := map[string]string{
+		"start": "in-progress", "review": "in-review", "draft": "in-progress",
+		"finish": "done", "supersede": "done",
+	}[command]
+	move := declaredStatusMove{to: fallback}
+	for _, transition := range w.Transitions {
+		if transition.Name == command {
+			move.to = transition.To
+			break
+		}
+	}
+	var mapped []string
+	for _, label := range labels {
+		for _, status := range w.Statuses {
+			if strings.EqualFold(strings.TrimSpace(label), status.Label) {
+				if move.from == "" {
+					move.from = status.Name
+				}
+				mapped = append(mapped, "status:"+status.Name)
+				break
+			}
+		}
+	}
+	derived := deriveStatus(mapped)
+	if derived.managed != "" {
+		for _, status := range w.Statuses {
+			if def, ok := statusByLabel("status:" + status.Name); ok && def.name == derived.managed {
+				move.from = status.Name
+				break
+			}
+		}
+	}
+	for _, status := range w.Statuses {
+		if status.Name == move.to {
+			move.label, move.category = status.Label, status.Category
+			break
+		}
+	}
+	if move.label == "" {
+		move.blocker = "missing_transition"
+		move.detail = fmt.Sprintf("from %s to %s", move.from, move.to)
+		return move
+	}
+	if move.from == move.to {
+		move.noOp = true
+	} else if findWorkflowTransition(w, move.from, move.to) == nil {
+		move.blocker = "missing_transition"
+		move.detail = fmt.Sprintf("from %s to %s", move.from, move.to)
+	}
+	return move
+}
+
+// workflowGate is the declared workflow a lifecycle command must follow.
+// A zero gate (declared=false) means callers keep their default behavior.
+type workflowGate struct {
+	workflow Workflow
+	declared bool
+}
+
+// loadWorkflowGate returns an invalid_workflow error when a declared workflow
+// has validation findings, so commands never guess at a broken declaration.
+func loadWorkflowGate(repo RepoRef) (workflowGate, error) {
+	w, declared, findings := loadDeclaredWorkflow(repo)
+	if !declared {
+		return workflowGate{}, nil
+	}
+	if len(findings) > 0 {
+		details := make([]string, 0, len(findings))
+		for _, finding := range findings {
+			details = append(details, finding.ID+": "+finding.Detail)
+		}
+		return workflowGate{}, fmt.Errorf("invalid_workflow: %s", strings.Join(details, "; "))
+	}
+	return workflowGate{workflow: w, declared: true}, nil
+}
+
+// move resolves a command's status move; a missing path is a named error.
+func (g workflowGate) move(command string, labels []string) (declaredStatusMove, error) {
+	move := resolveDeclaredStatusMove(g.workflow, command, labels)
+	if move.blocker != "" {
+		return move, fmt.Errorf("%s: %s %s", move.blocker, command, move.detail)
+	}
+	return move, nil
+}
+
+// setStatus writes the declared label for a resolved move, removing every
+// other declared or default status label.
+func (g workflowGate) setStatus(repo RepoRef, issueNumber int, labels []string, move declaredStatusMove, runner CommandRunner) error {
+	existing := managedStatusLabels(labels)
+	for _, label := range labels {
+		for _, status := range g.workflow.Statuses {
+			if strings.EqualFold(strings.TrimSpace(label), status.Label) && !containsFold(existing, label) {
+				existing = append(existing, label)
+			}
+		}
+	}
+	if len(existing) == 1 && strings.EqualFold(existing[0], move.label) {
+		return nil
+	}
+	return replaceIssueStatusLabel(repo, issueNumber, existing, move.label, runner)
 }

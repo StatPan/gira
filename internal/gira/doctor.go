@@ -77,6 +77,7 @@ func BuildDoctorReport(repoValue string, runner CommandRunner, checkedAt time.Ti
 
 	repo, repoCheck := resolveDoctorRepo(repoValue, runner, ghOK)
 	report.Checks = append(report.Checks, repoCheck)
+	report.Checks = append(report.Checks, localWorkflowFindings(repo)...)
 	if repo.FullName() != "/" {
 		report.Repo = repo.FullName()
 	}

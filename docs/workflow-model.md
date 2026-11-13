@@ -180,7 +180,6 @@ any ─▶ done (supersede, resolution: not planned)
 A team that deploys after merge declares one more status.
 
 ```yaml
-# Illustrative only; final schema is defined in phase 2.
 workflow:
   statuses:
     - { name: ready, category: to_do }
@@ -189,12 +188,19 @@ workflow:
     - { name: ready-for-release, category: in_progress }   # 배포대기
     - { name: done, category: done }
   transitions:
-    - { from: in-review, to: ready-for-release, command: ticket finish,
+    - { name: start, from: ready, to: in-progress }
+    - { name: review, from: in-progress, to: in-review }
+    - { name: finish, from: in-review, to: ready-for-release, command: ticket finish,
         validators: [finish_readiness], post: [merge, receipt] }
     - { from: ready-for-release, to: done, command: external,
         validators: [release_evidence], post: [close_completed] }
   finish_target: ready-for-release
 ```
+
+Status labels default to `status:` followed by the name; an explicit `label` may
+be supplied instead. Transition `from` accepts a status name, a list of names,
+or `any` (also spelled `global`). Phase 2 validates these declarations only;
+`command`, `validators`, and `post` are illustrative and not yet enforced.
 
 - `ticket finish` merges and moves the ticket to `ready-for-release`; the issue
   stays open because it is not in the Done category.

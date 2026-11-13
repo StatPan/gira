@@ -4,6 +4,8 @@ Gira defaults to GitHub-native operation. GitHub issues are executable work pack
 
 Jira-primary mode is optional. It is for teams that already plan in Jira but want Gira to keep GitHub execution safe and observable.
 
+Jira-primary and GitHub-native modes share one workflow model based on Jira status categories, workflows, transitions, and resolution; only the status store differs. See [Workflow Model](workflow-model.md) for the specification and the planned per-field source-of-truth configuration.
+
 ## Source Of Truth
 
 | Domain | Owner | Gira behavior |

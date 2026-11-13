@@ -8,7 +8,7 @@ The current product is execution-strong and portfolio/backlog-weak. That is an i
 
 ## Canonical Concept Mapping
 
-Gira uses Jira-like language at the CLI boundary, then maps that language onto durable GitHub objects. The mapping below is the v1 contract.
+Gira uses Jira-like language at the CLI boundary, then maps that language onto durable GitHub objects. The mapping below is the v1 contract. The workflow layer of that mapping (status categories, statuses, transitions, transition rules, resolution) follows Jira's documented workflow model and is specified in [Workflow Model](workflow-model.md).
 
 | Jira concept | GitHub source of truth | Gira command surface | Notes |
 | --- | --- | --- | --- |

@@ -29,6 +29,8 @@ Local files/cache = configuration, bindings, and acceleration
 
 Labels should remain few, stable, and useful in the GitHub UI.
 
+Status labels are the statuses of the [Workflow Model](workflow-model.md): each belongs to a Jira-style status category (To Do, In Progress, Done). Moving lifecycle commands onto declared transitions is planned in that document; current behavior is unchanged.
+
 The core status labels are:
 
 | Label | Meaning |

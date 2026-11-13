@@ -191,16 +191,19 @@ workflow:
     - { name: start, from: ready, to: in-progress }
     - { name: review, from: in-progress, to: in-review }
     - { name: finish, from: in-review, to: ready-for-release, command: ticket finish,
-        validators: [finish_readiness], post: [merge, receipt] }
-    - { from: ready-for-release, to: done, command: external,
-        validators: [release_evidence], post: [close_completed] }
+        validators: [finish_readiness], post: [merge, set_status_label, finish_receipt] }
+    - { name: release, from: ready-for-release, to: done, command: external,
+        post: [close_issue, set_status_label] }
   finish_target: ready-for-release
 ```
 
 Status labels default to `status:` followed by the name; an explicit `label` may
 be supplied instead. Transition `from` accepts a status name, a list of names,
-or `any` (also spelled `global`). Phase 2 validates these declarations only;
-`command`, `validators`, and `post` are illustrative and not yet enforced.
+or `any` (also spelled `global`). Phase 2 validates transition declarations and
+registered names in `conditions`, `validators`, and `post`; doctor reports an
+unknown name as `workflow_unknown_step`. `command` remains illustrative and
+existing commands do not yet run transition rules (phase 3). A release-evidence
+validator for the external `release` transition is not registered yet.
 
 - `ticket finish` merges and moves the ticket to `ready-for-release`; the issue
   stays open because it is not in the Done category.

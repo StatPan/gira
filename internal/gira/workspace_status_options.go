@@ -232,6 +232,7 @@ func estimateWorkspaceStatusRequests(config WorkspaceConfigResolved, repos []Rep
 
 func addWorkspaceStatusSummary(report *WorkspaceReport, summary StatusSummary, repoView WorkspaceRepo) {
 	report.Repos = append(report.Repos, repoView)
+	report.Counts.Categories.merge(repoView.Categories)
 	report.Counts.RepoOpen += repoView.Open
 	report.Counts.Ready += repoView.Ready
 	report.Counts.InProgress += repoView.InProgress

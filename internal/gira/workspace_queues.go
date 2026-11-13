@@ -26,12 +26,13 @@ type WorkspaceQueues struct {
 }
 
 type WorkspaceQueueCounts struct {
-	AgentReady    int `json:"agent_ready"`
-	ReviewNeeded  int `json:"review_needed"`
-	FinishReady   int `json:"finish_ready"`
-	Blocked       int `json:"blocked"`
-	FailedCheck   int `json:"failed_check"`
-	HumanDecision int `json:"human_decision"`
+	Categories    CategoryCounts `json:"categories"`
+	AgentReady    int            `json:"agent_ready"`
+	ReviewNeeded  int            `json:"review_needed"`
+	FinishReady   int            `json:"finish_ready"`
+	Blocked       int            `json:"blocked"`
+	FailedCheck   int            `json:"failed_check"`
+	HumanDecision int            `json:"human_decision"`
 }
 
 type WorkspaceQueueItem struct {
@@ -121,10 +122,19 @@ func BuildWorkspaceQueues(workspace WorkspaceSummary, statuses []WorkStatusResul
 		}
 		return items[i].Issue < items[j].Issue
 	})
+	categories := CategoryCounts{}
+	workflows := map[string]Workflow{}
 	for _, status := range items {
 		if isClosedWorkspaceQueueIssue(status) {
 			continue
 		}
+		w, ok := workflows[status.Repo]
+		if !ok {
+			repo, _ := ParseRepoRef(status.Repo)
+			w = reportWorkflow(repo)
+			workflows[status.Repo] = w
+		}
+		categories.add(statusCategoryOf(w, status.Labels, status.State))
 		if reasonCodes := workspaceAgentReadyReasons(status); len(reasonCodes) > 0 {
 			item := workspaceQueueItem("agent_ready", status, reasonCodes, fmt.Sprintf("gira ticket start --repo %s --ticket %d --apply", QuoteShellArg(status.Repo), status.Issue))
 			report.Queues.AgentReady = append(report.Queues.AgentReady, item)
@@ -151,6 +161,7 @@ func BuildWorkspaceQueues(workspace WorkspaceSummary, statuses []WorkStatusResul
 		}
 	}
 	report.Counts = WorkspaceQueueCounts{
+		Categories:    categories,
 		AgentReady:    len(report.Queues.AgentReady),
 		ReviewNeeded:  len(report.Queues.ReviewNeeded),
 		FinishReady:   len(report.Queues.FinishReady),

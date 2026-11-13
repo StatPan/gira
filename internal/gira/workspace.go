@@ -82,24 +82,26 @@ type WorkspaceInbox struct {
 }
 
 type WorkspaceRepo struct {
-	Repo            string `json:"repo"`
-	Open            int    `json:"open"`
-	Ready           int    `json:"ready"`
-	InProgress      int    `json:"in_progress"`
-	Blocked         int    `json:"blocked"`
-	Stale           int    `json:"stale"`
-	ActiveMilestone string `json:"active_milestone,omitempty"`
-	ProgressPercent int    `json:"progress_percent,omitempty"`
+	Categories      CategoryCounts `json:"categories"`
+	Repo            string         `json:"repo"`
+	Open            int            `json:"open"`
+	Ready           int            `json:"ready"`
+	InProgress      int            `json:"in_progress"`
+	Blocked         int            `json:"blocked"`
+	Stale           int            `json:"stale"`
+	ActiveMilestone string         `json:"active_milestone,omitempty"`
+	ProgressPercent int            `json:"progress_percent,omitempty"`
 }
 
 type WorkspaceCounts struct {
-	Backlog    int `json:"backlog"`
-	InboxOpen  int `json:"inbox_open"`
-	RepoOpen   int `json:"repo_open"`
-	Ready      int `json:"ready"`
-	InProgress int `json:"in_progress"`
-	Blocked    int `json:"blocked"`
-	Stale      int `json:"stale"`
+	Categories CategoryCounts `json:"categories"`
+	Backlog    int            `json:"backlog"`
+	InboxOpen  int            `json:"inbox_open"`
+	RepoOpen   int            `json:"repo_open"`
+	Ready      int            `json:"ready"`
+	InProgress int            `json:"in_progress"`
+	Blocked    int            `json:"blocked"`
+	Stale      int            `json:"stale"`
 }
 
 type WorkspaceRateLimit struct {
@@ -1004,7 +1006,7 @@ func workspaceInboxStatus(ticket PortfolioTicket, invalid map[int]struct{}) stri
 }
 
 func workspaceRepoFromStatus(summary StatusSummary) WorkspaceRepo {
-	view := WorkspaceRepo{Repo: summary.Repo, Open: summary.Counts.Issues.Open, Blocked: summary.Counts.Issues.BlockedOpen, Stale: summary.Counts.Issues.StaleOpen}
+	view := WorkspaceRepo{Categories: summary.Counts.Issues.Categories, Repo: summary.Repo, Open: summary.Counts.Issues.Open, Blocked: summary.Counts.Issues.BlockedOpen, Stale: summary.Counts.Issues.StaleOpen}
 	for _, issue := range summary.Issues.Open {
 		status := deriveStatus(issue.Labels).raw
 		switch status {

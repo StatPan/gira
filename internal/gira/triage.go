@@ -35,10 +35,11 @@ type TriageIssue struct {
 }
 
 type TriageQueueReport struct {
-	Repo      string                 `json:"repo"`
-	Generated string                 `json:"generated_at"`
-	Issues    []TriageIssue          `json:"issues"`
-	Buckets   map[string][]TriageRow `json:"buckets"`
+	Categories CategoryCounts         `json:"categories"`
+	Repo       string                 `json:"repo"`
+	Generated  string                 `json:"generated_at"`
+	Issues     []TriageIssue          `json:"issues"`
+	Buckets    map[string][]TriageRow `json:"buckets"`
 }
 
 type TriageRow struct {
@@ -191,8 +192,11 @@ func BuildTriageQueue(client TriageClient, now time.Time) (TriageQueueReport, er
 	if err != nil {
 		return TriageQueueReport{}, err
 	}
+	workflow := reportWorkflow(client.Repo())
+	categories := CategoryCounts{}
 	buckets := map[string][]TriageRow{"unowned": {}, "no-priority": {}, "no-due-date": {}, "overdue": {}, "sla-risk": {}}
 	for _, issue := range issues {
+		categories.add(statusCategoryOf(workflow, issue.Labels, issue.State))
 		violations := classifyViolations(issue, now)
 		row := TriageRow{Issue: issue, Violations: violations}
 		if contains(violations, "missing_assignee") {
@@ -211,7 +215,7 @@ func BuildTriageQueue(client TriageClient, now time.Time) (TriageQueueReport, er
 			buckets["sla-risk"] = append(buckets["sla-risk"], row)
 		}
 	}
-	return TriageQueueReport{Repo: client.Repo().FullName(), Generated: now.UTC().Format(time.RFC3339), Issues: issues, Buckets: buckets}, nil
+	return TriageQueueReport{Categories: categories, Repo: client.Repo().FullName(), Generated: now.UTC().Format(time.RFC3339), Issues: issues, Buckets: buckets}, nil
 }
 
 func ApplyTriagePolicy(client TriageClient, policy TriagePolicy, apply bool, now time.Time) (TriageApplyReport, error) {

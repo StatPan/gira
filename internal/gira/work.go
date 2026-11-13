@@ -458,6 +458,16 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 	if alreadyStarted && !strings.EqualFold(issue.State, "open") {
 		return WorkStartResult{}, fmt.Errorf("issue #%d is not open", issue.Number)
 	}
+	gate, err := loadWorkflowGate(repo)
+	if err != nil {
+		return WorkStartResult{}, err
+	}
+	var startMove declaredStatusMove
+	if gate.declared {
+		if startMove, err = gate.move("start", issue.Labels); err != nil {
+			return WorkStartResult{}, err
+		}
+	}
 	if !alreadyStarted && (!strings.EqualFold(issue.State, "open") || (!hasReadyLabel(issue.Labels) && operationPolicy.RequiresManagedDelivery())) {
 		start, err := StartDevBranchWithOptions(repo, issueNumber, DevStartOptions{Pattern: DefaultDevBranchPattern, DryRun: options.DryRun}, runner)
 		result := WorkStartResult{
@@ -619,7 +629,11 @@ func StartWorkWithOptions(repo RepoRef, issueNumber int, options WorkStartOption
 		result.NextStep = partialWorkStartNextStep(repo.FullName(), issueNumber)
 		return result, err
 	}
-	if err := setIssueStatus(repo, issueNumber, issue.Labels, "status:in-progress", runner); err != nil {
+	setStatus := func() error { return setIssueStatus(repo, issueNumber, issue.Labels, "status:in-progress", runner) }
+	if gate.declared {
+		setStatus = func() error { return gate.setStatus(repo, issueNumber, issue.Labels, startMove, runner) }
+	}
+	if err := setStatus(); err != nil {
 		result.ExecutionState = WorkStartExecutionPartiallyApplied
 		result.NextStep = partialWorkStartNextStep(repo.FullName(), issueNumber)
 		return result, err
@@ -808,6 +822,10 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 	if draft {
 		targetStatus = "In progress"
 	}
+	gate, err := loadWorkflowGate(repo)
+	if err != nil {
+		return WorkPRResult{}, err
+	}
 	result := WorkPRResult{
 		Repo:               repo.FullName(),
 		Issue:              issueNumber,
@@ -851,6 +869,12 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 			if result.BaseMismatch {
 				result.NextStep = correctPRBaseNextStep(repo, result.PRNumber, result.RecordedBase)
 				return result, fmt.Errorf("existing PR base %q does not match recorded ticket base %q", result.ActualBase, result.RecordedBase)
+			}
+			if gate.declared && result.Status != "Done" {
+				if _, err := gate.move(workPRTransitionName(actualDraft), issue.Labels); err != nil {
+					result.Blockers = appendUniqueStrings(result.Blockers, workflowBlockerCode(err))
+					return result, err
+				}
 			}
 			result.Approval = WorkPRApprovalEvidence(result, "gira work pr")
 			return result, nil
@@ -897,7 +921,7 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 			targetStatus = "In progress"
 		}
 		result.NextStatus = targetStatus
-		if err := setIssueStatus(repo, issueNumber, freshIssue.Labels, statusLabelForDraft(actualDraft), runner); err != nil {
+		if err := setWorkPRStatus(gate, repo, issueNumber, freshIssue.Labels, actualDraft, &result, runner); err != nil {
 			return result, err
 		}
 		result.Status = targetStatus
@@ -911,6 +935,12 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 	}
 	if err := validateRemoteBranchExists("origin", base.BaseBranch, runner); err != nil {
 		return result, err
+	}
+	if gate.declared {
+		if _, err := gate.move(workPRTransitionName(draft), issue.Labels); err != nil {
+			result.Blockers = appendUniqueStrings(result.Blockers, workflowBlockerCode(err))
+			return result, err
+		}
 	}
 	if dryRun {
 		push, err := prepareWorkPRBranchPush(issue, issueNumber, base.BaseBranch, dryRun, runner)
@@ -989,7 +1019,7 @@ func OpenWorkPR(repo RepoRef, issueNumber int, dryRun bool, draft bool, runner C
 		targetStatus = "In progress"
 	}
 	result.NextStatus = targetStatus
-	if err := setIssueStatus(repo, issueNumber, freshIssue.Labels, statusLabelForDraft(actualDraft), runner); err != nil {
+	if err := setWorkPRStatus(gate, repo, issueNumber, freshIssue.Labels, actualDraft, &result, runner); err != nil {
 		return result, err
 	}
 	result.Status = targetStatus
@@ -1537,6 +1567,33 @@ func setIssueStatus(repo RepoRef, issueNumber int, labels []string, targetLabel 
 		return nil
 	}
 	return replaceIssueStatusLabel(repo, issueNumber, existing, targetLabel, runner)
+}
+
+func workPRTransitionName(draft bool) string {
+	if draft {
+		return "draft"
+	}
+	return "review"
+}
+
+// workflowBlockerCode extracts the blocker code from a workflow gate error.
+func workflowBlockerCode(err error) string {
+	code, _, _ := strings.Cut(err.Error(), ":")
+	return code
+}
+
+// setWorkPRStatus writes the review/draft status. Under a declared workflow the
+// move is re-resolved from fresh labels and a missing path blocks the write.
+func setWorkPRStatus(gate workflowGate, repo RepoRef, issueNumber int, labels []string, draft bool, result *WorkPRResult, runner CommandRunner) error {
+	if !gate.declared {
+		return setIssueStatus(repo, issueNumber, labels, statusLabelForDraft(draft), runner)
+	}
+	move, err := gate.move(workPRTransitionName(draft), labels)
+	if err != nil {
+		result.Blockers = appendUniqueStrings(result.Blockers, workflowBlockerCode(err))
+		return err
+	}
+	return gate.setStatus(repo, issueNumber, labels, move, runner)
 }
 
 func statusLabelForDraft(draft bool) string {

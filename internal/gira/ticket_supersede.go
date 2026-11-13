@@ -113,6 +113,13 @@ func BuildTicketSupersedeReport(input TicketSupersedeInput, runner CommandRunner
 	if err != nil {
 		return report, err
 	}
+	gate, err := loadWorkflowGate(input.Repo)
+	if err == nil && gate.declared {
+		_, err = gate.move("supersede", original.Labels)
+	}
+	if err != nil {
+		return report, err
+	}
 
 	replacementLabels := ticketSupersedeReplacementLabels(original.Labels, input.Labels)
 	replacementMilestone := strings.TrimSpace(input.Milestone)
@@ -186,7 +193,12 @@ func BuildTicketSupersedeReport(input TicketSupersedeInput, runner CommandRunner
 	}
 	markSupersedeActionApplied(report.Actions, "original:resolution")
 
-	if _, err := runner.Run("gh", "issue", "close", strconv.Itoa(input.Ticket), "--repo", input.Repo.FullName()); err != nil {
+	closeArgs := []string{"issue", "close", strconv.Itoa(input.Ticket), "--repo", input.Repo.FullName()}
+	if gate.declared {
+		// Declared workflows record Jira-style resolution for a Done move.
+		closeArgs = append(closeArgs, "--reason", "not planned")
+	}
+	if _, err := runner.Run("gh", closeArgs...); err != nil {
 		return report, fmt.Errorf("close original issue: %w", err)
 	}
 	report.Original.State = "closed"

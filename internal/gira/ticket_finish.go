@@ -245,6 +245,20 @@ func FinishWorkWithOptions(repo RepoRef, issueNumber int, dryRun bool, wait time
 			State:           "pending",
 		}
 	}
+	gate, gateErr := loadWorkflowGate(repo)
+	if gateErr == nil && gate.declared {
+		issue, fetchErr := fetchDevIssue(repo, issueNumber, runner)
+		if fetchErr != nil {
+			return result, fetchErr
+		}
+		if !strings.EqualFold(issue.State, "closed") {
+			_, gateErr = gate.move("finish", issue.Labels)
+		}
+	}
+	if gateErr != nil {
+		result.Blockers = append(result.Blockers, workflowBlockerCode(gateErr))
+		return result, gateErr
+	}
 
 	var status DevPRStatusResult
 	var err error

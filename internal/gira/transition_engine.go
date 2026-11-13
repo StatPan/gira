@@ -38,11 +38,8 @@ type TransitionResult struct {
 	Planned, Applied []string
 }
 
-// RunTransition selects the first matching declaration and runs its rules in order.
-// Apply is explicit; a dry run never invokes post functions.
-func RunTransition(w Workflow, from, to string, ctx *TransitionContext, registry TransitionRegistry, apply bool) TransitionResult {
-	result := TransitionResult{From: from, To: to}
-	var selected *WorkflowTransition
+// findWorkflowTransition selects the first matching declaration, including global sources.
+func findWorkflowTransition(w Workflow, from, to string) *WorkflowTransition {
 	for i := range w.Transitions {
 		t := &w.Transitions[i]
 		if t.To != to {
@@ -50,14 +47,18 @@ func RunTransition(w Workflow, from, to string, ctx *TransitionContext, registry
 		}
 		for _, source := range t.From {
 			if source == from || source == "any" || source == "global" {
-				selected = t
-				break
+				return t
 			}
 		}
-		if selected != nil {
-			break
-		}
 	}
+	return nil
+}
+
+// RunTransition selects the first matching declaration and runs its rules in order.
+// Apply is explicit; a dry run never invokes post functions.
+func RunTransition(w Workflow, from, to string, ctx *TransitionContext, registry TransitionRegistry, apply bool) TransitionResult {
+	result := TransitionResult{From: from, To: to}
+	selected := findWorkflowTransition(w, from, to)
 	if selected == nil {
 		result.Blockers = append(result.Blockers, "missing_transition")
 		return result

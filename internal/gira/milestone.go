@@ -87,19 +87,20 @@ type MilestoneFilters struct {
 }
 
 type MilestoneWorkCounts struct {
-	Milestones      int `json:"milestones,omitempty"`
-	Tickets         int `json:"tickets,omitempty"`
-	Open            int `json:"open,omitempty"`
-	Closed          int `json:"closed,omitempty"`
-	Ready           int `json:"ready,omitempty"`
-	InProgress      int `json:"in_progress,omitempty"`
-	InReview        int `json:"in_review,omitempty"`
-	Blocked         int `json:"blocked,omitempty"`
-	Done            int `json:"done,omitempty"`
-	FinishReady     int `json:"finish_ready,omitempty"`
-	WouldAssign     int `json:"would_assign,omitempty"`
-	AppliedAssign   int `json:"applied_assign,omitempty"`
-	SkippedAssigned int `json:"skipped_assigned,omitempty"`
+	Categories      CategoryCounts `json:"categories"`
+	Milestones      int            `json:"milestones,omitempty"`
+	Tickets         int            `json:"tickets,omitempty"`
+	Open            int            `json:"open,omitempty"`
+	Closed          int            `json:"closed,omitempty"`
+	Ready           int            `json:"ready,omitempty"`
+	InProgress      int            `json:"in_progress,omitempty"`
+	InReview        int            `json:"in_review,omitempty"`
+	Blocked         int            `json:"blocked,omitempty"`
+	Done            int            `json:"done,omitempty"`
+	FinishReady     int            `json:"finish_ready,omitempty"`
+	WouldAssign     int            `json:"would_assign,omitempty"`
+	AppliedAssign   int            `json:"applied_assign,omitempty"`
+	SkippedAssigned int            `json:"skipped_assigned,omitempty"`
 }
 
 type MilestoneItem struct {
@@ -240,6 +241,7 @@ func BuildMilestoneStatusReport(options MilestoneStatusOptions, runner CommandRu
 		return MilestoneReport{}, err
 	}
 	item := milestoneItem(milestone)
+	workflow := reportWorkflow(options.Repo)
 	report := MilestoneReport{SchemaVersion: MilestoneReportSchemaVersion, Command: "milestone status", Repo: options.Repo.FullName(), Milestone: &item, Filters: MilestoneFilters{Milestone: milestone.Title}}
 	for _, issue := range issues {
 		if issue.Milestone == nil || *issue.Milestone != milestone.Title {
@@ -248,6 +250,7 @@ func BuildMilestoneStatusReport(options MilestoneStatusOptions, runner CommandRu
 		ticket := milestoneTicket(issue)
 		report.Tickets = append(report.Tickets, ticket)
 		countMilestoneTicket(&report.Counts, ticket)
+		report.Counts.Categories.add(statusCategoryOf(workflow, issue.Labels, issue.State))
 	}
 	sort.Slice(report.Tickets, func(i, j int) bool { return report.Tickets[i].Number < report.Tickets[j].Number })
 	report.Counts.Tickets = len(report.Tickets)

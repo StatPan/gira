@@ -107,9 +107,10 @@ type SprintRolloverTarget struct {
 }
 
 type SprintRolloverSummary struct {
-	Candidates int `json:"candidates"`
-	Applied    int `json:"applied"`
-	Skipped    int `json:"skipped"`
+	Categories CategoryCounts `json:"categories"`
+	Candidates int            `json:"candidates"`
+	Applied    int            `json:"applied"`
+	Skipped    int            `json:"skipped"`
 }
 
 type SprintRolloverItem struct {
@@ -264,6 +265,7 @@ func SprintRolloverForClient(client StatusClient, runner CommandRunner, toMilest
 		report.TargetMilestone = &SprintRolloverTarget{Number: target.Number, Title: target.Title}
 	}
 
+	workflow := reportWorkflow(client.Repo())
 	for _, issue := range issues {
 		if issue.State != "open" || issue.Milestone == nil {
 			continue
@@ -278,6 +280,7 @@ func SprintRolloverForClient(client StatusClient, runner CommandRunner, toMilest
 		}
 		lifecycleStatus := deriveStatus(issue.Labels).raw
 		item := SprintRolloverItem{IssueNumber: issue.Number, IssueTitle: issue.Title, FromMilestone: source.Title, LifecycleStatus: lifecycleStatus, CandidateReason: reason, NextStep: fmt.Sprintf("gira ticket status --repo %s --ticket %d", client.Repo().FullName(), issue.Number)}
+		report.Summary.Categories.add(statusCategoryOf(workflow, issue.Labels, issue.State))
 		report.Summary.Candidates++
 		if lifecycleStatus == "done" {
 			item.Action = "skipped"

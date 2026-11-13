@@ -82,3 +82,71 @@ func deriveStatus(labels []string) derivedStatus {
 	}
 	return result
 }
+
+// CategoryCounts counts issues once by their workflow category.
+type CategoryCounts struct {
+	ToDo       int `json:"to_do"`
+	InProgress int `json:"in_progress"`
+	Done       int `json:"done"`
+}
+
+func (c *CategoryCounts) add(category statusCategory) {
+	switch category {
+	case statusCategoryInProgress:
+		c.InProgress++
+	case statusCategoryDone:
+		c.Done++
+	default:
+		c.ToDo++
+	}
+}
+
+func (c *CategoryCounts) merge(other CategoryCounts) {
+	c.ToDo += other.ToDo
+	c.InProgress += other.InProgress
+	c.Done += other.Done
+}
+
+func reportWorkflow(repo RepoRef) Workflow {
+	w, declared, _ := loadDeclaredWorkflow(repo)
+	if !declared {
+		return defaultWorkflow()
+	}
+	return w
+}
+
+func statusCategoryOf(w Workflow, labels []string, issueState string) statusCategory {
+	if strings.EqualFold(strings.TrimSpace(issueState), "closed") {
+		return statusCategoryDone
+	}
+	// Preserve deriveStatus's priority for the built-in workflow.
+	defaults := defaultWorkflow().Statuses
+	isDefault := len(w.Statuses) == len(defaults)
+	if isDefault {
+		for i := range defaults {
+			if w.Statuses[i] != defaults[i] {
+				isDefault = false
+				break
+			}
+		}
+	}
+	if isDefault {
+		if label, ok := statusToLabel(deriveStatus(labels).managed); ok {
+			if status, ok := statusByLabel(label); ok {
+				return status.category
+			}
+		}
+		return statusCategoryToDo
+	}
+	for _, label := range labels {
+		for _, status := range w.Statuses {
+			if strings.EqualFold(strings.TrimSpace(label), strings.TrimSpace(status.Label)) {
+				switch status.Category {
+				case statusCategoryToDo, statusCategoryInProgress, statusCategoryDone:
+					return status.Category
+				}
+			}
+		}
+	}
+	return statusCategoryToDo
+}

@@ -132,13 +132,14 @@ type StatusCounts struct {
 }
 
 type IssueCounts struct {
-	Total                        int `json:"total"`
-	Open                         int `json:"open"`
-	Closed                       int `json:"closed"`
-	StaleOpen                    int `json:"stale_open"`
-	BlockedOpen                  int `json:"blocked_open"`
-	ClosureLinkMissingOpenIssues int `json:"closure_link_missing_open_issues"`
-	PRsMissingClosureLink        int `json:"prs_missing_closure_link"`
+	Categories                   CategoryCounts `json:"categories"`
+	Total                        int            `json:"total"`
+	Open                         int            `json:"open"`
+	Closed                       int            `json:"closed"`
+	StaleOpen                    int            `json:"stale_open"`
+	BlockedOpen                  int            `json:"blocked_open"`
+	ClosureLinkMissingOpenIssues int            `json:"closure_link_missing_open_issues"`
+	PRsMissingClosureLink        int            `json:"prs_missing_closure_link"`
 }
 
 type MilestoneCounts struct {
@@ -536,11 +537,15 @@ func SummarizeStatus(repo string, milestones []normalizedMilestone, issues []nor
 	now := fetchedAt.UTC().Truncate(time.Second)
 	staleCutoff := now.AddDate(0, 0, -staleDays)
 
+	repoRef, _ := ParseRepoRef(repo)
+	workflow := reportWorkflow(repoRef)
+	categories := CategoryCounts{}
 	openIssues := make([]normalizedIssue, 0)
 	closedIssues := make([]normalizedIssue, 0)
 	staleOpen := make([]normalizedIssue, 0)
 	blockedOpen := make([]normalizedIssue, 0)
 	for _, issue := range issues {
+		categories.add(statusCategoryOf(workflow, issue.Labels, issue.State))
 		switch issue.State {
 		case "open":
 			openIssues = append(openIssues, issue)
@@ -597,6 +602,7 @@ func SummarizeStatus(repo string, milestones []normalizedMilestone, issues []nor
 	return StatusSummary{
 		Counts: StatusCounts{
 			Issues: IssueCounts{
+				Categories:  categories,
 				Total:       len(issues),
 				Open:        len(openIssues),
 				Closed:      len(closedIssues),

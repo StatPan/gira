@@ -134,29 +134,19 @@ func resolveWorkflow(config *Workflow) (Workflow, []DoctorCheck) {
 		add("workflow_finish_target", fmt.Sprintf("undeclared finish target %q", w.FinishTarget))
 		return w, findings
 	}
-	reachable := map[string]bool{}
+	var toDo []string
 	for _, s := range w.Statuses {
 		if s.Category == statusCategoryToDo && s.Name != "" {
-			reachable[s.Name] = true
+			toDo = append(toDo, s.Name)
 		}
 	}
-	for changed := true; changed; {
-		changed = false
-		for _, t := range w.Transitions {
-			if !names[t.To] || reachable[t.To] {
-				continue
-			}
-			for _, from := range t.From {
-				if reachable[from] || ((from == "any" || from == "global") && len(reachable) > 0) {
-					reachable[t.To] = true
-					changed = true
-					break
-				}
-			}
-		}
-	}
-	if !reachable[w.FinishTarget] {
+	if !workflowReachable(w, toDo, names)[w.FinishTarget] {
 		add("workflow_finish_unreachable", fmt.Sprintf("finish target %q is unreachable from to_do statuses", w.FinishTarget))
+	}
+	for _, t := range w.Transitions {
+		if t.Name == "review" && names[t.To] && !workflowReachable(w, []string{t.To}, names)[w.FinishTarget] {
+			add("workflow_finish_unreachable_from_review", fmt.Sprintf("finish target %q is unreachable from review status %q", w.FinishTarget, t.To))
+		}
 	}
 	return w, findings
 }
@@ -230,12 +220,23 @@ func resolveDeclaredStatusMove(w Workflow, command string, labels []string) decl
 			break
 		}
 	}
+	if command == "finish" && w.FinishTarget != "" {
+		move.to = w.FinishTarget
+	}
+	move.from = currentWorkflowStatus(w, labels)
+	return completeStatusMove(w, move)
+}
+
+// currentWorkflowStatus maps status labels onto declared statuses; several
+// labels resolve by the default priority, otherwise the first declared match.
+func currentWorkflowStatus(w Workflow, labels []string) string {
+	from := ""
 	var mapped []string
 	for _, label := range labels {
 		for _, status := range w.Statuses {
 			if strings.EqualFold(strings.TrimSpace(label), status.Label) {
-				if move.from == "" {
-					move.from = status.Name
+				if from == "" {
+					from = status.Name
 				}
 				mapped = append(mapped, "status:"+status.Name)
 				break
@@ -246,11 +247,16 @@ func resolveDeclaredStatusMove(w Workflow, command string, labels []string) decl
 	if derived.managed != "" {
 		for _, status := range w.Statuses {
 			if def, ok := statusByLabel("status:" + status.Name); ok && def.name == derived.managed {
-				move.from = status.Name
+				from = status.Name
 				break
 			}
 		}
 	}
+	return from
+}
+
+// completeStatusMove fills the target label and checks the declared path.
+func completeStatusMove(w Workflow, move declaredStatusMove) declaredStatusMove {
 	for _, status := range w.Statuses {
 		if status.Name == move.to {
 			move.label, move.category = status.Label, status.Category
@@ -307,6 +313,14 @@ func (g workflowGate) move(command string, labels []string) (declaredStatusMove,
 // setStatus writes the declared label for a resolved move, removing every
 // other declared or default status label.
 func (g workflowGate) setStatus(repo RepoRef, issueNumber int, labels []string, move declaredStatusMove, runner CommandRunner) error {
+	if g.hasOnlyStatusLabel(labels, move.label) {
+		return nil
+	}
+	return replaceIssueStatusLabel(repo, issueNumber, g.statusLabels(labels), move.label, runner)
+}
+
+// statusLabels returns every default or declared status label on an issue.
+func (g workflowGate) statusLabels(labels []string) []string {
 	existing := managedStatusLabels(labels)
 	for _, label := range labels {
 		for _, status := range g.workflow.Statuses {
@@ -315,8 +329,48 @@ func (g workflowGate) setStatus(repo RepoRef, issueNumber int, labels []string, 
 			}
 		}
 	}
-	if len(existing) == 1 && strings.EqualFold(existing[0], move.label) {
-		return nil
+	return existing
+}
+
+func (g workflowGate) hasOnlyStatusLabel(labels []string, label string) bool {
+	existing := g.statusLabels(labels)
+	return len(existing) == 1 && strings.EqualFold(existing[0], label)
+}
+
+// openFinishTarget returns the declared finish target when it is not in the
+// Done category, so finish must leave the issue open there.
+func (g workflowGate) openFinishTarget() (WorkflowStatus, bool) {
+	if !g.declared {
+		return WorkflowStatus{}, false
 	}
-	return replaceIssueStatusLabel(repo, issueNumber, existing, move.label, runner)
+	for _, status := range g.workflow.Statuses {
+		if status.Name == g.workflow.FinishTarget && status.Category != statusCategoryDone {
+			return status, true
+		}
+	}
+	return WorkflowStatus{}, false
+}
+
+// workflowReachable returns the statuses reachable from starts, inclusive.
+func workflowReachable(w Workflow, starts []string, names map[string]bool) map[string]bool {
+	reachable := map[string]bool{}
+	for _, name := range starts {
+		reachable[name] = true
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, t := range w.Transitions {
+			if !names[t.To] || reachable[t.To] {
+				continue
+			}
+			for _, from := range t.From {
+				if reachable[from] || ((from == "any" || from == "global") && len(reachable) > 0) {
+					reachable[t.To] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	return reachable
 }

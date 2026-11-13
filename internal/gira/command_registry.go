@@ -1376,6 +1376,23 @@ func CoreCommandSpecs() []CommandSpec {
 			},
 		},
 		{
+			Path:    []string{"ticket", "transition"},
+			Summary: "Move a ticket to a status through a declared workflow transition.",
+			Usage:   "gira ticket transition [TICKET] --to STATUS --dry-run|--apply [--repo OWNER/REPO] [--json]",
+			Since:   "v3.1.0",
+			Flags: []FlagSpec{
+				{Name: "--to", Summary: "Target workflow status name."},
+				{Name: "--dry-run", Summary: "Preview the status, close, or reopen actions."},
+				{Name: "--apply", Summary: "Set the status label and close (completed) or reopen as the category requires."},
+			},
+			Docs:        []string{"docs/workflow-model.md"},
+			GuideTopics: []string{"ticket"},
+			GuideOrder:  39,
+			Examples: []CommandExample{
+				{Summary: "Mark a released ticket done", Command: "gira ticket transition 42 --to done --dry-run"},
+			},
+		},
+		{
 			Path:        []string{"ticket", "checks"},
 			Summary:     "Show linked PR checks, review blockers, and next action.",
 			Usage:       "gira ticket checks [TICKET] [--repo OWNER/REPO] [--detail] [--json]",
@@ -1612,6 +1629,8 @@ func applyAdapterCapabilities(specs []CommandSpec) {
 			specs[i].Adapter = adapterApply("posts issue or PR comments; --dry-run previews resolved targets and rendered note", JSONSupportStable)
 		case "ticket supersede":
 			specs[i].Adapter = adapterApply("creates a replacement ticket, posts cross-links, and closes the original; --dry-run previews all planned mutations", JSONSupportStable)
+		case "ticket transition":
+			specs[i].Adapter = adapterApply("sets the declared status label and closes (completed) or reopens the issue as the target status category requires; --dry-run previews", JSONSupportStable)
 		case "ticket checks":
 			specs[i].Adapter = adapterRead(JSONSupportStable)
 		case "ticket wait":

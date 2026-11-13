@@ -1223,6 +1223,13 @@ func convergeFinishedIssue(repo RepoRef, issueNumber int, merged bool, dryRun bo
 	if !merged {
 		return nil, nil
 	}
+	gate, err := loadWorkflowGate(repo)
+	if err != nil {
+		return nil, fmt.Errorf("converge finished issue: %w", err)
+	}
+	if target, ok := gate.openFinishTarget(); ok {
+		return convergeOpenFinishTarget(repo, issueNumber, gate, target, dryRun, runner)
+	}
 	issue, err := fetchDevIssue(repo, issueNumber, runner)
 	if err != nil {
 		return nil, fmt.Errorf("converge finished issue: %w", err)
@@ -1255,6 +1262,43 @@ func convergeFinishedIssue(repo RepoRef, issueNumber int, merged bool, dryRun bo
 	}
 	if strings.TrimSpace(normalize.Action) != "" {
 		actions = append(actions, normalize)
+	}
+	return actions, nil
+}
+
+// convergeOpenFinishTarget keeps a merged ticket open at a declared non-Done
+// finish target such as ready-for-release. GitHub may already have closed the
+// issue through the PR's closing reference, so the issue is reopened.
+func convergeOpenFinishTarget(repo RepoRef, issueNumber int, gate workflowGate, target WorkflowStatus, dryRun bool, runner CommandRunner) ([]WorkFinishAction, error) {
+	issue, err := fetchDevIssue(repo, issueNumber, runner)
+	if err != nil {
+		return nil, fmt.Errorf("converge finish target: %w", err)
+	}
+	actions := []WorkFinishAction{}
+	if strings.EqualFold(issue.State, "closed") {
+		actions = append(actions, WorkFinishAction{
+			Action: "ticket:reopen",
+			Status: plannedOrAppliedStatus(dryRun),
+			Detail: fmt.Sprintf("keep issue open at finish target %s", target.Name),
+		})
+		if !dryRun {
+			if _, err := runner.Run("gh", "issue", "reopen", fmt.Sprintf("%d", issueNumber), "--repo", repo.FullName()); err != nil {
+				return actions, fmt.Errorf("reopen issue at finish target: %w", err)
+			}
+		}
+	}
+	if !gate.hasOnlyStatusLabel(issue.Labels, target.Label) {
+		actions = append(actions, WorkFinishAction{
+			Action: "ticket:finish-target",
+			Status: plannedOrAppliedStatus(dryRun),
+			Detail: fmt.Sprintf("set %s; next: gira ticket transition %d --to <done status> --dry-run", target.Label, issueNumber),
+		})
+		if !dryRun {
+			move := declaredStatusMove{to: target.Name, label: target.Label, category: target.Category}
+			if err := gate.setStatus(repo, issueNumber, issue.Labels, move, runner); err != nil {
+				return actions, fmt.Errorf("set finish target status: %w", err)
+			}
+		}
 	}
 	return actions, nil
 }

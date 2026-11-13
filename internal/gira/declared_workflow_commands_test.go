@@ -144,9 +144,9 @@ func TestFinishWorkDeclaredWorkflowMissingTransitionBlocksBeforePRLookup(t *test
     - { name: in-review, category: in_progress }
     - { name: done, category: done }
   transitions:
-    - { name: review, from: ready, to: in-review }
-    - { name: reopen, from: done, to: ready }
-  finish_target: in-review
+    - { name: submit, from: ready, to: in-review }
+    - { name: close, from: ready, to: done }
+  finish_target: done
 `)
 	runner := &workRunner{outputs: map[string][]byte{
 		"gh api repos/StatPan/gira/issues/126": []byte(`{"number":126,"title":"Work command","state":"open","labels":[{"name":"status:in-review"}]}`),

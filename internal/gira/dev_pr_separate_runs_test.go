@@ -260,3 +260,40 @@ func assertReadOnlyGHCalls(t *testing.T, calls []string) {
 		}
 	}
 }
+
+func TestMarkSupersededCancelledChecksRequiresSameEventAndNewerRun(t *testing.T) {
+	check := func(runNumber int, event, conclusion, state, completedAt string) DevPRCheck {
+		return DevPRCheck{Name: "Linked Issue", AppID: 15368, AppSlug: "github-actions", WorkflowID: 42, HeadSHA: "head123",
+			CompletedAt: completedAt, Conclusion: conclusion, State: state, runID: 100 + runNumber, runNumber: runNumber, runEvent: event}
+	}
+	tests := []struct {
+		name           string
+		cancelled      DevPRCheck
+		success        DevPRCheck
+		wantSuperseded bool
+	}{
+		{name: "newer run of the same event", cancelled: check(5, "pull_request", "CANCELLED", "failing", "2026-08-02T01:00:00Z"),
+			success: check(6, "pull_request", "SUCCESS", "passing", "2026-08-02T02:00:00Z"), wantSuperseded: true},
+		{name: "later success from a different event", cancelled: check(5, "pull_request", "CANCELLED", "failing", "2026-08-02T01:00:00Z"),
+			success: check(6, "push", "SUCCESS", "passing", "2026-08-02T02:00:00Z")},
+		{name: "older run that completed later", cancelled: check(6, "pull_request", "CANCELLED", "failing", "2026-08-02T01:00:00Z"),
+			success: check(5, "pull_request", "SUCCESS", "passing", "2026-08-02T02:00:00Z")},
+		{name: "provenance on only one side", cancelled: check(5, "pull_request", "CANCELLED", "failing", "2026-08-02T01:00:00Z"),
+			success: func() DevPRCheck {
+				c := check(6, "", "SUCCESS", "passing", "2026-08-02T02:00:00Z")
+				c.runNumber = 0
+				return c
+			}()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checks := markSupersededCancelledChecks([]DevPRCheck{tt.cancelled, tt.success}, "head123")
+			if checks[0].Superseded != tt.wantSuperseded {
+				t.Fatalf("superseded = %t, want %t: %+v", checks[0].Superseded, tt.wantSuperseded, checks)
+			}
+			if blocked := containsString(devPRCheckBlockers(checks), "checks"); blocked == tt.wantSuperseded {
+				t.Fatalf("checks blocker = %t, want %t: %+v", blocked, !tt.wantSuperseded, checks)
+			}
+		})
+	}
+}

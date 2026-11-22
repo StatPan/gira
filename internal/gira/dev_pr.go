@@ -896,6 +896,9 @@ func markSupersededCancelledChecks(checks []DevPRCheck, headSHA string) []DevPRC
 			if !isGitHubActionsCheck(*cancelled) || !isGitHubActionsCheck(candidate) || candidate.AppID != cancelled.AppID || candidate.WorkflowID != cancelled.WorkflowID || candidate.Name != cancelled.Name || !strings.EqualFold(strings.TrimSpace(candidate.HeadSHA), headSHA) || !strings.EqualFold(candidate.Conclusion, "SUCCESS") {
 				continue
 			}
+			if !replacesCancelledRun(*cancelled, candidate) {
+				continue
+			}
 			candidateAt, err := time.Parse(time.RFC3339, strings.TrimSpace(candidate.CompletedAt))
 			if err != nil || !candidateAt.After(cancelledAt) {
 				continue
@@ -906,6 +909,24 @@ func markSupersededCancelledChecks(checks []DevPRCheck, headSHA string) []DevPRC
 		}
 	}
 	return checks
+}
+
+// replacesCancelledRun reports whether candidate's run provenance allows it to
+// supersede a cancelled check. A later completion time alone is not enough:
+// when run provenance is present on either side, both must come from the same
+// triggering event and candidate must belong to a strictly newer run.
+func replacesCancelledRun(cancelled, candidate DevPRCheck) bool {
+	if cancelled.runEvent != "" || candidate.runEvent != "" {
+		if cancelled.runEvent != candidate.runEvent {
+			return false
+		}
+	}
+	if cancelled.runNumber > 0 || candidate.runNumber > 0 {
+		if cancelled.runNumber <= 0 || candidate.runNumber <= cancelled.runNumber {
+			return false
+		}
+	}
+	return true
 }
 
 func restStatusesForCommit(repo RepoRef, headSHA string, runner CommandRunner) []DevPRCheck {

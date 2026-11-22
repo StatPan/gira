@@ -404,7 +404,7 @@ func TestMarkSupersededCancelledChecksRequiresStableProviderAndWorkflowIdentity(
 		t.Run(tt.name, func(t *testing.T) {
 			checks := append([]DevPRCheck(nil), base...)
 			tt.mutate(checks)
-			checks = markSupersededCancelledChecks(checks, "head123")
+			checks = markSupersededSeparateRuns(checks, "head123")
 			if checks[0].Superseded || !containsString(devPRCheckBlockers(checks), "checks") {
 				t.Fatalf("unstable provenance must remain blocking: %+v", checks)
 			}

@@ -683,8 +683,7 @@ func restCheckRunsForCommitWithAvailability(repo RepoRef, headSHA string, runner
 		}
 	}
 	checks = latestWorkflowAttemptChecks(repo, checks, headSHA, runner)
-	checks = markSupersededSeparateRuns(checks, headSHA)
-	return markSupersededCancelledChecks(checks, headSHA), true
+	return markSupersededSeparateRuns(checks, headSHA), true
 }
 
 // Separate workflow runs on the same head (a re-triggered event, a manual
@@ -695,6 +694,8 @@ func restCheckRunsForCommitWithAvailability(repo RepoRef, headSHA string, runner
 // workflow, triggering event and job name (which carries matrix values).
 // Anything ambiguous or lacking run provenance is left as is, so it can still
 // block. A newest failing, cancelled or pending run keeps blocking on its own.
+// This is also the only way a cancelled check stops blocking: completion time
+// alone never supersedes a cancellation.
 func markSupersededSeparateRuns(checks []DevPRCheck, headSHA string) []DevPRCheck {
 	type identity struct {
 		appID, workflowID int
@@ -867,47 +868,6 @@ func githubActionsJobID(rawURL string) int {
 		return 0
 	}
 	return jobID
-}
-
-func markSupersededCancelledChecks(checks []DevPRCheck, headSHA string) []DevPRCheck {
-	headSHA = strings.TrimSpace(headSHA)
-	for index := range checks {
-		cancelled := &checks[index]
-		if !strings.EqualFold(cancelled.Conclusion, "CANCELLED") || cancelled.WorkflowID <= 0 || cancelled.Name == "" || !strings.EqualFold(strings.TrimSpace(cancelled.HeadSHA), headSHA) {
-			continue
-		}
-		cancelledAt, err := time.Parse(time.RFC3339, strings.TrimSpace(cancelled.CompletedAt))
-		if err != nil {
-			continue
-		}
-		for candidateIndex := range checks {
-			candidate := checks[candidateIndex]
-			if !isGitHubActionsCheck(*cancelled) || !isGitHubActionsCheck(candidate) || candidate.AppID != cancelled.AppID || candidate.WorkflowID != cancelled.WorkflowID || candidate.Name != cancelled.Name || !strings.EqualFold(strings.TrimSpace(candidate.HeadSHA), headSHA) || !strings.EqualFold(candidate.Conclusion, "SUCCESS") {
-				continue
-			}
-			if !replacesCancelledRun(*cancelled, candidate) {
-				continue
-			}
-			candidateAt, err := time.Parse(time.RFC3339, strings.TrimSpace(candidate.CompletedAt))
-			if err != nil || !candidateAt.After(cancelledAt) {
-				continue
-			}
-			cancelled.Superseded = true
-			cancelled.State = "passing"
-			break
-		}
-	}
-	return checks
-}
-
-// replacesCancelledRun reports whether candidate's run provenance allows it to
-// supersede a cancelled check. A later completion time alone is not enough:
-// both checks must carry the same non-empty triggering event, and candidate
-// must belong to a strictly newer run. Missing or partial provenance keeps the
-// cancellation blocking.
-func replacesCancelledRun(cancelled, candidate DevPRCheck) bool {
-	return cancelled.runEvent != "" && cancelled.runEvent == candidate.runEvent &&
-		cancelled.runNumber > 0 && candidate.runNumber > cancelled.runNumber
 }
 
 func restStatusesForCommit(repo RepoRef, headSHA string, runner CommandRunner) []DevPRCheck {

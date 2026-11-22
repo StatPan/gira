@@ -299,7 +299,7 @@ func TestSupersededCheckPhraseShowsItsOwnOutcome(t *testing.T) {
 	}
 }
 
-func TestMarkSupersededCancelledChecksRequiresSameEventAndNewerRun(t *testing.T) {
+func TestCancelledCheckIsSupersededOnlyByNewerSameIdentityRun(t *testing.T) {
 	check := func(runNumber int, event, conclusion, state, completedAt string) DevPRCheck {
 		return DevPRCheck{Name: "Linked Issue", AppID: 15368, AppSlug: "github-actions", WorkflowID: 42, HeadSHA: "head123",
 			CompletedAt: completedAt, Conclusion: conclusion, State: state, runID: 100 + runNumber, runNumber: runNumber, runEvent: event}
@@ -322,6 +322,11 @@ func TestMarkSupersededCancelledChecksRequiresSameEventAndNewerRun(t *testing.T)
 				c.runNumber = 0
 				return c
 			}()},
+		{name: "run number and run id disagree", cancelled: func() DevPRCheck {
+			c := check(5, "pull_request", "CANCELLED", "failing", "2026-08-02T01:00:00Z")
+			c.runID = 110
+			return c
+		}(), success: check(6, "pull_request", "SUCCESS", "passing", "2026-08-02T02:00:00Z")},
 		{name: "no provenance on either side", cancelled: withoutProvenance(check(5, "pull_request", "CANCELLED", "failing", "2026-08-02T01:00:00Z"), true, true),
 			success: withoutProvenance(check(6, "push", "SUCCESS", "passing", "2026-08-02T02:00:00Z"), true, true)},
 		{name: "matching events without run numbers", cancelled: withoutProvenance(check(5, "pull_request", "CANCELLED", "failing", "2026-08-02T01:00:00Z"), false, true),
@@ -331,7 +336,7 @@ func TestMarkSupersededCancelledChecksRequiresSameEventAndNewerRun(t *testing.T)
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			checks := markSupersededCancelledChecks([]DevPRCheck{tt.cancelled, tt.success}, "head123")
+			checks := markSupersededSeparateRuns([]DevPRCheck{tt.cancelled, tt.success}, "head123")
 			if checks[0].Superseded != tt.wantSuperseded {
 				t.Fatalf("superseded = %t, want %t: %+v", checks[0].Superseded, tt.wantSuperseded, checks)
 			}
@@ -339,5 +344,20 @@ func TestMarkSupersededCancelledChecksRequiresSameEventAndNewerRun(t *testing.T)
 				t.Fatalf("checks blocker = %t, want %t: %+v", blocked, !tt.wantSuperseded, checks)
 			}
 		})
+	}
+}
+
+func TestCancelledCheckStaysBlockingWhenNewestRunIsAmbiguous(t *testing.T) {
+	check := func(runID, runNumber int, conclusion, state, completedAt string) DevPRCheck {
+		return DevPRCheck{Name: "Linked Issue", AppID: 15368, AppSlug: "github-actions", WorkflowID: 42, HeadSHA: "head123",
+			CompletedAt: completedAt, Conclusion: conclusion, State: state, runID: runID, runNumber: runNumber, runEvent: "pull_request"}
+	}
+	checks := markSupersededSeparateRuns([]DevPRCheck{
+		check(105, 5, "CANCELLED", "failing", "2026-08-02T01:00:00Z"),
+		check(106, 6, "SUCCESS", "passing", "2026-08-02T02:00:00Z"),
+		check(106, 6, "SUCCESS", "passing", "2026-08-02T02:00:00Z"),
+	}, "head123")
+	if checks[0].Superseded || !containsString(devPRCheckBlockers(checks), "checks") {
+		t.Fatalf("duplicate same-name jobs make the newest run ambiguous; cancellation must keep blocking: %+v", checks)
 	}
 }

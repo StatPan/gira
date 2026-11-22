@@ -2,10 +2,36 @@
 
 All notable Gira release changes are tracked here.
 
-Gira uses SemVer tags. User-facing features normally increment the minor version and fixes increment the patch version.
+Gira uses SemVer tags. The bump rule is in `docs/release-distribution.md` ("Version Policy").
 
 ## Unreleased
 
+## v3.3.0 - 2026-11-23
+
+- Added a declared workflow model based on Jira's workflow semantics (see
+  `docs/workflow-model.md`). An optional `workflow:` block in
+  `.gira/config.yaml` declares statuses with a `to_do`, `in_progress` or
+  `done` category, plus transitions with conditions, validators and post
+  functions. `gira doctor` validates the block. Repositories without the
+  block keep the default workflow unchanged.
+- Lifecycle commands now change status through the declared transitions.
+  `finish_target` lets `ticket finish` stop at a non-Done status such as a
+  release queue, keeping the issue open. The new `gira ticket transition N
+  --to STATUS --dry-run|--apply` command moves a ticket along a declared
+  transition.
+- `status`, `sprint`, `triage` and queue views now aggregate by status
+  category, so custom statuses are counted correctly.
+- Fixed PR readiness when one head has several separate workflow runs (for
+  example a re-triggered `pull_request` event). `ticket checks`, `ticket
+  wait`, `ticket finish` and workflow audit now judge each check by the
+  newest run of the same app, workflow, event and job name. Older runs stay
+  in the report marked `superseded` (shown as, for example, `failure
+  (superseded)` in `--detail`). A newest failing, cancelled or pending run
+  still blocks. Missing run metadata or an ambiguous newest run keeps every
+  run blocking, and a later completion time alone no longer clears a
+  cancelled check.
+- Fixed closing-keyword detection to bound keywords and match exact issue
+  references.
 - Fixed Goal child batch query nesting and upgraded Goal status/selection,
   planning, finish, dossier, dispatch, and PM observe/replan contracts to v2.
   Reports retain discovered identities when snapshots or operation policy are

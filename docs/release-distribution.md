@@ -10,7 +10,18 @@ Gira ships as one Go-built binary. Package-manager channels are wrappers around 
   validated the tag shape.
 - Published release assets are immutable. Reusing a tag or replacing assets for the same version is a release defect; publish a new patch version instead.
 - Pull requests and `main` pushes run validation builds but do not publish stable package-manager releases.
-- During `v0.x`, user-facing feature work increments the minor version and fixes increment the patch version.
+- Version bump rule (applies from v1 onward; agents decide without asking):
+  - patch: fixes, docs and internal refactors only. No new command, flag,
+    config key or JSON field.
+  - minor: any additive user-facing surface (new command, flag, config key,
+    JSON field or opt-in behavior), even when shipped together with fixes.
+  - major: removing or renaming a command, flag, config key or JSON field, or
+    changing a default so that existing configs or scripts break.
+  - The highest-ranked change since the last tag decides the bump.
+- Release cadence: after a merged PR leaves `main` with unreleased
+  user-facing changes, the merging agent cuts the release by the rule above.
+  A major bump, a failing release workflow, or a failing check stops the
+  agent, which reports to the maintainer instead of tagging.
 - Every release should update `CHANGELOG.md` before the tag is pushed.
 
 ## Release Impact In Ticket Delivery

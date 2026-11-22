@@ -171,7 +171,8 @@ func TestBuildTicketChecksReportDetailStatesStayTruthful(t *testing.T) {
 			`{"name":"Build","status":"completed","conclusion":"cancelled","completed_at":"2026-09-28T00:00:00Z","html_url":"https://github.com/StatPan/gira/actions/runs/100/job/200","app":{"id":15368,"name":"GitHub Actions","slug":"github-actions"}},` +
 			`{"name":"Build","status":"completed","conclusion":"success","completed_at":"2026-09-28T00:05:00Z","html_url":"https://github.com/StatPan/gira/actions/runs/101/job/201","app":{"id":15368,"name":"GitHub Actions","slug":"github-actions"}}]}`
 		runner := detailRunner(1, detailPullJSON("clean"), []string{checks}, []string{`{"jobs":[` + actionsJobJSON(200, 100, 1, "completed", "cancelled", "Run tests", "completed", "failure") + `]}`}, nil)
-		runner.outputs["gh api repos/StatPan/gira/actions/runs/101"] = repeatPayload(2, `{"name":"CI","run_number":129,"head_sha":"abc123","html_url":"https://github.com/StatPan/gira/actions/runs/101","workflow_id":42}`)
+		runner.outputs["gh api repos/StatPan/gira/actions/runs/100"] = repeatPayload(2, `{"name":"CI","run_number":128,"event":"pull_request","head_sha":"abc123","html_url":"https://github.com/StatPan/gira/actions/runs/100","workflow_id":42}`)
+		runner.outputs["gh api repos/StatPan/gira/actions/runs/101"] = repeatPayload(2, `{"name":"CI","run_number":129,"event":"pull_request","head_sha":"abc123","html_url":"https://github.com/StatPan/gira/actions/runs/101","workflow_id":42}`)
 		runner.outputs["gh api repos/StatPan/gira/actions/runs/101/jobs -X GET -f filter=all -f per_page=100 --paginate --slurp"] = [][]byte{[]byte(`{"jobs":[` + actionsJobJSON(201, 101, 1, "completed", "success", "", "completed", "success") + `]}`)}
 		report, err := BuildTicketChecksReport(repo, 227, options, runner)
 		if err != nil {

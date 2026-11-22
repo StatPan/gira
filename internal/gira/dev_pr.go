@@ -683,18 +683,19 @@ func restCheckRunsForCommitWithAvailability(repo RepoRef, headSHA string, runner
 		}
 	}
 	checks = latestWorkflowAttemptChecks(repo, checks, headSHA, runner)
-	checks = latestWorkflowRunChecks(checks, headSHA)
+	checks = markSupersededSeparateRuns(checks, headSHA)
 	return markSupersededCancelledChecks(checks, headSHA), true
 }
 
 // Separate workflow runs on the same head (a re-triggered event, a manual
 // re-dispatch) each leave their own check runs, and the commit endpoint returns
 // all of them. Only the newest run of one stable check identity represents the
-// current result, so older runs of that identity are dropped. Identity is the
-// Actions app, workflow, triggering event and job name (which carries matrix
-// values); anything ambiguous or lacking run provenance is kept, so it can
-// still block.
-func latestWorkflowRunChecks(checks []DevPRCheck, headSHA string) []DevPRCheck {
+// current result, so older runs of that identity are marked superseded and stop
+// blocking, while staying visible as history. Identity is the Actions app,
+// workflow, triggering event and job name (which carries matrix values).
+// Anything ambiguous or lacking run provenance is left as is, so it can still
+// block. A newest failing, cancelled or pending run keeps blocking on its own.
+func markSupersededSeparateRuns(checks []DevPRCheck, headSHA string) []DevPRCheck {
 	type identity struct {
 		appID, workflowID int
 		event, name       string
@@ -709,7 +710,6 @@ func latestWorkflowRunChecks(checks []DevPRCheck, headSHA string) []DevPRCheck {
 		groups[key] = append(groups[key], index)
 	}
 
-	var drop []bool
 	for _, indexes := range groups {
 		if len(indexes) < 2 {
 			continue
@@ -734,25 +734,14 @@ func latestWorkflowRunChecks(checks []DevPRCheck, headSHA string) []DevPRCheck {
 		if !valid || checks[byRunNumber[latestNumber]].runID != latestRunID {
 			continue // Run number and run id must agree on which run is newest.
 		}
-		if drop == nil {
-			drop = make([]bool, len(checks))
-		}
 		for number, index := range byRunNumber {
 			if number < latestNumber {
-				drop[index] = true
+				checks[index].Superseded = true
+				checks[index].State = "passing"
 			}
 		}
 	}
-	if drop == nil {
-		return checks
-	}
-	effective := make([]DevPRCheck, 0, len(checks))
-	for index, check := range checks {
-		if !drop[index] {
-			effective = append(effective, check)
-		}
-	}
-	return effective
+	return checks
 }
 
 func isGitHubActionsCheck(check DevPRCheck) bool {
@@ -913,20 +902,12 @@ func markSupersededCancelledChecks(checks []DevPRCheck, headSHA string) []DevPRC
 
 // replacesCancelledRun reports whether candidate's run provenance allows it to
 // supersede a cancelled check. A later completion time alone is not enough:
-// when run provenance is present on either side, both must come from the same
-// triggering event and candidate must belong to a strictly newer run.
+// both checks must carry the same non-empty triggering event, and candidate
+// must belong to a strictly newer run. Missing or partial provenance keeps the
+// cancellation blocking.
 func replacesCancelledRun(cancelled, candidate DevPRCheck) bool {
-	if cancelled.runEvent != "" || candidate.runEvent != "" {
-		if cancelled.runEvent != candidate.runEvent {
-			return false
-		}
-	}
-	if cancelled.runNumber > 0 || candidate.runNumber > 0 {
-		if cancelled.runNumber <= 0 || candidate.runNumber <= cancelled.runNumber {
-			return false
-		}
-	}
-	return true
+	return cancelled.runEvent != "" && cancelled.runEvent == candidate.runEvent &&
+		cancelled.runNumber > 0 && candidate.runNumber > cancelled.runNumber
 }
 
 func restStatusesForCommit(repo RepoRef, headSHA string, runner CommandRunner) []DevPRCheck {

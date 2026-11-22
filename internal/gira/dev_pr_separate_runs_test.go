@@ -58,11 +58,10 @@ func separateRunOutputs(runs []separateRun) map[string][]byte {
 func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 	repo := RepoRef{Owner: "StatPan", Name: "gira"}
 	tests := []struct {
-		name        string
-		runs        []separateRun
-		wantChecks  int
-		wantState   string
-		wantBlocker string
+		name           string
+		runs           []separateRun
+		wantSuperseded int
+		wantBlocker    string
 	}{
 		{
 			name: "failure, cancel, then successes on the same head",
@@ -72,7 +71,7 @@ func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 				{runID: 102, runNumber: 7, jobID: 12, result: "success"},
 				{runID: 103, runNumber: 8, jobID: 13, result: "success"},
 			},
-			wantChecks: 1, wantState: "passing",
+			wantSuperseded: 3,
 		},
 		{
 			name: "newest failure is not replaced by an older success",
@@ -80,7 +79,7 @@ func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 				{runID: 100, runNumber: 5, jobID: 10, result: "success"},
 				{runID: 101, runNumber: 6, jobID: 11, result: "failure"},
 			},
-			wantChecks: 1, wantState: "failing", wantBlocker: "checks",
+			wantSuperseded: 1, wantBlocker: "checks",
 		},
 		{
 			name: "newest pending keeps waiting",
@@ -88,7 +87,7 @@ func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 				{runID: 100, runNumber: 5, jobID: 10, result: "success"},
 				{runID: 101, runNumber: 6, jobID: 11, status: "in_progress"},
 			},
-			wantChecks: 1, wantState: "pending", wantBlocker: "checks_pending",
+			wantSuperseded: 1, wantBlocker: "checks_pending",
 		},
 		{
 			name: "newest cancelled is not replaced by an older success",
@@ -96,7 +95,7 @@ func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 				{runID: 100, runNumber: 5, jobID: 10, result: "success"},
 				{runID: 101, runNumber: 6, jobID: 11, result: "cancelled"},
 			},
-			wantChecks: 1, wantState: "failing", wantBlocker: "checks",
+			wantSuperseded: 1, wantBlocker: "checks",
 		},
 		{
 			name: "different workflows are not merged",
@@ -104,7 +103,7 @@ func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 				{runID: 100, runNumber: 5, jobID: 10, result: "failure"},
 				{runID: 101, runNumber: 6, jobID: 11, result: "success", workflowID: 43},
 			},
-			wantChecks: 2, wantBlocker: "checks",
+			wantSuperseded: 0, wantBlocker: "checks",
 		},
 		{
 			name: "different triggering events are not merged",
@@ -112,7 +111,7 @@ func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 				{runID: 100, runNumber: 5, jobID: 10, result: "failure", event: "push"},
 				{runID: 101, runNumber: 6, jobID: 11, result: "success"},
 			},
-			wantChecks: 2, wantBlocker: "checks",
+			wantSuperseded: 0, wantBlocker: "checks",
 		},
 		{
 			name: "different matrix jobs are not merged",
@@ -120,7 +119,7 @@ func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 				{runID: 100, runNumber: 5, jobID: 10, result: "failure", name: "test (1.22)"},
 				{runID: 101, runNumber: 6, jobID: 11, result: "success", name: "test (1.23)"},
 			},
-			wantChecks: 2, wantBlocker: "checks",
+			wantSuperseded: 0, wantBlocker: "checks",
 		},
 		{
 			name: "missing run number keeps the failure",
@@ -128,7 +127,7 @@ func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 				{runID: 100, jobID: 10, result: "failure"},
 				{runID: 101, runNumber: 6, jobID: 11, result: "success"},
 			},
-			wantChecks: 2, wantBlocker: "checks",
+			wantSuperseded: 0, wantBlocker: "checks",
 		},
 		{
 			name: "missing event keeps the failure",
@@ -136,7 +135,7 @@ func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 				{runID: 100, runNumber: 5, jobID: 10, result: "failure", event: "-"},
 				{runID: 101, runNumber: 6, jobID: 11, result: "success", event: "-"},
 			},
-			wantChecks: 2, wantBlocker: "checks",
+			wantSuperseded: 0, wantBlocker: "checks",
 		},
 		{
 			name: "run number and run id disagreeing keeps the failure",
@@ -144,7 +143,7 @@ func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 				{runID: 101, runNumber: 5, jobID: 10, result: "failure"},
 				{runID: 100, runNumber: 6, jobID: 11, result: "success"},
 			},
-			wantChecks: 2, wantBlocker: "checks",
+			wantSuperseded: 0, wantBlocker: "checks",
 		},
 		{
 			name: "success on another head is not a replacement",
@@ -152,18 +151,27 @@ func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 				{runID: 100, runNumber: 5, jobID: 10, result: "failure"},
 				{runID: 101, runNumber: 6, jobID: 11, result: "success", head: "other-head"},
 			},
-			wantChecks: 2, wantBlocker: "checks",
+			wantSuperseded: 0, wantBlocker: "checks",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls []string
 			checks := restCheckRunsForCommit(repo, "head123", devPRRunner{outputs: separateRunOutputs(tt.runs), calls: &calls})
-			if len(checks) != tt.wantChecks {
-				t.Fatalf("effective checks = %+v, want %d", checks, tt.wantChecks)
+			if len(checks) != len(tt.runs) {
+				t.Fatalf("history must stay visible: got %d checks, want %d: %+v", len(checks), len(tt.runs), checks)
 			}
-			if tt.wantState != "" && checks[0].State != tt.wantState {
-				t.Fatalf("effective state = %q, want %q: %+v", checks[0].State, tt.wantState, checks)
+			superseded := 0
+			for _, check := range checks {
+				if check.Superseded {
+					superseded++
+					if check.runNumber == newestRunNumber(tt.runs) {
+						t.Fatalf("newest run must never be superseded: %+v", checks)
+					}
+				}
+			}
+			if superseded != tt.wantSuperseded {
+				t.Fatalf("superseded = %d, want %d: %+v", superseded, tt.wantSuperseded, checks)
 			}
 			blockers := devPRCheckBlockers(checks)
 			if (tt.wantBlocker == "" && len(blockers) > 0) || (tt.wantBlocker != "" && !containsString(blockers, tt.wantBlocker)) {
@@ -174,7 +182,17 @@ func TestRestCheckRunsUseNewestSeparateRunPerCheckIdentity(t *testing.T) {
 	}
 }
 
-func TestLatestWorkflowRunChecksKeepsAmbiguousSameRunDuplicates(t *testing.T) {
+func newestRunNumber(runs []separateRun) int {
+	newest := 0
+	for _, run := range runs {
+		if run.runNumber > newest {
+			newest = run.runNumber
+		}
+	}
+	return newest
+}
+
+func TestMarkSupersededSeparateRunsKeepsAmbiguousSameRunDuplicates(t *testing.T) {
 	check := func(runID, runNumber int, conclusion, state string) DevPRCheck {
 		return DevPRCheck{Name: "test", AppID: 15368, AppSlug: "github-actions", WorkflowID: 42, HeadSHA: "head123",
 			Conclusion: conclusion, State: state, runID: runID, runNumber: runNumber, runEvent: "pull_request"}
@@ -186,9 +204,9 @@ func TestLatestWorkflowRunChecksKeepsAmbiguousSameRunDuplicates(t *testing.T) {
 		check(101, 6, "SUCCESS", "passing"),
 		check(101, 6, "SUCCESS", "passing"),
 	}
-	effective := latestWorkflowRunChecks(checks, "head123")
-	if len(effective) != 3 || !containsString(devPRCheckBlockers(effective), "checks") {
-		t.Fatalf("ambiguous identity must keep every check: %+v", effective)
+	marked := markSupersededSeparateRuns(checks, "head123")
+	if marked[0].Superseded || !containsString(devPRCheckBlockers(marked), "checks") {
+		t.Fatalf("ambiguous identity must keep the failure blocking: %+v", marked)
 	}
 }
 
@@ -220,8 +238,8 @@ func TestTicketChecksWaitAndFinishAgreeOnNewestSeparateRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !checks.Ready || containsString(checks.Blockers, "checks") || len(checks.Checks) != 1 {
-		t.Fatalf("checks must use the newest run only: ready=%t blockers=%v checks=%+v", checks.Ready, checks.Blockers, checks.Checks)
+	if !checks.Ready || containsString(checks.Blockers, "checks") || len(checks.Checks) != 4 {
+		t.Fatalf("checks must judge by the newest run and keep older runs as history: ready=%t blockers=%v checks=%+v", checks.Ready, checks.Blockers, checks.Checks)
 	}
 	waited, err := BuildTicketChecksReport(repo, 219, TicketChecksOptions{Wait: 1, PollInterval: 1, Sleep: func(time.Duration) {}}, runner)
 	if err != nil {
@@ -234,7 +252,7 @@ func TestTicketChecksWaitAndFinishAgreeOnNewestSeparateRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !finish.Readiness.Ready || containsString(finish.Blockers, "checks") || finish.Readiness.Checks.Total != 1 ||
+	if !finish.Readiness.Ready || containsString(finish.Blockers, "checks") || finish.Readiness.Checks.Total != 4 ||
 		finish.Readiness.Checks.Failing != 0 {
 		t.Fatalf("finish --dry-run must agree with checks: %+v", finish.Readiness)
 	}
@@ -257,6 +275,26 @@ func assertReadOnlyGHCalls(t *testing.T, calls []string) {
 		}
 		if mutating {
 			t.Fatalf("readiness must stay read-only, got call %q in %v", call, calls)
+		}
+	}
+}
+
+func withoutProvenance(check DevPRCheck, dropEvent, dropRunNumber bool) DevPRCheck {
+	if dropEvent {
+		check.runEvent = ""
+	}
+	if dropRunNumber {
+		check.runNumber = 0
+	}
+	return check
+}
+
+func TestSupersededCheckPhraseShowsItsOwnOutcome(t *testing.T) {
+	now := time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC)
+	for conclusion, want := range map[string]string{"FAILURE": "failure (superseded)", "CANCELLED": "cancelled (superseded)", "SUCCESS": "success (superseded)"} {
+		phrase := ticketCheckAvailablePhrase(DevPRCheck{Name: "Ops", Superseded: true, Conclusion: conclusion, State: "passing"}, TicketCheckDetail{}, now)
+		if !strings.Contains(phrase, want) {
+			t.Fatalf("phrase for %s = %q, want %q", conclusion, phrase, want)
 		}
 	}
 }
@@ -284,6 +322,12 @@ func TestMarkSupersededCancelledChecksRequiresSameEventAndNewerRun(t *testing.T)
 				c.runNumber = 0
 				return c
 			}()},
+		{name: "no provenance on either side", cancelled: withoutProvenance(check(5, "pull_request", "CANCELLED", "failing", "2026-08-02T01:00:00Z"), true, true),
+			success: withoutProvenance(check(6, "push", "SUCCESS", "passing", "2026-08-02T02:00:00Z"), true, true)},
+		{name: "matching events without run numbers", cancelled: withoutProvenance(check(5, "pull_request", "CANCELLED", "failing", "2026-08-02T01:00:00Z"), false, true),
+			success: withoutProvenance(check(6, "pull_request", "SUCCESS", "passing", "2026-08-02T02:00:00Z"), false, true)},
+		{name: "increasing run numbers without events", cancelled: withoutProvenance(check(5, "pull_request", "CANCELLED", "failing", "2026-08-02T01:00:00Z"), true, false),
+			success: withoutProvenance(check(6, "push", "SUCCESS", "passing", "2026-08-02T02:00:00Z"), true, false)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

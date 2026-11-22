@@ -358,7 +358,7 @@ func TestRestCheckRunsOnlySupersedesCancelledChecksWithNewerSameWorkflowSuccess(
 		wantSuperseded    bool
 		wantChecksBlocker bool
 	}{
-		{name: "newer equivalent success on same head", replacement: true, replacementStatus: "completed", replacementResult: "success", replacementHead: "head123", wantSuperseded: true},
+		{name: "newer success without run provenance does not supersede", replacement: true, replacementStatus: "completed", replacementResult: "success", replacementHead: "head123", wantChecksBlocker: true},
 		{name: "cancelled without replacement", replacement: false, wantChecksBlocker: true},
 		{name: "newer equivalent failure remains blocking", replacement: true, replacementStatus: "completed", replacementResult: "failure", replacementHead: "head123", wantChecksBlocker: true},
 		{name: "newer equivalent pending remains blocking", replacement: true, replacementStatus: "in_progress", replacementHead: "head123", wantChecksBlocker: true},

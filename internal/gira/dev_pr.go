@@ -77,6 +77,12 @@ type DevPRCheck struct {
 	Conclusion  string `json:"conclusion,omitempty"`
 	URL         string `json:"url,omitempty"`
 	State       string `json:"state"`
+
+	// Workflow run provenance used only to pick the newest separate run of one
+	// check identity; never serialized.
+	runID     int
+	runNumber int
+	runEvent  string
 }
 
 type prSummary struct {
@@ -168,6 +174,8 @@ type restCheckRuns struct {
 type restWorkflowRun struct {
 	WorkflowID int    `json:"workflow_id"`
 	HeadSHA    string `json:"head_sha"`
+	RunNumber  int    `json:"run_number"`
+	Event      string `json:"event"`
 }
 
 type restCombinedStatus struct {
@@ -666,12 +674,85 @@ func restCheckRunsForCommitWithAvailability(repo RepoRef, headSHA string, runner
 				if ok {
 					result.WorkflowID = run.WorkflowID
 					result.HeadSHA = strings.TrimSpace(run.HeadSHA)
+					result.runID = runID
+					result.runNumber = run.RunNumber
+					result.runEvent = strings.TrimSpace(run.Event)
 				}
 			}
 			checks = append(checks, result)
 		}
 	}
-	return markSupersededCancelledChecks(latestWorkflowAttemptChecks(repo, checks, headSHA, runner), headSHA), true
+	checks = latestWorkflowAttemptChecks(repo, checks, headSHA, runner)
+	checks = latestWorkflowRunChecks(checks, headSHA)
+	return markSupersededCancelledChecks(checks, headSHA), true
+}
+
+// Separate workflow runs on the same head (a re-triggered event, a manual
+// re-dispatch) each leave their own check runs, and the commit endpoint returns
+// all of them. Only the newest run of one stable check identity represents the
+// current result, so older runs of that identity are dropped. Identity is the
+// Actions app, workflow, triggering event and job name (which carries matrix
+// values); anything ambiguous or lacking run provenance is kept, so it can
+// still block.
+func latestWorkflowRunChecks(checks []DevPRCheck, headSHA string) []DevPRCheck {
+	type identity struct {
+		appID, workflowID int
+		event, name       string
+	}
+	groups := make(map[identity][]int)
+	for index, check := range checks {
+		if !isGitHubActionsCheck(check) || check.WorkflowID <= 0 || check.HeadSHA != headSHA || check.Name == "" ||
+			check.runID <= 0 || check.runNumber <= 0 || check.runEvent == "" {
+			continue
+		}
+		key := identity{appID: check.AppID, workflowID: check.WorkflowID, event: check.runEvent, name: check.Name}
+		groups[key] = append(groups[key], index)
+	}
+
+	var drop []bool
+	for _, indexes := range groups {
+		if len(indexes) < 2 {
+			continue
+		}
+		byRunNumber := make(map[int]int, len(indexes))
+		latestNumber, latestRunID := 0, 0
+		valid := true
+		for _, index := range indexes {
+			check := checks[index]
+			if _, exists := byRunNumber[check.runNumber]; exists {
+				valid = false // Same-name checks within one run (unresolved attempts, unnamed matrix) are ambiguous.
+				break
+			}
+			byRunNumber[check.runNumber] = index
+			if check.runNumber > latestNumber {
+				latestNumber = check.runNumber
+			}
+			if check.runID > latestRunID {
+				latestRunID = check.runID
+			}
+		}
+		if !valid || checks[byRunNumber[latestNumber]].runID != latestRunID {
+			continue // Run number and run id must agree on which run is newest.
+		}
+		if drop == nil {
+			drop = make([]bool, len(checks))
+		}
+		for number, index := range byRunNumber {
+			if number < latestNumber {
+				drop[index] = true
+			}
+		}
+	}
+	if drop == nil {
+		return checks
+	}
+	effective := make([]DevPRCheck, 0, len(checks))
+	for index, check := range checks {
+		if !drop[index] {
+			effective = append(effective, check)
+		}
+	}
+	return effective
 }
 
 func isGitHubActionsCheck(check DevPRCheck) bool {

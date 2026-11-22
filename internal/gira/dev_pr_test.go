@@ -358,7 +358,7 @@ func TestRestCheckRunsOnlySupersedesCancelledChecksWithNewerSameWorkflowSuccess(
 		wantSuperseded    bool
 		wantChecksBlocker bool
 	}{
-		{name: "newer equivalent success on same head", replacement: true, replacementStatus: "completed", replacementResult: "success", replacementHead: "head123", wantSuperseded: true},
+		{name: "newer success without run provenance does not supersede", replacement: true, replacementStatus: "completed", replacementResult: "success", replacementHead: "head123", wantChecksBlocker: true},
 		{name: "cancelled without replacement", replacement: false, wantChecksBlocker: true},
 		{name: "newer equivalent failure remains blocking", replacement: true, replacementStatus: "completed", replacementResult: "failure", replacementHead: "head123", wantChecksBlocker: true},
 		{name: "newer equivalent pending remains blocking", replacement: true, replacementStatus: "in_progress", replacementHead: "head123", wantChecksBlocker: true},
@@ -404,7 +404,7 @@ func TestMarkSupersededCancelledChecksRequiresStableProviderAndWorkflowIdentity(
 		t.Run(tt.name, func(t *testing.T) {
 			checks := append([]DevPRCheck(nil), base...)
 			tt.mutate(checks)
-			checks = markSupersededCancelledChecks(checks, "head123")
+			checks = markSupersededSeparateRuns(checks, "head123")
 			if checks[0].Superseded || !containsString(devPRCheckBlockers(checks), "checks") {
 				t.Fatalf("unstable provenance must remain blocking: %+v", checks)
 			}

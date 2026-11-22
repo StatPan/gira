@@ -77,6 +77,12 @@ type DevPRCheck struct {
 	Conclusion  string `json:"conclusion,omitempty"`
 	URL         string `json:"url,omitempty"`
 	State       string `json:"state"`
+
+	// Workflow run provenance used only to pick the newest separate run of one
+	// check identity; never serialized.
+	runID     int
+	runNumber int
+	runEvent  string
 }
 
 type prSummary struct {
@@ -168,6 +174,8 @@ type restCheckRuns struct {
 type restWorkflowRun struct {
 	WorkflowID int    `json:"workflow_id"`
 	HeadSHA    string `json:"head_sha"`
+	RunNumber  int    `json:"run_number"`
+	Event      string `json:"event"`
 }
 
 type restCombinedStatus struct {
@@ -666,12 +674,75 @@ func restCheckRunsForCommitWithAvailability(repo RepoRef, headSHA string, runner
 				if ok {
 					result.WorkflowID = run.WorkflowID
 					result.HeadSHA = strings.TrimSpace(run.HeadSHA)
+					result.runID = runID
+					result.runNumber = run.RunNumber
+					result.runEvent = strings.TrimSpace(run.Event)
 				}
 			}
 			checks = append(checks, result)
 		}
 	}
-	return markSupersededCancelledChecks(latestWorkflowAttemptChecks(repo, checks, headSHA, runner), headSHA), true
+	checks = latestWorkflowAttemptChecks(repo, checks, headSHA, runner)
+	return markSupersededSeparateRuns(checks, headSHA), true
+}
+
+// Separate workflow runs on the same head (a re-triggered event, a manual
+// re-dispatch) each leave their own check runs, and the commit endpoint returns
+// all of them. Only the newest run of one stable check identity represents the
+// current result, so older runs of that identity are marked superseded and stop
+// blocking, while staying visible as history. Identity is the Actions app,
+// workflow, triggering event and job name (which carries matrix values).
+// Anything ambiguous or lacking run provenance is left as is, so it can still
+// block. A newest failing, cancelled or pending run keeps blocking on its own.
+// This is also the only way a cancelled check stops blocking: completion time
+// alone never supersedes a cancellation.
+func markSupersededSeparateRuns(checks []DevPRCheck, headSHA string) []DevPRCheck {
+	type identity struct {
+		appID, workflowID int
+		event, name       string
+	}
+	groups := make(map[identity][]int)
+	for index, check := range checks {
+		if !isGitHubActionsCheck(check) || check.WorkflowID <= 0 || check.HeadSHA != headSHA || check.Name == "" ||
+			check.runID <= 0 || check.runNumber <= 0 || check.runEvent == "" {
+			continue
+		}
+		key := identity{appID: check.AppID, workflowID: check.WorkflowID, event: check.runEvent, name: check.Name}
+		groups[key] = append(groups[key], index)
+	}
+
+	for _, indexes := range groups {
+		if len(indexes) < 2 {
+			continue
+		}
+		byRunNumber := make(map[int]int, len(indexes))
+		latestNumber, latestRunID := 0, 0
+		valid := true
+		for _, index := range indexes {
+			check := checks[index]
+			if _, exists := byRunNumber[check.runNumber]; exists {
+				valid = false // Same-name checks within one run (unresolved attempts, unnamed matrix) are ambiguous.
+				break
+			}
+			byRunNumber[check.runNumber] = index
+			if check.runNumber > latestNumber {
+				latestNumber = check.runNumber
+			}
+			if check.runID > latestRunID {
+				latestRunID = check.runID
+			}
+		}
+		if !valid || checks[byRunNumber[latestNumber]].runID != latestRunID {
+			continue // Run number and run id must agree on which run is newest.
+		}
+		for number, index := range byRunNumber {
+			if number < latestNumber {
+				checks[index].Superseded = true
+				checks[index].State = "passing"
+			}
+		}
+	}
+	return checks
 }
 
 func isGitHubActionsCheck(check DevPRCheck) bool {
@@ -797,34 +868,6 @@ func githubActionsJobID(rawURL string) int {
 		return 0
 	}
 	return jobID
-}
-
-func markSupersededCancelledChecks(checks []DevPRCheck, headSHA string) []DevPRCheck {
-	headSHA = strings.TrimSpace(headSHA)
-	for index := range checks {
-		cancelled := &checks[index]
-		if !strings.EqualFold(cancelled.Conclusion, "CANCELLED") || cancelled.WorkflowID <= 0 || cancelled.Name == "" || !strings.EqualFold(strings.TrimSpace(cancelled.HeadSHA), headSHA) {
-			continue
-		}
-		cancelledAt, err := time.Parse(time.RFC3339, strings.TrimSpace(cancelled.CompletedAt))
-		if err != nil {
-			continue
-		}
-		for candidateIndex := range checks {
-			candidate := checks[candidateIndex]
-			if !isGitHubActionsCheck(*cancelled) || !isGitHubActionsCheck(candidate) || candidate.AppID != cancelled.AppID || candidate.WorkflowID != cancelled.WorkflowID || candidate.Name != cancelled.Name || !strings.EqualFold(strings.TrimSpace(candidate.HeadSHA), headSHA) || !strings.EqualFold(candidate.Conclusion, "SUCCESS") {
-				continue
-			}
-			candidateAt, err := time.Parse(time.RFC3339, strings.TrimSpace(candidate.CompletedAt))
-			if err != nil || !candidateAt.After(cancelledAt) {
-				continue
-			}
-			cancelled.Superseded = true
-			cancelled.State = "passing"
-			break
-		}
-	}
-	return checks
 }
 
 func restStatusesForCommit(repo RepoRef, headSHA string, runner CommandRunner) []DevPRCheck {

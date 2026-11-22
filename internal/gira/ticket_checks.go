@@ -401,7 +401,14 @@ func ticketCheckProgressPhrase(check DevPRCheck, detail TicketCheckDetail, now t
 func ticketCheckAvailablePhrase(check DevPRCheck, detail TicketCheckDetail, now time.Time) string {
 	var parts []string
 	if check.Superseded {
-		parts = append(parts, "cancelled (superseded)")
+		outcome := strings.ToLower(strings.TrimSpace(check.Conclusion))
+		if outcome == "" {
+			outcome = strings.ToLower(strings.TrimSpace(check.Status))
+		}
+		if outcome == "" {
+			outcome = "older run"
+		}
+		parts = append(parts, outcome+" (superseded)")
 	} else {
 		parts = append(parts, ticketCheckStatusPhrase(detail))
 	}

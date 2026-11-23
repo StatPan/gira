@@ -10,17 +10,21 @@ Gira uses SemVer tags. The bump rule is in `docs/release-distribution.md` ("Vers
 
 Breaking changes:
 
-- Goal JSON reports moved to schema v2: `goal-plan/v2`, `goal-plan-compact/v2`,
-  `goal-next/v2`, `goal-handoff/v2`, `goal-dossier/v2`,
-  `goal-finish-readiness/v2`, `dispatch-packet/v2` and `dispatch-compact/v2`.
+- Goal, dispatch and PM JSON reports moved to schema v2. Goal commands:
+  `goal-status/v2`, `goal-plan/v2`, `goal-plan-compact/v2`, `goal-next/v2`,
+  `goal-handoff/v2`, `goal-dossier/v2` and `goal-finish-readiness/v2`.
+  Dispatch packets: `dispatch-packet/v2` and `dispatch-compact/v2`. PM
+  reports: `pm-work-graph-report/v2`, `pm-work-graph-compact/v2`,
+  `pm-observe-report/v2` and `pm-replan-report/v2`.
   `remaining_autonomous_work` is now `null` until child discovery and status
   are complete. Use the new `known_remaining_autonomous_work` integer for a
   lower bound. Consumers that pin a v1 `schema_version` or require an integer
   must update.
-- PR readiness check lists and totals in `ticket checks`, `ticket wait` and
-  `ticket finish` JSON can now include older GitHub Actions runs marked
-  `"superseded": true` with state `passing`. Filter on `superseded` to count
-  only current runs.
+- `ticket checks` and `ticket wait` JSON check lists can now include older
+  GitHub Actions runs marked `"superseded": true` with state `passing`. The
+  aggregate check counts in `ticket finish` readiness JSON and finish
+  receipts include those rows as passing. To count current runs only, read
+  the check list from `ticket checks --json` and skip superseded rows.
 
 Changes:
 

@@ -201,8 +201,12 @@ Status labels default to `status:` followed by the name; an explicit `label` may
 be supplied instead. Transition `from` accepts a status name, a list of names,
 or `any` (also spelled `global`). Phase 2 validates transition declarations and
 registered names in `conditions`, `validators`, and `post`; doctor reports an
-unknown name as `workflow_unknown_step`. `command` remains illustrative and
-existing commands do not yet run transition rules (phase 3). A release-evidence
+unknown name as `workflow_unknown_step`. Since phase 3, `ticket start`,
+`ticket pr`, `ticket finish` and `ticket supersede` resolve each status move
+against the declared transitions before any mutation: a missing path blocks
+with `missing_transition` and an invalid declaration blocks with
+`invalid_workflow`. The merge, close and PR actions themselves still run in
+each command rather than as engine post functions. A release-evidence
 validator for the external `release` transition is not registered yet.
 
 - `ticket finish` merges and moves the ticket to `ready-for-release`; the issue

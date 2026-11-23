@@ -6,7 +6,23 @@ Gira uses SemVer tags. The bump rule is in `docs/release-distribution.md` ("Vers
 
 ## Unreleased
 
-## v3.3.0 - 2026-11-23
+## v4.0.0 - 2026-11-23
+
+Breaking changes:
+
+- Goal JSON reports moved to schema v2: `goal-plan/v2`, `goal-plan-compact/v2`,
+  `goal-next/v2`, `goal-handoff/v2`, `goal-dossier/v2`,
+  `goal-finish-readiness/v2`, `dispatch-packet/v2` and `dispatch-compact/v2`.
+  `remaining_autonomous_work` is now `null` until child discovery and status
+  are complete. Use the new `known_remaining_autonomous_work` integer for a
+  lower bound. Consumers that pin a v1 `schema_version` or require an integer
+  must update.
+- PR readiness check lists and totals in `ticket checks`, `ticket wait` and
+  `ticket finish` JSON can now include older GitHub Actions runs marked
+  `"superseded": true` with state `passing`. Filter on `superseded` to count
+  only current runs.
+
+Changes:
 
 - Added a declared workflow model based on Jira's workflow semantics (see
   `docs/workflow-model.md`). An optional `workflow:` block in
@@ -14,22 +30,25 @@ Gira uses SemVer tags. The bump rule is in `docs/release-distribution.md` ("Vers
   `done` category, plus transitions with conditions, validators and post
   functions. `gira doctor` validates the block. Repositories without the
   block keep the default workflow unchanged.
-- Lifecycle commands now change status through the declared transitions.
+- With a declared workflow, `ticket start`, `ticket pr`, `ticket finish` and
+  `ticket supersede` resolve each status move against the declared
+  transitions and block on a missing path.
   `finish_target` lets `ticket finish` stop at a non-Done status such as a
   release queue, keeping the issue open. The new `gira ticket transition N
   --to STATUS --dry-run|--apply` command moves a ticket along a declared
   transition.
 - `status`, `sprint`, `triage` and queue views now aggregate by status
   category, so custom statuses are counted correctly.
-- Fixed PR readiness when one head has several separate workflow runs (for
-  example a re-triggered `pull_request` event). `ticket checks`, `ticket
-  wait`, `ticket finish` and workflow audit now judge each check by the
-  newest run of the same app, workflow, event and job name. Older runs stay
-  in the report marked `superseded` (shown as, for example, `failure
-  (superseded)` in `--detail`). A newest failing, cancelled or pending run
-  still blocks. Missing run metadata or an ambiguous newest run keeps every
-  run blocking, and a later completion time alone no longer clears a
-  cancelled check.
+- Fixed PR readiness when one head has several separate GitHub Actions
+  workflow runs (for example a re-triggered `pull_request` event). `ticket
+  checks`, `ticket wait`, `ticket finish` and workflow audit now judge an
+  Actions check by the newest run of the same app, workflow, event and job
+  name. Older runs stay in the report marked `superseded` (shown as, for
+  example, `failure (superseded)` in `--detail`). A newest failing, cancelled
+  or pending run still blocks. Checks without full run metadata, or whose
+  newest run is ambiguous, keep their own state, so a failed or cancelled one
+  still blocks. A later completion time alone no longer clears a cancelled
+  check.
 - Fixed closing-keyword detection to bound keywords and match exact issue
   references.
 - Fixed Goal child batch query nesting and upgraded Goal status/selection,

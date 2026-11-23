@@ -15,13 +15,18 @@ Gira ships as one Go-built binary. Package-manager channels are wrappers around 
     config key or JSON field.
   - minor: any additive user-facing surface (new command, flag, config key,
     JSON field or opt-in behavior), even when shipped together with fixes.
-  - major: removing or renaming a command, flag, config key or JSON field, or
-    changing a default so that existing configs or scripts break.
+  - major: any change that can break an existing config, script or JSON
+    consumer: removing or renaming a command, flag, config key or JSON field;
+    changing a field's type or nullability; bumping a JSON `schema_version`
+    to a new major identifier (for example `goal-plan/v1` to `goal-plan/v2`);
+    or changing a default.
   - The highest-ranked change since the last tag decides the bump.
 - Release cadence: after a merged PR leaves `main` with unreleased
-  user-facing changes, the merging agent cuts the release by the rule above.
-  A major bump, a failing release workflow, or a failing check stops the
-  agent, which reports to the maintainer instead of tagging.
+  user-facing changes, the merging agent cuts the release by the rule above
+  without asking. A major release must open its changelog entry with a
+  "Breaking changes" list that names each change and the migration. A failing
+  check, a blocked review or a failing release workflow stops the agent,
+  which reports instead of tagging.
 - Every release should update `CHANGELOG.md` before the tag is pushed.
 
 ## Release Impact In Ticket Delivery
